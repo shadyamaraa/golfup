@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Гольфчидын тоглолт зохион байгуулах апп - Golf Game Organizer" />
+  <title>⛳ Golf Organizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛳</text></svg>" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="app-header">
+      <div class="header-inner">
+        <a href="#/" class="logo" id="logo-link">
+          <span class="logo-icon">⛳</span>
+          <span class="logo-text">GolfUp</span>
+        </a>
+        <nav class="header-nav">
+          <button id="lang-toggle" class="btn-icon" title="Language">
+            <span id="lang-label">MN</span>
+          </button>
+          <div id="user-info" class="user-info hidden">
+            <span id="user-avatar" class="user-avatar"></span>
+            <span id="user-name-display"></span>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content">
+      <!-- Views will be rendered here -->
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
