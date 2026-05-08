@@ -2,3 +2,6 @@ node_modules
 dist
 .env
 *.local
+.claude/
+.firebase/
+dist/
