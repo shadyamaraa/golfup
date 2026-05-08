@@ -44,8 +44,8 @@ const T = {
     notificationSettings: 'Мэдэгдэл тохиргоо',
     description: 'Тайлбар', descriptionPlaceholder: 'Нэмэлт мэдээлэл...',
     invitePlayers: 'Урилга илгээх (заавал биш)',
-    pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан',
-    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Тоглолтод урьлаа',
+    pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан', decline: 'Татгалзах',
+    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Таныг тоглолтод урьсан байна',
     gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай'
   },
   en: {
@@ -93,7 +93,7 @@ const T = {
     notificationSettings: 'Notification Settings',
     description: 'Description', descriptionPlaceholder: 'Additional info...',
     invitePlayers: 'Invite Players (Optional)',
-    pendingNotifications: 'Notifications', markRead: 'Dismiss',
+    pendingNotifications: 'Notifications', markRead: 'Dismiss', decline: 'Decline',
     newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
     gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private'
   }

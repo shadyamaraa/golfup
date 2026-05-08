@@ -241,12 +241,18 @@ function renderNotifications(notifs) {
               </div>
             </div>
             <div class="notif-actions">
-              <a href="#/game/${n.gameId}" class="btn btn-primary btn-sm">${t('join')}</a>
-              <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('markRead')}</button>
+              <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${t('join')}</button>
+              <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
             </div>
           </div>`).join('')}
       </div>
     </div>`;
+  container.querySelectorAll('.join-notif-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await store.deleteNotification(currentUser.id, btn.dataset.id);
+      location.hash = '#/game/' + btn.dataset.game;
+    });
+  });
   container.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       await store.deleteNotification(currentUser.id, btn.dataset.id);
