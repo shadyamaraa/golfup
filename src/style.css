@@ -231,6 +231,13 @@ input, button { font-family: var(--font); }
 /* ====== Games List ====== */
 .games-list { display: flex; flex-direction: column; gap: 12px; }
 
+.day-group { margin-bottom: 8px; }
+.day-group-header {
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gold); padding: 6px 4px 8px;
+  border-bottom: 1px solid rgba(200,169,81,0.2); margin-bottom: 10px;
+}
+
 .game-card {
   padding: 20px; display: block;
   animation: slideUp 0.4s ease-out both;
@@ -357,6 +364,13 @@ input, button { font-family: var(--font); }
 
 /* ====== Responsive ====== */
 @media (max-width: 480px) {
+  .header-inner { padding: 8px 12px; }
+  .logo-text { display: none; }
+  .header-nav { gap: 4px; }
+  #user-name-display { display: none; }
+  .user-info { gap: 2px; }
+  .btn-icon { padding: 6px 8px; }
+  
   .hero-title { font-size: 1.8rem; }
   .auth-card { padding: 36px 24px; }
   .create-card { padding: 24px; }
@@ -367,3 +381,18 @@ input, button { font-family: var(--font); }
   .form-actions { flex-direction: column-reverse; }
   .form-actions .btn { width: 100%; }
 }
+
+/* Modals */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
+.modal-content { width: 100%; max-width: 450px; padding: 30px; border: 1px solid rgba(255,255,255,0.1); }
+.modal-title { margin-bottom: 25px; font-size: 1.4rem; text-align: center; }
+.modal-actions { display: flex; gap: 12px; margin-top: 30px; }
+.modal-actions button { flex: 1; }
+.bank-info-row { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; }
+.bank-info-row .label { color: var(--text-secondary); font-size: 0.9rem; width: 60px; }
+.bank-info-row .value { flex: 1; font-weight: 600; color: var(--gold); }
+.copy-btn { padding: 6px 12px !important; font-size: 0.8rem !important; }
+
+/* Logout button icon */
+.btn-logout-icon { cursor: pointer; background: none; border: none; opacity: 0.7; width: 20px; height: 20px; padding: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpolyline points='16 17 21 12 16 7'/%3E%3Cline x1='21' y1='12' x2='9' y2='12'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-size: contain; }
+.btn-logout-icon:hover { opacity: 1; }
