@@ -24,13 +24,12 @@
           <button id="lang-toggle" class="btn-icon" title="Language">
             <span id="lang-label">MN</span>
           </button>
-          <div id="user-info" class="user-info hidden" style="display:flex; align-items:center;">
-            <a href="#/users" id="users-link" class="btn-icon" title="Хэрэглэгчид" style="margin-right: 8px; text-decoration:none; display:flex; align-items:center;">👥</a>
-            <div id="profile-trigger" style="display:flex; align-items:center; gap:8px; cursor:pointer;" title="Миний бүртгэл">
-              <span id="user-avatar" class="user-avatar"></span>
-              <span id="user-name-display"></span>
+          <div id="user-info" class="user-info hidden">
+            <span id="user-avatar" class="user-avatar"></span>
+            <span id="user-name-display"></span>
+            <div id="user-dropdown" class="user-dropdown hidden">
+              <button class="dropdown-item danger" id="logout-btn">🚪 Гарах</button>
             </div>
-            <button id="logout-btn" class="btn-icon btn-logout-icon" title="Гарах" style="margin-left: 12px;"></button>
           </div>
         </nav>
       </div>
