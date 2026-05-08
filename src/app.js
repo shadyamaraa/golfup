@@ -897,6 +897,7 @@ async function renderAdminPanel() {
                 <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
                 <div style="display:flex; flex-direction:column;">
                   <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${u.name} ${u.role === 'admin' ? '(Admin)' : ''}</span>
+                  <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
                 </div>
                 <div style="margin-left: auto; display: flex; gap: 8px;">
                   <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
@@ -1298,7 +1299,8 @@ function isPlayerInGame(game, userId) {
   if (!game || !userId) return false;
   const groups = ensureGroups(game.groups);
   for (const grp of groups) {
-    if (grp && Array.isArray(grp) && grp.some(p => p.id === userId)) return true;
+    const players = Array.isArray(grp) ? grp : Object.values(grp || {});
+    if (players.some(p => p && p.id === userId)) return true;
   }
   const wl = ensureArray(game.waitingList);
   return wl.some(p => p && p.id === userId);
