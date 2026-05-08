@@ -3,7 +3,8 @@ import { APP_CONFIG } from './config.js';
 import * as store from './store.js';
 
 let currentUser = null;
-let allUsersMap = {}; // Global cache for user details
+let allUsersMap = {};
+let currentUserFollows = {};
 let isRouting = false;
 let activeUnsubs = [];
 
@@ -24,6 +25,7 @@ export async function router() {
   try {
     const hash = location.hash || '#/';
     currentUser = store.getUser();
+    if (currentUser) currentUserFollows = await store.loadFollows(currentUser.id);
     updateHeader();
     clearActiveListeners();
 
@@ -184,6 +186,7 @@ async function renderHome() {
           <span class="btn-icon-left">+</span> ${t('createGame')}
         </a>
       </div>
+      <div id="notifications-section"></div>
       <div class="section">
         <h2 class="section-title">${t('activeGames')}</h2>
         <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
@@ -193,13 +196,57 @@ async function renderHome() {
         <div id="past-games-list" class="games-list"></div>
       </div>
     </div>`;
-    
+
+  if (currentUser) {
+    const notifs = await store.loadNotifications(currentUser.id);
+    renderNotifications(notifs);
+    if (store.isUsingFirebase()) {
+      const unsub = store.onNotificationsChanged(currentUser.id, renderNotifications);
+      if (unsub) activeUnsubs.push(unsub);
+    }
+  }
+
   const games = await store.loadAllGames();
   renderGamesHome(games);
-  
+
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged(renderGamesHome);
     if (unsub) activeUnsubs.push(unsub);
+  }
+}
+
+function renderNotifications(notifs) {
+  const container = document.getElementById('notifications-section');
+  if (!container) return;
+  if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = `
+    <div class="section">
+      <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
+      <div class="notif-list">
+        ${notifs.map(n => `
+          <div class="notif-item glass-card">
+            <div class="notif-content">
+              <span class="notif-icon">${n.type === 'invite' ? '🏌️' : '⛳'}</span>
+              <div>
+                <div class="notif-title">${n.type === 'invite' ? t('inviteNotif') : t('newGameNotif')}</div>
+                <div class="notif-sub">${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+              </div>
+            </div>
+            <div class="notif-actions">
+              <a href="#/game/${n.gameId}" class="btn btn-primary btn-sm">${t('join')}</a>
+              <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('markRead')}</button>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  container.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await store.deleteNotification(currentUser.id, btn.dataset.id);
+    });
+  });
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const n = notifs[0];
+    new Notification(`GolfUp 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
   }
 }
 
@@ -347,7 +394,11 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
-            <label>${t('addPlayerOptional')}</label>
+            <label for="game-desc">${t('description')}</label>
+            <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
+          </div>
+          <div class="input-group">
+            <label>${t('invitePlayers')}</label>
             <div style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
               ${availableUsers.length > 0 ? availableUsers.map(u => `
                 <label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer;">
@@ -395,30 +446,7 @@ async function renderCreateGame() {
     }
 
     const groupSize = +document.getElementById('game-group-size').value;
-    
-    const selectedPlayers = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => ({
-      id: cb.value,
-      name: cb.dataset.name,
-      joinedAt: Date.now()
-    }));
-    
-    const allPlayers = [{ id: currentUser.id, name: currentUser.name, joinedAt: Date.now() }, ...selectedPlayers];
-    const groups = [[]];
-    const waitingList = [];
-    
-    for (const p of allPlayers) {
-      let added = false;
-      for (let i = 0; i < groups.length; i++) {
-        if (groups[i].length < groupSize) {
-          groups[i].push(p);
-          added = true;
-          break;
-        }
-      }
-      if (!added) {
-        groups.push([p]); // Add to a new group
-      }
-    }
+    const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
 
     const game = {
       id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -427,13 +455,33 @@ async function renderCreateGame() {
       date: document.getElementById('game-date').value,
       time: hour + ':' + min,
       location: document.getElementById('game-location').value.trim(),
+      description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
-      groups: groups,
-      waitingList: waitingList,
+      groups: [[{ id: currentUser.id, name: currentUser.name, joinedAt: Date.now() }]],
+      waitingList: [],
       createdAt: Date.now(),
       status: 'open'
     };
     await store.saveGame(game);
+
+    // Send invitations to selected players
+    for (const uid of invitedIds) {
+      await store.saveNotification(uid, {
+        type: 'invite', gameId: game.id, from: currentUser.name,
+        gameDate: game.date, gameTime: game.time, gameLocation: game.location
+      });
+    }
+    // Notify followers of creator (skip already-invited)
+    const followerIds = await store.getFollowerIds(currentUser.id);
+    for (const fid of followerIds) {
+      if (!invitedIds.includes(fid)) {
+        await store.saveNotification(fid, {
+          type: 'new_game', gameId: game.id, from: currentUser.name,
+          gameDate: game.date, gameTime: game.time, gameLocation: game.location
+        });
+      }
+    }
+
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
   });
@@ -524,6 +572,7 @@ function renderGameView(game) {
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
         <p class="auto-group-hint">ℹ️ ${isReadOnly ? t('pastGameNotice') : t('autoGroup')}</p>
+        ${game.description ? `<p class="game-description">${game.description}</p>` : ''}
       </div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
@@ -568,6 +617,30 @@ function renderGameView(game) {
       }
     });
   });
+  setupFollowListeners();
+}
+
+function setupFollowListeners() {
+  document.querySelectorAll('.follow-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!currentUser) return;
+      const targetId = e.currentTarget.dataset.uid;
+      const isFollowing = !!currentUserFollows[targetId];
+      if (isFollowing) {
+        await store.unfollowUser(currentUser.id, targetId);
+        delete currentUserFollows[targetId];
+        e.currentTarget.classList.remove('following');
+        e.currentTarget.title = t('follow');
+      } else {
+        await store.followUser(currentUser.id, targetId);
+        currentUserFollows[targetId] = true;
+        e.currentTarget.classList.add('following');
+        e.currentTarget.title = t('unfollow');
+      }
+      showToast(isFollowing ? t('unfollow') : t('follow') + ' ✓', 'success');
+    });
+  });
 }
 
 function renderGroupCard(players, groupIndex, game, isPast) {
@@ -582,6 +655,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
           <span class="player-name">${players[i].name}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
+            ${players[i].id !== currentUser?.id ? `<button class="follow-btn ${currentUserFollows[players[i].id] ? 'following' : ''}" data-uid="${players[i].id}" title="${currentUserFollows[players[i].id] ? t('unfollow') : t('follow')}">⭐</button>` : ''}
             ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
             ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
           </div>
@@ -915,6 +989,7 @@ async function renderUsersList() {
                 <span class="player-name">${u.name}</span>
                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
               </div>
+              ${u.id !== currentUser?.id ? `<button class="follow-btn ${currentUserFollows[u.id] ? 'following' : ''}" data-uid="${u.id}" title="${currentUserFollows[u.id] ? t('unfollow') : t('follow')}">⭐</button>` : ''}
               ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
             </div>
           `).join('')}
@@ -934,6 +1009,7 @@ async function renderUsersList() {
       if (user) showBankDetailsModal(user);
     });
   });
+  setupFollowListeners();
 }
 
 // ---- Edit Game View ----
@@ -982,6 +1058,10 @@ async function renderEditGame(gameId) {
               <option value="Chinggis Khaan Golf Course" ${game.location === 'Chinggis Khaan Golf Course' ? 'selected' : ''}>Chinggis Khaan Golf Course</option>
             </select>
           </div>
+          <div class="input-group">
+            <label for="edit-desc">${t('description')}</label>
+            <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
+          </div>
           <div class="form-actions">
             <a href="#/game/${game.id}" class="btn btn-ghost">${t('cancel')}</a>
             <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -995,7 +1075,7 @@ async function renderEditGame(gameId) {
     const date = document.getElementById('edit-date').value;
     const hour = document.getElementById('edit-hour').value;
     const min = document.getElementById('edit-minute').value;
-    
+
     const selectedTime = new Date(`${date}T${hour}:${min}`).getTime();
     if (selectedTime < Date.now()) {
       showToast('Өнгөрсөн цагт тоглолт товлох боломжгүй!', 'error');
@@ -1005,6 +1085,7 @@ async function renderEditGame(gameId) {
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
+    game.description = document.getElementById('edit-desc').value.trim();
     
     await store.saveGame(game);
     showToast('✅ Saved!', 'success');
@@ -1324,6 +1405,18 @@ function showProfileModal(user) {
         </div>
       </div>
 
+      <div class="input-group" style="margin-top: 16px;">
+        <label>${t('notificationSettings')}</label>
+        <label class="toggle-label">
+          <input type="checkbox" id="notify-web-toggle" ${user.notifyWeb !== false ? 'checked' : ''}>
+          <span>${t('notifyWeb')}</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="notify-sms-toggle" ${user.notifySms ? 'checked' : ''}>
+          <span>${t('notifySms')}</span>
+        </label>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>
         <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
@@ -1360,6 +1453,12 @@ function showProfileModal(user) {
     user.bankName = document.getElementById('profile-bank-name').value.trim();
     user.bankAccount = document.getElementById('profile-bank-acc').value.trim();
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
+    user.notifyWeb = document.getElementById('notify-web-toggle').checked;
+    user.notifySms = document.getElementById('notify-sms-toggle').checked;
+
+    if (user.notifyWeb && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
 
     await store.adminUpdateUser(user);
     store.saveUser(user);
