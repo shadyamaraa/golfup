@@ -279,7 +279,7 @@ function renderGamesHome(games) {
   const pastGames = [];
 
   games.forEach(g => {
-    // Precise time check: date + T + time (e.g. 2024-05-04T15:00)
+    if (g.isPrivate && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
     if (gDate >= now) activeGames.push(g);
     else pastGames.push(g);
@@ -326,7 +326,10 @@ function renderGamesCards(games, isPast = false) {
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
         <div class="game-card-header">
           <span class="game-date-badge">${dateStr}</span>
-          <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
+            <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
+          </div>
         </div>
         <div class="game-card-body">
           <div class="game-location">📍 ${g.location || '-'}</div>
@@ -410,6 +413,17 @@ async function renderCreateGame() {
             <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
           </div>
           <div class="input-group">
+            <label>${t('gameVisibility')}</label>
+            <div style="display:flex; gap:10px; margin-top:6px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-public-label">
+                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-private-label">
+                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
             <label>${t('invitePlayers')}</label>
             <div style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
               ${availableUsers.length > 0 ? availableUsers.map(u => `
@@ -435,6 +449,14 @@ async function renderCreateGame() {
   document.getElementById('size-plus').addEventListener('click', () => {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
   });
+  document.querySelectorAll('input[name="visibility"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isPriv = document.querySelector('input[name="visibility"]:checked').value === 'private';
+      document.getElementById('vis-public-label').style.borderColor = isPriv ? 'transparent' : 'var(--emerald)';
+      document.getElementById('vis-private-label').style.borderColor = isPriv ? 'var(--emerald)' : 'transparent';
+    });
+  });
+  document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('create-submit-btn').disabled = true;
@@ -459,6 +481,7 @@ async function renderCreateGame() {
 
     const groupSize = +document.getElementById('game-group-size').value;
     const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
+    const isPrivate = document.querySelector('input[name="visibility"]:checked').value === 'private';
 
     const game = {
       id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -472,7 +495,8 @@ async function renderCreateGame() {
       groups: [[{ id: currentUser.id, name: currentUser.name, joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
-      status: 'open'
+      status: 'open',
+      isPrivate
     };
     await store.saveGame(game);
 
@@ -560,7 +584,7 @@ function renderGameView(game) {
             ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location}</h2>
+        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''}</h2>
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
@@ -627,28 +651,7 @@ function followBtn(uid) {
   return `<button class="follow-btn ${f ? 'following' : ''}" data-uid="${uid}" title="${f ? t('unfollow') : t('follow')}">⭐</button>`;
 }
 
-function setupFollowListeners() {
-  document.querySelectorAll('.follow-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!currentUser) return;
-      const targetId = e.currentTarget.dataset.uid;
-      const isFollowing = !!currentUserFollows[targetId];
-      if (isFollowing) {
-        await store.unfollowUser(currentUser.id, targetId);
-        delete currentUserFollows[targetId];
-        e.currentTarget.classList.remove('following');
-        e.currentTarget.title = t('follow');
-      } else {
-        await store.followUser(currentUser.id, targetId);
-        currentUserFollows[targetId] = true;
-        e.currentTarget.classList.add('following');
-        e.currentTarget.title = t('unfollow');
-      }
-      showToast(isFollowing ? t('unfollow') : t('follow') + ' ✓', 'success');
-    });
-  });
-}
+function setupFollowListeners() {} // handled by delegated listener in initApp
 
 function renderGroupCard(players, groupIndex, game, isPast) {
   const groupSize = game.groupSize;
@@ -1237,10 +1240,13 @@ function formatDate(dateStr) {
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
   if (d.getTime() === today.getTime()) return t('today');
   if (d.getTime() === tomorrow.getTime()) return t('tomorrow');
-  const months = getLang() === 'mn' 
+  const months = getLang() === 'mn'
     ? ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар','7-р сар','8-р сар','9-р сар','10-р сар','11-р сар','12-р сар']
     : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()}`;
+  const days = getLang() === 'mn'
+    ? ['Ням','Даваа','Мягмар','Лхагва','Пүрэв','Баасан','Бямба']
+    : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return `${months[d.getMonth()]} ${d.getDate()} · ${days[d.getDay()]}`;
 }
 
 function timeAgo(ts) {
@@ -1314,6 +1320,27 @@ export function initApp() {
   document.getElementById('profile-trigger')?.addEventListener('click', () => {
     if (!currentUser) return;
     showProfileModal(currentUser);
+  });
+
+  document.body.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.follow-btn');
+    if (!btn || !currentUser) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const targetId = btn.dataset.uid;
+    const isFollowing = !!currentUserFollows[targetId];
+    if (isFollowing) {
+      await store.unfollowUser(currentUser.id, targetId);
+      delete currentUserFollows[targetId];
+      btn.classList.remove('following');
+      btn.title = t('follow');
+    } else {
+      await store.followUser(currentUser.id, targetId);
+      currentUserFollows[targetId] = true;
+      btn.classList.add('following');
+      btn.title = t('unfollow');
+    }
+    showToast(isFollowing ? t('unfollow') : t('follow') + ' ✓', 'success');
   });
 
   window.addEventListener('hashchange', router);

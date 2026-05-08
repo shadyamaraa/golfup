@@ -45,7 +45,8 @@ const T = {
     description: 'Тайлбар', descriptionPlaceholder: 'Нэмэлт мэдээлэл...',
     invitePlayers: 'Урилга илгээх (заавал биш)',
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан',
-    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Тоглолтод урилсан байна'
+    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Тоглолтод урилсан байна',
+    gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай'
   },
   en: {
     appName: 'GolfUp', tagline: 'Play together!',
@@ -93,7 +94,8 @@ const T = {
     description: 'Description', descriptionPlaceholder: 'Additional info...',
     invitePlayers: 'Invite Players (Optional)',
     pendingNotifications: 'Notifications', markRead: 'Dismiss',
-    newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game'
+    newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
+    gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private'
   }
 };
 
