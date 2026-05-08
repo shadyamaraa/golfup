@@ -1,6 +1,7 @@
 import { t, getLang, toggleLang } from './i18n.js';
-import { APP_CONFIG } from './config.js';
+import { APP_CONFIG, VAPID_KEY } from './config.js';
 import * as store from './store.js';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 let currentUser = null;
 let allUsersMap = {};
@@ -156,6 +157,7 @@ function renderAuth() {
       // Success
       currentUser = user;
       store.saveUser(user);
+      initFCM(user);
       showToast(t('welcome') + ' ' + user.name + '!', 'success');
       location.hash = '#/';
       router();
@@ -1268,6 +1270,27 @@ function showToast(msg, type = 'info') {
   }, 2500);
 }
 
+// ---- FCM ----
+async function initFCM(user) {
+  if (!store.firebaseApp || !user || user.notifyWeb === false) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const messaging = getMessaging(store.firebaseApp);
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (token && token !== user.fcmToken) {
+      user.fcmToken = token;
+      store.saveUser(user);
+      await store.saveFCMToken(user.id, token);
+    }
+    onMessage(messaging, (payload) => {
+      const { title, body } = payload.data || {};
+      showToast(`${title || '⛳'} ${body || ''}`, 'info');
+    });
+  } catch (e) {
+    console.warn('FCM init failed:', e);
+  }
+}
+
 // ---- Init ----
 export function initApp() {
   document.getElementById('lang-toggle')?.addEventListener('click', () => {
@@ -1461,9 +1484,7 @@ function showProfileModal(user) {
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
 
-    if (user.notifyWeb && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
+    if (user.notifyWeb) initFCM(user);
 
     await store.adminUpdateUser(user);
     store.saveUser(user);

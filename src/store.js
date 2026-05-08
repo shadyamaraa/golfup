@@ -5,7 +5,7 @@ import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
 let db = null;
 let auth = null;
-let firebaseApp = null;
+export let firebaseApp = null;
 let useFirebase = false;
 
 export async function initStore() {
@@ -248,5 +248,12 @@ export function onNotificationsChanged(userId, callback) {
       callback(Object.values(snap.val()).sort((a, b) => b.createdAt - a.createdAt));
     });
     return () => off(notifRef);
+  }
+}
+
+// ---- FCM Token ----
+export async function saveFCMToken(userId, token) {
+  if (useFirebase && db && userId && token) {
+    await set(ref(db, `users/${userId}/fcmToken`), token);
   }
 }
