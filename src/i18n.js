@@ -45,7 +45,7 @@ const T = {
     description: 'Тайлбар', descriptionPlaceholder: 'Нэмэлт мэдээлэл...',
     invitePlayers: 'Урилга илгээх (заавал биш)',
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан',
-    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Тоглолтод урилсан байна',
+    newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Тоглолтод урьлаа',
     gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай'
   },
   en: {

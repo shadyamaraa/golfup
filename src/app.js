@@ -86,7 +86,7 @@ function renderAuth() {
             <input type="text" id="auth-name" placeholder="${t('needName')}" minlength="2" maxlength="20" />
           </div>
           <div class="input-group">
-            <input type="password" id="auth-password" placeholder="${t('newPass')}" required minlength="4" />
+            <input type="password" id="auth-password" placeholder="${t('newPass')}" required minlength="1" />
           </div>
           <button type="submit" class="btn btn-primary btn-lg" id="auth-submit-btn">${t('start')}</button>
         </form>
@@ -884,7 +884,7 @@ async function renderAdminPanel() {
           <form id="create-user-form" style="display:flex; gap:10px; flex-wrap: wrap;">
             <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
             <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="4" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
             <button type="submit" class="btn btn-primary">${t('create')}</button>
           </form>
         </div>
@@ -899,8 +899,7 @@ async function renderAdminPanel() {
                   <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${u.name} ${u.role === 'admin' ? '(Admin)' : ''}</span>
                 </div>
                 <div style="margin-left: auto; display: flex; gap: 8px;">
-                  <button class="btn btn-sm btn-outline change-pass-btn" data-id="${u.id}" data-name="${u.name}">${t('changePass')}</button>
-                  ${u.id !== currentUser.id ? `<button class="btn btn-sm ${u.status === 'hold' ? 'btn-primary' : 'btn-outline'} toggle-status-btn" data-id="${u.id}" data-status="${u.status}">${u.status === 'hold' ? t('restore') : 'Hold'}</button>` : ''}
+                  <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
                   ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
                 </div>
               </div>
@@ -932,44 +931,123 @@ async function renderAdminPanel() {
     renderAdminPanel();
   });
 
-  document.querySelectorAll('.change-pass-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.dataset.id;
-      const name = e.target.dataset.name;
-      const newPass = prompt(`Шинэ нууц үг оруулна уу (${name}):`);
-      if (newPass && newPass.length >= 4) {
-        const user = users.find(u => u.id === id);
-        if (user) {
-          user.password = newPass;
-          await store.adminUpdateUser(user);
-          showToast('Нууц үг солигдлоо', 'success');
-        }
-      }
-    });
-  });
-
-
-  document.querySelectorAll('.toggle-status-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.dataset.id;
-      const currentStatus = e.target.dataset.status;
-      const user = users.find(u => u.id === id);
-      if (user) {
-        user.status = currentStatus === 'hold' ? 'active' : 'hold';
-        await store.adminUpdateUser(user);
-        renderAdminPanel();
-      }
+  document.querySelectorAll('.edit-user-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const u = users.find(x => x.id === btn.dataset.id);
+      if (u) showAdminEditUserModal(u, () => renderAdminPanel());
     });
   });
 
   document.querySelectorAll('.delete-user-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', async () => {
       if (confirm(t('confirmDeleteUser'))) {
-        await store.deleteUserFromDB(e.target.dataset.id);
+        await store.deleteUserFromDB(btn.dataset.id);
         renderAdminPanel();
       }
     });
   });
+}
+
+function showAdminEditUserModal(user, onSaved) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  const avatars = ['⛳','🏌️','🏌️‍♀️','🔥','⭐','🏆','🧢','🕶️','💎','🦁','🦊','🐻','🐼','🐯','🦸','🥷'];
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width:480px;">
+      <h3 class="modal-title">✏️ ${user.name} засах</h3>
+
+      <div class="input-group">
+        <label>Аватар</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;">
+          ${avatars.map(a => `<div class="avatar-option ${user.avatar===a?'selected':''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar===a?'background:var(--primary-color);':''}">${a}</div>`).join('')}
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top:12px;">
+        <label>Нэр</label>
+        <input type="text" id="ae-name" value="${user.name}" minlength="2" />
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>Утасны дугаар</label>
+        <input type="text" id="ae-phone" value="${user.phone || ''}" />
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>Шинэ нууц үг (хоосон = өөрчлөхгүй)</label>
+        <input type="password" id="ae-pass" placeholder="..." minlength="1" />
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>Эрх</label>
+        <select id="ae-role" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
+          <option value="user" ${user.role!=='admin'?'selected':''}>Хэрэглэгч</option>
+          <option value="admin" ${user.role==='admin'?'selected':''}>Admin</option>
+        </select>
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>Статус</label>
+        <select id="ae-status" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
+          <option value="active" ${user.status!=='hold'?'selected':''}>Идэвхтэй</option>
+          <option value="hold" ${user.status==='hold'?'selected':''}>Hold</option>
+        </select>
+      </div>
+
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);">
+        <h4 style="margin-bottom:8px;color:var(--emerald);">${t('editBank')}</h4>
+        <div class="input-group">
+          <label>${t('bankName')}</label>
+          <input type="text" id="ae-bank-name" value="${user.bankName||''}" />
+        </div>
+        <div class="input-group" style="margin-top:8px;">
+          <label>${t('bankAccount')}</label>
+          <input type="text" id="ae-bank-acc" value="${user.bankAccount||''}" />
+        </div>
+        <div class="input-group" style="margin-top:8px;">
+          <label>IBAN</label>
+          <input type="text" id="ae-bank-iban" value="${user.bankIban||''}" placeholder="MN..." />
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="ae-cancel">${t('cancel')}</button>
+        <button class="btn btn-primary" id="ae-save">${t('save')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let selectedAvatar = user.avatar || '';
+  modal.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.onclick = () => {
+      modal.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
+      opt.style.background = 'var(--primary-color)';
+      selectedAvatar = opt.dataset.val;
+    };
+  });
+
+  modal.querySelector('#ae-cancel').onclick = () => modal.remove();
+  modal.querySelector('#ae-save').onclick = async () => {
+    const name = document.getElementById('ae-name').value.trim();
+    if (name.length < 2) { showToast('Нэр хэтэрхий богино', 'error'); return; }
+    const pass = document.getElementById('ae-pass').value;
+
+    user.name = name;
+    user.avatar = selectedAvatar;
+    user.phone = document.getElementById('ae-phone').value.trim();
+    user.role = document.getElementById('ae-role').value;
+    user.status = document.getElementById('ae-status').value;
+    user.bankName = document.getElementById('ae-bank-name').value.trim();
+    user.bankAccount = document.getElementById('ae-bank-acc').value.trim();
+    user.bankIban = document.getElementById('ae-bank-iban').value.trim();
+    if (pass) user.password = pass;
+
+    await store.adminUpdateUser(user);
+    if (currentUser && currentUser.id === user.id) {
+      store.saveUser(user);
+      currentUser = user;
+      updateHeader();
+    }
+    showToast('✅ Хадгалагдлаа', 'success');
+    modal.remove();
+    if (onSaved) onSaved();
+  };
 }
 
 // ---- Users List View ----
@@ -1441,7 +1519,7 @@ function showProfileModal(user) {
 
       <div class="input-group" style="margin-top: 15px;">
         <label>${t('newPass')}</label>
-        <input type="password" id="profile-pass-input" placeholder="4+" minlength="4" />
+        <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
       </div>
 
       <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
