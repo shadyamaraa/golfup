@@ -185,15 +185,19 @@ export function onGameChanged(id, callback) {
 // ---- Follow System ----
 export async function followUser(currentUserId, targetUserId) {
   if (useFirebase && db) {
-    await set(ref(db, `follows/${currentUserId}/${targetUserId}`), true);
-    await set(ref(db, `followers/${targetUserId}/${currentUserId}`), true);
+    await Promise.all([
+      set(ref(db, `follows/${currentUserId}/${targetUserId}`), true),
+      set(ref(db, `followers/${targetUserId}/${currentUserId}`), true)
+    ]);
   }
 }
 
 export async function unfollowUser(currentUserId, targetUserId) {
   if (useFirebase && db) {
-    await remove(ref(db, `follows/${currentUserId}/${targetUserId}`));
-    await remove(ref(db, `followers/${targetUserId}/${currentUserId}`));
+    await Promise.all([
+      remove(ref(db, `follows/${currentUserId}/${targetUserId}`)),
+      remove(ref(db, `followers/${targetUserId}/${currentUserId}`))
+    ]);
   }
 }
 

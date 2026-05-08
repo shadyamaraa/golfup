@@ -5,6 +5,8 @@ import * as store from './store.js';
 let currentUser = null;
 let allUsersMap = {};
 let currentUserFollows = {};
+let followsLoadedForUser = null;
+let shownNotifIds = new Set();
 let isRouting = false;
 let activeUnsubs = [];
 
@@ -25,7 +27,10 @@ export async function router() {
   try {
     const hash = location.hash || '#/';
     currentUser = store.getUser();
-    if (currentUser) currentUserFollows = await store.loadFollows(currentUser.id);
+    if (currentUser && followsLoadedForUser !== currentUser.id) {
+      currentUserFollows = await store.loadFollows(currentUser.id);
+      followsLoadedForUser = currentUser.id;
+    }
     updateHeader();
     clearActiveListeners();
 
@@ -197,16 +202,17 @@ async function renderHome() {
       </div>
     </div>`;
 
+  const [notifs, games] = await Promise.all([
+    currentUser ? store.loadNotifications(currentUser.id) : Promise.resolve([]),
+    store.loadAllGames()
+  ]);
   if (currentUser) {
-    const notifs = await store.loadNotifications(currentUser.id);
     renderNotifications(notifs);
     if (store.isUsingFirebase()) {
       const unsub = store.onNotificationsChanged(currentUser.id, renderNotifications);
       if (unsub) activeUnsubs.push(unsub);
     }
   }
-
-  const games = await store.loadAllGames();
   renderGamesHome(games);
 
   if (store.isUsingFirebase()) {
@@ -245,8 +251,12 @@ function renderNotifications(notifs) {
     });
   });
   if ('Notification' in window && Notification.permission === 'granted') {
-    const n = notifs[0];
-    new Notification(`GolfUp 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
+    const unseen = notifs.filter(n => !shownNotifIds.has(n.id));
+    if (unseen.length > 0) {
+      const n = unseen[0];
+      new Notification(`GolfUp 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
+      unseen.forEach(n => shownNotifIds.add(n.id));
+    }
   }
 }
 
@@ -464,23 +474,12 @@ async function renderCreateGame() {
     };
     await store.saveGame(game);
 
-    // Send invitations to selected players
-    for (const uid of invitedIds) {
-      await store.saveNotification(uid, {
-        type: 'invite', gameId: game.id, from: currentUser.name,
-        gameDate: game.date, gameTime: game.time, gameLocation: game.location
-      });
-    }
-    // Notify followers of creator (skip already-invited)
+    const notifPayload = { gameId: game.id, from: currentUser.name, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
-    for (const fid of followerIds) {
-      if (!invitedIds.includes(fid)) {
-        await store.saveNotification(fid, {
-          type: 'new_game', gameId: game.id, from: currentUser.name,
-          gameDate: game.date, gameTime: game.time, gameLocation: game.location
-        });
-      }
-    }
+    await Promise.all([
+      ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
+      ...followerIds.filter(fid => !invitedIds.includes(fid)).map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
+    ]);
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -620,6 +619,12 @@ function renderGameView(game) {
   setupFollowListeners();
 }
 
+function followBtn(uid) {
+  if (!currentUser || uid === currentUser.id) return '';
+  const f = !!currentUserFollows[uid];
+  return `<button class="follow-btn ${f ? 'following' : ''}" data-uid="${uid}" title="${f ? t('unfollow') : t('follow')}">⭐</button>`;
+}
+
 function setupFollowListeners() {
   document.querySelectorAll('.follow-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -655,7 +660,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
           <span class="player-name">${players[i].name}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
-            ${players[i].id !== currentUser?.id ? `<button class="follow-btn ${currentUserFollows[players[i].id] ? 'following' : ''}" data-uid="${players[i].id}" title="${currentUserFollows[players[i].id] ? t('unfollow') : t('follow')}">⭐</button>` : ''}
+            ${followBtn(players[i].id)}
             ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
             ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
           </div>
@@ -989,7 +994,7 @@ async function renderUsersList() {
                 <span class="player-name">${u.name}</span>
                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
               </div>
-              ${u.id !== currentUser?.id ? `<button class="follow-btn ${currentUserFollows[u.id] ? 'following' : ''}" data-uid="${u.id}" title="${currentUserFollows[u.id] ? t('unfollow') : t('follow')}">⭐</button>` : ''}
+              ${followBtn(u.id)}
               ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
             </div>
           `).join('')}
