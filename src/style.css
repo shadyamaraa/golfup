@@ -350,7 +350,7 @@ input, button { font-family: var(--font); }
 .toast {
   padding: 12px 24px; border-radius: var(--radius-md);
   font-size: 0.9rem; font-weight: 500;
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   opacity: 0; transform: translateY(10px);
   transition: all 0.3s ease;
   white-space: nowrap;
@@ -383,8 +383,8 @@ input, button { font-family: var(--font); }
 }
 
 /* Modals */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
-.modal-content { width: 100%; max-width: 450px; padding: 30px; border: 1px solid rgba(255,255,255,0.1); }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: flex-start; justify-content: center; z-index: 2000; padding: 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.modal-content { width: 100%; max-width: 450px; padding: 30px; border: 1px solid rgba(255,255,255,0.1); margin: auto; }
 .modal-title { margin-bottom: 25px; font-size: 1.4rem; text-align: center; }
 .modal-actions { display: flex; gap: 12px; margin-top: 30px; }
 .modal-actions button { flex: 1; }
