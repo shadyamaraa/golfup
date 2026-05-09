@@ -6,16 +6,31 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 let currentUser = null;
 let allUsersMap = {};
 let currentUserFollows = {};
+let currentUserFollowers = new Set();
 let followsLoadedForUser = null;
 let shownNotifIds = new Set();
 let isRouting = false;
 let activeUnsubs = [];
+let homeFilter = 'all';
+let homeGamesCache = [];
 
 const main = () => document.getElementById('main-content');
 
+const MN_BANKS = [
+  'Хаан банк', 'Голомт банк', 'Хас банк', 'Төрийн банк', 'Богд банк',
+  'Капитрон банк', 'М банк', 'Ариг банк', 'Чингис хаан банк', 'Инвескор банк'
+];
+
+function bankSelectHTML(id, currentValue) {
+  const opts = MN_BANKS.map(b =>
+    `<option value="${b}"${currentValue === b ? ' selected' : ''}>${b}</option>`
+  ).join('');
+  return `<select id="${id}" class="form-input"><option value="">— Банк сонгох —</option>${opts}</select>`;
+}
+
 function clearActiveListeners() {
   activeUnsubs.forEach(unsub => {
-    try { unsub(); } catch(e) {}
+    try { unsub(); } catch (e) { }
   });
   activeUnsubs = [];
 }
@@ -24,20 +39,25 @@ function clearActiveListeners() {
 export async function router() {
   if (isRouting) return;
   isRouting = true;
-  
+
   try {
     const hash = location.hash || '#/';
     currentUser = store.getUser();
     if (currentUser && followsLoadedForUser !== currentUser.id) {
-      currentUserFollows = await store.loadFollows(currentUser.id);
+      const [follows, followerIds] = await Promise.all([
+        store.loadFollows(currentUser.id),
+        store.getFollowerIds(currentUser.id)
+      ]);
+      currentUserFollows = follows;
+      currentUserFollowers = new Set(followerIds);
       followsLoadedForUser = currentUser.id;
     }
     updateHeader();
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/')) { 
-      renderAuth(); 
-      return; 
+    if (!currentUser && !hash.startsWith('#/join/')) {
+      renderAuth();
+      return;
     }
 
     if (hash === '#/' || hash === '#/home') await renderHome();
@@ -104,7 +124,7 @@ function renderAuth() {
   const phoneInput = document.getElementById('auth-phone');
   const nameGroup = document.getElementById('auth-name-group');
   const nameInput = document.getElementById('auth-name');
-  
+
   phoneInput.addEventListener('blur', async () => {
     const phone = phoneInput.value.trim();
     if (phone.length >= 8) {
@@ -126,12 +146,12 @@ function renderAuth() {
       const phone = phoneInput.value.trim();
       const pass = document.getElementById('auth-password').value;
       const name = nameInput.value.trim();
-      
+
       btn.disabled = true;
       btn.textContent = '...';
 
       let user = await store.findUserByPhone(phone);
-      
+
       if (!user) {
         // Registration
         if (name.length < 2) {
@@ -171,7 +191,7 @@ function renderAuth() {
   document.getElementById('admin-login-link').addEventListener('click', (e) => {
     e.preventDefault();
     const pwd = prompt("System Admin Password:");
-    if (pwd === "admin123") {
+    if (pwd === "ASMadmin2026@") {
       currentUser = { id: "admin_uid", name: "System Admin", role: "admin", status: "active", createdAt: Date.now() };
       store.saveUser(currentUser);
       location.hash = '#/admin';
@@ -184,6 +204,7 @@ function renderAuth() {
 
 // ---- Home View ----
 async function renderHome() {
+  homeFilter = 'all';
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="hero-section">
@@ -195,10 +216,15 @@ async function renderHome() {
       </div>
       <div id="notifications-section"></div>
       <div class="section">
-        <h2 class="section-title">${t('activeGames')}</h2>
+        <div class="game-filter-tabs">
+          <button class="filter-tab active" data-tab="all">🌍 ${t('tabAll')}</button>
+          <button class="filter-tab" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
+          <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
+        </div>
         <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
       </div>
-      <div class="section" style="margin-top: 40px; opacity: 0.8;">
+      <div class="section past-section" style="margin-top: 40px; opacity: 0.8;">
         <h2 class="section-title">🕒 ${t('gameHistory')}</h2>
         <div id="past-games-list" class="games-list"></div>
       </div>
@@ -221,6 +247,15 @@ async function renderHome() {
     const unsub = store.onAllGamesChanged(renderGamesHome);
     if (unsub) activeUnsubs.push(unsub);
   }
+
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      homeFilter = btn.dataset.tab;
+      renderGamesHome(homeGamesCache);
+    });
+  });
 }
 
 function renderNotifications(notifs) {
@@ -282,23 +317,24 @@ function renderGamesHome(games) {
   const pastContainer = document.getElementById('past-games-list');
   if (!activeContainer) return;
 
-  if (!games || games.length === 0) {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${t('noGames')}</p></div>`;
-    if (pastContainer) pastContainer.innerHTML = '';
-    return;
-  }
+  if (games) homeGamesCache = games;
+  const allGames = homeGamesCache;
 
   const now = new Date().getTime();
-
   const activeGames = [];
   const pastGames = [];
 
-  games.forEach(g => {
-    if (g.isPrivate && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+  allGames.forEach(g => {
+    if (g.isPrivate && currentUser?.role !== 'admin' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+    if (homeFilter === 'mine' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+    if (homeFilter === 'joined' && (g.createdBy === currentUser?.id || !isPlayerInGame(g, currentUser?.id))) return;
+    if (homeFilter === 'following' && !currentUserFollows[g.createdBy]) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
     if (gDate >= now) activeGames.push(g);
     else pastGames.push(g);
   });
+
+  const emptyMsg = homeFilter === 'all' ? t('noGames') : t('noGamesInFilter');
 
   // Sort active games by date+time ascending (nearest first)
   activeGames.sort((a, b) => {
@@ -320,7 +356,7 @@ function renderGamesHome(games) {
         ${renderGamesCards(dayGames)}
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${t('noGames')}</p></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
   }
 
   if (pastContainer) {
@@ -401,7 +437,7 @@ async function renderCreateGame() {
             <label for="game-time">${t('time')}</label>
             <div style="display: flex; gap: 10px;">
               <select id="game-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i===8?'selected':''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
               </select>
               <select id="game-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
                 ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
@@ -456,7 +492,7 @@ async function renderCreateGame() {
         </form>
       </div>
     </div>`;
-  
+
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
     sizeInput.value = Math.max(APP_CONFIG.minGroupSize, +sizeInput.value - 1);
@@ -479,7 +515,7 @@ async function renderCreateGame() {
     const date = document.getElementById('game-date').value;
     const hour = document.getElementById('game-hour').value;
     const min = document.getElementById('game-minute').value;
-    
+
     const selectedTime = new Date(`${date}T${hour}:${min}`).getTime();
     if (selectedTime < Date.now()) {
       showToast(t('pastTimeError'), 'error');
@@ -531,9 +567,9 @@ async function renderCreateGame() {
 async function renderGameDetail(gameId) {
   try {
     main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
-    
+
     // Set a timeout for data loading
-    const timeoutPromise = new Promise((_, reject) => 
+    const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Data loading timed out')), 8000)
     );
 
@@ -550,16 +586,16 @@ async function renderGameDetail(gameId) {
 
     const game = await Promise.race([loadDataPromise, timeoutPromise]);
 
-    if (!game) { 
-      main().innerHTML = `<div class="empty-state"><p>❌</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`; 
-      return; 
+    if (!game) {
+      main().innerHTML = `<div class="empty-state"><p>❌</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
+      return;
     }
 
     renderGameView(game);
-    
+
     if (store.isUsingFirebase()) {
-      const unsub = store.onGameChanged(gameId, (updated) => { 
-        if (updated) renderGameView(updated); 
+      const unsub = store.onGameChanged(gameId, (updated) => {
+        if (updated) renderGameView(updated);
       });
       if (unsub) activeUnsubs.push(unsub);
     }
@@ -574,16 +610,16 @@ function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
   const dateStr = formatDate(game.date);
-  
+
   const gDateStr = `${game.date}T${(game.time || '00:00').padStart(5, '0')}`;
   const gDate = new Date(gDateStr).getTime();
   const now = new Date().getTime();
-  
+
   // Moves to history immediately after start time
   const isPast = !isNaN(gDate) && gDate < now;
   // Locked for editing 1 hour after start time
   const isReadOnly = !isNaN(gDate) && (gDate + (1 * 60 * 60 * 1000)) < now;
-  
+
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
 
@@ -611,8 +647,8 @@ function renderGameView(game) {
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
-        <p class="auto-group-hint">ℹ️ ${isReadOnly ? t('pastGameNotice') : t('autoGroup')}</p>
-        ${game.description ? `<p class="game-description">${game.description}</p>` : ''}
+        ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
       </div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
@@ -621,13 +657,22 @@ function renderGameView(game) {
         <div class="group-card glass-card waiting-card">
           <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
           <div class="player-list">
-            ${waitingList.map((p, idx) => `
-              <div class="player-row waiting">
+            ${waitingList.map((p, idx) => {
+    const isFollowing = !!currentUserFollows[p.id];
+    const isFollower = currentUserFollowers.has(p.id);
+    const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
+    const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
+    const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
+      : isFollowing ? ' <span class="followed-tag">⭐</span>'
+        : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
+    return `
+              <div class="player-row waiting${rowClass}">
                 <span class="player-order">${idx + 1}</span>
-                <span class="player-avatar-sm">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
-                <span class="player-name">${p.name}</span>
+                <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
+                <span class="player-name">${p.name}${tag}</span>
                 <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
-              </div>`).join('')}
+              </div>`;
+  }).join('')}
           </div>
         </div>` : ''}
     </div>`;
@@ -648,6 +693,11 @@ function renderGameView(game) {
       }
     });
   });
+  document.querySelectorAll('.add-to-group-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      handleAddToGroup(game, parseInt(e.currentTarget.dataset.group));
+    });
+  });
   document.querySelectorAll('.copy-bank-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const uid = e.currentTarget.dataset.id;
@@ -666,18 +716,26 @@ function followBtn(uid) {
   return `<button class="follow-btn ${f ? 'following' : ''}" data-uid="${uid}" title="${f ? t('unfollow') : t('follow')}">⭐</button>`;
 }
 
-function setupFollowListeners() {} // handled by delegated listener in initApp
+function setupFollowListeners() { } // handled by delegated listener in initApp
 
 function renderGroupCard(players, groupIndex, game, isPast) {
   const groupSize = game.groupSize;
   const slots = [];
   for (let i = 0; i < groupSize; i++) {
     if (players[i]) {
+      const pid = players[i].id;
+      const isFollowing = !!currentUserFollows[pid];
+      const isFollower = currentUserFollowers.has(pid);
+      const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
+      const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
+      const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
+        : isFollowing ? ' <span class="followed-tag">⭐</span>'
+          : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
       slots.push(`
-        <div class="player-row filled">
+        <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
-          <span class="player-avatar-sm">${allUsersMap[players[i].id]?.avatar || players[i].name.charAt(0).toUpperCase()}</span>
-          <span class="player-name">${players[i].name}</span>
+          <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || players[i].name.charAt(0).toUpperCase()}</span>
+          <span class="player-name">${players[i].name}${tag}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
@@ -696,11 +754,15 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   }
   const filledCount = players.length;
   const isFull = filledCount >= groupSize;
+  const canDirectAdd = !isPast && !isFull && (game.createdBy === currentUser?.id || currentUser?.role === 'admin');
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
         <h3 class="group-title">🏌️ ${t('group')} ${groupIndex + 1}</h3>
-        <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ Нэмэх</button>` : ''}
+          <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
+        </div>
       </div>
       <div class="player-list">${slots.join('')}</div>
     </div>`;
@@ -737,7 +799,7 @@ async function handleJoin(game) {
     showToast(`Та ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор өөр тоглолтонд нэгдэх боломжгүй.`, 'warning');
     return;
   }
-  
+
   const player = { id: currentUser.id, name: currentUser.name, joinedAt: Date.now() };
   const groups = game.groups || [[]];
   const waitingList = game.waitingList || [];
@@ -758,9 +820,6 @@ async function handleJoin(game) {
   game.groups = groups;
   game.waitingList = waitingList;
 
-  // Check if waiting list should form a new group
-  reorganizeGroups(game);
-  
   await store.saveGame(game);
   if (game.createdBy && game.createdBy !== currentUser.id) {
     store.saveNotification(game.createdBy, {
@@ -768,13 +827,16 @@ async function handleJoin(game) {
       gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
     });
   }
+  if (isPlayerInGroup(game, currentUser.id)) {
+    removeFromConflictingWaitlists(currentUser.id, game);
+  }
   renderGameView(game);
   showToast('✅ ' + t('join') + '!', 'success');
 }
 
 async function handleLeave(game) {
   if (!currentUser) return;
-  
+
   const groups = game.groups || [];
   const waitingList = game.waitingList || [];
 
@@ -819,23 +881,6 @@ async function handleDelete(game) {
   location.hash = '#/';
 }
 
-// ---- Group Reorganization ----
-function reorganizeGroups(game) {
-  const threshold = APP_CONFIG.waitingListThreshold;
-  const waitingList = game.waitingList || [];
-  
-  if (waitingList.length >= threshold) {
-    // Create new group from waiting list
-    const newGroup = waitingList.splice(0, game.groupSize);
-    game.groups.push(newGroup);
-    game.waitingList = waitingList;
-    
-    // If still enough in waiting list, recurse
-    if (game.waitingList.length >= threshold) {
-      reorganizeGroups(game);
-    }
-  }
-}
 
 function fillFromWaitingList(game) {
   const waitingList = game.waitingList || [];
@@ -851,7 +896,7 @@ function cleanEmptyGroups(game) {
   // Keep at least one group; remove empty trailing groups
   // If a non-first group becomes too small, merge its players back
   if (game.groups.length <= 1) return;
-  
+
   for (let i = game.groups.length - 1; i >= 1; i--) {
     if (game.groups[i].length === 0) {
       game.groups.splice(i, 1);
@@ -870,7 +915,18 @@ function getGameUrl(game) {
 
 function shareViber(game) {
   const url = getGameUrl(game);
-  const text = `${t('shareText')}\n📍 ${game.location}\n📅 ${formatDate(game.date)} ${game.time}\n🏌️ ${t('groupSize')}: ${game.groupSize}\n\n${t('joinPrompt')}\n${url}`;
+  const desc = game.description ? `\n📝 ${game.description}` : '';
+  const groups = ensureGroups(game.groups);
+  const groupLines = groups.map((grp, i) => {
+    const players = ensureArray(grp);
+    const names = players.map((p, idx) => `  ${idx + 1}. ${p.name}`).join('\n');
+    return `👥 ${t('group')} ${i + 1}:\n${names || '  -'}`;
+  }).join('\n');
+  const waitingList = ensureArray(game.waitingList);
+  const waitingLine = waitingList.length > 0
+    ? `\n⏳ ${t('waitingList')}:\n${waitingList.map((p, i) => `  ${i + 1}. ${p.name}`).join('\n')}`
+    : '';
+  const text = `${t('shareText')}\n📍 ${game.location}\n📅 ${formatDate(game.date)} ${game.time}\n🏌️ ${t('groupSize')}: ${game.groupSize}${desc}\n\n🔗 ${url}\n\n${groupLines}${waitingLine}`;
   const viberUrl = `viber://forward?text=${encodeURIComponent(text)}`;
   window.open(viberUrl, '_blank');
 }
@@ -899,7 +955,7 @@ async function renderAdminPanel() {
   }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
-  
+
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="#/" class="back-link">← ${t('back')}</a>
@@ -946,14 +1002,14 @@ async function renderAdminPanel() {
     const name = document.getElementById('new-user-name').value.trim();
     const phone = document.getElementById('new-user-phone').value.trim();
     const pass = document.getElementById('new-user-pass').value;
-    
+
     const existing = await store.findUserByPhone(phone);
     if (existing) {
       showToast('Энэ дугаартай хэрэглэгч бүртгэлтэй байна!', 'error');
       submitBtn.disabled = false;
       return;
     }
-    
+
     await store.adminCreateUser(name, pass, phone);
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
@@ -979,7 +1035,7 @@ async function renderAdminPanel() {
 function showAdminEditUserModal(user, onSaved) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
-  const avatars = ['⛳','🏌️','🏌️‍♀️','🔥','⭐','🏆','🧢','🕶️','💎','🦁','🦊','🐻','🐼','🐯','🦸','🥷'];
+  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:480px;">
       <h3 class="modal-title">✏️ ${user.name} засах</h3>
@@ -987,7 +1043,7 @@ function showAdminEditUserModal(user, onSaved) {
       <div class="input-group">
         <label>Аватар</label>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;">
-          ${avatars.map(a => `<div class="avatar-option ${user.avatar===a?'selected':''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar===a?'background:var(--primary-color);':''}">${a}</div>`).join('')}
+          ${avatars.map(a => `<div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar === a ? 'background:var(--primary-color);' : ''}">${a}</div>`).join('')}
         </div>
       </div>
 
@@ -1006,15 +1062,15 @@ function showAdminEditUserModal(user, onSaved) {
       <div class="input-group" style="margin-top:10px;">
         <label>Эрх</label>
         <select id="ae-role" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
-          <option value="user" ${user.role!=='admin'?'selected':''}>Хэрэглэгч</option>
-          <option value="admin" ${user.role==='admin'?'selected':''}>Admin</option>
+          <option value="user" ${user.role !== 'admin' ? 'selected' : ''}>Хэрэглэгч</option>
+          <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
         </select>
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>Статус</label>
         <select id="ae-status" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
-          <option value="active" ${user.status!=='hold'?'selected':''}>Идэвхтэй</option>
-          <option value="hold" ${user.status==='hold'?'selected':''}>Hold</option>
+          <option value="active" ${user.status !== 'hold' ? 'selected' : ''}>Идэвхтэй</option>
+          <option value="hold" ${user.status === 'hold' ? 'selected' : ''}>Hold</option>
         </select>
       </div>
 
@@ -1022,15 +1078,15 @@ function showAdminEditUserModal(user, onSaved) {
         <h4 style="margin-bottom:8px;color:var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
-          <input type="text" id="ae-bank-name" value="${user.bankName||''}" />
+          ${bankSelectHTML('ae-bank-name', user.bankName || '')}
         </div>
         <div class="input-group" style="margin-top:8px;">
           <label>${t('bankAccount')}</label>
-          <input type="text" id="ae-bank-acc" value="${user.bankAccount||''}" />
+          <input type="text" id="ae-bank-acc" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
         </div>
         <div class="input-group" style="margin-top:8px;">
           <label>IBAN</label>
-          <input type="text" id="ae-bank-iban" value="${user.bankIban||''}" placeholder="MN..." />
+          <input type="text" id="ae-bank-iban" value="${user.bankIban || ''}" placeholder="MN..." />
         </div>
       </div>
 
@@ -1062,7 +1118,7 @@ function showAdminEditUserModal(user, onSaved) {
     user.role = document.getElementById('ae-role').value;
     user.status = document.getElementById('ae-status').value;
     user.bankName = document.getElementById('ae-bank-name').value.trim();
-    user.bankAccount = document.getElementById('ae-bank-acc').value.trim();
+    user.bankAccount = document.getElementById('ae-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('ae-bank-iban').value.trim();
     if (pass) user.password = pass;
 
@@ -1082,7 +1138,7 @@ function showAdminEditUserModal(user, onSaved) {
 async function renderUsersList() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
-  
+
   // Update allUsersMap for copy buttons to work
   allUsersMap = {};
   users.forEach(u => { if (u && u.id) allUsersMap[u.id] = u; });
@@ -1098,17 +1154,25 @@ async function renderUsersList() {
 
       <div class="glass-card" style="padding: 10px;">
         <div class="player-list">
-          ${sortedUsers.map(u => `
-            <div class="player-row" style="background: rgba(255,255,255,0.03); margin-bottom: 8px; padding: 14px 20px;">
-              <span class="player-avatar-sm" style="background: linear-gradient(135deg, var(--emerald), var(--emerald-light));">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
+          ${sortedUsers.map(u => {
+    const isFollowing = !!currentUserFollows[u.id];
+    const isFollower = currentUserFollowers.has(u.id);
+    const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
+    const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
+    const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
+      : isFollowing ? ' <span class="followed-tag">⭐</span>'
+        : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
+    return `
+            <div class="player-row ${rowClass}" style="margin-bottom: 8px; padding: 14px 20px;">
+              <span class="player-avatar-sm ${avatarClass}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
               <div style="display:flex; flex-direction:column; flex:1;">
-                <span class="player-name">${u.name}</span>
+                <span class="player-name">${u.name}${tag}</span>
                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
               </div>
               ${followBtn(u.id)}
               ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
-            </div>
-          `).join('')}
+            </div>`;
+  }).join('')}
         </div>
       </div>
       
@@ -1143,7 +1207,7 @@ async function renderEditGame(gameId) {
     location.hash = `#/game/${gameId}`;
     return;
   }
-  
+
   const [hour, min] = game.time ? game.time.split(':') : ['08', '00'];
 
   main().innerHTML = `
@@ -1160,10 +1224,10 @@ async function renderEditGame(gameId) {
             <label for="game-time">${t('time')}</label>
             <div style="display: flex; gap: 10px;">
               <select id="edit-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i.toString().padStart(2, '0')===hour?'selected':''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i.toString().padStart(2, '0') === hour ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
               </select>
               <select id="edit-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}" ${m.toString().padStart(2, '0')===min?'selected':''}>${m.toString().padStart(2, '0')}</option>`).join('')}
+                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}" ${m.toString().padStart(2, '0') === min ? 'selected' : ''}>${m.toString().padStart(2, '0')}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -1202,7 +1266,7 @@ async function renderEditGame(gameId) {
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
     game.description = document.getElementById('edit-desc').value.trim();
-    
+
     await store.saveGame(game);
     showToast('✅ Saved!', 'success');
     location.hash = '#/game/' + game.id;
@@ -1213,11 +1277,11 @@ async function renderEditGame(gameId) {
 async function handleAddPlayer(game) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
-  
+
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
   modal.style.cssText = 'width: 100%; max-width: 400px; padding: 20px; text-align: center;';
-  
+
   modal.innerHTML = `<h3>Тоглогч нэмэх</h3><div class="loading-spinner" style="margin: 20px auto;"></div>`;
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
@@ -1248,15 +1312,15 @@ async function handleAddPlayer(game) {
     const selectedId = document.getElementById('player-select').value;
     const selectedUser = availableUsers.find(u => u.id === selectedId);
     if (!selectedUser) return;
-    
+
     overlay.remove();
-    
+
     const conflict = await checkTimeConflict(selectedUser.id, game);
     if (conflict) {
       showToast(`${selectedUser.name} ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор нэмэх боломжгүй.`, 'warning');
       return;
     }
-    
+
     const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
     const groups = game.groups || [[]];
     const waitingList = game.waitingList || [];
@@ -1269,24 +1333,77 @@ async function handleAddPlayer(game) {
       }
     }
     if (!added) waitingList.push(player);
-    
+
     game.groups = groups;
     game.waitingList = waitingList;
-    reorganizeGroups(game);
-    
+
     await store.saveGame(game);
+    if (added) removeFromConflictingWaitlists(selectedUser.id, game);
     renderGameView(game);
     showToast('✅ Added ' + selectedUser.name, 'success');
   };
 }
 
+async function handleAddToGroup(game, groupIndex) {
+  const groups = ensureGroups(game.groups);
+  const group = groups[groupIndex];
+  if (!group || group.length >= game.groupSize) {
+    showToast('Групп дүүрсэн байна', 'error');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:400px;padding:20px;text-align:center;';
+  modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><div class="loading-spinner" style="margin:20px auto;"></div>`;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const users = await store.loadAllUsers();
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
+
+  if (availableUsers.length === 0) {
+    modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Нэмэх боломжтой хэрэглэгч байхгүй.</p><button class="btn btn-ghost" id="close-atg-btn">Хаах</button>`;
+    document.getElementById('close-atg-btn').onclick = () => overlay.remove();
+    return;
+  }
+
+  modal.innerHTML = `
+    <h3>Групп ${groupIndex + 1}-д нэмэх</h3>
+    <select id="player-select-grp" style="width:100%;padding:12px;margin:20px 0;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;">
+      ${availableUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
+    </select>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" id="cancel-atg-btn" style="flex:1;">Болих</button>
+      <button class="btn btn-primary" id="confirm-atg-btn" style="flex:1;">Нэмэх</button>
+    </div>
+  `;
+
+  document.getElementById('cancel-atg-btn').onclick = () => overlay.remove();
+  document.getElementById('confirm-atg-btn').onclick = async () => {
+    const selectedId = document.getElementById('player-select-grp').value;
+    const selectedUser = availableUsers.find(u => u.id === selectedId);
+    if (!selectedUser) return;
+    overlay.remove();
+
+    const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
+    game.groups[groupIndex].push(player);
+    await store.saveGame(game);
+    removeFromConflictingWaitlists(selectedUser.id, game);
+    renderGameView(game);
+    showToast(`✅ ${selectedUser.name} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
+  };
+}
+
 async function handleRemovePlayer(game, playerId) {
   if (!confirm("Remove this player?")) return;
-  
+
   const groups = game.groups || [];
   const waitingList = game.waitingList || [];
   let removed = false;
-  
+
   for (let i = 0; i < groups.length; i++) {
     const idx = groups[i].findIndex(p => p.id === playerId);
     if (idx !== -1) {
@@ -1299,12 +1416,12 @@ async function handleRemovePlayer(game, playerId) {
     const wIdx = waitingList.findIndex(p => p.id === playerId);
     if (wIdx !== -1) waitingList.splice(wIdx, 1);
   }
-  
+
   game.groups = groups;
   game.waitingList = waitingList;
   fillFromWaitingList(game);
   cleanEmptyGroups(game);
-  
+
   await store.saveGame(game);
   renderGameView(game);
   showToast('❌ Removed', 'info');
@@ -1333,6 +1450,16 @@ function isPlayerInGame(game, userId) {
   return wl.some(p => p && p.id === userId);
 }
 
+function isPlayerInGroup(game, userId) {
+  if (!game || !userId) return false;
+  const groups = ensureGroups(game.groups);
+  for (const grp of groups) {
+    const players = Array.isArray(grp) ? grp : Object.values(grp || {});
+    if (players.some(p => p && p.id === userId)) return true;
+  }
+  return false;
+}
+
 function countAllPlayers(game) {
   let count = 0;
   ensureGroups(game.groups).forEach(g => { if (Array.isArray(g)) count += g.length; });
@@ -1343,16 +1470,16 @@ function countAllPlayers(game) {
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
   if (d.getTime() === today.getTime()) return t('today');
   if (d.getTime() === tomorrow.getTime()) return t('tomorrow');
   const months = getLang() === 'mn'
-    ? ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар','7-р сар','8-р сар','9-р сар','10-р сар','11-р сар','12-р сар']
-    : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
+    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const days = getLang() === 'mn'
-    ? ['Ням','Даваа','Мягмар','Лхагва','Пүрэв','Баасан','Бямба']
-    : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    ? ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return `${months[d.getMonth()]} ${d.getDate()} · ${days[d.getDay()]}`;
 }
 
@@ -1412,7 +1539,7 @@ export function initApp() {
     if (lbl) lbl.textContent = newLang.toUpperCase();
     router();
   });
-  
+
   document.getElementById('logout-btn')?.addEventListener('click', () => {
     if (confirm(t('confirmLogout'))) {
       store.logoutUser();
@@ -1457,20 +1584,37 @@ export function initApp() {
 async function checkTimeConflict(userId, newGame) {
   const allGames = await store.loadAllGames();
   const newTime = new Date(`${newGame.date}T${newGame.time.padStart(5, '0')}`).getTime();
-  
+
   for (const g of allGames) {
     if (g.id === newGame.id) continue;
-    if (isPlayerInGame(g, userId)) {
+    if (isPlayerInGroup(g, userId)) {
       const gTime = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
       const diffMs = Math.abs(newTime - gTime);
       const diffHrs = diffMs / (1000 * 60 * 60);
-      
+
       if (diffHrs < 2) {
         return { time: g.time, game: g };
       }
     }
   }
   return null;
+}
+
+async function removeFromConflictingWaitlists(userId, joinedGame) {
+  const allGames = await store.loadAllGames();
+  const newTime = new Date(`${joinedGame.date}T${joinedGame.time.padStart(5, '0')}`).getTime();
+  for (const g of allGames) {
+    if (g.id === joinedGame.id) continue;
+    const wl = ensureArray(g.waitingList);
+    const idx = wl.findIndex(p => p && p.id === userId);
+    if (idx === -1) continue;
+    const gTime = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
+    if (Math.abs(newTime - gTime) / (1000 * 60 * 60) < 2) {
+      wl.splice(idx, 1);
+      g.waitingList = wl;
+      await store.saveGame(g);
+    }
+  }
 }
 
 // ---- Bank Modals ----
@@ -1482,11 +1626,11 @@ function showEditBankModal(user) {
       <h3 class="modal-title">💳 ${t('editBank')}</h3>
       <div class="input-group">
         <label>${t('bankName')}</label>
-        <input type="text" id="bank-name-input" value="${user.bankName || ''}" placeholder="" />
+        ${bankSelectHTML('bank-name-input', user.bankName || '')}
       </div>
       <div class="input-group">
         <label>${t('bankAccount')}</label>
-        <input type="text" id="bank-acc-input" value="${user.bankAccount || ''}" placeholder="" />
+        <input type="text" id="bank-acc-input" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
       </div>
       <div class="input-group">
         <label>IBAN</label>
@@ -1502,16 +1646,16 @@ function showEditBankModal(user) {
   modal.querySelector('#modal-cancel').onclick = () => modal.remove();
   modal.querySelector('#modal-save').onclick = async () => {
     const bankName = document.getElementById('bank-name-input').value.trim();
-    const bankAccount = document.getElementById('bank-acc-input').value.trim();
+    const bankAccount = document.getElementById('bank-acc-input').value.replace(/\D/g, '');
     const bankIban = document.getElementById('bank-iban-input').value.trim();
-    
+
     user.bankName = bankName;
     user.bankAccount = bankAccount;
     user.bankIban = bankIban;
-    
+
     await store.adminUpdateUser(user);
     if (currentUser && currentUser.id === user.id) store.saveUser(user);
-    
+
     showToast('✅ ' + t('saved'), 'success');
     modal.remove();
     router();
@@ -1522,7 +1666,7 @@ function showProfileModal(user) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
   const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
-  
+
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width: 450px;">
       <h3 class="modal-title">👤 ${t('profile')}</h3>
@@ -1555,11 +1699,11 @@ function showProfileModal(user) {
         <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
-          <input type="text" id="profile-bank-name" value="${user.bankName || ''}" />
+          ${bankSelectHTML('profile-bank-name', user.bankName || '')}
         </div>
         <div class="input-group" style="margin-top: 10px;">
           <label>${t('bankAccount')}</label>
-          <input type="text" id="profile-bank-acc" value="${user.bankAccount || ''}" />
+          <input type="text" id="profile-bank-acc" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
         </div>
         <div class="input-group" style="margin-top: 10px;">
           <label>IBAN</label>
@@ -1600,7 +1744,7 @@ function showProfileModal(user) {
   modal.querySelector('#profile-modal-save').onclick = async () => {
     const newName = document.getElementById('profile-name-input').value.trim();
     const newPass = document.getElementById('profile-pass-input').value;
-    
+
     if (newName.length < 2) {
       showToast('Нэр хэтэрхий богино байна', 'error');
       return;
@@ -1611,9 +1755,9 @@ function showProfileModal(user) {
     if (newPass && newPass.length >= 4) {
       user.password = newPass;
     }
-    
+
     user.bankName = document.getElementById('profile-bank-name').value.trim();
-    user.bankAccount = document.getElementById('profile-bank-acc').value.trim();
+    user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
@@ -1623,7 +1767,7 @@ function showProfileModal(user) {
     await store.adminUpdateUser(user);
     store.saveUser(user);
     currentUser = user;
-    
+
     showToast('✅ ' + t('saved'), 'success');
     modal.remove();
     updateHeader();
@@ -1661,7 +1805,7 @@ function showBankDetailsModal(user) {
   document.body.appendChild(modal);
 
   modal.querySelector('#modal-close').onclick = () => modal.remove();
-  
+
   modal.querySelectorAll('.copy-btn').forEach(btn => {
     btn.onclick = () => {
       const type = btn.dataset.target;

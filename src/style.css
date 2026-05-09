@@ -228,6 +228,27 @@ input, button { font-family: var(--font); }
 .section { margin-bottom: 32px; }
 .section-title { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 16px; padding-left: 4px; }
 
+/* ====== Game Filter Tabs ====== */
+.game-filter-tabs {
+  display: flex; gap: 8px; margin-bottom: 20px;
+  overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.game-filter-tabs::-webkit-scrollbar { display: none; }
+.filter-tab {
+  flex-shrink: 0;
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  color: var(--text-secondary); padding: 8px 16px;
+  border-radius: var(--radius-lg); font-size: 0.85rem; font-weight: 500;
+  cursor: pointer; transition: var(--transition); white-space: nowrap;
+}
+.filter-tab:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.filter-tab.active {
+  background: linear-gradient(135deg, var(--emerald-dark), var(--emerald));
+  border-color: transparent; color: #fff; font-weight: 700;
+  box-shadow: 0 4px 16px rgba(45,106,79,0.35);
+}
+
 /* ====== Games List ====== */
 .games-list { display: flex; flex-direction: column; gap: 12px; }
 
@@ -327,6 +348,13 @@ input, button { font-family: var(--font); }
 .player-row.filled:hover { background: rgba(255,255,255,0.06); }
 .player-row.empty-row { opacity: 0.4; border: 1px dashed var(--border-card); background: transparent; }
 .player-row.waiting { background: rgba(244,162,97,0.05); border-left: 3px solid var(--amber); }
+.player-row.followed-player { background: rgba(200,169,81,0.08); border-left: 3px solid var(--gold); }
+.player-row.followed-player:hover { background: rgba(200,169,81,0.13); }
+.followed-avatar { background: linear-gradient(135deg, var(--gold-dark), var(--gold)) !important; }
+.player-row.follower-player { background: rgba(56,189,248,0.07); border-left: 3px solid #38bdf8; }
+.player-row.follower-player:hover { background: rgba(56,189,248,0.12); }
+.follower-avatar { background: linear-gradient(135deg, #0284c7, #38bdf8) !important; }
+.followed-tag { font-size: 0.75rem; vertical-align: middle; }
 
 .player-order { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 18px; }
 .player-avatar-sm {
@@ -409,7 +437,9 @@ input, button { font-family: var(--font); }
 .notif-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* Game description */
-.game-description { font-size: 0.9rem; color: var(--text-secondary); margin-top: 10px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid var(--emerald); white-space: pre-wrap; }
+.game-description { margin-top: 14px; padding: 14px 16px; background: rgba(45,106,79,0.18); border-radius: 10px; border-left: 4px solid var(--emerald); }
+.desc-label { display: block; font-size: 0.78rem; font-weight: 700; color: var(--emerald); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; }
+.desc-text { font-size: 1rem; color: var(--text-primary); white-space: pre-wrap; line-height: 1.6; margin: 0; }
 
 /* Notification toggles */
 .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 0; font-size: 0.95rem; }
