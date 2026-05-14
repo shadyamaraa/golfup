@@ -231,20 +231,29 @@ function renderNotifications(notifs) {
     <div class="section">
       <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
       <div class="notif-list">
-        ${notifs.map(n => `
+        ${notifs.map(n => {
+          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
+          const title = n.type === 'invite' ? t('inviteNotif')
+            : n.type === 'new_game' ? t('newGameNotif')
+            : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
+            : `${n.from} ${t('playerLeft')}`;
+          const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
+          const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
+          return `
           <div class="notif-item glass-card">
             <div class="notif-content">
-              <span class="notif-icon">${n.type === 'invite' ? '🏌️' : '⛳'}</span>
+              <span class="notif-icon">${icon}</span>
               <div>
-                <div class="notif-title">${n.type === 'invite' ? t('inviteNotif') : t('newGameNotif')}</div>
-                <div class="notif-sub">${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+                <div class="notif-title">${title}</div>
+                <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
               </div>
             </div>
             <div class="notif-actions">
-              <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${t('join')}</button>
+              <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>
               <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
             </div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
   container.querySelectorAll('.join-notif-btn').forEach(btn => {
@@ -753,6 +762,12 @@ async function handleJoin(game) {
   reorganizeGroups(game);
   
   await store.saveGame(game);
+  if (game.createdBy && game.createdBy !== currentUser.id) {
+    store.saveNotification(game.createdBy, {
+      type: 'player_joined', from: currentUser.name,
+      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
+    });
+  }
   renderGameView(game);
   showToast('✅ ' + t('join') + '!', 'success');
 }
@@ -787,6 +802,12 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
+  if (game.createdBy && game.createdBy !== currentUser.id) {
+    store.saveNotification(game.createdBy, {
+      type: 'player_left', from: currentUser.name,
+      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
+    });
+  }
   renderGameView(game);
   showToast('👋 ' + t('leave'), 'info');
 }

@@ -46,6 +46,7 @@ const T = {
     invitePlayers: 'Урилга илгээх (заавал биш)',
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан', decline: 'Татгалзах',
     newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Таныг тоглолтод урьсан байна',
+    playerJoined: 'тоглолтод нэгдлээ', playerLeft: 'тоглолтоос гарлаа', viewGame: 'Харах',
     gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай'
   },
   en: {
@@ -95,6 +96,7 @@ const T = {
     invitePlayers: 'Invite Players (Optional)',
     pendingNotifications: 'Notifications', markRead: 'Dismiss', decline: 'Decline',
     newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
+    playerJoined: 'joined the game', playerLeft: 'left the game', viewGame: 'View',
     gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private'
   }
 };
