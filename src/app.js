@@ -1,4 +1,4 @@
-import { t, getLang, toggleLang } from './i18n.js';
+﻿import { t, getLang, toggleLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY } from './config.js';
 import * as store from './store.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
@@ -13,19 +13,20 @@ let isRouting = false;
 let activeUnsubs = [];
 let homeFilter = 'all';
 let homeGamesCache = [];
+let historyOpen = false;
 
 const main = () => document.getElementById('main-content');
 
 const MN_BANKS = [
-  'Хаан банк', 'Голомт банк', 'Хас банк', 'Төрийн банк', 'Богд банк',
-  'Капитрон банк', 'М банк', 'Ариг банк', 'Чингис хаан банк', 'Инвескор банк'
+  'Ð¥Ð°Ð°Ð½ Ð±Ð°Ð½Ðº', 'Ð“Ð¾Ð»Ð¾Ð¼Ñ‚ Ð±Ð°Ð½Ðº', 'Ð¥Ð°Ñ Ð±Ð°Ð½Ðº', 'Ð¢Ó©Ñ€Ð¸Ð¹Ð½ Ð±Ð°Ð½Ðº', 'Ð‘Ð¾Ð³Ð´ Ð±Ð°Ð½Ðº',
+  'ÐšÐ°Ð¿Ð¸Ñ‚Ñ€Ð¾Ð½ Ð±Ð°Ð½Ðº', 'Ðœ Ð±Ð°Ð½Ðº', 'ÐÑ€Ð¸Ð³ Ð±Ð°Ð½Ðº', 'Ð§Ð¸Ð½Ð³Ð¸Ñ Ñ…Ð°Ð°Ð½ Ð±Ð°Ð½Ðº', 'Ð˜Ð½Ð²ÐµÑÐºÐ¾Ñ€ Ð±Ð°Ð½Ðº'
 ];
 
 function bankSelectHTML(id, currentValue) {
   const opts = MN_BANKS.map(b =>
     `<option value="${b}"${currentValue === b ? ' selected' : ''}>${b}</option>`
   ).join('');
-  return `<select id="${id}" class="form-input"><option value="">— Банк сонгох —</option>${opts}</select>`;
+  return `<select id="${id}" class="form-input"><option value="">â€” Ð‘Ð°Ð½Ðº ÑÐ¾Ð½Ð³Ð¾Ñ… â€”</option>${opts}</select>`;
 }
 
 function clearActiveListeners() {
@@ -95,7 +96,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <div class="auth-logo">⛳</div>
+        <div class="auth-logo">â›³</div>
         <h1 class="auth-title">${t('appName')}</h1>
         <p class="auth-tagline">${t('tagline')}</p>
         <form id="auth-form" class="auth-form">
@@ -163,12 +164,12 @@ function renderAuth() {
       } else {
         // Login
         if (user.password !== pass) {
-          showToast('Нууц үг буруу байна.', 'error');
+          showToast('ÐÑƒÑƒÑ† Ò¯Ð³ Ð±ÑƒÑ€ÑƒÑƒ Ð±Ð°Ð¹Ð½Ð°.', 'error');
           btn.disabled = false;
           return;
         }
         if (user.status === 'hold') {
-          showToast('Таны эрхийг түр хаасан байна.', 'error');
+          showToast('Ð¢Ð°Ð½Ñ‹ ÑÑ€Ñ…Ð¸Ð¹Ð³ Ñ‚Ò¯Ñ€ Ñ…Ð°Ð°ÑÐ°Ð½ Ð±Ð°Ð¹Ð½Ð°.', 'error');
           btn.disabled = false;
           return;
         }
@@ -183,7 +184,7 @@ function renderAuth() {
       router();
     } catch (err) {
       console.error('Auth error:', err);
-      showToast('Алдаа гарлаа.', 'error');
+      showToast('ÐÐ»Ð´Ð°Ð° Ð³Ð°Ñ€Ð»Ð°Ð°.', 'error');
       btn.disabled = false;
     }
   });
@@ -217,16 +218,19 @@ async function renderHome() {
       <div id="notifications-section"></div>
       <div class="section">
         <div class="game-filter-tabs">
-          <button class="filter-tab active" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
-          <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
+          <button class="filter-tab active" data-tab="all">ðŸŒ ${t('tabAll')}</button>
+          <button class="filter-tab" data-tab="mine">ðŸŒï¸ ${t('tabMine')}</button>
+          <button class="filter-tab" data-tab="joined">ðŸ¤ ${t('tabJoined')}</button>
+          <button class="filter-tab" data-tab="following">â­ ${t('tabFollowing')}</button>
         </div>
         <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
       </div>
-      <div class="section past-section" style="margin-top: 40px; opacity: 0.8;">
-        <h2 class="section-title">🕒 ${t('gameHistory')}</h2>
-        <div id="past-games-list" class="games-list"></div>
+      <div class="section past-section" style="margin-top: 40px;">
+        <div class="history-toggle-header" id="history-toggle">
+          <h2 class="section-title" style="margin:0;">ðŸ•’ ${t('gameHistory')}</h2>
+          <span class="history-chevron" id="history-chevron">${historyOpen ? 'â–²' : 'â–¼'}</span>
+        </div>
+        <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
       </div>
     </div>`;
 
@@ -256,6 +260,15 @@ async function renderHome() {
       renderGamesHome(homeGamesCache);
     });
   });
+
+  document.getElementById('history-toggle')?.addEventListener('click', () => {
+    historyOpen = !historyOpen;
+    const list = document.getElementById('past-games-list');
+    const chevron = document.getElementById('history-chevron');
+    if (list) list.style.display = historyOpen ? 'block' : 'none';
+    if (chevron) chevron.textContent = historyOpen ? 'â–²' : 'â–¼';
+    if (historyOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
+  });
 }
 
 function renderNotifications(notifs) {
@@ -264,10 +277,10 @@ function renderNotifications(notifs) {
   if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
   container.innerHTML = `
     <div class="section">
-      <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
+      <h2 class="section-title">ðŸ”” ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
       <div class="notif-list">
         ${notifs.map(n => {
-          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
+          const icon = n.type === 'invite' ? 'ðŸŒï¸' : n.type === 'player_joined' ? 'ðŸ‘¤' : n.type === 'player_left' ? 'ðŸ‘‹' : 'â›³';
           const title = n.type === 'invite' ? t('inviteNotif')
             : n.type === 'new_game' ? t('newGameNotif')
             : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
@@ -280,7 +293,7 @@ function renderNotifications(notifs) {
               <span class="notif-icon">${icon}</span>
               <div>
                 <div class="notif-title">${title}</div>
-                <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+                <div class="notif-sub">${isInviteOrNew ? n.from + ' Â· ' : ''}${formatDate(n.gameDate)} ${n.gameTime} Â· ${n.gameLocation}</div>
               </div>
             </div>
             <div class="notif-actions">
@@ -306,7 +319,7 @@ function renderNotifications(notifs) {
     const unseen = notifs.filter(n => !shownNotifIds.has(n.id));
     if (unseen.length > 0) {
       const n = unseen[0];
-      new Notification(`GolfUp 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
+      new Notification(`GolfUp ðŸŒï¸`, { body: `${n.from} Â· ${formatDate(n.gameDate)} ${n.gameTime} Â· ${n.gameLocation}` });
       unseen.forEach(n => shownNotifIds.add(n.id));
     }
   }
@@ -325,7 +338,7 @@ function renderGamesHome(games) {
   const pastGames = [];
 
   allGames.forEach(g => {
-    if (g.isPrivate && currentUser?.role !== 'admin' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+    if (g.isPrivate && currentUser?.role !== 'admin' && currentUser?.role !== 'marshal' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
     if (homeFilter === 'mine' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
     if (homeFilter === 'joined' && (g.createdBy === currentUser?.id || !isPlayerInGame(g, currentUser?.id))) return;
     if (homeFilter === 'following' && !currentUserFollows[g.createdBy]) return;
@@ -356,10 +369,10 @@ function renderGamesHome(games) {
         ${renderGamesCards(dayGames)}
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>ðŸŒï¸</p><p>${emptyMsg}</p></div>`;
   }
 
-  if (pastContainer) {
+  if (pastContainer && historyOpen) {
     pastContainer.innerHTML = pastGames.length > 0 ? renderGamesCards(pastGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noHistory')}</p>`;
   }
 }
@@ -378,15 +391,15 @@ function renderGamesCards(games, isPast = false) {
         <div class="game-card-header">
           <span class="game-date-badge">${dateStr}</span>
           <div style="display:flex; gap:6px; align-items:center;">
-            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
+            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">ðŸ”’</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
         <div class="game-card-body">
-          <div class="game-location">📍 ${g.location || '-'}</div>
+          <div class="game-location">ðŸ“ ${g.location || '-'}</div>
           <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
-            <span>🕐 ${g.time}</span>
-            <span>👤 ${g.creatorName || '-'}</span>
+            <span>ðŸ• ${g.time}</span>
+            <span>ðŸ‘¤ ${g.creatorName || '-'}</span>
           </div>
         </div>
         <div class="game-card-footer">
@@ -425,7 +438,7 @@ async function renderCreateGame() {
 
   main().innerHTML = `
     <div class="create-container fade-in">
-      <a href="#/" class="back-link" id="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link" id="back-link">â† ${t('back')}</a>
       <div class="create-card glass-card">
         <h2 class="card-title">${t('createGame')}</h2>
         <form id="create-form" class="create-form">
@@ -454,7 +467,7 @@ async function renderCreateGame() {
           <div class="input-group">
             <label for="game-group-size">${t('groupSize')}</label>
             <div class="stepper">
-              <button type="button" class="stepper-btn" id="size-minus">−</button>
+              <button type="button" class="stepper-btn" id="size-minus">âˆ’</button>
               <input type="number" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}" min="${APP_CONFIG.minGroupSize}" max="${APP_CONFIG.maxGroupSize}" readonly />
               <button type="button" class="stepper-btn" id="size-plus">+</button>
             </div>
@@ -467,10 +480,10 @@ async function renderCreateGame() {
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px;">
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> ðŸŒ ${t('gamePublic')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-private-label">
-                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
+                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> ðŸ”’ ${t('gamePrivate')}
               </label>
             </div>
           </div>
@@ -558,7 +571,7 @@ async function renderCreateGame() {
       ...followerIds.filter(fid => !invitedIds.includes(fid)).map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
     ]);
 
-    showToast('✅ ' + t('createGame') + '!', 'success');
+    showToast('âœ… ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
   });
 }
@@ -587,7 +600,7 @@ async function renderGameDetail(gameId) {
     const game = await Promise.race([loadDataPromise, timeoutPromise]);
 
     if (!game) {
-      main().innerHTML = `<div class="empty-state"><p>❌</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
+      main().innerHTML = `<div class="empty-state"><p>âŒ</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
       return;
     }
 
@@ -601,7 +614,7 @@ async function renderGameDetail(gameId) {
     }
   } catch (error) {
     console.error('Render game detail failed:', error);
-    showToast('Мэдээлэл уншихад алдаа гарлаа. Та дахин нэвтэрч үзнэ үү.', 'error');
+    showToast('ÐœÑÐ´ÑÑÐ»ÑÐ» ÑƒÐ½ÑˆÐ¸Ñ…Ð°Ð´ Ð°Ð»Ð´Ð°Ð° Ð³Ð°Ñ€Ð»Ð°Ð°. Ð¢Ð° Ð´Ð°Ñ…Ð¸Ð½ Ð½ÑÐ²Ñ‚ÑÑ€Ñ‡ Ò¯Ð·Ð½Ñ Ò¯Ò¯.', 'error');
     location.hash = '#/';
   }
 }
@@ -625,52 +638,50 @@ function renderGameView(game) {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
+      <a href="#/" class="back-link" id="back-link-detail">â† ${t('back')}</a>
       
       <div class="detail-header glass-card">
         <div class="detail-header-top">
           <span class="game-date-badge large">${dateStr}</span>
           <div style="display:flex; gap: 8px;">
-            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">✏️ Edit</a>` : ''}
+            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">âœï¸ Edit</a>` : ''}
             ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''}</h2>
+        <h2 class="detail-title">ðŸ“ ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">ðŸ”’</span>' : ''}</h2>
         <div class="detail-meta">
-          <span>🕐 ${game.time}</span>
-          <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
+          <span>ðŸ• ${game.time}</span>
+          <span>ðŸ‘¤ ${t('createdBy')}: ${game.creatorName || '-'}</span>
         </div>
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">➕ Add Player</button>` : ''}
-          <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
-          <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
+          ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">âž• Add Player</button>` : ''}
+          <button class="btn btn-outline" id="share-viber-btn">ðŸ“± ${t('shareViber')}</button>
+          <button class="btn btn-outline" id="copy-link-btn">ðŸ”— ${t('copyLink')}</button>
         </div>
-        ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
+        ${isReadOnly ? `<p class="auto-group-hint">â„¹ï¸ ${t('pastGameNotice')}</p>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">ðŸ“‹ Ð¢Ð°Ð¹Ð»Ð±Ð°Ñ€</span><p class="desc-text">${game.description}</p></div>` : ''}
       </div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
 
       ${waitingList.length > 0 ? `
         <div class="group-card glass-card waiting-card">
-          <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
+          <h3 class="group-title">â³ ${t('waitingList')} (${waitingList.length})</h3>
           <div class="player-list">
             ${waitingList.map((p, idx) => {
     const isFollowing = !!currentUserFollows[p.id];
     const isFollower = currentUserFollowers.has(p.id);
     const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
     const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
-    const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
-      : isFollowing ? ' <span class="followed-tag">⭐</span>'
-        : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
+    const tag = isFollower ? ' <span class="tag-follower">â˜…</span>' : '';
     return `
               <div class="player-row waiting${rowClass}">
                 <span class="player-order">${idx + 1}</span>
                 <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
                 <span class="player-name">${p.name}${tag}</span>
-                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
+                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">âŒ</button>
               </div>`;
   }).join('')}
           </div>
@@ -689,7 +700,7 @@ function renderGameView(game) {
       if (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || e.currentTarget.dataset.id === currentUser?.id) {
         handleRemovePlayer(game, e.currentTarget.dataset.id);
       } else {
-        showToast('Зөвхөн зохион байгуулагч тоглогч хасах эрхтэй', 'error');
+        showToast('Ð—Ó©Ð²Ñ…Ó©Ð½ Ð·Ð¾Ñ…Ð¸Ð¾Ð½ Ð±Ð°Ð¹Ð³ÑƒÑƒÐ»Ð°Ð³Ñ‡ Ñ‚Ð¾Ð³Ð»Ð¾Ð³Ñ‡ Ñ…Ð°ÑÐ°Ñ… ÑÑ€Ñ…Ñ‚ÑÐ¹', 'error');
       }
     });
   });
@@ -713,7 +724,7 @@ function renderGameView(game) {
 function followBtn(uid) {
   if (!currentUser || uid === currentUser.id) return '';
   const f = !!currentUserFollows[uid];
-  return `<button class="follow-btn ${f ? 'following' : ''}" data-uid="${uid}" title="${f ? t('unfollow') : t('follow')}">⭐</button>`;
+  return `<button class="follow-btn ${f ? 'following' : ''}" data-uid="${uid}" title="${f ? t('unfollow') : t('follow')}">${f ? 'â˜…' : 'â˜†'}</button>`;
 }
 
 function setupFollowListeners() { } // handled by delegated listener in initApp
@@ -728,9 +739,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       const isFollower = currentUserFollowers.has(pid);
       const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
       const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
-      const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
-        : isFollowing ? ' <span class="followed-tag">⭐</span>'
-          : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
+      const tag = isFollower ? ' <span class="tag-follower">â˜…</span>' : '';
       slots.push(`
         <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
@@ -739,8 +748,8 @@ function renderGroupCard(players, groupIndex, game, isPast) {
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
-            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
-            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Ð”Ð°Ð½Ñ Ñ…Ð°Ñ€Ð°Ñ…" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">ðŸ’³</button>` : ''}
+            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">âŒ</button>` : ''}
           </div>
         </div>`);
     } else {
@@ -758,9 +767,9 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
-        <h3 class="group-title">🏌️ ${t('group')} ${groupIndex + 1}</h3>
+        <h3 class="group-title">ðŸŒï¸ ${t('group')} ${groupIndex + 1}</h3>
         <div style="display:flex;align-items:center;gap:8px;">
-          ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ Нэмэх</button>` : ''}
+          ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ ÐÑÐ¼ÑÑ…</button>` : ''}
           <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
         </div>
       </div>
@@ -792,11 +801,11 @@ async function renderJoinGame(gameId) {
 // ---- Game Actions ----
 async function handleJoin(game) {
   if (!currentUser) return;
-  if (isPlayerInGame(game, currentUser.id)) { showToast('Та аль хэдийн нэгдсэн байна', 'warning'); return; }
+  if (isPlayerInGame(game, currentUser.id)) { showToast('Ð¢Ð° Ð°Ð»ÑŒ Ñ…ÑÐ´Ð¸Ð¹Ð½ Ð½ÑÐ³Ð´ÑÑÐ½ Ð±Ð°Ð¹Ð½Ð°', 'warning'); return; }
 
   const conflict = await checkTimeConflict(currentUser.id, game);
   if (conflict) {
-    showToast(`Та ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор өөр тоглолтонд нэгдэх боломжгүй.`, 'warning');
+    showToast(`Ð¢Ð° ${conflict.time}-Ð´ Ó©Ó©Ñ€ Ñ‚Ð¾Ð³Ð»Ð¾Ð»Ñ‚Ñ‚Ð¾Ð¹ Ð±Ð°Ð¹Ð³Ð°Ð° Ñ‚ÑƒÐ» 2 Ñ†Ð°Ð³Ð¸Ð¹Ð½ Ð´Ð¾Ñ‚Ð¾Ñ€ Ó©Ó©Ñ€ Ñ‚Ð¾Ð³Ð»Ð¾Ð»Ñ‚Ð¾Ð½Ð´ Ð½ÑÐ³Ð´ÑÑ… Ð±Ð¾Ð»Ð¾Ð¼Ð¶Ð³Ò¯Ð¹.`, 'warning');
     return;
   }
 
@@ -830,8 +839,11 @@ async function handleJoin(game) {
   if (isPlayerInGroup(game, currentUser.id)) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
+  if (game.createdBy && game.createdBy !== currentUser.id) {
+    store.saveNotification(game.createdBy, { type: 'player_joined', gameId: game.id, from: currentUser.name, gameDate: game.date, gameTime: game.time, gameLocation: game.location });
+  }
   renderGameView(game);
-  showToast('✅ ' + t('join') + '!', 'success');
+  showToast('âœ… ' + t('join') + '!', 'success');
 }
 
 async function handleLeave(game) {
@@ -871,13 +883,13 @@ async function handleLeave(game) {
     });
   }
   renderGameView(game);
-  showToast('👋 ' + t('leave'), 'info');
+  showToast('ðŸ‘‹ ' + t('leave'), 'info');
 }
 
 async function handleDelete(game) {
   if (!confirm(t('confirmDelete'))) return;
   await store.deleteGame(game.id);
-  showToast('🗑️ ' + t('gameDeleted'), 'info');
+  showToast('ðŸ—‘ï¸ ' + t('gameDeleted'), 'info');
   location.hash = '#/';
 }
 
@@ -915,18 +927,18 @@ function getGameUrl(game) {
 
 function shareViber(game) {
   const url = getGameUrl(game);
-  const desc = game.description ? `\n📝 ${game.description}` : '';
+  const desc = game.description ? `\nðŸ“ ${game.description}` : '';
   const groups = ensureGroups(game.groups);
   const groupLines = groups.map((grp, i) => {
     const players = ensureArray(grp);
     const names = players.map((p, idx) => `  ${idx + 1}. ${p.name}`).join('\n');
-    return `👥 ${t('group')} ${i + 1}:\n${names || '  -'}`;
+    return `ðŸ‘¥ ${t('group')} ${i + 1}:\n${names || '  -'}`;
   }).join('\n');
   const waitingList = ensureArray(game.waitingList);
   const waitingLine = waitingList.length > 0
-    ? `\n⏳ ${t('waitingList')}:\n${waitingList.map((p, i) => `  ${i + 1}. ${p.name}`).join('\n')}`
+    ? `\nâ³ ${t('waitingList')}:\n${waitingList.map((p, i) => `  ${i + 1}. ${p.name}`).join('\n')}`
     : '';
-  const text = `${t('shareText')}\n📍 ${game.location}\n📅 ${formatDate(game.date)} ${game.time}\n🏌️ ${t('groupSize')}: ${game.groupSize}${desc}\n\n🔗 ${url}\n\n${groupLines}${waitingLine}`;
+  const text = `${t('shareText')}\nðŸ“ ${game.location}\nðŸ“… ${formatDate(game.date)} ${game.time}\nðŸŒï¸ ${t('groupSize')}: ${game.groupSize}${desc}\n\nðŸ”— ${url}\n\n${groupLines}${waitingLine}`;
   const viberUrl = `viber://forward?text=${encodeURIComponent(text)}`;
   window.open(viberUrl, '_blank');
 }
@@ -934,7 +946,7 @@ function shareViber(game) {
 function copyGameLink(game) {
   const url = getGameUrl(game);
   navigator.clipboard.writeText(url).then(() => {
-    showToast('📋 ' + t('copied'), 'success');
+    showToast('ðŸ“‹ ' + t('copied'), 'success');
   }).catch(() => {
     // Fallback
     const input = document.createElement('input');
@@ -943,7 +955,7 @@ function copyGameLink(game) {
     input.select();
     document.execCommand('copy');
     document.body.removeChild(input);
-    showToast('📋 ' + t('copied'), 'success');
+    showToast('ðŸ“‹ ' + t('copied'), 'success');
   });
 }
 
@@ -958,9 +970,9 @@ async function renderAdminPanel() {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link">â† ${t('back')}</a>
       <div class="glass-card" style="margin-bottom: 20px;">
-        <h2 class="card-title">🛡️ Admin Panel</h2>
+        <h2 class="card-title">ðŸ›¡ï¸ Admin Panel</h2>
         
         <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
           <h3 style="margin-bottom: 10px;">${t('createUser')}</h3>
@@ -979,11 +991,11 @@ async function renderAdminPanel() {
               <div class="player-row" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
                 <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
                 <div style="display:flex; flex-direction:column;">
-                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${u.name} ${u.role === 'admin' ? '(Admin)' : ''}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
+                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${u.name} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
+                  <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || 'â€”'}</span>
                 </div>
                 <div style="margin-left: auto; display: flex; gap: 8px;">
-                  <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
+                  <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">âœï¸ Ð—Ð°ÑÐ°Ñ…</button>
                   ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
                 </div>
               </div>
@@ -1005,7 +1017,7 @@ async function renderAdminPanel() {
 
     const existing = await store.findUserByPhone(phone);
     if (existing) {
-      showToast('Энэ дугаартай хэрэглэгч бүртгэлтэй байна!', 'error');
+      showToast('Ð­Ð½Ñ Ð´ÑƒÐ³Ð°Ð°Ñ€Ñ‚Ð°Ð¹ Ñ…ÑÑ€ÑÐ³Ð»ÑÐ³Ñ‡ Ð±Ò¯Ñ€Ñ‚Ð³ÑÐ»Ñ‚ÑÐ¹ Ð±Ð°Ð¹Ð½Ð°!', 'error');
       submitBtn.disabled = false;
       return;
     }
@@ -1035,41 +1047,42 @@ async function renderAdminPanel() {
 function showAdminEditUserModal(user, onSaved) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
-  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
+  const avatars = ['â›³', 'ðŸŒï¸', 'ðŸŒï¸â€â™€ï¸', 'ðŸ”¥', 'â­', 'ðŸ†', 'ðŸ§¢', 'ðŸ•¶ï¸', 'ðŸ’Ž', 'ðŸ¦', 'ðŸ¦Š', 'ðŸ»', 'ðŸ¼', 'ðŸ¯', 'ðŸ¦¸', 'ðŸ¥·'];
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:480px;">
-      <h3 class="modal-title">✏️ ${user.name} засах</h3>
+      <h3 class="modal-title">âœï¸ ${user.name} Ð·Ð°ÑÐ°Ñ…</h3>
 
       <div class="input-group">
-        <label>Аватар</label>
+        <label>ÐÐ²Ð°Ñ‚Ð°Ñ€</label>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;">
           ${avatars.map(a => `<div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar === a ? 'background:var(--primary-color);' : ''}">${a}</div>`).join('')}
         </div>
       </div>
 
       <div class="input-group" style="margin-top:12px;">
-        <label>Нэр</label>
+        <label>ÐÑÑ€</label>
         <input type="text" id="ae-name" value="${user.name}" minlength="2" />
       </div>
       <div class="input-group" style="margin-top:10px;">
-        <label>Утасны дугаар</label>
+        <label>Ð£Ñ‚Ð°ÑÐ½Ñ‹ Ð´ÑƒÐ³Ð°Ð°Ñ€</label>
         <input type="text" id="ae-phone" value="${user.phone || ''}" />
       </div>
       <div class="input-group" style="margin-top:10px;">
-        <label>Шинэ нууц үг (хоосон = өөрчлөхгүй)</label>
+        <label>Ð¨Ð¸Ð½Ñ Ð½ÑƒÑƒÑ† Ò¯Ð³ (Ñ…Ð¾Ð¾ÑÐ¾Ð½ = Ó©Ó©Ñ€Ñ‡Ð»Ó©Ñ…Ð³Ò¯Ð¹)</label>
         <input type="password" id="ae-pass" placeholder="..." minlength="1" />
       </div>
       <div class="input-group" style="margin-top:10px;">
-        <label>Эрх</label>
+        <label>Ð­Ñ€Ñ…</label>
         <select id="ae-role" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
-          <option value="user" ${user.role !== 'admin' ? 'selected' : ''}>Хэрэглэгч</option>
+          <option value="user" ${user.role === 'user' || !user.role ? 'selected' : ''}>Ð¥ÑÑ€ÑÐ³Ð»ÑÐ³Ñ‡</option>
+          <option value="marshal" ${user.role === 'marshal' ? 'selected' : ''}>Marshal</option>
           <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
         </select>
       </div>
       <div class="input-group" style="margin-top:10px;">
-        <label>Статус</label>
+        <label>Ð¡Ñ‚Ð°Ñ‚ÑƒÑ</label>
         <select id="ae-status" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
-          <option value="active" ${user.status !== 'hold' ? 'selected' : ''}>Идэвхтэй</option>
+          <option value="active" ${user.status !== 'hold' ? 'selected' : ''}>Ð˜Ð´ÑÐ²Ñ…Ñ‚ÑÐ¹</option>
           <option value="hold" ${user.status === 'hold' ? 'selected' : ''}>Hold</option>
         </select>
       </div>
@@ -1109,7 +1122,7 @@ function showAdminEditUserModal(user, onSaved) {
   modal.querySelector('#ae-cancel').onclick = () => modal.remove();
   modal.querySelector('#ae-save').onclick = async () => {
     const name = document.getElementById('ae-name').value.trim();
-    if (name.length < 2) { showToast('Нэр хэтэрхий богино', 'error'); return; }
+    if (name.length < 2) { showToast('ÐÑÑ€ Ñ…ÑÑ‚ÑÑ€Ñ…Ð¸Ð¹ Ð±Ð¾Ð³Ð¸Ð½Ð¾', 'error'); return; }
     const pass = document.getElementById('ae-pass').value;
 
     user.name = name;
@@ -1128,7 +1141,7 @@ function showAdminEditUserModal(user, onSaved) {
       currentUser = user;
       updateHeader();
     }
-    showToast('✅ Хадгалагдлаа', 'success');
+    showToast('âœ… Ð¥Ð°Ð´Ð³Ð°Ð»Ð°Ð³Ð´Ð»Ð°Ð°', 'success');
     modal.remove();
     if (onSaved) onSaved();
   };
@@ -1148,7 +1161,7 @@ async function renderUsersList() {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div class="hero-section" style="padding: 20px 0 30px;">
-        <h2 class="hero-title">👥 ${t('usersListTitle')}</h2>
+        <h2 class="hero-title">ðŸ‘¥ ${t('usersListTitle')}</h2>
         <p class="hero-subtitle">${t('usersListSub')}</p>
       </div>
 
@@ -1159,25 +1172,25 @@ async function renderUsersList() {
     const isFollower = currentUserFollowers.has(u.id);
     const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
     const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
-    const tag = isFollowing && isFollower ? ' <span class="followed-tag">⭐👁️</span>'
-      : isFollowing ? ' <span class="followed-tag">⭐</span>'
-        : isFollower ? ' <span class="followed-tag">👁️</span>' : '';
+    const tag = isFollower ? ' <span class="tag-follower">â˜…</span>' : '';
     return `
             <div class="player-row ${rowClass}" style="margin-bottom: 8px; padding: 14px 20px;">
-              <span class="player-avatar-sm ${avatarClass}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
+              <div class="avatar-follow-wrap" style="position:relative; display:inline-flex; flex-shrink:0;">
+                <span class="player-avatar-sm ${avatarClass}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
+                ${followBtn(u.id)}
+              </div>
               <div style="display:flex; flex-direction:column; flex:1;">
                 <span class="player-name">${u.name}${tag}</span>
                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
               </div>
-              ${followBtn(u.id)}
-              ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
+              ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">ðŸ’³</button>` : ''}
             </div>`;
   }).join('')}
         </div>
       </div>
       
       <div style="margin-top: 20px; text-align:center;">
-        <a href="#/" class="btn btn-ghost">← ${t('back')}</a>
+        <a href="#/" class="btn btn-ghost">â† ${t('back')}</a>
       </div>
     </div>`;
 
@@ -1212,9 +1225,9 @@ async function renderEditGame(gameId) {
 
   main().innerHTML = `
     <div class="create-container fade-in">
-      <a href="#/game/${game.id}" class="back-link">← ${t('back')}</a>
+      <a href="#/game/${game.id}" class="back-link">â† ${t('back')}</a>
       <div class="create-card glass-card">
-        <h2 class="card-title">✏️ Edit Game</h2>
+        <h2 class="card-title">âœï¸ Edit Game</h2>
         <form id="edit-form" class="create-form">
           <div class="input-group">
             <label for="edit-date">${t('date')}</label>
@@ -1258,7 +1271,7 @@ async function renderEditGame(gameId) {
 
     const selectedTime = new Date(`${date}T${hour}:${min}`).getTime();
     if (selectedTime < Date.now()) {
-      showToast('Өнгөрсөн цагт тоглолт товлох боломжгүй!', 'error');
+      showToast('Ó¨Ð½Ð³Ó©Ñ€ÑÓ©Ð½ Ñ†Ð°Ð³Ñ‚ Ñ‚Ð¾Ð³Ð»Ð¾Ð»Ñ‚ Ñ‚Ð¾Ð²Ð»Ð¾Ñ… Ð±Ð¾Ð»Ð¾Ð¼Ð¶Ð³Ò¯Ð¹!', 'error');
       return;
     }
 
@@ -1268,7 +1281,7 @@ async function renderEditGame(gameId) {
     game.description = document.getElementById('edit-desc').value.trim();
 
     await store.saveGame(game);
-    showToast('✅ Saved!', 'success');
+    showToast('âœ… Saved!', 'success');
     location.hash = '#/game/' + game.id;
   });
 }
@@ -1282,7 +1295,7 @@ async function handleAddPlayer(game) {
   modal.className = 'glass-card fade-in';
   modal.style.cssText = 'width: 100%; max-width: 400px; padding: 20px; text-align: center;';
 
-  modal.innerHTML = `<h3>Тоглогч нэмэх</h3><div class="loading-spinner" style="margin: 20px auto;"></div>`;
+  modal.innerHTML = `<h3>Ð¢Ð¾Ð³Ð»Ð¾Ð³Ñ‡ Ð½ÑÐ¼ÑÑ…</h3><div class="loading-spinner" style="margin: 20px auto;"></div>`;
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1291,56 +1304,86 @@ async function handleAddPlayer(game) {
   const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
-    modal.innerHTML = `<h3>Тоглогч нэмэх</h3><p style="margin:20px 0; color:var(--text-secondary);">Бүх хүн тоглолтод орсон эсвэл нэмэх хүн алга байна.</p><button class="btn btn-ghost" id="close-modal-btn">Хаах</button>`;
+    modal.innerHTML = `<h3>Ð¢Ð¾Ð³Ð»Ð¾Ð³Ñ‡ Ð½ÑÐ¼ÑÑ…</h3><p style="margin:20px 0;color:var(--text-secondary);">Ð‘Ò¯Ñ… Ñ…Ò¯Ð½ Ñ‚Ð¾Ð³Ð»Ð¾Ð»Ñ‚Ð¾Ð´ Ð¾Ñ€ÑÐ¾Ð½ ÑÑÐ²ÑÐ» Ð½ÑÐ¼ÑÑ… Ñ…Ò¯Ð½ Ð°Ð»Ð³Ð° Ð±Ð°Ð¹Ð½Ð°.</p><button class="btn btn-ghost" id="close-modal-btn">Ð¥Ð°Ð°Ñ…</button>`;
     document.getElementById('close-modal-btn').onclick = () => overlay.remove();
     return;
   }
+  overlay.remove();
 
-  modal.innerHTML = `
-    <h3>Тоглогч нэмэх</h3>
-    <select id="player-select" style="width:100%; padding:12px; margin: 20px 0; border-radius:8px; border: 1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size: 1rem;">
-      ${availableUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
-    </select>
-    <div style="display:flex; gap:10px;">
-      <button class="btn btn-ghost" id="cancel-add-btn" style="flex:1;">Болих</button>
-      <button class="btn btn-primary" id="confirm-add-btn" style="flex:1;">Нэмэх</button>
-    </div>
-  `;
-
-  document.getElementById('cancel-add-btn').onclick = () => overlay.remove();
-  document.getElementById('confirm-add-btn').onclick = async () => {
-    const selectedId = document.getElementById('player-select').value;
-    const selectedUser = availableUsers.find(u => u.id === selectedId);
-    if (!selectedUser) return;
-
-    overlay.remove();
-
+  openPlayerSearchModal('Ð¢Ð¾Ð³Ð»Ð¾Ð³Ñ‡ Ð½ÑÐ¼ÑÑ…', availableUsers, async (selectedUser) => {
     const conflict = await checkTimeConflict(selectedUser.id, game);
     if (conflict) {
-      showToast(`${selectedUser.name} ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор нэмэх боломжгүй.`, 'warning');
+      showToast(`${selectedUser.name} ${conflict.time}-Ð´ Ó©Ó©Ñ€ Ñ‚Ð¾Ð³Ð»Ð¾Ð»Ñ‚Ñ‚Ð¾Ð¹ Ð±Ð°Ð¹Ð³Ð°Ð° Ñ‚ÑƒÐ» 2 Ñ†Ð°Ð³Ð¸Ð¹Ð½ Ð´Ð¾Ñ‚Ð¾Ñ€ Ð½ÑÐ¼ÑÑ… Ð±Ð¾Ð»Ð¾Ð¼Ð¶Ð³Ò¯Ð¹.`, 'warning');
       return;
     }
-
     const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
     const groups = game.groups || [[]];
     const waitingList = game.waitingList || [];
     let added = false;
     for (let i = 0; i < groups.length; i++) {
-      if (groups[i].length < game.groupSize) {
-        groups[i].push(player);
-        added = true;
-        break;
-      }
+      if (groups[i].length < game.groupSize) { groups[i].push(player); added = true; break; }
     }
     if (!added) waitingList.push(player);
-
     game.groups = groups;
     game.waitingList = waitingList;
-
     await store.saveGame(game);
     if (added) removeFromConflictingWaitlists(selectedUser.id, game);
     renderGameView(game);
-    showToast('✅ Added ' + selectedUser.name, 'success');
+    showToast('âœ… Added ' + selectedUser.name, 'success');
+  });
+}
+
+function openPlayerSearchModal(title, availableUsers, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:400px;padding:20px;';
+  modal.innerHTML = `
+    <h3 style="margin:0 0 16px;">${title}</h3>
+    <div style="position:relative;">
+      <input type="text" id="ps-input" placeholder="ÐÑÑ€ Ð±Ð¸Ñ‡Ð¸Ñ…..." autocomplete="off"
+        style="width:100%;padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;box-sizing:border-box;">
+      <div id="ps-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);z-index:10;max-height:200px;overflow-y:auto;"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost" id="ps-cancel" style="flex:1;">Ð‘Ð¾Ð»Ð¸Ñ…</button>
+      <button class="btn btn-primary" id="ps-confirm" style="flex:1;">ÐÑÐ¼ÑÑ…</button>
+    </div>
+  `;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  let selectedUser = null;
+  const inp = modal.querySelector('#ps-input');
+  const results = modal.querySelector('#ps-results');
+
+  inp.addEventListener('input', () => {
+    const q = inp.value.trim().toLowerCase();
+    if (!q) { results.style.display = 'none'; return; }
+    const matches = availableUsers.filter(u => u.name.toLowerCase().includes(q));
+    if (!matches.length) { results.style.display = 'none'; return; }
+    results.innerHTML = matches.map(u =>
+      `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${u.name}</div>`
+    ).join('');
+    results.style.display = 'block';
+    results.querySelectorAll('.ps-item').forEach(item => {
+      item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
+      item.addEventListener('mouseleave', () => item.style.background = '');
+      item.addEventListener('click', () => {
+        selectedUser = availableUsers.find(u => u.id === item.dataset.id);
+        inp.value = selectedUser.name;
+        results.style.display = 'none';
+      });
+    });
+  });
+
+  inp.focus();
+  modal.querySelector('#ps-cancel').onclick = () => overlay.remove();
+  modal.querySelector('#ps-confirm').onclick = () => {
+    if (!selectedUser) { showToast('Ð¢Ð¾Ð³Ð»Ð¾Ð³Ñ‡ ÑÐ¾Ð½Ð³Ð¾Ð½Ð¾ ÑƒÑƒ', 'warning'); return; }
+    overlay.remove();
+    onConfirm(selectedUser);
   };
 }
 
@@ -1348,7 +1391,7 @@ async function handleAddToGroup(game, groupIndex) {
   const groups = ensureGroups(game.groups);
   const group = groups[groupIndex];
   if (!group || group.length >= game.groupSize) {
-    showToast('Групп дүүрсэн байна', 'error');
+    showToast('Ð“Ñ€ÑƒÐ¿Ð¿ Ð´Ò¯Ò¯Ñ€ÑÑÐ½ Ð±Ð°Ð¹Ð½Ð°', 'error');
     return;
   }
 
@@ -1357,7 +1400,7 @@ async function handleAddToGroup(game, groupIndex) {
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
   modal.style.cssText = 'width:100%;max-width:400px;padding:20px;text-align:center;';
-  modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><div class="loading-spinner" style="margin:20px auto;"></div>`;
+  modal.innerHTML = `<h3>Ð“Ñ€ÑƒÐ¿Ð¿ ${groupIndex + 1}-Ð´ Ð½ÑÐ¼ÑÑ…</h3><div class="loading-spinner" style="margin:20px auto;"></div>`;
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1365,36 +1408,20 @@ async function handleAddToGroup(game, groupIndex) {
   const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
-    modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Нэмэх боломжтой хэрэглэгч байхгүй.</p><button class="btn btn-ghost" id="close-atg-btn">Хаах</button>`;
+    modal.innerHTML = `<h3>Ð“Ñ€ÑƒÐ¿Ð¿ ${groupIndex + 1}-Ð´ Ð½ÑÐ¼ÑÑ…</h3><p style="margin:20px 0;color:var(--text-secondary);">ÐÑÐ¼ÑÑ… Ð±Ð¾Ð»Ð¾Ð¼Ð¶Ñ‚Ð¾Ð¹ Ñ…ÑÑ€ÑÐ³Ð»ÑÐ³Ñ‡ Ð±Ð°Ð¹Ñ…Ð³Ò¯Ð¹.</p><button class="btn btn-ghost" id="close-atg-btn">Ð¥Ð°Ð°Ñ…</button>`;
     document.getElementById('close-atg-btn').onclick = () => overlay.remove();
     return;
   }
+  overlay.remove();
 
-  modal.innerHTML = `
-    <h3>Групп ${groupIndex + 1}-д нэмэх</h3>
-    <select id="player-select-grp" style="width:100%;padding:12px;margin:20px 0;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;">
-      ${availableUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
-    </select>
-    <div style="display:flex;gap:10px;">
-      <button class="btn btn-ghost" id="cancel-atg-btn" style="flex:1;">Болих</button>
-      <button class="btn btn-primary" id="confirm-atg-btn" style="flex:1;">Нэмэх</button>
-    </div>
-  `;
-
-  document.getElementById('cancel-atg-btn').onclick = () => overlay.remove();
-  document.getElementById('confirm-atg-btn').onclick = async () => {
-    const selectedId = document.getElementById('player-select-grp').value;
-    const selectedUser = availableUsers.find(u => u.id === selectedId);
-    if (!selectedUser) return;
-    overlay.remove();
-
+  openPlayerSearchModal(`Ð“Ñ€ÑƒÐ¿Ð¿ ${groupIndex + 1}-Ð´ Ð½ÑÐ¼ÑÑ…`, availableUsers, async (selectedUser) => {
     const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
     game.groups[groupIndex].push(player);
     await store.saveGame(game);
     removeFromConflictingWaitlists(selectedUser.id, game);
     renderGameView(game);
-    showToast(`✅ ${selectedUser.name} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
-  };
+    showToast(`âœ… ${selectedUser.name} Ð“Ñ€ÑƒÐ¿Ð¿ ${groupIndex + 1}-Ð´ Ð½ÑÐ¼ÑÐ³Ð´Ð»ÑÑ`, 'success');
+  });
 }
 
 async function handleRemovePlayer(game, playerId) {
@@ -1424,7 +1451,7 @@ async function handleRemovePlayer(game, playerId) {
 
   await store.saveGame(game);
   renderGameView(game);
-  showToast('❌ Removed', 'info');
+  showToast('âŒ Removed', 'info');
 }
 
 // ---- Utilities ----
@@ -1475,19 +1502,19 @@ function formatDate(dateStr) {
   if (d.getTime() === today.getTime()) return t('today');
   if (d.getTime() === tomorrow.getTime()) return t('tomorrow');
   const months = getLang() === 'mn'
-    ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
+    ? ['1-Ñ€ ÑÐ°Ñ€', '2-Ñ€ ÑÐ°Ñ€', '3-Ñ€ ÑÐ°Ñ€', '4-Ñ€ ÑÐ°Ñ€', '5-Ñ€ ÑÐ°Ñ€', '6-Ñ€ ÑÐ°Ñ€', '7-Ñ€ ÑÐ°Ñ€', '8-Ñ€ ÑÐ°Ñ€', '9-Ñ€ ÑÐ°Ñ€', '10-Ñ€ ÑÐ°Ñ€', '11-Ñ€ ÑÐ°Ñ€', '12-Ñ€ ÑÐ°Ñ€']
     : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const days = getLang() === 'mn'
-    ? ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба']
+    ? ['ÐÑÐ¼', 'Ð”Ð°Ð²Ð°Ð°', 'ÐœÑÐ³Ð¼Ð°Ñ€', 'Ð›Ñ…Ð°Ð³Ð²Ð°', 'ÐŸÒ¯Ñ€ÑÐ²', 'Ð‘Ð°Ð°ÑÐ°Ð½', 'Ð‘ÑÐ¼Ð±Ð°']
     : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return `${months[d.getMonth()]} ${d.getDate()} · ${days[d.getDay()]}`;
+  return `${months[d.getMonth()]} ${d.getDate()} Â· ${days[d.getDay()]}`;
 }
 
 function timeAgo(ts) {
   if (!ts) return '';
   const diff = Date.now() - ts;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return getLang() === 'mn' ? 'дөнгөж сая' : 'just now';
+  if (min < 1) return getLang() === 'mn' ? 'Ð´Ó©Ð½Ð³Ó©Ð¶ ÑÐ°Ñ' : 'just now';
   if (min < 60) return `${min}m`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}h`;
@@ -1524,7 +1551,7 @@ async function initFCM(user) {
     }
     onMessage(messaging, (payload) => {
       const { title, body } = payload.data || {};
-      showToast(`${title || '⛳'} ${body || ''}`, 'info');
+      showToast(`${title || 'â›³'} ${body || ''}`, 'info');
     });
   } catch (e) {
     console.warn('FCM init failed:', e);
@@ -1567,14 +1594,16 @@ export function initApp() {
       await store.unfollowUser(currentUser.id, targetId);
       delete currentUserFollows[targetId];
       btn.classList.remove('following');
+      btn.textContent = 'â˜†';
       btn.title = t('follow');
     } else {
       await store.followUser(currentUser.id, targetId);
       currentUserFollows[targetId] = true;
       btn.classList.add('following');
+      btn.textContent = 'â˜…';
       btn.title = t('unfollow');
     }
-    showToast(isFollowing ? t('unfollow') : t('follow') + ' ✓', 'success');
+    showToast(isFollowing ? t('unfollow') : t('follow') + ' âœ“', 'success');
   });
 
   window.addEventListener('hashchange', router);
@@ -1623,7 +1652,7 @@ function showEditBankModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card">
-      <h3 class="modal-title">💳 ${t('editBank')}</h3>
+      <h3 class="modal-title">ðŸ’³ ${t('editBank')}</h3>
       <div class="input-group">
         <label>${t('bankName')}</label>
         ${bankSelectHTML('bank-name-input', user.bankName || '')}
@@ -1656,7 +1685,7 @@ function showEditBankModal(user) {
     await store.adminUpdateUser(user);
     if (currentUser && currentUser.id === user.id) store.saveUser(user);
 
-    showToast('✅ ' + t('saved'), 'success');
+    showToast('âœ… ' + t('saved'), 'success');
     modal.remove();
     router();
   };
@@ -1665,11 +1694,11 @@ function showEditBankModal(user) {
 function showProfileModal(user) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
-  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
+  const avatars = ['â›³', 'ðŸŒï¸', 'ðŸŒï¸â€â™€ï¸', 'ðŸ”¥', 'â­', 'ðŸ†', 'ðŸ§¢', 'ðŸ•¶ï¸', 'ðŸ’Ž', 'ðŸ¦', 'ðŸ¦Š', 'ðŸ»', 'ðŸ¼', 'ðŸ¯', 'ðŸ¦¸', 'ðŸ¥·'];
 
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width: 450px;">
-      <h3 class="modal-title">👤 ${t('profile')}</h3>
+      <h3 class="modal-title">ðŸ‘¤ ${t('profile')}</h3>
       
       <div class="input-group">
         <label>${t('avatar')}</label>
@@ -1746,7 +1775,7 @@ function showProfileModal(user) {
     const newPass = document.getElementById('profile-pass-input').value;
 
     if (newName.length < 2) {
-      showToast('Нэр хэтэрхий богино байна', 'error');
+      showToast('ÐÑÑ€ Ñ…ÑÑ‚ÑÑ€Ñ…Ð¸Ð¹ Ð±Ð¾Ð³Ð¸Ð½Ð¾ Ð±Ð°Ð¹Ð½Ð°', 'error');
       return;
     }
 
@@ -1768,7 +1797,7 @@ function showProfileModal(user) {
     store.saveUser(user);
     currentUser = user;
 
-    showToast('✅ ' + t('saved'), 'success');
+    showToast('âœ… ' + t('saved'), 'success');
     modal.remove();
     updateHeader();
     router();
@@ -1782,24 +1811,24 @@ function showBankDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">💳 ${user.name}-н данс</h3>
+      <h3 class="modal-title">ðŸ’³ ${user.name}-Ð½ Ð´Ð°Ð½Ñ</h3>
       <div class="bank-info-row">
-        <span class="label">Банк:</span>
+        <span class="label">Ð‘Ð°Ð½Ðº:</span>
         <span class="value">${user.bankName || '-'}</span>
       </div>
       <div class="bank-info-row">
-        <span class="label">Данс:</span>
+        <span class="label">Ð”Ð°Ð½Ñ:</span>
         <span class="value" id="val-acc">${user.bankAccount || '-'}</span>
-        ${user.bankAccount ? `<button class="btn btn-sm btn-outline copy-btn" data-target="acc">Хуулах</button>` : ''}
+        ${user.bankAccount ? `<button class="btn btn-sm btn-outline copy-btn" data-target="acc">Ð¥ÑƒÑƒÐ»Ð°Ñ…</button>` : ''}
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
         <span class="value" id="val-iban">${user.bankIban || '-'}</span>
-        ${user.bankIban ? `<button class="btn btn-sm btn-outline copy-btn" data-target="iban">Хуулах</button>` : ''}
+        ${user.bankIban ? `<button class="btn btn-sm btn-outline copy-btn" data-target="iban">Ð¥ÑƒÑƒÐ»Ð°Ñ…</button>` : ''}
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
-        ${(user.bankAccount && user.bankIban) ? `<button class="btn btn-primary" id="copy-both">Данс + IBAN хуулах</button>` : ''}
-        <button class="btn btn-ghost" id="modal-close">Хаах</button>
+        ${(user.bankAccount && user.bankIban) ? `<button class="btn btn-primary" id="copy-both">Ð”Ð°Ð½Ñ + IBAN Ñ…ÑƒÑƒÐ»Ð°Ñ…</button>` : ''}
+        <button class="btn btn-ghost" id="modal-close">Ð¥Ð°Ð°Ñ…</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -1811,7 +1840,7 @@ function showBankDetailsModal(user) {
       const type = btn.dataset.target;
       const text = type === 'acc' ? user.bankAccount : user.bankIban;
       navigator.clipboard.writeText(text).then(() => {
-        showToast('Хуулагдлаа', 'success');
+        showToast('Ð¥ÑƒÑƒÐ»Ð°Ð³Ð´Ð»Ð°Ð°', 'success');
       });
     };
   });
@@ -1821,7 +1850,7 @@ function showBankDetailsModal(user) {
       const iban = (user.bankIban || '').replace(/^MN/i, '');
       const text = `${iban}${user.bankAccount || ''}`;
       navigator.clipboard.writeText(text).then(() => {
-        showToast('IBAN + Данс хуулагдлаа', 'success');
+        showToast('IBAN + Ð”Ð°Ð½Ñ Ñ…ÑƒÑƒÐ»Ð°Ð³Ð´Ð»Ð°Ð°', 'success');
       });
     };
   }

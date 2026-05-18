@@ -249,6 +249,12 @@ input, button { font-family: var(--font); }
   box-shadow: 0 4px 16px rgba(45,106,79,0.35);
 }
 
+/* History toggle */
+.history-toggle-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 6px 0; user-select: none; }
+.history-toggle-header:hover .section-title { color: var(--emerald); }
+.history-chevron { font-size: 0.85rem; color: var(--text-muted); transition: color 0.2s; }
+.history-toggle-header:hover .history-chevron { color: var(--emerald); }
+
 /* ====== Games List ====== */
 .games-list { display: flex; flex-direction: column; gap: 12px; }
 
@@ -354,7 +360,8 @@ input, button { font-family: var(--font); }
 .player-row.follower-player { background: rgba(56,189,248,0.07); border-left: 3px solid #38bdf8; }
 .player-row.follower-player:hover { background: rgba(56,189,248,0.12); }
 .follower-avatar { background: linear-gradient(135deg, #0284c7, #38bdf8) !important; }
-.followed-tag { font-size: 0.75rem; vertical-align: middle; }
+.tag-following { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; background: rgba(255,215,0,0.18); color: var(--gold); border: 1px solid rgba(255,215,0,0.4); vertical-align: middle; letter-spacing: 0.03em; }
+.tag-follower  { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); vertical-align: middle; letter-spacing: 0.03em; }
 
 .player-order { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 18px; }
 .player-avatar-sm {
@@ -422,9 +429,11 @@ input, button { font-family: var(--font); }
 .copy-btn { padding: 6px 12px !important; font-size: 0.8rem !important; }
 
 /* Follow button */
-.follow-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.35; transition: opacity 0.2s, transform 0.15s; padding: 4px; line-height: 1; }
-.follow-btn:hover { opacity: 0.75; transform: scale(1.2); }
-.follow-btn.following { opacity: 1; filter: drop-shadow(0 0 5px gold); }
+.follow-btn { background: none; border: 1.5px solid rgba(255,255,255,0.15); border-radius: 6px; cursor: pointer; font-size: 1.05rem; color: rgba(255,255,255,0.35); transition: all 0.2s; padding: 3px 7px; line-height: 1; }
+.follow-btn:hover { border-color: var(--gold); color: var(--gold); transform: scale(1.08); }
+.follow-btn.following { color: var(--gold); border-color: var(--gold); background: rgba(255,215,0,0.12); filter: drop-shadow(0 0 4px rgba(255,215,0,0.5)); }
+/* Follow button overlay on avatar in users list */
+.avatar-follow-wrap .follow-btn { position: absolute; bottom: -6px; right: -8px; font-size: 0.72rem; padding: 1px 4px; border-radius: 5px; z-index: 1; }
 
 /* Notification badge & cards */
 .notif-badge { background: var(--danger-color); color: white; border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; font-weight: 700; vertical-align: middle; margin-left: 6px; }

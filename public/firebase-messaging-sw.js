@@ -15,10 +15,10 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   const { title, body, gameId } = payload.data || {};
-  self.registration.showNotification(title || '⛳ GolfUp', {
+  self.registration.showNotification(title || 'GolfUp', {
     body: body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/icon.svg',
+    badge: '/icon.svg',
     data: { gameId }
   });
 });
