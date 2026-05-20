@@ -1153,6 +1153,9 @@ async function renderUsersList() {
       </div>
 
       <div class="glass-card" style="padding: 10px;">
+        <div class="input-group" style="margin: 4px 4px 14px;">
+          <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+        </div>
         <div class="player-list">
           ${sortedUsers.map(u => {
     const isFollowing = !!currentUserFollows[u.id];
@@ -1161,7 +1164,7 @@ async function renderUsersList() {
     const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
     const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
     return `
-            <div class="player-row ${rowClass}" style="margin-bottom: 8px; padding: 14px 20px;">
+            <div class="player-row ${rowClass} user-list-row" data-name="${(u.name || '').toLowerCase()}" style="margin-bottom: 8px; padding: 14px 20px;">
               <div class="avatar-follow-wrap" style="position:relative; display:inline-flex; flex-shrink:0;">
                 <span class="player-avatar-sm ${avatarClass}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
                 ${followBtn(u.id)}
@@ -1182,6 +1185,16 @@ async function renderUsersList() {
     </div>`;
 
   // Attach copy listeners
+  const searchInput = document.getElementById('user-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.trim().toLowerCase();
+      document.querySelectorAll('.user-list-row').forEach(row => {
+        row.style.display = row.dataset.name.includes(query) ? 'flex' : 'none';
+      });
+    });
+  }
+
   document.querySelectorAll('.copy-bank-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const uid = e.currentTarget.dataset.id;
