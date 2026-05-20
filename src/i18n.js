@@ -2,7 +2,7 @@ const T = {
   mn: {
     appName: 'GolfUp', tagline: 'Хамтдаа тоглоё!',
     home: 'Нүүр', createGame: 'Тоглолт үүсгэх', activeGames: 'Идэвхтэй тоглолтууд',
-    tabAll: 'Бүх тоглолт', tabMine: 'Миний тоглолт', tabJoined: 'Уригдсан', tabFollowing: 'Дагаж байгаа',
+    tabAll: 'Бүх тоглолт', tabMine: 'Миний тоглолт', tabCommunity: 'Миний тойрог', tabRecommended: 'Санал болгох', tabJoined: 'Уригдсан', tabFollowing: 'Дагаж байгаа',
     noGamesInFilter: 'Энэ ангилалд тоглолт байхгүй байна',
     noGames: 'Одоогоор тоглолт алга. Шинэ тоглолт үүсгэнэ үү!',
     date: 'Огноо', time: 'Цаг', location: 'Байршил', groupSize: 'Группын хүний тоо',
@@ -50,12 +50,14 @@ const T = {
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан', decline: 'Татгалзах',
     newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Таныг тоглолтод урьсан байна',
     playerJoined: 'тоглолтод нэгдлээ', playerLeft: 'тоглолтоос гарлаа', viewGame: 'Харах',
-    gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай'
+    gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай',
+    communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
+    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна'
   },
   en: {
     appName: 'GolfUp', tagline: 'Play together!',
     home: 'Home', createGame: 'Create Game', activeGames: 'Active Games',
-    tabAll: 'All', tabMine: 'My Games', tabJoined: 'Invited', tabFollowing: 'Following',
+    tabAll: 'All', tabMine: 'My Games', tabCommunity: 'My Circle', tabRecommended: 'Recommended', tabJoined: 'Invited', tabFollowing: 'Following',
     noGamesInFilter: 'No games in this category',
     noGames: 'No games yet. Create a new one!',
     date: 'Date', time: 'Time', location: 'Location', groupSize: 'Group Size',
@@ -103,7 +105,9 @@ const T = {
     pendingNotifications: 'Notifications', markRead: 'Dismiss', decline: 'Decline',
     newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
     playerJoined: 'joined the game', playerLeft: 'left the game', viewGame: 'View',
-    gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private'
+    gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private',
+    communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
+    noCommunitiesAssigned: 'No circle assigned yet'
   }
 };
 

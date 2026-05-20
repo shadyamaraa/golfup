@@ -18,10 +18,78 @@ let pendingAuthRedirect = null;
 
 const main = () => document.getElementById('main-content');
 
+function displayUsername(user) {
+  if (!user) return '-';
+  return user.username || user.name || '-';
+}
+
+function displayFullName(user) {
+  if (!user) return '-';
+  return user.fullName || user.name || '-';
+}
+
+function needsProfileCompletion(user) {
+  return !!user && (!user.username || !user.fullName);
+}
+
 const MN_BANKS = [
   'Хаан банк', 'Голомт банк', 'Хас банк', 'Төрийн банк', 'Богд банк',
   'Капитрон банк', 'М банк', 'Ариг банк', 'Чингис хаан банк', 'Инвескор банк'
 ];
+
+const COMMUNITY_OPTIONS = [
+  { id: 'club', label: 'Клубын гишүүд' },
+  { id: 'morning', label: 'Өглөө тоглодог' },
+  { id: 'weekend', label: 'Амралтын өдөр' },
+  { id: 'social', label: 'Social golf' },
+  { id: 'competitive', label: 'Өрсөлдөөнт' },
+  { id: 'beginner', label: 'Шинэ тоглогчид' },
+  { id: 'sky', label: 'Sky Resort' },
+  { id: 'chinggis', label: 'Chinggis Khaan' }
+];
+
+function userCommunityIds(user) {
+  return Array.isArray(user?.communities) ? user.communities : [];
+}
+
+function communityLabel(id) {
+  if (!id || id === 'all') return t('communityAll');
+  return COMMUNITY_OPTIONS.find(c => c.id === id)?.label || id;
+}
+
+function communityCheckboxes(name, selected = []) {
+  const selectedSet = new Set(selected);
+  return COMMUNITY_OPTIONS.map(c => `
+    <label class="toggle-label" style="margin:6px 0;">
+      <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
+      <span>${c.label}</span>
+    </label>`).join('');
+}
+
+function selectedCommunities(name) {
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(cb => cb.value);
+}
+
+function canSeeGameByCommunity(game) {
+  if (!game || !currentUser) return false;
+  if (currentUser.role === 'admin' || currentUser.role === 'marshal') return true;
+  if (game.createdBy === currentUser.id || isPlayerInGame(game, currentUser.id)) return true;
+  if (game.isPrivate) return false;
+  const community = game.targetCommunity || 'all';
+  if (community === 'all') return true;
+  return userCommunityIds(currentUser).includes(community);
+}
+
+function recommendationScore(game) {
+  if (!game || !currentUser) return 0;
+  let score = 0;
+  const userCommunities = userCommunityIds(currentUser);
+  if (game.targetCommunity && game.targetCommunity !== 'all' && userCommunities.includes(game.targetCommunity)) score += 40;
+  if (currentUserFollows[game.createdBy]) score += 25;
+  if (game.createdBy === currentUser.id || isPlayerInGame(game, currentUser.id)) score += 15;
+  if (game.location && userCommunities.some(id => game.location.toLowerCase().includes(id.toLowerCase()))) score += 10;
+  return score;
+}
 
 function bankSelectHTML(id, currentValue) {
   const opts = MN_BANKS.map(b =>
@@ -85,8 +153,8 @@ function updateHeader() {
   if (langBtn) langBtn.textContent = getLang().toUpperCase();
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
-    nameDisplay.textContent = currentUser.name;
-    avatar.textContent = currentUser.avatar || currentUser.name.charAt(0).toUpperCase();
+    nameDisplay.textContent = displayUsername(currentUser);
+    avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
   } else if (userInfo) {
     userInfo.classList.add('hidden');
   }
@@ -179,6 +247,9 @@ function renderAuth() {
       location.hash = pendingAuthRedirect || '#/';
       pendingAuthRedirect = null;
       router();
+      if (needsProfileCompletion(user)) {
+        setTimeout(() => showProfileModal(currentUser, { required: true }), 0);
+      }
     } catch (err) {
       console.error('Auth error:', err);
       showToast('Алдаа гарлаа.', 'error');
@@ -217,6 +288,8 @@ async function renderHome() {
         <div class="game-filter-tabs">
           <button class="filter-tab active" data-tab="all">🌍 ${t('tabAll')}</button>
           <button class="filter-tab" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab" data-tab="community">◎ ${t('tabCommunity')}</button>
+          <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
           <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
         </div>
@@ -335,8 +408,10 @@ function renderGamesHome(games) {
   const pastGames = [];
 
   allGames.forEach(g => {
-    if (g.isPrivate && currentUser?.role !== 'admin' && currentUser?.role !== 'marshal' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+    if (!canSeeGameByCommunity(g)) return;
     if (homeFilter === 'mine' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
+    if (homeFilter === 'community' && (!g.targetCommunity || g.targetCommunity === 'all' || !userCommunityIds(currentUser).includes(g.targetCommunity))) return;
+    if (homeFilter === 'recommended' && recommendationScore(g) <= 0) return;
     if (homeFilter === 'joined' && (g.createdBy === currentUser?.id || !isPlayerInGame(g, currentUser?.id))) return;
     if (homeFilter === 'following' && !currentUserFollows[g.createdBy]) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
@@ -348,6 +423,10 @@ function renderGamesHome(games) {
 
   // Sort active games by date+time ascending (nearest first)
   activeGames.sort((a, b) => {
+    if (homeFilter === 'recommended') {
+      const scoreDiff = recommendationScore(b) - recommendationScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+    }
     const aMs = new Date(`${a.date}T${a.time.padStart(5, '0')}`).getTime();
     const bMs = new Date(`${b.date}T${b.time.padStart(5, '0')}`).getTime();
     return aMs - bMs;
@@ -389,6 +468,7 @@ function renderGamesCards(games, isPast = false) {
           <span class="game-date-badge">${dateStr}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
+            ${g.targetCommunity && g.targetCommunity !== 'all' ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityLabel(g.targetCommunity)}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
@@ -485,6 +565,13 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
+            <label for="game-community">${t('gameCommunity')}</label>
+            <select id="game-community" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;">
+              <option value="all">${t('communityAll')}</option>
+              ${COMMUNITY_OPTIONS.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="input-group">
             <label>${t('invitePlayers')}</label>
             <div style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
               ${availableUsers.length > 0 ? availableUsers.map(u => `
@@ -543,25 +630,27 @@ async function renderCreateGame() {
     const groupSize = +document.getElementById('game-group-size').value;
     const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
     const isPrivate = document.querySelector('input[name="visibility"]:checked').value === 'private';
+    const targetCommunity = document.getElementById('game-community').value;
 
     const game = {
       id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
       createdBy: currentUser.id,
-      creatorName: currentUser.name,
+      creatorName: displayUsername(currentUser),
       date: document.getElementById('game-date').value,
       time: hour + ':' + min,
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
-      groups: [[{ id: currentUser.id, name: currentUser.name, joinedAt: Date.now() }]],
+      groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
       status: 'open',
-      isPrivate
+      isPrivate,
+      targetCommunity
     };
     await store.saveGame(game);
 
-    const notifPayload = { gameId: game.id, from: currentUser.name, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+    const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
     await Promise.all([
       ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
@@ -645,7 +734,7 @@ function renderGameView(game) {
             ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''}</h2>
+        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${game.targetCommunity && game.targetCommunity !== 'all' ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityLabel(game.targetCommunity) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
@@ -676,8 +765,8 @@ function renderGameView(game) {
     return `
               <div class="player-row waiting${rowClass}">
                 <span class="player-order">${idx + 1}</span>
-                <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
-                <span class="player-name">${p.name}${tag}</span>
+                <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</span>
+                <span class="player-name">${displayUsername(allUsersMap[p.id] || p)}${tag}</span>
                 <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
               </div>`;
   }).join('')}
@@ -740,8 +829,8 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       slots.push(`
         <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
-          <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || players[i].name.charAt(0).toUpperCase()}</span>
-          <span class="player-name">${players[i].name}${tag}</span>
+          <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</span>
+          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${tag}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
@@ -796,7 +885,7 @@ async function handleJoin(game) {
     return;
   }
 
-  const player = { id: currentUser.id, name: currentUser.name, joinedAt: Date.now() };
+  const player = { id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() };
   const groups = game.groups || [[]];
   const waitingList = game.waitingList || [];
 
@@ -819,7 +908,7 @@ async function handleJoin(game) {
   await store.saveGame(game);
   if (game.createdBy && game.createdBy !== currentUser.id) {
     store.saveNotification(game.createdBy, {
-      type: 'player_joined', from: currentUser.name,
+      type: 'player_joined', from: displayUsername(currentUser),
       gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
     });
   }
@@ -827,7 +916,7 @@ async function handleJoin(game) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
   if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, { type: 'player_joined', gameId: game.id, from: currentUser.name, gameDate: game.date, gameTime: game.time, gameLocation: game.location });
+    store.saveNotification(game.createdBy, { type: 'player_joined', gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location });
   }
   renderGameView(game);
   showToast('✅ ' + t('join') + '!', 'success');
@@ -865,7 +954,7 @@ async function handleLeave(game) {
   await store.saveGame(game);
   if (game.createdBy && game.createdBy !== currentUser.id) {
     store.saveNotification(game.createdBy, {
-      type: 'player_left', from: currentUser.name,
+      type: 'player_left', from: displayUsername(currentUser),
       gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
     });
   }
@@ -1047,8 +1136,18 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
 
       <div class="input-group" style="margin-top:12px;">
-        <label>Нэр</label>
-        <input type="text" id="ae-name" value="${user.name}" minlength="2" />
+        <label>Username</label>
+        <input type="text" id="ae-username" value="${user.username || user.name || ''}" minlength="2" />
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>Овог нэр</label>
+        <input type="text" id="ae-fullname" value="${user.fullName || user.name || ''}" minlength="2" />
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+        <label>${t('communities')}</label>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+          ${communityCheckboxes('ae-communities', userCommunityIds(user))}
+        </div>
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>Утасны дугаар</label>
@@ -1108,11 +1207,15 @@ function showAdminEditUserModal(user, onSaved) {
 
   modal.querySelector('#ae-cancel').onclick = () => modal.remove();
   modal.querySelector('#ae-save').onclick = async () => {
-    const name = document.getElementById('ae-name').value.trim();
-    if (name.length < 2) { showToast('Нэр хэтэрхий богино', 'error'); return; }
+    const username = document.getElementById('ae-username').value.trim();
+    const fullName = document.getElementById('ae-fullname').value.trim();
+    if (username.length < 2 || fullName.length < 2) { showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error'); return; }
     const pass = document.getElementById('ae-pass').value;
 
-    user.name = name;
+    user.username = username;
+    user.fullName = fullName;
+    user.name = username;
+    user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
     user.phone = document.getElementById('ae-phone').value.trim();
     user.role = document.getElementById('ae-role').value;
@@ -1143,7 +1246,7 @@ async function renderUsersList() {
   allUsersMap = {};
   users.forEach(u => { if (u && u.id) allUsersMap[u.id] = u; });
 
-  const sortedUsers = users.filter(u => u.role !== 'admin').sort((a, b) => a.name.localeCompare(b.name));
+  const sortedUsers = users.filter(u => u.role !== 'admin').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
 
   main().innerHTML = `
     <div class="detail-container fade-in">
@@ -1164,15 +1267,15 @@ async function renderUsersList() {
     const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
     const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
     return `
-            <div class="player-row ${rowClass} user-list-row" data-name="${(u.name || '').toLowerCase()}" style="margin-bottom: 8px; padding: 14px 20px;">
+            <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom: 8px; padding: 14px 20px;">
               <div class="avatar-follow-wrap" style="position:relative; display:inline-flex; flex-shrink:0;">
-                <span class="player-avatar-sm ${avatarClass}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
+                <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
                 ${followBtn(u.id)}
               </div>
-              <div style="display:flex; flex-direction:column; flex:1;">
-                <span class="player-name">${u.name}${tag}</span>
+              <button class="user-detail-btn" data-id="${u.id}" style="display:flex; flex-direction:column; flex:1; text-align:left; background:none; border:none; color:inherit; padding:0; cursor:pointer;">
+                <span class="player-name">${displayUsername(u)}${tag}</span>
                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
-              </div>
+              </button>
               ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
             </div>`;
   }).join('')}
@@ -1202,7 +1305,55 @@ async function renderUsersList() {
       if (user) showBankDetailsModal(user);
     });
   });
+  document.querySelectorAll('.user-detail-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const user = allUsersMap[e.currentTarget.dataset.id];
+      if (user) showUserDetailsModal(user);
+    });
+  });
   setupFollowListeners();
+}
+
+function showUserDetailsModal(user) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.innerHTML = `
+    <div class="modal-content glass-card bank-details-modal">
+      <h3 class="modal-title">${user.avatar || '👤'} ${displayUsername(user)}</h3>
+      <div class="bank-info-row">
+        <span class="label">Овог нэр:</span>
+        <span class="value">${displayFullName(user)}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">Username:</span>
+        <span class="value">${displayUsername(user)}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">${t('communities')}:</span>
+        <span class="value">${userCommunityIds(user).map(communityLabel).join(', ') || '-'}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">Утас:</span>
+        <span class="value">${user.phone || '-'}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">Банк:</span>
+        <span class="value">${user.bankName || '-'}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">Данс:</span>
+        <span class="value">${user.bankAccount || '-'}</span>
+      </div>
+      <div class="bank-info-row">
+        <span class="label">IBAN:</span>
+        <span class="value">${user.bankIban || '-'}</span>
+      </div>
+      <div class="modal-actions" style="margin-top: 20px;">
+        <button class="btn btn-ghost" id="user-detail-close">Хаах</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#user-detail-close').onclick = () => modal.remove();
 }
 
 // ---- Edit Game View ----
@@ -1568,14 +1719,14 @@ function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  if (d.getTime() === today.getTime()) return t('today');
-  if (d.getTime() === tomorrow.getTime()) return t('tomorrow');
-  const months = getLang() === 'mn'
-    ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
-    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const days = getLang() === 'mn'
     ? ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба']
     : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  if (d.getTime() === today.getTime()) return `${t('today')} · ${days[d.getDay()]}`;
+  if (d.getTime() === tomorrow.getTime()) return `${t('tomorrow')} · ${days[d.getDay()]}`;
+  const months = getLang() === 'mn'
+    ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
+    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[d.getMonth()]} ${d.getDate()} · ${days[d.getDay()]}`;
 }
 
@@ -1760,9 +1911,10 @@ function showEditBankModal(user) {
   };
 }
 
-function showProfileModal(user) {
+function showProfileModal(user, options = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
+  const isRequired = !!options.required;
   const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
 
   modal.innerHTML = `
@@ -1784,8 +1936,20 @@ function showProfileModal(user) {
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
-        <label>${t('yourName')}</label>
-        <input type="text" id="profile-name-input" value="${user.name}" />
+        <label>Username *</label>
+        <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>Овог нэр *</label>
+        <input type="text" id="profile-fullname-input" value="${user.fullName || user.name || ''}" required minlength="2" />
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>${t('communities')}</label>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
+          ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
+        </div>
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
@@ -1822,7 +1986,7 @@ function showProfileModal(user) {
       </div>
 
       <div class="modal-actions">
-        <button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>
+        ${isRequired ? '' : `<button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>`}
         <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
       </div>
     </div>`;
@@ -1838,19 +2002,30 @@ function showProfileModal(user) {
     };
   });
 
-  modal.querySelector('#profile-modal-cancel').onclick = () => modal.remove();
+  modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
   modal.querySelector('#profile-modal-save').onclick = async () => {
-    const newName = document.getElementById('profile-name-input').value.trim();
+    const newUsername = document.getElementById('profile-username-input').value.trim();
+    const newFullName = document.getElementById('profile-fullname-input').value.trim();
     const newPass = document.getElementById('profile-pass-input').value;
 
-    if (newName.length < 2) {
-      showToast('Нэр хэтэрхий богино байна', 'error');
+    if (newUsername.length < 2 || newFullName.length < 2) {
+      showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error');
+      return;
+    }
+    const allUsers = await store.loadAllUsers();
+    const duplicateUsername = allUsers.some(u =>
+      u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
+    );
+    if (duplicateUsername) {
+      showToast('Энэ username ашиглагдаж байна', 'error');
       return;
     }
 
-    user.name = newName;
+    user.username = newUsername;
+    user.fullName = newFullName;
+    user.name = newUsername;
     user.avatar = selectedAvatar;
-    if (newPass && newPass.length >= 4) {
+    if (newPass && newPass.length >= 1) {
       user.password = newPass;
     }
 
