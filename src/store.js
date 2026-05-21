@@ -220,8 +220,21 @@ export async function getFollowerIds(targetUserId) {
 // ---- Notifications ----
 export async function saveNotification(targetUserId, notif) {
   if (useFirebase && db) {
+    if (notif?.gameId && notif?.type) {
+      const snap = await get(ref(db, `notifications/${targetUserId}`));
+      if (snap.exists()) {
+        const duplicate = Object.values(snap.val()).find(n =>
+          n &&
+          n.gameId === notif.gameId &&
+          n.type === notif.type &&
+          (n.from || '') === (notif.from || '')
+        );
+        if (duplicate) return duplicate.id;
+      }
+    }
     const id = 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     await set(ref(db, `notifications/${targetUserId}/${id}`), { ...notif, id, createdAt: Date.now() });
+    return id;
   }
 }
 

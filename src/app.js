@@ -8,7 +8,6 @@ let allUsersMap = {};
 let currentUserFollows = {};
 let currentUserFollowers = new Set();
 let followsLoadedForUser = null;
-let shownNotifIds = new Set();
 let isRouting = false;
 let activeUnsubs = [];
 let homeFilter = 'all';
@@ -127,6 +126,16 @@ function recommendationScore(game) {
   if (game.createdBy === currentUser.id || isPlayerInGame(game, currentUser.id)) score += 15;
   if (game.location && userCommunities.some(id => game.location.toLowerCase().includes(id.toLowerCase()))) score += 10;
   return score;
+}
+
+function matchesHomeFilter(game) {
+  if (!canSeeGameByCommunity(game)) return false;
+  if (homeFilter === 'mine') return game.createdBy === currentUser?.id || isPlayerInGame(game, currentUser?.id);
+  if (homeFilter === 'community') return gameCommunityIds(game).some(id => userCommunityIds(currentUser).includes(id));
+  if (homeFilter === 'recommended') return recommendationScore(game) > 0;
+  if (homeFilter === 'joined') return game.createdBy !== currentUser?.id && isPlayerInGame(game, currentUser?.id);
+  if (homeFilter === 'following') return !!currentUserFollows[game.createdBy];
+  return true;
 }
 
 function bankSelectHTML(id, currentValue) {
@@ -423,14 +432,6 @@ function renderNotifications(notifs) {
       await store.deleteNotification(currentUser.id, btn.dataset.id);
     });
   });
-  if ('Notification' in window && Notification.permission === 'granted') {
-    const unseen = notifs.filter(n => !shownNotifIds.has(n.id));
-    if (unseen.length > 0) {
-      const n = unseen[0];
-      new Notification(`UB Golf 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
-      unseen.forEach(n => shownNotifIds.add(n.id));
-    }
-  }
 }
 
 function renderGamesHome(games) {
@@ -446,12 +447,7 @@ function renderGamesHome(games) {
   const pastGames = [];
 
   allGames.forEach(g => {
-    if (!canSeeGameByCommunity(g)) return;
-    if (homeFilter === 'mine' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
-    if (homeFilter === 'community' && !gameCommunityIds(g).some(id => userCommunityIds(currentUser).includes(id))) return;
-    if (homeFilter === 'recommended' && recommendationScore(g) <= 0) return;
-    if (homeFilter === 'joined' && (g.createdBy === currentUser?.id || !isPlayerInGame(g, currentUser?.id))) return;
-    if (homeFilter === 'following' && !currentUserFollows[g.createdBy]) return;
+    if (!matchesHomeFilter(g)) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
     if (gDate >= now) activeGames.push(g);
     else pastGames.push(g);
@@ -468,6 +464,15 @@ function renderGamesHome(games) {
     const aMs = new Date(`${a.date}T${a.time.padStart(5, '0')}`).getTime();
     const bMs = new Date(`${b.date}T${b.time.padStart(5, '0')}`).getTime();
     return aMs - bMs;
+  });
+  pastGames.sort((a, b) => {
+    if (homeFilter === 'recommended') {
+      const scoreDiff = recommendationScore(b) - recommendationScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+    }
+    const aMs = new Date(`${a.date}T${a.time.padStart(5, '0')}`).getTime();
+    const bMs = new Date(`${b.date}T${b.time.padStart(5, '0')}`).getTime();
+    return bMs - aMs;
   });
 
   if (activeGames.length > 0) {
@@ -982,9 +987,6 @@ async function handleJoin(game) {
   if (isPlayerInGroup(game, currentUser.id)) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
-  if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, { type: 'player_joined', gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location });
-  }
   renderGameView(game);
   showToast('✅ ' + t('join') + '!', 'success');
 }
@@ -1133,12 +1135,15 @@ async function renderAdminPanel() {
 
         <div>
           <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
+          <div class="input-group" style="margin: 4px 0 14px;">
+            <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+          </div>
           <div style="display:flex; flex-direction: column; gap: 8px;">
             ${users.map(u => `
-              <div class="player-row" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || u.name.charAt(0).toUpperCase()}</span>
+              <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+                <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <div style="display:flex; flex-direction:column;">
-                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${u.name} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
+                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
                   <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
                 </div>
                 <div style="margin-left: auto; display: flex; gap: 8px;">
@@ -1152,6 +1157,16 @@ async function renderAdminPanel() {
       </div>
     </div>
   `;
+
+  const adminSearchInput = document.getElementById('admin-user-search-input');
+  if (adminSearchInput) {
+    adminSearchInput.addEventListener('input', () => {
+      const query = adminSearchInput.value.trim().toLowerCase();
+      document.querySelectorAll('.admin-user-list-row').forEach(row => {
+        row.style.display = row.dataset.name.includes(query) ? 'flex' : 'none';
+      });
+    });
+  }
 
   document.getElementById('create-user-form').addEventListener('submit', async (e) => {
     e.preventDefault();
