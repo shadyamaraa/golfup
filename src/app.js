@@ -1120,8 +1120,11 @@ async function renderAdminPanel() {
         <h2 class="card-title">🛡️ Admin Panel</h2>
         
         <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-          <h3 style="margin-bottom: 10px;">${t('createUser')}</h3>
-          <form id="create-user-form" style="display:flex; gap:10px; flex-wrap: wrap;">
+          <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
+            <h3 style="margin:0;">${t('createUser')}</h3>
+            <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
+          </button>
+          <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
             <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
             <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
             <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
@@ -1157,6 +1160,15 @@ async function renderAdminPanel() {
       </div>
     </div>
   `;
+
+  const createUserToggle = document.getElementById('create-user-toggle');
+  const createUserForm = document.getElementById('create-user-form');
+  const createUserChevron = document.getElementById('create-user-chevron');
+  createUserToggle?.addEventListener('click', () => {
+    const isOpen = createUserForm.style.display !== 'none';
+    createUserForm.style.display = isOpen ? 'none' : 'flex';
+    if (createUserChevron) createUserChevron.textContent = isOpen ? '▼' : '▲';
+  });
 
   const adminSearchInput = document.getElementById('admin-user-search-input');
   if (adminSearchInput) {
