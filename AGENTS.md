@@ -36,13 +36,14 @@ After changing code:
 ## Git Rules
 
 - `main` is the stable branch and should stay deployable.
-- Prefer a separate branch for non-trivial work:
+- **Always work on a feature branch. Never commit or push directly to `main`.**
   - `ai/codex-task-name`
   - `ai/claude-task-name`
   - `ai/gemini-task-name`
   - `feature/task-name`
   - `fix/task-name`
-- If the user explicitly asks for direct commit/deploy on `main`, it is allowed after build verification.
+- Even if the user asks to work on `main` directly, create a branch, do the work there, push the branch, and ask the user to merge via GitHub.
+- `main` receives changes only through GitHub merges, not direct AI pushes.
 - Always pull before starting work on a second PC:
 
 ```bash

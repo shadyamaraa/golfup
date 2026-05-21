@@ -47,4 +47,6 @@ git diff --check
 git status --short
 ```
 
-Commit only when requested or when the workflow explicitly calls for it.
+- Commit only when requested or when the workflow explicitly calls for it.
+- **Never push to `main` directly — always push to the feature branch.**
+- After pushing the branch, inform the user so they can review and merge on GitHub.

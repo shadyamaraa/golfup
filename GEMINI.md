@@ -50,4 +50,5 @@ git diff --check
 git status --short
 ```
 
-Commit, push, or deploy only when requested by the user.
+- Commit, push, or deploy only when requested by the user.
+- **Never push to `main` directly. Always push the feature branch and ask the user to merge.**
