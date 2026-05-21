@@ -52,6 +52,7 @@ const T = {
     playerJoined: 'тоглолтод нэгдлээ', playerLeft: 'тоглолтоос гарлаа', viewGame: 'Харах',
     gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gamePrivate: 'Зөвхөн урьсан',
     communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
+    clubCircles: 'Тойрогууд', interestCircles: 'Сонирхлын тойргууд',
     noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
   },
   en: {
@@ -107,6 +108,7 @@ const T = {
     playerJoined: 'joined the game', playerLeft: 'left the game', viewGame: 'View',
     gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gamePrivate: 'Invited only',
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
+    clubCircles: 'Circles', interestCircles: 'Interest circles',
     noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'
   }
 };

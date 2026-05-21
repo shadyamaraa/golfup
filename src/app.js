@@ -38,14 +38,17 @@ const MN_BANKS = [
 ];
 
 const COMMUNITY_OPTIONS = [
-  { id: 'club', label: 'Клубын гишүүд' },
-  { id: 'morning', label: 'Өглөө тоглодог' },
-  { id: 'weekend', label: 'Амралтын өдөр' },
-  { id: 'social', label: 'Social golf' },
-  { id: 'competitive', label: 'Өрсөлдөөнт' },
-  { id: 'beginner', label: 'Шинэ тоглогчид' },
-  { id: 'sky', label: 'Sky Resort' },
-  { id: 'chinggis', label: 'Chinggis Khaan' }
+  { id: 'club', label: 'Club', type: 'club' },
+  { id: 'eagle', label: 'Eagle', type: 'club' },
+  { id: 'khan_bogd', label: 'Khan Bogd', type: 'club' },
+  { id: 'soyombo', label: 'Soyombo', type: 'club' },
+  { id: 'star', label: 'Star', type: 'club' },
+  { id: 'jci', label: 'JCI', type: 'club' },
+  { id: 'vista', label: 'Vista', type: 'club' },
+  { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
+  { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' },
+  { id: 'senior', label: 'Сениор', type: 'interest' },
+  { id: 'bulaa', label: 'Булаа', type: 'interest' }
 ];
 
 function userCommunityIds(user) {
@@ -67,13 +70,34 @@ function communityLabels(ids) {
   return ids.map(communityLabel).join(', ');
 }
 
-function communityCheckboxes(name, selected = []) {
+function communityAudienceLabel(ids) {
+  const labels = communityLabels(ids);
+  if (!labels) return '';
+  return `${labels}-ийн гишүүдэд`;
+}
+
+function communityCheckboxes(name, selected = [], options = {}) {
   const selectedSet = new Set(selected);
-  return COMMUNITY_OPTIONS.map(c => `
-    <label class="toggle-label" style="margin:6px 0;">
-      <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
-      <span>${c.label}</span>
-    </label>`).join('');
+  const renderGroup = (type, title) => {
+    const items = COMMUNITY_OPTIONS.filter(c => c.type === type);
+    return `
+      <div class="community-checkbox-group">
+        <div style="font-size:0.78rem;font-weight:700;color:var(--gold);margin:${type === 'interest' ? '12px' : '0'} 0 6px;">${title}</div>
+        ${items.map(c => `
+          <label class="toggle-label" style="margin:6px 0;">
+            <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
+            <span>${c.label}</span>
+          </label>`).join('')}
+      </div>`;
+  };
+  if (options.flat) {
+    return COMMUNITY_OPTIONS.map(c => `
+      <label class="toggle-label" style="margin:6px 0;">
+        <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
+        <span>${c.label}</span>
+      </label>`).join('');
+  }
+  return renderGroup('club', t('clubCircles')) + renderGroup('interest', t('interestCircles'));
 }
 
 function selectedCommunities(name) {
@@ -481,7 +505,7 @@ function renderGamesCards(games, isPast = false) {
           <span class="game-date-badge">${dateStr}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
-            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityLabels(gameCommunities)}</span>` : ''}
+            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityAudienceLabel(gameCommunities)}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
@@ -766,7 +790,7 @@ function renderGameView(game) {
             ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityLabels(gameCommunities) + '</span>' : ''}</h2>
+        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
@@ -1085,9 +1109,13 @@ async function renderAdminPanel() {
         <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
           <h3 style="margin-bottom: 10px;">${t('createUser')}</h3>
           <form id="create-user-form" style="display:flex; gap:10px; flex-wrap: wrap;">
-            <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+            <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+            <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+            <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
+              <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
+              ${communityCheckboxes('new-user-communities', [])}
+            </div>
             <button type="submit" class="btn btn-primary">${t('create')}</button>
           </form>
         </div>
@@ -1122,6 +1150,7 @@ async function renderAdminPanel() {
     const name = document.getElementById('new-user-name').value.trim();
     const phone = document.getElementById('new-user-phone').value.trim();
     const pass = document.getElementById('new-user-pass').value;
+    const communities = selectedCommunities('new-user-communities');
 
     const existing = await store.findUserByPhone(phone);
     if (existing) {
@@ -1130,7 +1159,7 @@ async function renderAdminPanel() {
       return;
     }
 
-    await store.adminCreateUser(name, pass, phone);
+    await store.adminCreateUser(name, pass, phone, 'user', communities);
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
   });
