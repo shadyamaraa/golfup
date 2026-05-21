@@ -1,93 +1,167 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the shared working agreement for every AI tool used on this repository.
+
+Tool-specific entry files:
+
+- `CODEX.md` for Codex
+- `CLAUDE.md` for Claude Code
+- `GEMINI.md` for Gemini / Antigravity
+
+Each tool should read this shared file first, then read its own tool-specific file.
+
+## Project
+
+UB Golf is a single-page vanilla JS golf game organizer backed by Firebase Realtime Database and Firebase Hosting.
+
+The project is often edited from two PCs and multiple AI tools. GitHub is the source of truth.
+
+## Mandatory Workflow
+
+Before changing code:
+
+1. Read `AGENTS.md`, `PROJECT_NOTES.md`, `TASKS.md`, and the relevant tool-specific note (`CODEX.md`, `CLAUDE.md`, or `GEMINI.md`) if present.
+2. Run `git status --short`.
+3. Make sure you understand whether the current branch is correct for the task.
+4. Do not overwrite unrelated user or AI changes.
+5. Explain the files you plan to change before editing when the task is not trivial.
+
+After changing code:
+
+1. Run `npm run build`.
+2. Run `git diff --check` on changed source files.
+3. Summarize changed files, behavior, risks, and verification.
+4. Update `CHANGELOG_AI.md` for meaningful code changes.
+
+## Git Rules
+
+- `main` is the stable branch and should stay deployable.
+- Prefer a separate branch for non-trivial work:
+  - `ai/codex-task-name`
+  - `ai/claude-task-name`
+  - `ai/gemini-task-name`
+  - `feature/task-name`
+  - `fix/task-name`
+- If the user explicitly asks for direct commit/deploy on `main`, it is allowed after build verification.
+- Always pull before starting work on a second PC:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+Commit only relevant files. Do not include `dist/`, `node_modules/`, local clones, or unrelated generated files.
 
 ## Commands
 
 ```bash
-npm run dev       # Start Vite dev server (hot reload)
+npm run dev       # Start Vite dev server
 npm run build     # Build to dist/
 npm run preview   # Preview production build locally
 ```
 
-Deploy to Firebase Hosting after building:
+Deploy hosting:
+
 ```bash
 firebase deploy --only hosting
 ```
 
-There are no lint or test scripts configured.
+Deploy functions only when `functions/` changes:
+
+```bash
+firebase deploy --only functions
+```
 
 ## Architecture
 
-**GolfUp** is a Viber-group golf game organizer — a single-page vanilla JS app with hash-based routing, backed by Firebase Realtime Database with a localStorage fallback.
+Boot sequence:
 
-### Boot sequence
+`index.html` -> `src/main.js` -> `initStore()` -> `initApp()` -> `router()`
 
-`index.html` → `src/main.js` → `initStore()` → `initApp()` → `router()`
+Key files:
 
-### Key files
+- `src/app.js`: all routing, rendering, and UI handlers.
+- `src/store.js`: Firebase/localStorage CRUD, notifications, follows, FCM token storage.
+- `src/config.js`: Firebase config and app constants.
+- `src/i18n.js`: Mongolian/English translations. Add new UI strings to both languages.
+- `src/style.css`: app styling.
+- `functions/index.js`: Firebase Cloud Function for FCM push notifications.
+- `public/firebase-messaging-sw.js`: FCM service worker.
 
-| File | Role |
-|------|------|
-| [src/app.js](src/app.js) | All view rendering, routing, and UI event handlers (~1,400 lines) |
-| [src/store.js](src/store.js) | Firebase + localStorage CRUD; real-time listeners |
-| [src/config.js](src/config.js) | Firebase credentials + app constants (`defaultGroupSize`, `waitingListThreshold`, etc.) |
-| [src/i18n.js](src/i18n.js) | Mongolian/English translations; `t(key)` is the translation function |
-| [src/style.css](src/style.css) | Dark glassmorphism theme (emerald + gold palette, no CSS framework) |
+Routes:
 
-### Routing
+- `#/` home and game list
+- `#/create` create game
+- `#/game/:id` game detail
+- `#/join/:id` join redirect
+- `#/edit/:id` edit game
+- `#/users` player list
+- `#/admin` admin panel
 
-Hash-based. The `router()` function in [src/app.js](src/app.js) reads `window.location.hash` and renders the matching view into `#app`. Routes:
+## Data Notes
 
-- `#/` — home (game list)
-- `#/create` — create game
-- `#/game/:id` — game detail
-- `#/join/:id` — join via shared link
-- `#/edit/:id` — edit game
-- `#/users` — player list with bank details
-- `#/admin` — admin panel
+Users:
 
-All routes except join require authentication (stored in `localStorage` as `currentUser`).
-
-### Data model
-
-**Games** (Firebase path: `/games/:id`):
 ```js
 {
-  id, name, date, time, endTime, location,
-  groupSize,            // players per group
-  groups: [{ players: [userId, ...] }],
-  waitingList: [userId, ...],
-  createdBy, createdAt
+  id,
+  name, username, fullName,
+  phone, password,
+  role, // admin | marshal | user
+  status,
+  communities,
+  bankName, bankAccount, bankIban,
+  avatar,
+  notifyWeb, notifySms,
+  fcmToken
 }
 ```
 
-**Users** (Firebase path: `/users/:id`):
+Games:
+
 ```js
 {
-  id, name, phone, password,  // plain-text password
-  role,                        // 'admin' | 'user'
-  bankName, bankAccount,
-  status                       // 'active' | 'inactive'
+  id,
+  createdBy, creatorName,
+  date, time, location, description,
+  groupSize,
+  groups,
+  waitingList,
+  isPrivate,
+  targetCommunities,
+  invitedIds,
+  bookingStatus
 }
 ```
 
-### State management pattern
+Notifications:
 
-`store.js` exposes async functions for CRUD. Real-time updates use Firebase `onValue` listeners: `onAllGamesChanged(callback)` and `onGameChanged(id, callback)`. When Firebase is not configured, all operations fall back to localStorage.
+```js
+/notifications/{userId}/{notificationId}
+```
 
-### Group logic
+`saveNotification()` includes duplicate protection by `gameId + type + from`.
 
-- Players join a waiting list first.
-- When `waitingList.length >= waitingListThreshold` (default 3), a new group is auto-created.
-- When a player leaves a group, the first waiting-list player is moved in automatically.
-- A game becomes read-only 1 hour after its start time.
-- Time-conflict detection enforces a 2-hour buffer between a player's games.
+## Product Rules
 
-### i18n
+- Use `displayUsername(user)` for public/member list names.
+- Full name and private info should only appear in detail/admin contexts.
+- Circle membership is assigned by admin when creating/editing users.
+- When creating games, users can only target their own assigned circles.
+- Private games should be visible to creator, joined players, invited players, admin, and marshal.
+- All UI strings should go through `t(key)` when practical.
 
-All UI strings go through `t(key)` from [src/i18n.js](src/i18n.js). Language is toggled via a header button and persisted to `localStorage`. Add new keys to both `mn` and `en` objects in i18n.js.
+## Do Not Touch Without Explicit Request
 
-### UI rendering
+- Firebase project IDs and credentials in `src/config.js`.
+- `.firebaserc` and deployment target settings.
+- `functions/package.json` runtime/dependencies.
+- Auth/session localStorage keys.
+- Existing deployed functions behavior.
 
-Views are rendered by calling a `render*` function that sets `document.querySelector('#app').innerHTML = \`...\`` with a template literal. Event listeners are attached after each render via `document.addEventListener` delegated clicks or direct `querySelector` bindings inside the render function.
+## Safety
+
+- Never run destructive git commands such as `git reset --hard` unless the user explicitly asks.
+- Never delete user work to resolve conflicts.
+- Keep changes scoped.
+- Prefer fixing the direct issue over broad refactors.
