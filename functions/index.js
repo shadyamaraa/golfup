@@ -29,13 +29,13 @@ exports.sendPushOnNotification = functions.database
     await admin.messaging().send({
       token: user.fcmToken,
       data: {
-        title: `GolfUp: ${line1}`,
+        title: `UB Golf: ${line1}`,
         body,
         gameId: notif.gameId || ''
       },
       webpush: {
         notification: {
-          title: `GolfUp: ${line1}`,
+          title: `UB Golf: ${line1}`,
           body,
           icon: `${APP_URL}/icon.svg`
         },

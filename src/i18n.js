@@ -1,6 +1,6 @@
 const T = {
   mn: {
-    appName: 'GolfUp', tagline: 'Хамтдаа тоглоё!',
+    appName: 'UB Golf', tagline: 'Хамтдаа тоглоё!',
     home: 'Нүүр', createGame: 'Тоглолт үүсгэх', activeGames: 'Идэвхтэй тоглолтууд',
     tabAll: 'Бүх тоглолт', tabMine: 'Миний тоглолт', tabCommunity: 'Миний тойрог', tabRecommended: 'Санал болгох', tabJoined: 'Уригдсан', tabFollowing: 'Дагаж байгаа',
     noGamesInFilter: 'Энэ ангилалд тоглолт байхгүй байна',
@@ -55,7 +55,7 @@ const T = {
     noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
   },
   en: {
-    appName: 'GolfUp', tagline: 'Play together!',
+    appName: 'UB Golf', tagline: 'Play together!',
     home: 'Home', createGame: 'Create Game', activeGames: 'Active Games',
     tabAll: 'All', tabMine: 'My Games', tabCommunity: 'My Circle', tabRecommended: 'Recommended', tabJoined: 'Invited', tabFollowing: 'Following',
     noGamesInFilter: 'No games in this category',

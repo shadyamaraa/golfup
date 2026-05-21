@@ -1,7 +1,7 @@
 import { initStore } from './store.js';
 import { initApp } from './app.js';
 
-console.log('⛳ GolfUp Booting...');
+console.log('⛳ UB Golf Booting...');
 
 window.onerror = function(msg, url, lineNo, columnNo, error) {
   console.error('Global Error:', msg, 'at', url, ':', lineNo);

@@ -401,7 +401,7 @@ function renderNotifications(notifs) {
     const unseen = notifs.filter(n => !shownNotifIds.has(n.id));
     if (unseen.length > 0) {
       const n = unseen[0];
-      new Notification(`GolfUp 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
+      new Notification(`UB Golf 🏌️`, { body: `${n.from} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}` });
       unseen.forEach(n => shownNotifIds.add(n.id));
     }
   }

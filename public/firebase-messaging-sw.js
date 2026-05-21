@@ -15,7 +15,7 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   const { title, body, gameId } = payload.data || {};
-  self.registration.showNotification(title || 'GolfUp', {
+  self.registration.showNotification(title || 'UB Golf', {
     body: body || '',
     icon: '/icon.svg',
     badge: '/icon.svg',

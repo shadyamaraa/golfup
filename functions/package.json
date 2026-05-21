@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for GolfUp",
+  "description": "Cloud Functions for UB Golf",
   "scripts": {
     "deploy": "firebase deploy --only functions"
   },
