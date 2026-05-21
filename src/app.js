@@ -57,6 +57,16 @@ function communityLabel(id) {
   return COMMUNITY_OPTIONS.find(c => c.id === id)?.label || id;
 }
 
+function gameCommunityIds(game) {
+  if (Array.isArray(game?.targetCommunities)) return game.targetCommunities.filter(id => id && id !== 'all');
+  if (game?.targetCommunity && game.targetCommunity !== 'all') return [game.targetCommunity];
+  return [];
+}
+
+function communityLabels(ids) {
+  return ids.map(communityLabel).join(', ');
+}
+
 function communityCheckboxes(name, selected = []) {
   const selectedSet = new Set(selected);
   return COMMUNITY_OPTIONS.map(c => `
@@ -74,17 +84,19 @@ function canSeeGameByCommunity(game) {
   if (!game || !currentUser) return false;
   if (currentUser.role === 'admin' || currentUser.role === 'marshal') return true;
   if (game.createdBy === currentUser.id || isPlayerInGame(game, currentUser.id)) return true;
+  if (Array.isArray(game.invitedIds) && game.invitedIds.includes(currentUser.id)) return true;
   if (game.isPrivate) return false;
-  const community = game.targetCommunity || 'all';
-  if (community === 'all') return true;
-  return userCommunityIds(currentUser).includes(community);
+  const gameCommunities = gameCommunityIds(game);
+  if (gameCommunities.length === 0) return true;
+  const userCommunities = userCommunityIds(currentUser);
+  return gameCommunities.some(id => userCommunities.includes(id));
 }
 
 function recommendationScore(game) {
   if (!game || !currentUser) return 0;
   let score = 0;
   const userCommunities = userCommunityIds(currentUser);
-  if (game.targetCommunity && game.targetCommunity !== 'all' && userCommunities.includes(game.targetCommunity)) score += 40;
+  if (gameCommunityIds(game).some(id => userCommunities.includes(id))) score += 40;
   if (currentUserFollows[game.createdBy]) score += 25;
   if (game.createdBy === currentUser.id || isPlayerInGame(game, currentUser.id)) score += 15;
   if (game.location && userCommunities.some(id => game.location.toLowerCase().includes(id.toLowerCase()))) score += 10;
@@ -410,7 +422,7 @@ function renderGamesHome(games) {
   allGames.forEach(g => {
     if (!canSeeGameByCommunity(g)) return;
     if (homeFilter === 'mine' && g.createdBy !== currentUser?.id && !isPlayerInGame(g, currentUser?.id)) return;
-    if (homeFilter === 'community' && (!g.targetCommunity || g.targetCommunity === 'all' || !userCommunityIds(currentUser).includes(g.targetCommunity))) return;
+    if (homeFilter === 'community' && !gameCommunityIds(g).some(id => userCommunityIds(currentUser).includes(id))) return;
     if (homeFilter === 'recommended' && recommendationScore(g) <= 0) return;
     if (homeFilter === 'joined' && (g.createdBy === currentUser?.id || !isPlayerInGame(g, currentUser?.id))) return;
     if (homeFilter === 'following' && !currentUserFollows[g.createdBy]) return;
@@ -462,13 +474,14 @@ function renderGamesCards(games, isPast = false) {
     const spotsLeft = Math.max(0, g.groupSize - (Array.isArray(firstGroup) ? firstGroup.length : Object.values(firstGroup).length));
     const isFull = spotsLeft === 0;
     const dateStr = formatDate(g.date);
+    const gameCommunities = gameCommunityIds(g);
     return `
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
         <div class="game-card-header">
           <span class="game-date-badge">${dateStr}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
-            ${g.targetCommunity && g.targetCommunity !== 'all' ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityLabel(g.targetCommunity)}</span>` : ''}
+            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityLabels(gameCommunities)}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
@@ -555,21 +568,23 @@ async function renderCreateGame() {
           </div>
           <div class="input-group">
             <label>${t('gameVisibility')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-public-label">
+            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
                 <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; border:2px solid transparent;" id="vis-private-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-circles-label">
+                <input type="radio" name="visibility" value="circles" style="width:16px; height:16px;"> ◎ ${t('gameCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
                 <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
               </label>
             </div>
           </div>
-          <div class="input-group">
-            <label for="game-community">${t('gameCommunity')}</label>
-            <select id="game-community" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;">
-              <option value="all">${t('communityAll')}</option>
-              ${COMMUNITY_OPTIONS.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}
-            </select>
+          <div class="input-group" id="game-communities-wrap" style="display:none;">
+            <label>${t('gameCommunity')}</label>
+            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+              ${communityCheckboxes('game-communities', userCommunityIds(currentUser))}
+            </div>
           </div>
           <div class="input-group">
             <label>${t('invitePlayers')}</label>
@@ -599,9 +614,11 @@ async function renderCreateGame() {
   });
   document.querySelectorAll('input[name="visibility"]').forEach(radio => {
     radio.addEventListener('change', () => {
-      const isPriv = document.querySelector('input[name="visibility"]:checked').value === 'private';
-      document.getElementById('vis-public-label').style.borderColor = isPriv ? 'transparent' : 'var(--emerald)';
-      document.getElementById('vis-private-label').style.borderColor = isPriv ? 'var(--emerald)' : 'transparent';
+      const visibility = document.querySelector('input[name="visibility"]:checked').value;
+      document.getElementById('vis-public-label').style.borderColor = visibility === 'public' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('vis-circles-label').style.borderColor = visibility === 'circles' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('vis-private-label').style.borderColor = visibility === 'private' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('game-communities-wrap').style.display = visibility === 'circles' ? 'block' : 'none';
     });
   });
   document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
@@ -629,8 +646,15 @@ async function renderCreateGame() {
 
     const groupSize = +document.getElementById('game-group-size').value;
     const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
-    const isPrivate = document.querySelector('input[name="visibility"]:checked').value === 'private';
-    const targetCommunity = document.getElementById('game-community').value;
+    const visibility = document.querySelector('input[name="visibility"]:checked').value;
+    const isPrivate = visibility === 'private';
+    const targetCommunities = visibility === 'circles' ? selectedCommunities('game-communities') : [];
+
+    if (visibility === 'circles' && targetCommunities.length === 0) {
+      showToast(t('selectCircleError'), 'error');
+      document.getElementById('create-submit-btn').disabled = false;
+      return;
+    }
 
     const game = {
       id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -646,15 +670,22 @@ async function renderCreateGame() {
       createdAt: Date.now(),
       status: 'open',
       isPrivate,
-      targetCommunity
+      targetCommunities,
+      invitedIds
     };
     await store.saveGame(game);
 
     const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
+    const userById = Object.fromEntries(users.map(u => [u.id, u]));
+    const followerNotifIds = isPrivate ? [] : followerIds.filter(fid => {
+      if (invitedIds.includes(fid)) return false;
+      if (targetCommunities.length === 0) return true;
+      return targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id));
+    });
     await Promise.all([
       ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
-      ...followerIds.filter(fid => !invitedIds.includes(fid)).map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
+      ...followerNotifIds.map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
     ]);
 
     showToast('✅ ' + t('createGame') + '!', 'success');
@@ -709,6 +740,7 @@ function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
   const dateStr = formatDate(game.date);
+  const gameCommunities = gameCommunityIds(game);
 
   const gDateStr = `${game.date}T${(game.time || '00:00').padStart(5, '0')}`;
   const gDate = new Date(gDateStr).getTime();
@@ -734,7 +766,7 @@ function renderGameView(game) {
             ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${game.targetCommunity && game.targetCommunity !== 'all' ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityLabel(game.targetCommunity) + '</span>' : ''}</h2>
+        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityLabels(gameCommunities) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>

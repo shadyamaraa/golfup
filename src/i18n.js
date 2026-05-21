@@ -50,9 +50,9 @@ const T = {
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан', decline: 'Татгалзах',
     newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Таныг тоглолтод урьсан байна',
     playerJoined: 'тоглолтод нэгдлээ', playerLeft: 'тоглолтоос гарлаа', viewGame: 'Харах',
-    gameVisibility: 'Харагдах байдал', gamePublic: 'Нийтийн', gamePrivate: 'Хаалттай',
+    gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gamePrivate: 'Зөвхөн урьсан',
     communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
-    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна'
+    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
   },
   en: {
     appName: 'GolfUp', tagline: 'Play together!',
@@ -105,9 +105,9 @@ const T = {
     pendingNotifications: 'Notifications', markRead: 'Dismiss', decline: 'Decline',
     newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
     playerJoined: 'joined the game', playerLeft: 'left the game', viewGame: 'View',
-    gameVisibility: 'Visibility', gamePublic: 'Public', gamePrivate: 'Private',
+    gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gamePrivate: 'Invited only',
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
-    noCommunitiesAssigned: 'No circle assigned yet'
+    noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'
   }
 };
 
