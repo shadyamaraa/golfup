@@ -50,7 +50,7 @@ const T = {
     pendingNotifications: 'Мэдэгдлүүд', markRead: 'Уншсан', decline: 'Татгалзах',
     newGameNotif: 'Шинэ тоглолт үүслээ', inviteNotif: 'Таныг тоглолтод урьсан байна',
     playerJoined: 'тоглолтод нэгдлээ', playerLeft: 'тоглолтоос гарлаа', viewGame: 'Харах',
-    gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gamePrivate: 'Зөвхөн урьсан',
+    gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gameMyCircles: 'Миний тойргуудад', gameSelectedCircles: 'Сонгосон тойргуудад', gamePrivate: 'Зөвхөн урьсан',
     communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
     clubCircles: 'Тойрогууд', interestCircles: 'Сонирхлын тойргууд',
     noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
@@ -106,7 +106,7 @@ const T = {
     pendingNotifications: 'Notifications', markRead: 'Dismiss', decline: 'Decline',
     newGameNotif: 'New game created', inviteNotif: 'You\'ve been invited to a game',
     playerJoined: 'joined the game', playerLeft: 'left the game', viewGame: 'View',
-    gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gamePrivate: 'Invited only',
+    gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gameMyCircles: 'My circles', gameSelectedCircles: 'Selected circles', gamePrivate: 'Invited only',
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
     clubCircles: 'Circles', interestCircles: 'Interest circles',
     noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'

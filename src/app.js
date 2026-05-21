@@ -78,8 +78,10 @@ function communityAudienceLabel(ids) {
 
 function communityCheckboxes(name, selected = [], options = {}) {
   const selectedSet = new Set(selected);
+  const allowedIds = Array.isArray(options.ids) ? new Set(options.ids) : null;
   const renderGroup = (type, title) => {
-    const items = COMMUNITY_OPTIONS.filter(c => c.type === type);
+    const items = COMMUNITY_OPTIONS.filter(c => c.type === type && (!allowedIds || allowedIds.has(c.id)));
+    if (items.length === 0) return '';
     return `
       <div class="community-checkbox-group">
         <div style="font-size:0.78rem;font-weight:700;color:var(--gold);margin:${type === 'interest' ? '12px' : '0'} 0 6px;">${title}</div>
@@ -91,7 +93,7 @@ function communityCheckboxes(name, selected = [], options = {}) {
       </div>`;
   };
   if (options.flat) {
-    return COMMUNITY_OPTIONS.map(c => `
+    return COMMUNITY_OPTIONS.filter(c => !allowedIds || allowedIds.has(c.id)).map(c => `
       <label class="toggle-label" style="margin:6px 0;">
         <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
         <span>${c.label}</span>
@@ -549,6 +551,7 @@ async function renderCreateGame() {
   const users = await store.loadAllUsers();
   // Filter out hold status, the current user, AND the System Admin
   const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.role !== 'admin');
+  const myCommunities = userCommunityIds(currentUser);
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -596,8 +599,11 @@ async function renderCreateGame() {
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
                 <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-circles-label">
-                <input type="radio" name="visibility" value="circles" style="width:16px; height:16px;"> ◎ ${t('gameCircles')}
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
+                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
+                <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
                 <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
@@ -607,7 +613,7 @@ async function renderCreateGame() {
           <div class="input-group" id="game-communities-wrap" style="display:none;">
             <label>${t('gameCommunity')}</label>
             <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
-              ${communityCheckboxes('game-communities', userCommunityIds(currentUser))}
+              ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
           <div class="input-group">
@@ -640,9 +646,10 @@ async function renderCreateGame() {
     radio.addEventListener('change', () => {
       const visibility = document.querySelector('input[name="visibility"]:checked').value;
       document.getElementById('vis-public-label').style.borderColor = visibility === 'public' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-circles-label').style.borderColor = visibility === 'circles' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('vis-my-circles-label').style.borderColor = visibility === 'my-circles' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('vis-selected-circles-label').style.borderColor = visibility === 'selected-circles' ? 'var(--emerald)' : 'transparent';
       document.getElementById('vis-private-label').style.borderColor = visibility === 'private' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('game-communities-wrap').style.display = visibility === 'circles' ? 'block' : 'none';
+      document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
     });
   });
   document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
@@ -672,9 +679,13 @@ async function renderCreateGame() {
     const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
     const visibility = document.querySelector('input[name="visibility"]:checked').value;
     const isPrivate = visibility === 'private';
-    const targetCommunities = visibility === 'circles' ? selectedCommunities('game-communities') : [];
+    const targetCommunities = visibility === 'my-circles'
+      ? userCommunityIds(currentUser)
+      : visibility === 'selected-circles'
+        ? selectedCommunities('game-communities')
+        : [];
 
-    if (visibility === 'circles' && targetCommunities.length === 0) {
+    if ((visibility === 'my-circles' || visibility === 'selected-circles') && targetCommunities.length === 0) {
       showToast(t('selectCircleError'), 'error');
       document.getElementById('create-submit-btn').disabled = false;
       return;
