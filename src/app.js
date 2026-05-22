@@ -32,23 +32,23 @@ function needsProfileCompletion(user) {
 }
 
 const MN_BANKS = [
-  'Хаан банк', 'Голомт банк', 'Хас банк', 'Төрийн банк', 'Богд банк',
-  'Капитрон банк', 'М банк', 'Ариг банк', 'Чингис хаан банк', 'Инвескор банк',
-  'Худалдаа Хөгжилийн Банк'
+  'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвескор банк', 'Капитрон банк',
+  'М банк', 'Төрийн банк', 'Хаан банк', 'Хас банк', 'Худалдаа Хөгжилийн Банк',
+  'Чингис хаан банк'
 ];
 
 const COMMUNITY_OPTIONS = [
   { id: 'club', label: 'Club', type: 'club' },
   { id: 'eagle', label: 'Eagle', type: 'club' },
+  { id: 'jci', label: 'JCI', type: 'club' },
   { id: 'khan_bogd', label: 'Khan Bogd', type: 'club' },
   { id: 'soyombo', label: 'Soyombo', type: 'club' },
   { id: 'star', label: 'Star', type: 'club' },
-  { id: 'jci', label: 'JCI', type: 'club' },
   { id: 'vista', label: 'Vista', type: 'club' },
   { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
-  { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' },
+  { id: 'bulaa', label: 'Булаа', type: 'interest' },
   { id: 'senior', label: 'Сениор', type: 'interest' },
-  { id: 'bulaa', label: 'Булаа', type: 'interest' }
+  { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' }
 ];
 
 function userCommunityIds(user) {
