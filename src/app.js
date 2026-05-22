@@ -959,15 +959,24 @@ function showJoinConfirmModal(game) {
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:420px;">
       <h3 class="modal-title">📋 Тайлбар</h3>
-      <p style="margin:12px 0 20px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
+        <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
+        Та нөхцөлийг зөвшөөрч байна уу?
+      </label>
       <div class="modal-actions">
         <button id="join-confirm-cancel" class="btn btn-secondary">${t('cancel')}</button>
-        <button id="join-confirm-ok" class="btn btn-primary">${t('join')}</button>
+        <button id="join-confirm-ok" class="btn btn-primary" disabled style="opacity:0.4;">${t('join')}</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  const okBtn = modal.querySelector('#join-confirm-ok');
+  modal.querySelector('#join-agree-check').onchange = (e) => {
+    okBtn.disabled = !e.target.checked;
+    okBtn.style.opacity = e.target.checked ? '1' : '0.4';
+  };
   modal.querySelector('#join-confirm-cancel').onclick = () => modal.remove();
-  modal.querySelector('#join-confirm-ok').onclick = () => { modal.remove(); handleJoin(game); };
+  okBtn.onclick = () => { modal.remove(); handleJoin(game); };
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
