@@ -847,7 +847,13 @@ function renderGameView(game) {
     </div>`;
 
   // Event listeners
-  document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
+  document.getElementById('join-btn')?.addEventListener('click', () => {
+    if (game.description) {
+      showJoinConfirmModal(game);
+    } else {
+      handleJoin(game);
+    }
+  });
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
@@ -947,6 +953,24 @@ async function renderJoinGame(gameId) {
 }
 
 // ---- Game Actions ----
+function showJoinConfirmModal(game) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width:420px;">
+      <h3 class="modal-title">📋 Тайлбар</h3>
+      <p style="margin:12px 0 20px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <div class="modal-actions">
+        <button id="join-confirm-cancel" class="btn btn-secondary">${t('cancel')}</button>
+        <button id="join-confirm-ok" class="btn btn-primary">${t('join')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#join-confirm-cancel').onclick = () => modal.remove();
+  modal.querySelector('#join-confirm-ok').onclick = () => { modal.remove(); handleJoin(game); };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
 async function handleJoin(game) {
   if (!currentUser) return;
   if (isPlayerInGame(game, currentUser.id)) { showToast('Та аль хэдийн нэгдсэн байна', 'warning'); return; }
