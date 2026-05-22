@@ -53,7 +53,9 @@ const T = {
     gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gameMyCircles: 'Миний тойргуудад', gameSelectedCircles: 'Сонгосон тойргуудад', gamePrivate: 'Зөвхөн урьсан',
     communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
     clubCircles: 'Тойрогууд', interestCircles: 'Сонирхлын тойргууд',
-    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
+    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу',
+    holes: 'Нүх', startingHole: 'Эхлэх нүх', hole1start: '1-р нүхнээс', hole10start: '10-р нүхнээс',
+    slotTaken: 'Энэ цагт сонгосон нүхний flight аль хэдийн бүртгэгдсэн байна'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -109,7 +111,9 @@ const T = {
     gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gameMyCircles: 'My circles', gameSelectedCircles: 'Selected circles', gamePrivate: 'Invited only',
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
     clubCircles: 'Circles', interestCircles: 'Interest circles',
-    noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'
+    noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle',
+    holes: 'Holes', startingHole: 'Starting Hole', hole1start: 'From Hole 1', hole10start: 'From Hole 10',
+    slotTaken: 'A flight from this starting hole already exists at this time'
   }
 };
 

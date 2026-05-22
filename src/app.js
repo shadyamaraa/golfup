@@ -521,6 +521,7 @@ function renderGamesCards(games, isPast = false) {
           <div class="game-location">📍 ${g.location || '-'}</div>
           <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
             <span>🕐 ${g.time}</span>
+            <span>⛳ ${g.holes || 18}${t('holes')} · ${g.startingHole === 10 ? t('hole10start') : t('hole1start')}</span>
             <span>👤 ${g.creatorName || '-'}</span>
           </div>
         </div>
@@ -596,6 +597,28 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('holes')}</label>
+            <div style="display:flex; gap:10px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid transparent;" id="holes-9-label">
+                <input type="radio" name="game-holes" value="9" style="width:16px;height:16px;"> 9 ${t('holes')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid var(--emerald);" id="holes-18-label">
+                <input type="radio" name="game-holes" value="18" checked style="width:16px;height:16px;"> 18 ${t('holes')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
+            <label>${t('startingHole')}</label>
+            <div style="display:flex; gap:10px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid var(--emerald);" id="start-hole1-label">
+                <input type="radio" name="game-start-hole" value="1" checked style="width:16px;height:16px;"> ⛳ ${t('hole1start')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid transparent;" id="start-hole10-label">
+                <input type="radio" name="game-start-hole" value="10" style="width:16px;height:16px;"> ⛳ ${t('hole10start')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
             <label for="game-desc">${t('description')}</label>
             <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
           </div>
@@ -648,6 +671,19 @@ async function renderCreateGame() {
   document.getElementById('size-plus').addEventListener('click', () => {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
   });
+  document.querySelectorAll('input[name="game-holes"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.getElementById('holes-9-label').style.borderColor = r.value === '9' && r.checked ? 'var(--emerald)' : (document.querySelector('input[name="game-holes"]:checked').value === '9' ? 'var(--emerald)' : 'transparent');
+      document.getElementById('holes-18-label').style.borderColor = document.querySelector('input[name="game-holes"]:checked').value === '18' ? 'var(--emerald)' : 'transparent';
+    });
+  });
+  document.querySelectorAll('input[name="game-start-hole"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const val = document.querySelector('input[name="game-start-hole"]:checked').value;
+      document.getElementById('start-hole1-label').style.borderColor = val === '1' ? 'var(--emerald)' : 'transparent';
+      document.getElementById('start-hole10-label').style.borderColor = val === '10' ? 'var(--emerald)' : 'transparent';
+    });
+  });
   document.querySelectorAll('input[name="visibility"]').forEach(radio => {
     radio.addEventListener('change', () => {
       const visibility = document.querySelector('input[name="visibility"]:checked').value;
@@ -674,9 +710,39 @@ async function renderCreateGame() {
       return;
     }
 
-    const conflict = await checkTimeConflict(currentUser.id, { date, time: hour + ':' + min });
+    const startingHole = parseInt(document.querySelector('input[name="game-start-hole"]:checked').value);
+    const holes = parseInt(document.querySelector('input[name="game-holes"]:checked').value);
+
+    const conflict = await checkTimeConflict(currentUser.id, { date, time: hour + ':' + min, holes });
     if (conflict) {
       showToast(t('conflictError'), 'error');
+      document.getElementById('create-submit-btn').disabled = false;
+      return;
+    }
+
+    const allGames = await store.loadAllGames();
+    const newTimeMs = new Date(`${date}T${(hour + ':' + min).padStart(5, '0')}`).getTime();
+    const newEndMs = newTimeMs + gameDurationHrs({ holes }) * 60 * 60 * 1000;
+
+    const slotTaken = allGames.some(g => {
+      if (g.date !== date) return false;
+      const gTimeMs = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
+      const gEndMs = gTimeMs + gameDurationHrs(g) * 60 * 60 * 1000;
+      // Same starting hole at same time
+      if (g.startingHole === startingHole && g.time === (hour + ':' + min)) return true;
+      // Wrap-around: hole-10 18-hole flight arrives at hole 1 after 2hrs — check overlap with hole-1 flights
+      if (startingHole === 1 && g.startingHole === 10 && (g.holes || 18) === 18) {
+        const wrapArrival = gTimeMs + 2 * 60 * 60 * 1000; // hole-10 flight reaches hole 1
+        return newTimeMs < wrapArrival + 2 * 60 * 60 * 1000 && newEndMs > wrapArrival;
+      }
+      if (startingHole === 10 && holes === 18 && g.startingHole === 1) {
+        const wrapArrival = newTimeMs + 2 * 60 * 60 * 1000;
+        return gTimeMs < wrapArrival + 2 * 60 * 60 * 1000 && gEndMs > wrapArrival;
+      }
+      return false;
+    });
+    if (slotTaken) {
+      showToast(t('slotTaken'), 'error');
       document.getElementById('create-submit-btn').disabled = false;
       return;
     }
@@ -706,6 +772,8 @@ async function renderCreateGame() {
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
+      holes,
+      startingHole,
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
@@ -810,6 +878,7 @@ function renderGameView(game) {
         <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
+          <span>⛳ ${game.holes || 18} ${t('holes')} · ${game.startingHole === 10 ? t('hole10start') : t('hole1start')}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
         </div>
         <div class="detail-actions">
@@ -1547,6 +1616,28 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('holes')}</label>
+            <div style="display:flex; gap:10px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid ${(game.holes || 18) === 9 ? 'var(--emerald)' : 'transparent'};" id="edit-holes-9-label">
+                <input type="radio" name="edit-holes" value="9" ${(game.holes || 18) === 9 ? 'checked' : ''} style="width:16px;height:16px;"> 9 ${t('holes')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid ${(game.holes || 18) === 18 ? 'var(--emerald)' : 'transparent'};" id="edit-holes-18-label">
+                <input type="radio" name="edit-holes" value="18" ${(game.holes || 18) === 18 ? 'checked' : ''} style="width:16px;height:16px;"> 18 ${t('holes')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
+            <label>${t('startingHole')}</label>
+            <div style="display:flex; gap:10px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid ${(game.startingHole || 1) === 1 ? 'var(--emerald)' : 'transparent'};" id="edit-start-hole1-label">
+                <input type="radio" name="edit-start-hole" value="1" ${(game.startingHole || 1) === 1 ? 'checked' : ''} style="width:16px;height:16px;"> ⛳ ${t('hole1start')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 20px; border-radius:8px; flex:1; justify-content:center; border:2px solid ${(game.startingHole || 1) === 10 ? 'var(--emerald)' : 'transparent'};" id="edit-start-hole10-label">
+                <input type="radio" name="edit-start-hole" value="10" ${(game.startingHole || 1) === 10 ? 'checked' : ''} style="width:16px;height:16px;"> ⛳ ${t('hole10start')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
             <label for="edit-desc">${t('description')}</label>
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
@@ -1600,10 +1691,18 @@ async function renderEditGame(gameId) {
       return;
     }
 
+    const newStartingHole = parseInt(document.querySelector('input[name="edit-start-hole"]:checked').value);
+    const newHoles = parseInt(document.querySelector('input[name="edit-holes"]:checked').value);
+    const allGames = await store.loadAllGames();
+    const slotTaken = allGames.some(g => g.id !== game.id && g.date === date && g.time === (hour + ':' + min) && g.startingHole === newStartingHole);
+    if (slotTaken) { showToast(t('slotTaken'), 'error'); return; }
+
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
     game.groupSize = groupSize;
+    game.holes = newHoles;
+    game.startingHole = newStartingHole;
     reflowGroupsBySize(game);
     game.description = document.getElementById('edit-desc').value.trim();
 
@@ -1963,20 +2062,23 @@ export function initApp() {
   router();
 }
 
+function gameDurationHrs(game) {
+  return (game.holes || 18) === 9 ? 2 : 4.5;
+}
+
 async function checkTimeConflict(userId, newGame) {
   const allGames = await store.loadAllGames();
   const newTime = new Date(`${newGame.date}T${newGame.time.padStart(5, '0')}`).getTime();
+  const newDur = gameDurationHrs(newGame) * 60 * 60 * 1000;
 
   for (const g of allGames) {
     if (g.id === newGame.id) continue;
-    if (isPlayerInGroup(g, userId)) {
-      const gTime = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
-      const diffMs = Math.abs(newTime - gTime);
-      const diffHrs = diffMs / (1000 * 60 * 60);
-
-      if (diffHrs < 2) {
-        return { time: g.time, game: g };
-      }
+    if (!isPlayerInGroup(g, userId)) continue;
+    const gTime = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
+    const gDur = gameDurationHrs(g) * 60 * 60 * 1000;
+    // Overlap check: two intervals [gTime, gTime+gDur] and [newTime, newTime+newDur]
+    if (newTime < gTime + gDur && newTime + newDur > gTime) {
+      return { time: g.time, game: g };
     }
   }
   return null;
