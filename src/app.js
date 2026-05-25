@@ -393,35 +393,61 @@ function renderNotifications(notifs) {
   const container = document.getElementById('notifications-section');
   if (!container) return;
   if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
+
+  // Auto-remove expired notifications (game date+time has passed)
+  const now = Date.now();
+  const expired = notifs.filter(n => {
+    if (!n.gameDate || !n.gameTime) return false;
+    return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() < now;
+  });
+  expired.forEach(n => store.deleteNotification(currentUser.id, n.id));
+  const active = notifs.filter(n => !expired.includes(n));
+  if (active.length === 0) { container.innerHTML = ''; return; }
+
+  const isOpen = container.dataset.open !== 'false';
   container.innerHTML = `
     <div class="section">
-      <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
-      <div class="notif-list">
-        ${notifs.map(n => {
-          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
-          const title = n.type === 'invite' ? t('inviteNotif')
-            : n.type === 'new_game' ? t('newGameNotif')
-            : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
-            : `${n.from} ${t('playerLeft')}`;
-          const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
-          const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
-          return `
-          <div class="notif-item glass-card">
-            <div class="notif-content">
-              <span class="notif-icon">${icon}</span>
-              <div>
-                <div class="notif-title">${title}</div>
-                <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+      <button id="notif-toggle-btn" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;padding:0;margin-bottom:${isOpen ? '10px' : '0'};">
+        <h2 class="section-title" style="margin:0;">🔔 ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
+        <span style="color:var(--text-secondary);font-size:0.9rem;">${isOpen ? '▲' : '▼'}</span>
+      </button>
+      <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
+        <div class="notif-list">
+          ${active.map(n => {
+            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
+            const title = n.type === 'invite' ? t('inviteNotif')
+              : n.type === 'new_game' ? t('newGameNotif')
+              : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
+              : `${n.from} ${t('playerLeft')}`;
+            const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
+            const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
+            return `
+            <div class="notif-item glass-card">
+              <div class="notif-content">
+                <span class="notif-icon">${icon}</span>
+                <div>
+                  <div class="notif-title">${title}</div>
+                  <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+                </div>
               </div>
-            </div>
-            <div class="notif-actions">
-              <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>
-              <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
-            </div>
-          </div>`;
-        }).join('')}
+              <div class="notif-actions">
+                <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>
+                <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
       </div>
     </div>`;
+
+  container.querySelector('#notif-toggle-btn').addEventListener('click', () => {
+    const wrap = container.querySelector('#notif-list-wrap');
+    const chevron = container.querySelector('#notif-toggle-btn span:last-child');
+    const open = wrap.style.display === 'none';
+    wrap.style.display = open ? 'block' : 'none';
+    chevron.textContent = open ? '▲' : '▼';
+    container.dataset.open = open ? 'true' : 'false';
+  });
   container.querySelectorAll('.join-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       await store.deleteNotification(currentUser.id, btn.dataset.id);
