@@ -1194,55 +1194,116 @@ async function renderAdminPanel() {
   }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
+  const nonAdminUsers = users.filter(u => u.role !== 'admin');
+
+  const circlesHtml = COMMUNITY_OPTIONS.map(circle => {
+    const members = nonAdminUsers.filter(u => userCommunityIds(u).includes(circle.id))
+      .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+    const nonMembers = nonAdminUsers.filter(u => u.status !== 'hold' && !userCommunityIds(u).includes(circle.id))
+      .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+    return `
+    <div style="margin-bottom:16px; background:rgba(255,255,255,0.05); border-radius:10px; padding:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+        <h3 style="margin:0;">${circle.label} <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:normal;">${members.length} гишүүн</span></h3>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <select class="circle-add-select" data-circle="${circle.id}" style="padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:0.85rem; max-width:180px;">
+            <option value="">Нэмэх тоглогч...</option>
+            ${nonMembers.map(u => `<option value="${u.id}">${displayUsername(u)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm btn-primary circle-add-btn" data-circle="${circle.id}">+</button>
+        </div>
+      </div>
+      ${members.length === 0
+        ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Гишүүн байхгүй</p>`
+        : `<div style="display:flex; flex-direction:column; gap:5px;">
+            ${members.map(u => `
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
+                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
+                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
+              </div>`).join('')}
+          </div>`}
+    </div>`;
+  }).join('');
 
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="#/" class="back-link">← ${t('back')}</a>
       <div class="glass-card" style="margin-bottom: 20px;">
         <h2 class="card-title">🛡️ Admin Panel</h2>
-        
-        <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-          <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
-            <h3 style="margin:0;">${t('createUser')}</h3>
-            <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
-          </button>
-          <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
-            <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
-              <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
-              ${communityCheckboxes('new-user-communities', [])}
-            </div>
-            <button type="submit" class="btn btn-primary">${t('create')}</button>
-          </form>
+
+        <div style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
+          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
         </div>
 
-        <div>
-          <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
-          <div class="input-group" style="margin: 4px 0 14px;">
-            <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-          </div>
-          <div style="display:flex; flex-direction: column; gap: 8px;">
-            ${users.map(u => `
-              <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
-                <div style="display:flex; flex-direction:column;">
-                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
-                </div>
-                <div style="margin-left: auto; display: flex; gap: 8px;">
-                  <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
-                  ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
-                </div>
+        <div id="admin-tab-users">
+          <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
+              <h3 style="margin:0;">${t('createUser')}</h3>
+              <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
+            </button>
+            <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
+              <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
+                <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
+                ${communityCheckboxes('new-user-communities', [])}
               </div>
-            `).join('')}
+              <button type="submit" class="btn btn-primary">${t('create')}</button>
+            </form>
           </div>
+
+          <div>
+            <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
+            <div class="input-group" style="margin: 4px 0 14px;">
+              <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <div style="display:flex; flex-direction: column; gap: 8px;">
+              ${users.map(u => `
+                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                  <div style="display:flex; flex-direction:column;">
+                    <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
+                    <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
+                  </div>
+                  <div style="margin-left: auto; display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
+                    ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div id="admin-tab-circles" style="display:none;">
+          ${circlesHtml}
         </div>
       </div>
     </div>
   `;
 
+  // Tab switching
+  const tabUsers = document.getElementById('admin-tab-btn-users');
+  const tabCircles = document.getElementById('admin-tab-btn-circles');
+  const sectionUsers = document.getElementById('admin-tab-users');
+  const sectionCircles = document.getElementById('admin-tab-circles');
+  tabUsers.addEventListener('click', () => {
+    sectionUsers.style.display = 'block';
+    sectionCircles.style.display = 'none';
+    tabUsers.className = 'btn btn-primary btn-sm';
+    tabCircles.className = 'btn btn-outline btn-sm';
+  });
+  tabCircles.addEventListener('click', () => {
+    sectionUsers.style.display = 'none';
+    sectionCircles.style.display = 'block';
+    tabCircles.className = 'btn btn-primary btn-sm';
+    tabUsers.className = 'btn btn-outline btn-sm';
+  });
+
+  // Users tab: create user toggle
   const createUserToggle = document.getElementById('create-user-toggle');
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
@@ -1297,6 +1358,43 @@ async function renderAdminPanel() {
         await store.deleteUserFromDB(btn.dataset.id);
         renderAdminPanel();
       }
+    });
+  });
+
+  // Circles tab: add player to circle
+  document.querySelectorAll('.circle-add-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const circleId = btn.dataset.circle;
+      const sel = document.querySelector(`.circle-add-select[data-circle="${circleId}"]`);
+      const userId = sel?.value;
+      if (!userId) { showToast('Тоглогч сонгоно уу', 'warning'); return; }
+      const u = users.find(x => x.id === userId);
+      if (!u) return;
+      const coms = userCommunityIds(u);
+      if (!coms.includes(circleId)) {
+        u.communities = [...coms, circleId];
+        await store.adminUpdateUser(u);
+        showToast(`✅ ${displayUsername(u)}-г нэмлээ`, 'success');
+        renderAdminPanel().then(() => {
+          document.getElementById('admin-tab-btn-circles')?.click();
+        });
+      }
+    });
+  });
+
+  // Circles tab: remove player from circle
+  document.querySelectorAll('.circle-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const circleId = btn.dataset.circle;
+      const userId = btn.dataset.user;
+      const u = users.find(x => x.id === userId);
+      if (!u) return;
+      u.communities = userCommunityIds(u).filter(id => id !== circleId);
+      await store.adminUpdateUser(u);
+      showToast(`✅ ${displayUsername(u)}-г хаслаа`, 'success');
+      renderAdminPanel().then(() => {
+        document.getElementById('admin-tab-btn-circles')?.click();
+      });
     });
   });
 }
