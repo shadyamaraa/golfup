@@ -200,12 +200,15 @@ function updateHeader() {
   const nameDisplay = document.getElementById('user-name-display');
   const avatar = document.getElementById('user-avatar');
   if (langBtn) langBtn.textContent = getLang().toUpperCase();
+  const adminLink = document.getElementById('admin-link');
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
     nameDisplay.textContent = displayUsername(currentUser);
     avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
+    if (adminLink) adminLink.classList.add('hidden');
   }
 }
 
@@ -1864,6 +1867,7 @@ async function renderEditGame(gameId) {
 // ---- Add / Remove Player ----
 async function handleAddPlayer(game, onSaved = null) {
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
 
   const modal = document.createElement('div');
@@ -1911,6 +1915,7 @@ async function handleAddPlayer(game, onSaved = null) {
 
 function openPlayerSearchModal(title, availableUsers, onConfirm) {
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
@@ -1972,6 +1977,7 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   }
 
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
@@ -2170,6 +2176,13 @@ export function initApp() {
   document.getElementById('profile-trigger')?.addEventListener('click', () => {
     if (!currentUser) return;
     showProfileModal(currentUser);
+  });
+
+  // Close any modal/popup when its backdrop is clicked
+  document.body.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('modal-overlay') || e.target.classList?.contains('popup-overlay')) {
+      e.target.remove();
+    }
   });
 
   document.body.addEventListener('click', async (e) => {
