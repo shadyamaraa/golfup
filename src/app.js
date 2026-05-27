@@ -843,6 +843,7 @@ function renderGameView(game) {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
       
       <div class="detail-header glass-card">
         <div class="detail-header-top">
@@ -1713,6 +1714,7 @@ async function renderEditGame(gameId) {
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/game/${game.id}" class="back-link">← ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
       <div class="create-card glass-card">
         <h2 class="card-title">✏️ Edit Game</h2>
         <form id="edit-form" class="create-form">
