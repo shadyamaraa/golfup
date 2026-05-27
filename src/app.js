@@ -1242,6 +1242,7 @@ async function renderAdminPanel() {
         <div style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
           <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
           <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
+          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
         </div>
 
         <div id="admin-tab-users">
@@ -1288,6 +1289,28 @@ async function renderAdminPanel() {
         <div id="admin-tab-circles" style="display:none;">
           ${circlesHtml}
         </div>
+
+        <div id="admin-tab-nocircle" style="display:none;">
+          ${(() => {
+            const noCircle = nonAdminUsers
+              .filter(u => userCommunityIds(u).length === 0)
+              .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+            if (noCircle.length === 0) return `<p style="color:var(--text-secondary);">Бүх тоглогч тойрогт бүртгэлтэй байна.</p>`;
+            return `
+              <p style="margin:0 0 12px; color:var(--text-secondary); font-size:0.85rem;">${noCircle.length} тоглогч ямар ч тойрогт ороогүй байна.</p>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                ${noCircle.map(u => `
+                  <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
+                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                    <div style="flex:1;">
+                      <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
+                      <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}">✏️ Засах</button>
+                  </div>`).join('')}
+              </div>`;
+          })()}
+        </div>
       </div>
     </div>
   `;
@@ -1295,19 +1318,28 @@ async function renderAdminPanel() {
   // Tab switching
   const tabUsers = document.getElementById('admin-tab-btn-users');
   const tabCircles = document.getElementById('admin-tab-btn-circles');
+  const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
-  tabUsers.addEventListener('click', () => {
-    sectionUsers.style.display = 'block';
-    sectionCircles.style.display = 'none';
-    tabUsers.className = 'btn btn-primary btn-sm';
-    tabCircles.className = 'btn btn-outline btn-sm';
-  });
-  tabCircles.addEventListener('click', () => {
-    sectionUsers.style.display = 'none';
-    sectionCircles.style.display = 'block';
-    tabCircles.className = 'btn btn-primary btn-sm';
-    tabUsers.className = 'btn btn-outline btn-sm';
+  const sectionNoCircle = document.getElementById('admin-tab-nocircle');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle];
+  const switchTab = (activeTab, activeSection) => {
+    allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
+    allSections.forEach(s => s.style.display = 'none');
+    activeTab.className = 'btn btn-primary btn-sm';
+    activeSection.style.display = 'block';
+  };
+  tabUsers.addEventListener('click', () => switchTab(tabUsers, sectionUsers));
+  tabCircles.addEventListener('click', () => switchTab(tabCircles, sectionCircles));
+  tabNoCircle.addEventListener('click', () => switchTab(tabNoCircle, sectionNoCircle));
+
+  // No-circle tab: open edit modal
+  document.querySelectorAll('.edit-user-btn-nc').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const u = users.find(x => x.id === btn.dataset.id);
+      if (u) showAdminEditUserModal(u, () => renderAdminPanel());
+    });
   });
 
   // Users tab: create user toggle
