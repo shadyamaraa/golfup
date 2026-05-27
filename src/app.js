@@ -750,22 +750,28 @@ async function renderCreateGame() {
     const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
     const userById = Object.fromEntries(users.map(u => [u.id, u]));
-    const notified = new Set([currentUser.id, ...invitedIds]);
-    const followerNotifIds = isPrivate ? [] : followerIds.filter(fid => {
-      if (notified.has(fid)) return false;
-      if (targetCommunities.length === 0) return true;
-      return targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id));
-    });
-    followerNotifIds.forEach(id => notified.add(id));
-    // Notify all circle members who haven't been notified yet
-    const circleNotifIds = (!isPrivate && targetCommunities.length > 0)
-      ? users.filter(u => !notified.has(u.id) && u.status !== 'hold' && targetCommunities.some(id => userCommunityIds(u).includes(id))).map(u => u.id)
-      : [];
-    await Promise.all([
-      ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
-      ...followerNotifIds.map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload })),
-      ...circleNotifIds.map(uid => store.saveNotification(uid, { type: 'new_game', ...notifPayload }))
-    ]);
+    // Build a per-user notification map so each user gets at most one notification
+    const notifMap = new Map();
+    for (const uid of invitedIds) {
+      if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
+    }
+    if (!isPrivate) {
+      for (const fid of followerIds) {
+        if (notifMap.has(fid) || fid === currentUser.id) continue;
+        if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
+          notifMap.set(fid, { type: 'new_game', ...notifPayload });
+        }
+      }
+      if (targetCommunities.length > 0) {
+        for (const u of users) {
+          if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
+          if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
+            notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+          }
+        }
+      }
+    }
+    await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -1050,12 +1056,14 @@ async function handleJoin(game) {
   game.waitingList = waitingList;
 
   await store.saveGame(game);
-  if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, {
-      type: 'player_joined', from: displayUsername(currentUser),
-      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
-    });
-  }
+  const joinNotif = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  const joinedAfter = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+  joinedAfter.forEach(uid => store.saveNotification(uid, joinNotif));
   if (isPlayerInGroup(game, currentUser.id)) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
@@ -1093,12 +1101,14 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
-  if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, {
-      type: 'player_left', from: displayUsername(currentUser),
-      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
-    });
-  }
+  const leaveNotif = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  const remainingAfter = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+  remainingAfter.forEach(uid => store.saveNotification(uid, leaveNotif));
   renderGameView(game);
   showToast('👋 ' + t('leave'), 'info');
 }
