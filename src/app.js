@@ -631,10 +631,10 @@ async function renderCreateGame() {
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
                 <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent; ${myCommunities.length === 0 ? 'opacity:0.45;' : ''}" id="vis-my-circles-label" ${myCommunities.length === 0 ? `title="${t('noCommunitiesAssigned')}"` : ''}>
                 <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent; ${myCommunities.length === 0 ? 'opacity:0.45;' : ''}" id="vis-selected-circles-label" ${myCommunities.length === 0 ? `title="${t('noCommunitiesAssigned')}"` : ''}>
                 <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
@@ -745,14 +745,21 @@ async function renderCreateGame() {
     const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
     const userById = Object.fromEntries(users.map(u => [u.id, u]));
+    const notified = new Set([currentUser.id, ...invitedIds]);
     const followerNotifIds = isPrivate ? [] : followerIds.filter(fid => {
-      if (invitedIds.includes(fid)) return false;
+      if (notified.has(fid)) return false;
       if (targetCommunities.length === 0) return true;
       return targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id));
     });
+    followerNotifIds.forEach(id => notified.add(id));
+    // Notify all circle members who haven't been notified yet
+    const circleNotifIds = (!isPrivate && targetCommunities.length > 0)
+      ? users.filter(u => !notified.has(u.id) && u.status !== 'hold' && targetCommunities.some(id => userCommunityIds(u).includes(id))).map(u => u.id)
+      : [];
     await Promise.all([
       ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
-      ...followerNotifIds.map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
+      ...followerNotifIds.map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload })),
+      ...circleNotifIds.map(uid => store.saveNotification(uid, { type: 'new_game', ...notifPayload }))
     ]);
 
     showToast('✅ ' + t('createGame') + '!', 'success');
