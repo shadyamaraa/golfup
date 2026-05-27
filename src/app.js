@@ -636,10 +636,10 @@ async function renderCreateGame() {
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
                 <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent; ${myCommunities.length === 0 ? 'opacity:0.45;' : ''}" id="vis-my-circles-label" ${myCommunities.length === 0 ? `title="${t('noCommunitiesAssigned')}"` : ''}>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
                 <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent; ${myCommunities.length === 0 ? 'opacity:0.45;' : ''}" id="vis-selected-circles-label" ${myCommunities.length === 0 ? `title="${t('noCommunitiesAssigned')}"` : ''}>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
                 <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
