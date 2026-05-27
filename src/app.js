@@ -13,6 +13,7 @@ let activeUnsubs = [];
 let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
+let openCircles = new Set();
 let pendingAuthRedirect = null;
 
 const main = () => document.getElementById('main-content');
@@ -1201,10 +1202,14 @@ async function renderAdminPanel() {
       .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
     const nonMembers = nonAdminUsers.filter(u => u.status !== 'hold' && !userCommunityIds(u).includes(circle.id))
       .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+    const isOpen = openCircles.has(circle.id);
     return `
     <div style="margin-bottom:16px; background:rgba(255,255,255,0.05); border-radius:10px; padding:14px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-        <h3 style="margin:0;">${circle.label} <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:normal;">${members.length} гишүүн</span></h3>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="circle-toggle-btn" data-circle="${circle.id}" style="flex:1; min-width:140px; display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--text-primary); padding:0; cursor:pointer; text-align:left;">
+          <span style="color:var(--text-secondary); font-size:0.85rem;">${isOpen ? '▲' : '▼'}</span>
+          <h3 style="margin:0;">${circle.label} <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:normal;">${members.length} гишүүн</span></h3>
+        </button>
         <div style="display:flex; gap:6px; align-items:center;">
           <select class="circle-add-select" data-circle="${circle.id}" style="padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:0.85rem; max-width:180px;">
             <option value="">Нэмэх тоглогч...</option>
@@ -1213,6 +1218,7 @@ async function renderAdminPanel() {
           <button class="btn btn-sm btn-primary circle-add-btn" data-circle="${circle.id}">+</button>
         </div>
       </div>
+      <div class="circle-members-wrap" data-circle="${circle.id}" style="display:${isOpen ? 'block' : 'none'}; margin-top:10px;">
       ${members.length === 0
         ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Гишүүн байхгүй</p>`
         : `<div style="display:flex; flex-direction:column; gap:5px;">
@@ -1223,6 +1229,7 @@ async function renderAdminPanel() {
                 <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
               </div>`).join('')}
           </div>`}
+      </div>
     </div>`;
   }).join('');
 
@@ -1361,6 +1368,19 @@ async function renderAdminPanel() {
     });
   });
 
+  // Circles tab: collapse/expand on title click
+  document.querySelectorAll('.circle-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const circleId = btn.dataset.circle;
+      const wrap = document.querySelector(`.circle-members-wrap[data-circle="${circleId}"]`);
+      const chevron = btn.querySelector('span');
+      const open = wrap.style.display === 'none';
+      wrap.style.display = open ? 'block' : 'none';
+      chevron.textContent = open ? '▲' : '▼';
+      if (open) openCircles.add(circleId); else openCircles.delete(circleId);
+    });
+  });
+
   // Circles tab: add player to circle
   document.querySelectorAll('.circle-add-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1375,6 +1395,7 @@ async function renderAdminPanel() {
         u.communities = [...coms, circleId];
         await store.adminUpdateUser(u);
         showToast(`✅ ${displayUsername(u)}-г нэмлээ`, 'success');
+        openCircles.add(circleId);
         renderAdminPanel().then(() => {
           document.getElementById('admin-tab-btn-circles')?.click();
         });
@@ -1392,6 +1413,7 @@ async function renderAdminPanel() {
       u.communities = userCommunityIds(u).filter(id => id !== circleId);
       await store.adminUpdateUser(u);
       showToast(`✅ ${displayUsername(u)}-г хаслаа`, 'success');
+      openCircles.add(circleId);
       renderAdminPanel().then(() => {
         document.getElementById('admin-tab-btn-circles')?.click();
       });
