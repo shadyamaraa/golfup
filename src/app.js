@@ -414,20 +414,25 @@ function renderNotifications(notifs) {
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
-            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
+            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : '⛳';
             const title = n.type === 'invite' ? t('inviteNotif')
               : n.type === 'new_game' ? t('newGameNotif')
               : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
-              : `${n.from} ${t('playerLeft')}`;
+              : n.type === 'player_left' ? `${n.from} ${t('playerLeft')}`
+              : n.type === 'game_updated' ? t('gameUpdatedNotif')
+              : t('newGameNotif');
             const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
             const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
+            const sub = n.type === 'game_updated' && n.changes
+              ? `${n.changes} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`
+              : `${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`;
             return `
             <div class="notif-item glass-card">
               <div class="notif-content">
                 <span class="notif-icon">${icon}</span>
                 <div>
                   <div class="notif-title">${title}</div>
-                  <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+                  <div class="notif-sub">${sub}</div>
                 </div>
               </div>
               <div class="notif-actions">
@@ -1633,6 +1638,12 @@ async function renderEditGame(gameId) {
       return;
     }
 
+    const oldDate = game.date;
+    const oldTime = game.time;
+    const oldLocation = game.location;
+    const oldGroupSize = game.groupSize;
+    const oldDescription = game.description;
+
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
@@ -1640,7 +1651,35 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     game.description = document.getElementById('edit-desc').value.trim();
 
+    const changes = [];
+    if (oldDate !== game.date) changes.push(`Огноо: ${oldDate} → ${game.date}`);
+    if (oldTime !== game.time) changes.push(`Цаг: ${oldTime} → ${game.time}`);
+    if (oldLocation !== game.location) changes.push(`Байршил: ${oldLocation} → ${game.location}`);
+    if (oldGroupSize !== game.groupSize) changes.push(`Тоглогч: ${oldGroupSize} → ${game.groupSize}`);
+    if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
+
     await store.saveGame(game);
+
+    if (changes.length > 0) {
+      const changesText = changes.join(', ');
+      const notifPayload = {
+        type: 'game_updated',
+        from: displayUsername(currentUser),
+        changes: changesText,
+        gameId: game.id,
+        gameDate: game.date,
+        gameTime: game.time,
+        gameLocation: game.location
+      };
+      const joinedIds = ensureGroups(game.groups)
+        .flatMap(grp => ensureArray(grp))
+        .concat(ensureArray(game.waitingList))
+        .map(p => p?.id)
+        .filter(id => id && id !== currentUser.id);
+      const uniqueJoinedIds = [...new Set(joinedIds)];
+      await Promise.all(uniqueJoinedIds.map(uid => store.saveNotification(uid, notifPayload)));
+    }
+
     showToast('✅ Saved!', 'success');
     location.hash = '#/game/' + game.id;
   });
