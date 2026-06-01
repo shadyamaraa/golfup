@@ -1318,12 +1318,12 @@ async function renderAdminPanel() {
         </div>
 
         <div id="admin-tab-lookup" style="display:none;">
-          <div style="margin-bottom:16px;">
-            <select id="admin-lookup-select" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;">
-              <option value="">— Хэрэглэгч сонгох —</option>
-              ${nonAdminUsers.sort((a,b) => displayUsername(a).localeCompare(displayUsername(b))).map(u => `<option value="${u.id}">${displayUsername(u)}${u.phone ? ' · ' + u.phone : ''}</option>`).join('')}
-            </select>
+          <div style="margin-bottom:16px; position:relative;">
+            <input type="search" id="admin-lookup-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off"
+              style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; box-sizing:border-box;" />
+            <div id="admin-lookup-dropdown" style="display:none; position:absolute; left:0; right:0; top:100%; margin-top:4px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-card); z-index:20; max-height:220px; overflow-y:auto;"></div>
           </div>
+          <div id="admin-lookup-results"></div>
           <div id="admin-lookup-results"></div>
         </div>
       </div>
@@ -1361,8 +1361,7 @@ async function renderAdminPanel() {
   });
 
   // Lookup tab: user select → show game history
-  document.getElementById('admin-lookup-select')?.addEventListener('change', async (e) => {
-    const uid = e.target.value;
+  const lookupRunForUser = async (uid) => {
     const resultsEl = document.getElementById('admin-lookup-results');
     if (!uid) { resultsEl.innerHTML = ''; return; }
     resultsEl.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
@@ -1419,7 +1418,43 @@ async function renderAdminPanel() {
         showToast('✅ Тоглолт сэргээгдлээ', 'success');
       });
     });
+  };
+
+  const lookupInput = document.getElementById('admin-lookup-input');
+  const lookupDropdown = document.getElementById('admin-lookup-dropdown');
+  const sortedLookupUsers = nonAdminUsers.sort((a,b) => displayUsername(a).localeCompare(displayUsername(b)));
+
+  lookupInput?.addEventListener('input', () => {
+    const q = lookupInput.value.trim().toLowerCase();
+    if (!q) { lookupDropdown.style.display = 'none'; return; }
+    const matches = sortedLookupUsers.filter(u =>
+      displayUsername(u).toLowerCase().includes(q) || (u.phone || '').includes(q)
+    );
+    if (!matches.length) { lookupDropdown.style.display = 'none'; return; }
+    lookupDropdown.innerHTML = matches.map(u => `
+      <div class="lookup-item" data-id="${u.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); font-size:0.95rem; display:flex; gap:8px; align-items:center;">
+        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+        <span style="flex:1;">${displayUsername(u)}</span>
+        <span style="font-size:0.8rem; color:var(--text-secondary);">${u.phone || ''}</span>
+      </div>`).join('');
+    lookupDropdown.style.display = 'block';
+    lookupDropdown.querySelectorAll('.lookup-item').forEach(item => {
+      item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.07)');
+      item.addEventListener('mouseleave', () => item.style.background = '');
+      item.addEventListener('click', () => {
+        const u = sortedLookupUsers.find(x => x.id === item.dataset.id);
+        lookupInput.value = displayUsername(u) + (u.phone ? ' · ' + u.phone : '');
+        lookupDropdown.style.display = 'none';
+        lookupRunForUser(item.dataset.id);
+      });
+    });
   });
+
+  document.addEventListener('click', (e) => {
+    if (!lookupInput?.contains(e.target) && !lookupDropdown?.contains(e.target)) {
+      lookupDropdown.style.display = 'none';
+    }
+  }, { once: false });
 
   // Users tab: create user toggle
   const createUserToggle = document.getElementById('create-user-toggle');
