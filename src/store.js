@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, remove, onValue, off } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, off } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -133,22 +133,41 @@ export async function loadAllGames() {
       const snap = await get(ref(db, 'games'));
       if (!snap.exists()) return [];
       const data = snap.val();
-      return Object.values(data).sort((a, b) => b.createdAt - a.createdAt);
+      return Object.values(data).filter(g => g.status !== 'deleted').sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
       console.error('Failed to load all games:', error);
       return [];
     }
   }
   const games = getLocalGames();
-  return Object.values(games).sort((a, b) => b.createdAt - a.createdAt);
+  return Object.values(games).filter(g => g.status !== 'deleted').sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function loadAllGamesAdmin() {
+  if (useFirebase && db) {
+    const snap = await get(ref(db, 'games'));
+    if (!snap.exists()) return [];
+    return Object.values(snap.val()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  return Object.values(getLocalGames()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 export async function deleteGame(id) {
   if (useFirebase && db) {
-    await remove(ref(db, 'games/' + id));
+    await update(ref(db, 'games/' + id), { status: 'deleted', deletedAt: Date.now() });
   } else {
     const games = getLocalGames();
-    delete games[id];
+    if (games[id]) { games[id].status = 'deleted'; games[id].deletedAt = Date.now(); }
+    setLocalGames(games);
+  }
+}
+
+export async function restoreGame(id) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), { status: 'open', deletedAt: null });
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].status = 'open'; delete games[id].deletedAt; }
     setLocalGames(games);
   }
 }
@@ -166,7 +185,7 @@ export function onAllGamesChanged(callback) {
     onValue(gamesRef, (snap) => {
       const data = snap.val();
       if (!data) callback([]);
-      else callback(Object.values(data).sort((a, b) => b.createdAt - a.createdAt));
+      else callback(Object.values(data).filter(g => g.status !== 'deleted').sort((a, b) => b.createdAt - a.createdAt));
     });
     return () => off(gamesRef);
   }

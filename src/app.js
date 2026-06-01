@@ -1247,6 +1247,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
           <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
           <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
+          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
         </div>
 
         <div id="admin-tab-users">
@@ -1315,6 +1316,16 @@ async function renderAdminPanel() {
               </div>`;
           })()}
         </div>
+
+        <div id="admin-tab-lookup" style="display:none;">
+          <div style="margin-bottom:16px;">
+            <select id="admin-lookup-select" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;">
+              <option value="">— Хэрэглэгч сонгох —</option>
+              ${nonAdminUsers.sort((a,b) => displayUsername(a).localeCompare(displayUsername(b))).map(u => `<option value="${u.id}">${displayUsername(u)}${u.phone ? ' · ' + u.phone : ''}</option>`).join('')}
+            </select>
+          </div>
+          <div id="admin-lookup-results"></div>
+        </div>
       </div>
     </div>
   `;
@@ -1323,11 +1334,13 @@ async function renderAdminPanel() {
   const tabUsers = document.getElementById('admin-tab-btn-users');
   const tabCircles = document.getElementById('admin-tab-btn-circles');
   const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
+  const tabLookup = document.getElementById('admin-tab-btn-lookup');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle];
+  const sectionLookup = document.getElementById('admin-tab-lookup');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -1337,12 +1350,74 @@ async function renderAdminPanel() {
   tabUsers.addEventListener('click', () => switchTab(tabUsers, sectionUsers));
   tabCircles.addEventListener('click', () => switchTab(tabCircles, sectionCircles));
   tabNoCircle.addEventListener('click', () => switchTab(tabNoCircle, sectionNoCircle));
+  tabLookup.addEventListener('click', () => switchTab(tabLookup, sectionLookup));
 
   // No-circle tab: open edit modal
   document.querySelectorAll('.edit-user-btn-nc').forEach(btn => {
     btn.addEventListener('click', () => {
       const u = users.find(x => x.id === btn.dataset.id);
       if (u) showAdminEditUserModal(u, () => renderAdminPanel());
+    });
+  });
+
+  // Lookup tab: user select → show game history
+  document.getElementById('admin-lookup-select')?.addEventListener('change', async (e) => {
+    const uid = e.target.value;
+    const resultsEl = document.getElementById('admin-lookup-results');
+    if (!uid) { resultsEl.innerHTML = ''; return; }
+    resultsEl.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+    const allGames = await store.loadAllGamesAdmin();
+    const now = Date.now();
+    const upcoming = [], past = [], deleted = [];
+    for (const g of allGames) {
+      const isCreator = g.createdBy === uid;
+      let inGame = isCreator;
+      if (!inGame) {
+        const grps = ensureGroups(g.groups);
+        inGame = grps.some(grp => ensureArray(grp).some(p => p?.id === uid));
+      }
+      if (!inGame) inGame = ensureArray(g.waitingList).some(p => p?.id === uid);
+      if (!inGame) continue;
+      const gMs = new Date(`${g.date}T${(g.time||'00:00').padStart(5,'0')}`).getTime();
+      if (g.status === 'deleted') deleted.push({ g, isCreator, gMs });
+      else if (gMs < now) past.push({ g, isCreator, gMs });
+      else upcoming.push({ g, isCreator, gMs });
+    }
+    upcoming.sort((a,b) => a.gMs - b.gMs);
+    past.sort((a,b) => b.gMs - a.gMs);
+    deleted.sort((a,b) => b.gMs - a.gMs);
+
+    const renderRow = ({ g, isCreator }, showRestore = false) => {
+      const role = isCreator ? '✍️' : '🏌️';
+      const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
+      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:8px; flex-wrap:wrap;">
+        <span style="font-size:1rem;">${role}</span>
+        <div style="flex:1; min-width:140px;">
+          <div style="font-size:0.9rem;">${formatDate(g.date)} ${g.time}${deletedLabel}</div>
+          <div style="font-size:0.8rem; color:var(--text-secondary);">📍 ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
+        </div>
+        <a href="#/game/${g.id}" class="btn btn-sm btn-outline" style="font-size:0.8rem;">Харах</a>
+        ${showRestore ? `<button class="btn btn-sm btn-primary restore-game-btn" data-id="${g.id}" style="font-size:0.8rem;">↩ Сэргээх</button>` : ''}
+      </div>`;
+    };
+
+    const section = (title, items, restore = false) => items.length === 0 ? '' : `
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 8px; color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase; letter-spacing:0.05em;">${title} (${items.length})</h4>
+        <div style="display:flex; flex-direction:column; gap:6px;">${items.map(i => renderRow(i, restore)).join('')}</div>
+      </div>`;
+
+    resultsEl.innerHTML = section('Ирэх тоглолтууд', upcoming) +
+      section('Өнгөрсөн тоглолтууд', past) +
+      section('Устсан тоглолтууд', deleted, true) ||
+      `<p style="color:var(--text-secondary);">Тоглолт олдсонгүй.</p>`;
+
+    resultsEl.querySelectorAll('.restore-game-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await store.restoreGame(btn.dataset.id);
+        btn.closest('div[style]').remove();
+        showToast('✅ Тоглолт сэргээгдлээ', 'success');
+      });
     });
   });
 
