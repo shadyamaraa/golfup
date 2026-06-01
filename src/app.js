@@ -591,7 +591,7 @@ async function renderCreateGame() {
   const today = new Date().toISOString().split('T')[0];
   const users = await store.loadAllUsers();
   // Filter out hold status, the current user, AND the System Admin
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.role !== 'admin');
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
   const myCommunities = userCommunityIds(currentUser);
 
   main().innerHTML = `
@@ -1199,7 +1199,7 @@ async function renderAdminPanel() {
   }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
-  const nonAdminUsers = users.filter(u => u.role !== 'admin');
+  const nonAdminUsers = users.filter(u => u.id !== 'admin_uid');
 
   const circlesHtml = COMMUNITY_OPTIONS.map(circle => {
     const members = nonAdminUsers.filter(u => userCommunityIds(u).includes(circle.id))
@@ -1693,7 +1693,7 @@ async function renderUsersList() {
   allUsersMap = {};
   users.forEach(u => { if (u && u.id) allUsersMap[u.id] = u; });
 
-  const sortedUsers = users.filter(u => u.role !== 'admin').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  const sortedUsers = users.filter(u => u.id !== 'admin_uid').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
 
   main().innerHTML = `
     <div class="detail-container fade-in">
@@ -1990,7 +1990,7 @@ async function handleAddPlayer(game, onSaved = null) {
 
   const users = await store.loadAllUsers();
   // Filter out admin and people already in game
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== 'admin_uid' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
     modal.innerHTML = `<h3>Тоглогч нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Бүх хүн тоглолтод орсон эсвэл нэмэх хүн алга байна.</p><button class="btn btn-ghost" id="close-modal-btn">Хаах</button>`;
@@ -2097,7 +2097,7 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   document.body.appendChild(overlay);
 
   const users = await store.loadAllUsers();
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== 'admin_uid' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
     modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Нэмэх боломжтой хэрэглэгч байхгүй.</p><button class="btn btn-ghost" id="close-atg-btn">Хаах</button>`;
