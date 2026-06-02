@@ -13,7 +13,11 @@ let activeUnsubs = [];
 let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
+let archiveOpen = false;
 let pendingAuthRedirect = null;
+
+// Past games stay in History for this many days, then move to Archive.
+const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 const main = () => document.getElementById('main-content');
 
@@ -349,6 +353,13 @@ async function renderHome() {
         </div>
         <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
       </div>
+      <div class="section past-section" style="margin-top: 24px;">
+        <div class="history-toggle-header" id="archive-toggle">
+          <h2 class="section-title" style="margin:0;">📦 ${t('gameArchive')}</h2>
+          <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
+      </div>
     </div>`;
 
   const [notifs, games] = await Promise.all([
@@ -385,6 +396,15 @@ async function renderHome() {
     if (list) list.style.display = historyOpen ? 'block' : 'none';
     if (chevron) chevron.textContent = historyOpen ? '▲' : '▼';
     if (historyOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
+  });
+
+  document.getElementById('archive-toggle')?.addEventListener('click', () => {
+    archiveOpen = !archiveOpen;
+    const list = document.getElementById('archive-games-list');
+    const chevron = document.getElementById('archive-chevron');
+    if (list) list.style.display = archiveOpen ? 'block' : 'none';
+    if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
+    if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
 }
 
@@ -444,6 +464,7 @@ function renderNotifications(notifs) {
 function renderGamesHome(games) {
   const activeContainer = document.getElementById('active-games-list');
   const pastContainer = document.getElementById('past-games-list');
+  const archiveContainer = document.getElementById('archive-games-list');
   if (!activeContainer) return;
 
   if (games) homeGamesCache = games;
@@ -452,12 +473,14 @@ function renderGamesHome(games) {
   const now = new Date().getTime();
   const activeGames = [];
   const pastGames = [];
+  const archivedGames = [];
 
   allGames.forEach(g => {
     if (!matchesHomeFilter(g)) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
     if (gDate >= now) activeGames.push(g);
-    else pastGames.push(g);
+    else if (now - gDate <= ARCHIVE_AFTER_MS) pastGames.push(g);
+    else archivedGames.push(g);
   });
 
   const emptyMsg = homeFilter === 'all' ? t('noGames') : t('noGamesInFilter');
@@ -472,7 +495,7 @@ function renderGamesHome(games) {
     const bMs = new Date(`${b.date}T${b.time.padStart(5, '0')}`).getTime();
     return aMs - bMs;
   });
-  pastGames.sort((a, b) => {
+  const sortNewestFirst = (a, b) => {
     if (homeFilter === 'recommended') {
       const scoreDiff = recommendationScore(b) - recommendationScore(a);
       if (scoreDiff !== 0) return scoreDiff;
@@ -480,7 +503,9 @@ function renderGamesHome(games) {
     const aMs = new Date(`${a.date}T${a.time.padStart(5, '0')}`).getTime();
     const bMs = new Date(`${b.date}T${b.time.padStart(5, '0')}`).getTime();
     return bMs - aMs;
-  });
+  };
+  pastGames.sort(sortNewestFirst);
+  archivedGames.sort(sortNewestFirst);
 
   if (activeGames.length > 0) {
     // Group by date
@@ -500,6 +525,10 @@ function renderGamesHome(games) {
 
   if (pastContainer && historyOpen) {
     pastContainer.innerHTML = pastGames.length > 0 ? renderGamesCards(pastGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noHistory')}</p>`;
+  }
+
+  if (archiveContainer && archiveOpen) {
+    archiveContainer.innerHTML = archivedGames.length > 0 ? renderGamesCards(archivedGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noArchive')}</p>`;
   }
 }
 
@@ -810,7 +839,7 @@ function renderGameView(game) {
           <span class="game-date-badge large">${dateStr}</span>
           <div style="display:flex; gap: 8px;">
             ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">✏️ Edit</a>` : ''}
-            ${isCreator || (currentUser && currentUser.role === 'admin') ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
+            ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
         <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
@@ -1033,6 +1062,11 @@ async function handleLeave(game) {
 }
 
 async function handleDelete(game) {
+  const gDate = new Date(`${game.date}T${(game.time || '00:00').padStart(5, '0')}`).getTime();
+  if (!isNaN(gDate) && gDate < Date.now()) {
+    showToast(t('cannotDeletePast'), 'error');
+    return;
+  }
   if (!confirm(t('confirmDelete'))) return;
   const joinedIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
   await store.deleteGame(game.id);
