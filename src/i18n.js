@@ -28,7 +28,7 @@ const T = {
     gameArchive: 'Архив', noArchive: 'Архивт тоглолт байхгүй байна',
     cannotDeletePast: 'Өнгөрсөн болон архивласан тоглолтыг устгах боломжгүй',
     pastGameNotice: 'Өнгөрсөн тоглолт (Засах боломжгүй)',
-    changePass: 'Нууц үг солих', password: 'Нууц үг', newPass: 'Нууц үг', confirmPass: 'Нууц үг давтах',
+    changePass: 'Нууц үг солих', password: 'Нууц үг', newPass: 'Шинэ нууц үг', confirmPass: 'Нууц үг давтах',
     save: 'Хадгалах', editBank: 'Дансны мэдээлэл засах', bankName: 'Банкны нэр',
     bankAccount: 'Дансны дугаар', addPlayerOptional: 'Тоглогч нэмэх (Заавал биш)',
     noUsersFound: 'Нэмэх боломжтой хэрэглэгч олдсонгүй.', createUser: 'Шинэ хэрэглэгч үүсгэх',
@@ -38,7 +38,7 @@ const T = {
     pastTimeError: 'Өнгөрсөн цагт тоглолт үүсгэх боломжгүй!',
     usersListTitle: 'Тоглогчид', usersListSub: 'Бүх тоглогчдын жагсаалт ба дансны мэдээлэл',
     unknownBank: 'Банк тодорхойгүй', viewBank: 'Данс харах',
-    conflictError: 'Таны өөр нэг тоглолт ойролцоо цагт (2 цагийн дотор) байна!',
+    conflictError: 'Таны өөр нэг тоглолт ойролцоо цагт байна!',
     confirmLogout: 'Та системээс гарах уу?', saved: 'Хадгалагдлаа',
     profile: 'Профайл тохиргоо', avatar: 'Аватар (Emoji)', selectAvatar: 'Аватар сонгох',
     phone: 'Утасны дугаар', loginWithPhone: 'Утасны дугаараар нэвтрэх',
@@ -87,7 +87,7 @@ const T = {
     gameArchive: 'Archive', noArchive: 'No archived games',
     cannotDeletePast: 'Past and archived games cannot be deleted',
     pastGameNotice: 'Past Game (Read-only)',
-    changePass: 'Change Password', password: 'Password', newPass: 'Password', confirmPass: 'Confirm Password',
+    changePass: 'Change Password', password: 'Password', newPass: 'New Password', confirmPass: 'Confirm Password',
     save: 'Save', editBank: 'Edit Bank Details', bankName: 'Bank Name',
     bankAccount: 'Account Number', addPlayerOptional: 'Add Players (Optional)',
     noUsersFound: 'No available users found.', createUser: 'Create New User',
@@ -97,7 +97,7 @@ const T = {
     pastTimeError: 'Cannot schedule games in the past!',
     usersListTitle: 'Players', usersListSub: 'List of all players and bank details',
     unknownBank: 'Unknown Bank', viewBank: 'View Bank',
-    conflictError: 'You have another game scheduled within 2 hours of this time!',
+    conflictError: 'You have another game scheduled near this time!',
     confirmLogout: 'Are you sure you want to logout?', saved: 'Saved',
     profile: 'Profile Settings', avatar: 'Avatar (Emoji)', selectAvatar: 'Select Avatar',
     phone: 'Phone Number', loginWithPhone: 'Login with Phone Number',
@@ -116,12 +116,76 @@ const T = {
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
     clubCircles: 'Circles', interestCircles: 'Interest circles',
     noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'
+  },
+  kr: {
+    appName: 'UB 골프', tagline: '함께 플레이하자!',
+    home: '홈', createGame: '게임 만들기', activeGames: '진행 중인 게임',
+    tabAll: '전체', tabMine: '내 게임', tabCommunity: '내 서클', tabRecommended: '추천', tabJoined: '초대받음', tabFollowing: '팔로잉',
+    noGamesInFilter: '이 카테고리에 게임이 없습니다',
+    noGames: '아직 게임이 없습니다. 새 게임을 만드세요!',
+    date: '날짜', time: '시간', location: '장소', groupSize: '그룹 인원',
+    create: '만들기', cancel: '취소', join: '참가', leave: '나가기',
+    group: '그룹', waitingList: '대기자 목록', emptySlot: '빈 자리',
+    players: '명', full: '마감', open: '모집 중',
+    shareViber: 'Viber로 공유', copyLink: '링크 복사', copied: '복사됨!',
+    enterName: '이름을 입력하세요', yourName: '이름', start: '시작',
+    welcome: '환영합니다!', createdBy: '작성자', gameInfo: '게임 정보',
+    autoGroup: '대기자가 3명 이상이면 새 그룹이 자동으로 생성됩니다',
+    confirmLeave: '정말 나가시겠습니까?', yes: '예', no: '아니오',
+    organizedBy: '주최', at: '에', shareText: '골프 게임! 🏌️',
+    joinPrompt: '아래 링크를 클릭하여 참가하세요:', back: '뒤로',
+    today: '오늘', tomorrow: '내일', spotLeft: '자리 남음',
+    gameDeleted: '게임이 삭제됨', delete: '삭제', confirmDelete: '정말 삭제하시겠습니까?',
+    settings: '설정', demoMode: '데모 모드', firebaseMode: 'Firebase 모드',
+    setupFirebase: 'Firebase 설정', notConfigured: 'Firebase가 설정되지 않았습니다',
+    phonePrompt: '전화번호', phoneExample: '예: 99112233', sendCode: '코드 받기',
+    enterOtp: '인증 코드', verify: '확인',
+    invalidPhone: '잘못된 전화번호', invalidOtp: '잘못된 코드',
+    sending: '전송 중...', verifying: '확인 중...', resend: '재전송',
+    gameHistory: '게임 기록 (지난 7일)', noHistory: '기록이 없습니다',
+    gameArchive: '보관함', noArchive: '보관된 게임이 없습니다',
+    cannotDeletePast: '지난 게임과 보관된 게임은 삭제할 수 없습니다',
+    pastGameNotice: '지난 게임 (읽기 전용)',
+    changePass: '비밀번호 변경', password: '비밀번호', newPass: '새 비밀번호', confirmPass: '비밀번호 확인',
+    save: '저장', editBank: '계좌 정보 수정', bankName: '은행명',
+    bankAccount: '계좌번호', addPlayerOptional: '플레이어 추가 (선택사항)',
+    noUsersFound: '추가 가능한 사용자가 없습니다.', createUser: '새 사용자 만들기',
+    users: '사용자', restore: '복원', confirmDeleteUser: '이 사용자를 삭제하시겠습니까?',
+    userExists: '이미 같은 이름의 사용자가 있습니다!', userCreated: '사용자가 생성되었습니다',
+    passChanged: '비밀번호가 변경되었습니다', bankSaved: '계좌 정보가 저장되었습니다',
+    pastTimeError: '이미 지난 시간에는 게임을 만들 수 없습니다!',
+    usersListTitle: '플레이어', usersListSub: '전체 플레이어 및 계좌 정보',
+    unknownBank: '은행 미확인', viewBank: '계좌 보기',
+    conflictError: '이 시간 근처에 다른 게임이 있습니다!',
+    confirmLogout: '로그아웃 하시겠습니까?', saved: '저장됨',
+    profile: '프로필 설정', avatar: '아바타 (이모지)', selectAvatar: '아바타 선택',
+    phone: '전화번호', loginWithPhone: '전화번호로 로그인',
+    needName: '이름 (필수)', phonePlaceholder: '전화번호를 입력하세요',
+    userNotFound: '사용자를 찾을 수 없습니다. 관리자에게 등록을 요청하세요.',
+    follow: '팔로우', unfollow: '팔로잉 ✓',
+    notifyWeb: '웹 알림', notifySms: 'SMS 알림',
+    notificationSettings: '알림 설정',
+    description: '설명', descriptionPlaceholder: '추가 정보...',
+    invitePlayers: '플레이어 초대 (선택사항)',
+    pendingNotifications: '알림', markRead: '확인', decline: '거절',
+    newGameNotif: '새 게임이 생성되었습니다', inviteNotif: '게임에 초대받았습니다',
+    playerJoined: '게임에 참가했습니다', playerLeft: '게임을 나갔습니다', viewGame: '보기',
+    gameUpdatedNotif: '게임이 수정되었습니다', gameDeletedNotif: '게임이 취소되었습니다',
+    gameVisibility: '공개 범위', gamePublic: '모두', gameCircles: '서클별', gameMyCircles: '내 서클', gameSelectedCircles: '선택한 서클', gamePrivate: '초대받은 사람만',
+    communities: '서클', community: '서클', gameCommunity: '서클에 표시', communityAll: '모든 서클',
+    clubCircles: '서클', interestCircles: '관심 서클',
+    noCommunitiesAssigned: '아직 서클이 없습니다', selectCircleError: '서클을 선택해주세요'
   }
 };
 
+const LANGS = ['mn', 'en', 'kr'];
 let lang = localStorage.getItem('golfup_lang') || 'mn';
 
 export function t(key) { return T[lang]?.[key] || T.en[key] || key; }
 export function getLang() { return lang; }
 export function setLang(l) { lang = l; localStorage.setItem('golfup_lang', l); }
-export function toggleLang() { setLang(lang === 'mn' ? 'en' : 'mn'); return lang; }
+export function toggleLang() {
+  const idx = LANGS.indexOf(lang);
+  setLang(LANGS[(idx + 1) % LANGS.length]);
+  return lang;
+}

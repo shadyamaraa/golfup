@@ -14,6 +14,7 @@ let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
+let openCircles = new Set();
 let pendingAuthRedirect = null;
 
 // Past games stay in History for this many days, then move to Archive.
@@ -36,22 +37,23 @@ function needsProfileCompletion(user) {
 }
 
 const MN_BANKS = [
-  'Хаан банк', 'Голомт банк', 'Хас банк', 'Төрийн банк', 'Богд банк',
-  'Капитрон банк', 'М банк', 'Ариг банк', 'Чингис хаан банк', 'Инвескор банк'
+  'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвескор банк', 'Капитрон банк',
+  'М банк', 'Төрийн банк', 'Хаан банк', 'Хас банк', 'Худалдаа Хөгжилийн Банк',
+  'Чингис хаан банк'
 ];
 
 const COMMUNITY_OPTIONS = [
   { id: 'club', label: 'Club', type: 'club' },
   { id: 'eagle', label: 'Eagle', type: 'club' },
+  { id: 'jci', label: 'JCI', type: 'club' },
   { id: 'khan_bogd', label: 'Khan Bogd', type: 'club' },
   { id: 'soyombo', label: 'Soyombo', type: 'club' },
   { id: 'star', label: 'Star', type: 'club' },
-  { id: 'jci', label: 'JCI', type: 'club' },
   { id: 'vista', label: 'Vista', type: 'club' },
   { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
-  { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' },
+  { id: 'bulaa', label: 'Булаа', type: 'interest' },
   { id: 'senior', label: 'Сениор', type: 'interest' },
-  { id: 'bulaa', label: 'Булаа', type: 'interest' }
+  { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' }
 ];
 
 function userCommunityIds(user) {
@@ -202,12 +204,15 @@ function updateHeader() {
   const nameDisplay = document.getElementById('user-name-display');
   const avatar = document.getElementById('user-avatar');
   if (langBtn) langBtn.textContent = getLang().toUpperCase();
+  const adminLink = document.getElementById('admin-link');
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
     nameDisplay.textContent = displayUsername(currentUser);
     avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
+    if (adminLink) adminLink.classList.add('hidden');
   }
 }
 
@@ -412,42 +417,68 @@ function renderNotifications(notifs) {
   const container = document.getElementById('notifications-section');
   if (!container) return;
   if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
+
+  // Auto-remove expired notifications (game date+time has passed)
+  const now = Date.now();
+  const expired = notifs.filter(n => {
+    if (!n.gameDate || !n.gameTime) return false;
+    return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() < now;
+  });
+  expired.forEach(n => store.deleteNotification(currentUser.id, n.id));
+  const active = notifs.filter(n => !expired.includes(n));
+  if (active.length === 0) { container.innerHTML = ''; return; }
+
+  const isOpen = container.dataset.open !== 'false';
   container.innerHTML = `
     <div class="section">
-      <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
-      <div class="notif-list">
-        ${notifs.map(n => {
-          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
-          const title = n.type === 'invite' ? t('inviteNotif')
-            : n.type === 'new_game' ? t('newGameNotif')
-            : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
-            : n.type === 'player_left' ? `${n.from} ${t('playerLeft')}`
-            : n.type === 'game_updated' ? t('gameUpdatedNotif')
-            : n.type === 'game_deleted' ? t('gameDeletedNotif')
-            : `${n.from} ${t('playerLeft')}`;
-          const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
-          const isDeleted = n.type === 'game_deleted';
-          const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
-          const sub = n.type === 'game_updated'
-            ? `${n.changes ? n.changes + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`
-            : `${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`;
-          return `
-          <div class="notif-item glass-card">
-            <div class="notif-content">
-              <span class="notif-icon">${icon}</span>
-              <div>
-                <div class="notif-title">${title}</div>
-                <div class="notif-sub">${sub}</div>
+      <button id="notif-toggle-btn" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;padding:0;margin-bottom:${isOpen ? '10px' : '0'};">
+        <h2 class="section-title" style="margin:0;">🔔 ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
+        <span style="color:var(--text-secondary);font-size:0.9rem;">${isOpen ? '▲' : '▼'}</span>
+      </button>
+      <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
+        <div class="notif-list">
+          ${active.map(n => {
+            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
+            const title = n.type === 'invite' ? t('inviteNotif')
+              : n.type === 'new_game' ? t('newGameNotif')
+              : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
+              : n.type === 'player_left' ? `${n.from} ${t('playerLeft')}`
+              : n.type === 'game_updated' ? t('gameUpdatedNotif')
+              : n.type === 'game_deleted' ? t('gameDeletedNotif')
+              : t('newGameNotif');
+            const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
+            const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
+            const sub = n.type === 'game_updated' && n.changes
+              ? `${n.changes} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`
+              : `${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`;
+            const isDeleted = n.type === 'game_deleted';
+            return `
+            <div class="notif-item glass-card">
+              <div class="notif-content">
+                <span class="notif-icon">${icon}</span>
+                <div>
+                  <div class="notif-title">${title}</div>
+                  <div class="notif-sub">${sub}</div>
+                </div>
               </div>
-            </div>
-            <div class="notif-actions">
-              ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
-              <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
-            </div>
-          </div>`;
-        }).join('')}
+              <div class="notif-actions">
+                ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
+                <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
       </div>
     </div>`;
+
+  container.querySelector('#notif-toggle-btn').addEventListener('click', () => {
+    const wrap = container.querySelector('#notif-list-wrap');
+    const chevron = container.querySelector('#notif-toggle-btn span:last-child');
+    const open = wrap.style.display === 'none';
+    wrap.style.display = open ? 'block' : 'none';
+    chevron.textContent = open ? '▲' : '▼';
+    container.dataset.open = open ? 'true' : 'false';
+  });
   container.querySelectorAll('.join-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       await store.deleteNotification(currentUser.id, btn.dataset.id);
@@ -591,7 +622,7 @@ async function renderCreateGame() {
   const today = new Date().toISOString().split('T')[0];
   const users = await store.loadAllUsers();
   // Filter out hold status, the current user, AND the System Admin
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.role !== 'admin');
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
   const myCommunities = userCommunityIds(currentUser);
 
   main().innerHTML = `
@@ -754,15 +785,28 @@ async function renderCreateGame() {
     const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
     const followerIds = await store.getFollowerIds(currentUser.id);
     const userById = Object.fromEntries(users.map(u => [u.id, u]));
-    const followerNotifIds = isPrivate ? [] : followerIds.filter(fid => {
-      if (invitedIds.includes(fid)) return false;
-      if (targetCommunities.length === 0) return true;
-      return targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id));
-    });
-    await Promise.all([
-      ...invitedIds.map(uid => store.saveNotification(uid, { type: 'invite', ...notifPayload })),
-      ...followerNotifIds.map(fid => store.saveNotification(fid, { type: 'new_game', ...notifPayload }))
-    ]);
+    // Build a per-user notification map so each user gets at most one notification
+    const notifMap = new Map();
+    for (const uid of invitedIds) {
+      if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
+    }
+    if (!isPrivate) {
+      for (const fid of followerIds) {
+        if (notifMap.has(fid) || fid === currentUser.id) continue;
+        if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
+          notifMap.set(fid, { type: 'new_game', ...notifPayload });
+        }
+      }
+      if (targetCommunities.length > 0) {
+        for (const u of users) {
+          if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
+          if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
+            notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+          }
+        }
+      }
+    }
+    await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -833,6 +877,7 @@ function renderGameView(game) {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
       
       <div class="detail-header glass-card">
         <div class="detail-header-top">
@@ -883,7 +928,13 @@ function renderGameView(game) {
     </div>`;
 
   // Event listeners
-  document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
+  document.getElementById('join-btn')?.addEventListener('click', () => {
+    if (game.description) {
+      showJoinConfirmModal(game);
+    } else {
+      handleJoin(game);
+    }
+  });
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
@@ -983,6 +1034,33 @@ async function renderJoinGame(gameId) {
 }
 
 // ---- Game Actions ----
+function showJoinConfirmModal(game) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width:420px;">
+      <h3 class="modal-title">📋 Тайлбар</h3>
+      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
+        <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
+        Та нөхцөлийг зөвшөөрч байна уу?
+      </label>
+      <div class="modal-actions">
+        <button id="join-confirm-cancel" class="btn btn-secondary">${t('cancel')}</button>
+        <button id="join-confirm-ok" class="btn btn-primary" disabled style="opacity:0.4;">${t('join')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const okBtn = modal.querySelector('#join-confirm-ok');
+  modal.querySelector('#join-agree-check').onchange = (e) => {
+    okBtn.disabled = !e.target.checked;
+    okBtn.style.opacity = e.target.checked ? '1' : '0.4';
+  };
+  modal.querySelector('#join-confirm-cancel').onclick = () => modal.remove();
+  okBtn.onclick = () => { modal.remove(); handleJoin(game); };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
 async function handleJoin(game) {
   if (!currentUser) return;
   if (isPlayerInGame(game, currentUser.id)) { showToast('Та аль хэдийн нэгдсэн байна', 'warning'); return; }
@@ -1014,9 +1092,14 @@ async function handleJoin(game) {
   game.waitingList = waitingList;
 
   await store.saveGame(game);
-  const joinedIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
-  const notifPayload = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
-  await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, notifPayload)));
+  const joinNotif = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  const joinedAfter = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+  joinedAfter.forEach(uid => store.saveNotification(uid, joinNotif));
   if (isPlayerInGroup(game, currentUser.id)) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
@@ -1054,9 +1137,14 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
-  const remainingIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
-  const leavePayload = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
-  await Promise.all([...new Set(remainingIds)].map(uid => store.saveNotification(uid, leavePayload)));
+  const leaveNotif = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  const remainingAfter = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+  remainingAfter.forEach(uid => store.saveNotification(uid, leaveNotif));
   renderGameView(game);
   showToast('👋 ' + t('leave'), 'info');
 }
@@ -1068,10 +1156,28 @@ async function handleDelete(game) {
     return;
   }
   if (!confirm(t('confirmDelete'))) return;
-  const joinedIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
+
+  const joinedIds = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+
   await store.deleteGame(game.id);
-  const deletePayload = { type: 'game_deleted', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
-  await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, deletePayload)));
+
+  if (joinedIds.length > 0) {
+    const notifPayload = {
+      type: 'game_deleted',
+      from: displayUsername(currentUser),
+      gameId: game.id,
+      gameDate: game.date,
+      gameTime: game.time,
+      gameLocation: game.location
+    };
+    joinedIds.forEach(uid => store.saveNotification(uid, notifPayload));
+  }
+
   showToast('🗑️ ' + t('gameDeleted'), 'info');
   location.hash = '#/';
 }
@@ -1150,55 +1256,264 @@ async function renderAdminPanel() {
   }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
+  const nonAdminUsers = users.filter(u => u.id !== 'admin_uid');
+
+  const circlesHtml = COMMUNITY_OPTIONS.map(circle => {
+    const members = nonAdminUsers.filter(u => userCommunityIds(u).includes(circle.id))
+      .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+    const nonMembers = nonAdminUsers.filter(u => u.status !== 'hold' && !userCommunityIds(u).includes(circle.id))
+      .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+    const isOpen = openCircles.has(circle.id);
+    return `
+    <div style="margin-bottom:16px; background:rgba(255,255,255,0.05); border-radius:10px; padding:14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="circle-toggle-btn" data-circle="${circle.id}" style="flex:1; min-width:140px; display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--text-primary); padding:0; cursor:pointer; text-align:left;">
+          <span style="color:var(--text-secondary); font-size:0.85rem;">${isOpen ? '▲' : '▼'}</span>
+          <h3 style="margin:0;">${circle.label} <span style="font-size:0.8rem; color:var(--text-secondary); font-weight:normal;">${members.length} гишүүн</span></h3>
+        </button>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <select class="circle-add-select" data-circle="${circle.id}" style="padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:0.85rem; max-width:180px;">
+            <option value="">Нэмэх тоглогч...</option>
+            ${nonMembers.map(u => `<option value="${u.id}">${displayUsername(u)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm btn-primary circle-add-btn" data-circle="${circle.id}">+</button>
+        </div>
+      </div>
+      <div class="circle-members-wrap" data-circle="${circle.id}" style="display:${isOpen ? 'block' : 'none'}; margin-top:10px;">
+      ${members.length === 0
+        ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Гишүүн байхгүй</p>`
+        : `<div style="display:flex; flex-direction:column; gap:5px;">
+            ${members.map(u => `
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
+                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
+                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
+              </div>`).join('')}
+          </div>`}
+      </div>
+    </div>`;
+  }).join('');
 
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="#/" class="back-link">← ${t('back')}</a>
       <div class="glass-card" style="margin-bottom: 20px;">
         <h2 class="card-title">🛡️ Admin Panel</h2>
-        
-        <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-          <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
-            <h3 style="margin:0;">${t('createUser')}</h3>
-            <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
-          </button>
-          <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
-            <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-            <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
-              <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
-              ${communityCheckboxes('new-user-communities', [])}
-            </div>
-            <button type="submit" class="btn btn-primary">${t('create')}</button>
-          </form>
+
+        <div style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
+          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
+          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
+          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
         </div>
 
-        <div>
-          <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
-          <div class="input-group" style="margin: 4px 0 14px;">
-            <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-          </div>
-          <div style="display:flex; flex-direction: column; gap: 8px;">
-            ${users.map(u => `
-              <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
-                <div style="display:flex; flex-direction:column;">
-                  <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
-                </div>
-                <div style="margin-left: auto; display: flex; gap: 8px;">
-                  <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
-                  ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
-                </div>
+        <div id="admin-tab-users">
+          <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
+              <h3 style="margin:0;">${t('createUser')}</h3>
+              <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
+            </button>
+            <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
+              <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
+                <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
+                ${communityCheckboxes('new-user-communities', [])}
               </div>
-            `).join('')}
+              <button type="submit" class="btn btn-primary">${t('create')}</button>
+            </form>
           </div>
+
+          <div>
+            <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
+            <div class="input-group" style="margin: 4px 0 14px;">
+              <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <div style="display:flex; flex-direction: column; gap: 8px;">
+              ${users.map(u => `
+                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                  <div style="display:flex; flex-direction:column;">
+                    <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
+                    <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
+                  </div>
+                  <div style="margin-left: auto; display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
+                    ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div id="admin-tab-circles" style="display:none;">
+          ${circlesHtml}
+        </div>
+
+        <div id="admin-tab-nocircle" style="display:none;">
+          ${(() => {
+            const noCircle = nonAdminUsers
+              .filter(u => userCommunityIds(u).length === 0)
+              .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+            if (noCircle.length === 0) return `<p style="color:var(--text-secondary);">Бүх тоглогч тойрогт бүртгэлтэй байна.</p>`;
+            return `
+              <p style="margin:0 0 12px; color:var(--text-secondary); font-size:0.85rem;">${noCircle.length} тоглогч ямар ч тойрогт ороогүй байна.</p>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                ${noCircle.map(u => `
+                  <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
+                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                    <div style="flex:1;">
+                      <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
+                      <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}">✏️ Засах</button>
+                  </div>`).join('')}
+              </div>`;
+          })()}
+        </div>
+
+        <div id="admin-tab-lookup" style="display:none;">
+          <div style="margin-bottom:16px; position:relative;">
+            <input type="search" id="admin-lookup-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off"
+              style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; box-sizing:border-box;" />
+            <div id="admin-lookup-dropdown" style="display:none; position:absolute; left:0; right:0; top:100%; margin-top:4px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-card); z-index:20; max-height:220px; overflow-y:auto;"></div>
+          </div>
+          <div id="admin-lookup-results"></div>
+          <div id="admin-lookup-results"></div>
         </div>
       </div>
     </div>
   `;
 
+  // Tab switching
+  const tabUsers = document.getElementById('admin-tab-btn-users');
+  const tabCircles = document.getElementById('admin-tab-btn-circles');
+  const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
+  const tabLookup = document.getElementById('admin-tab-btn-lookup');
+  const sectionUsers = document.getElementById('admin-tab-users');
+  const sectionCircles = document.getElementById('admin-tab-circles');
+  const sectionNoCircle = document.getElementById('admin-tab-nocircle');
+  const sectionLookup = document.getElementById('admin-tab-lookup');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup];
+  const switchTab = (activeTab, activeSection) => {
+    allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
+    allSections.forEach(s => s.style.display = 'none');
+    activeTab.className = 'btn btn-primary btn-sm';
+    activeSection.style.display = 'block';
+  };
+  tabUsers.addEventListener('click', () => switchTab(tabUsers, sectionUsers));
+  tabCircles.addEventListener('click', () => switchTab(tabCircles, sectionCircles));
+  tabNoCircle.addEventListener('click', () => switchTab(tabNoCircle, sectionNoCircle));
+  tabLookup.addEventListener('click', () => switchTab(tabLookup, sectionLookup));
+
+  // No-circle tab: open edit modal
+  document.querySelectorAll('.edit-user-btn-nc').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const u = users.find(x => x.id === btn.dataset.id);
+      if (u) showAdminEditUserModal(u, () => renderAdminPanel());
+    });
+  });
+
+  // Lookup tab: user select → show game history
+  const lookupRunForUser = async (uid) => {
+    const resultsEl = document.getElementById('admin-lookup-results');
+    if (!uid) { resultsEl.innerHTML = ''; return; }
+    resultsEl.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+    const allGames = await store.loadAllGamesAdmin();
+    const now = Date.now();
+    const upcoming = [], past = [], deleted = [];
+    for (const g of allGames) {
+      const isCreator = g.createdBy === uid;
+      let inGame = isCreator;
+      if (!inGame) {
+        const grps = ensureGroups(g.groups);
+        inGame = grps.some(grp => ensureArray(grp).some(p => p?.id === uid));
+      }
+      if (!inGame) inGame = ensureArray(g.waitingList).some(p => p?.id === uid);
+      if (!inGame) continue;
+      const gMs = new Date(`${g.date}T${(g.time||'00:00').padStart(5,'0')}`).getTime();
+      if (g.status === 'deleted') deleted.push({ g, isCreator, gMs });
+      else if (gMs < now) past.push({ g, isCreator, gMs });
+      else upcoming.push({ g, isCreator, gMs });
+    }
+    upcoming.sort((a,b) => a.gMs - b.gMs);
+    past.sort((a,b) => b.gMs - a.gMs);
+    deleted.sort((a,b) => b.gMs - a.gMs);
+
+    const renderRow = ({ g, isCreator }, showRestore = false) => {
+      const role = isCreator ? '✍️' : '🏌️';
+      const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
+      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:8px; flex-wrap:wrap;">
+        <span style="font-size:1rem;">${role}</span>
+        <div style="flex:1; min-width:140px;">
+          <div style="font-size:0.9rem;">${formatDate(g.date)} ${g.time}${deletedLabel}</div>
+          <div style="font-size:0.8rem; color:var(--text-secondary);">📍 ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
+        </div>
+        <a href="#/game/${g.id}" class="btn btn-sm btn-outline" style="font-size:0.8rem;">Харах</a>
+        ${showRestore ? `<button class="btn btn-sm btn-primary restore-game-btn" data-id="${g.id}" style="font-size:0.8rem;">↩ Сэргээх</button>` : ''}
+      </div>`;
+    };
+
+    const section = (title, items, restore = false) => items.length === 0 ? '' : `
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 8px; color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase; letter-spacing:0.05em;">${title} (${items.length})</h4>
+        <div style="display:flex; flex-direction:column; gap:6px;">${items.map(i => renderRow(i, restore)).join('')}</div>
+      </div>`;
+
+    resultsEl.innerHTML = section('Ирэх тоглолтууд', upcoming) +
+      section('Өнгөрсөн тоглолтууд', past) +
+      section('Устсан тоглолтууд', deleted, true) ||
+      `<p style="color:var(--text-secondary);">Тоглолт олдсонгүй.</p>`;
+
+    resultsEl.querySelectorAll('.restore-game-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await store.restoreGame(btn.dataset.id);
+        btn.closest('div[style]').remove();
+        showToast('✅ Тоглолт сэргээгдлээ', 'success');
+      });
+    });
+  };
+
+  const lookupInput = document.getElementById('admin-lookup-input');
+  const lookupDropdown = document.getElementById('admin-lookup-dropdown');
+  const sortedLookupUsers = nonAdminUsers.sort((a,b) => displayUsername(a).localeCompare(displayUsername(b)));
+
+  lookupInput?.addEventListener('input', () => {
+    const q = lookupInput.value.trim().toLowerCase();
+    if (!q) { lookupDropdown.style.display = 'none'; return; }
+    const matches = sortedLookupUsers.filter(u =>
+      displayUsername(u).toLowerCase().includes(q) || (u.phone || '').includes(q)
+    );
+    if (!matches.length) { lookupDropdown.style.display = 'none'; return; }
+    lookupDropdown.innerHTML = matches.map(u => `
+      <div class="lookup-item" data-id="${u.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); font-size:0.95rem; display:flex; gap:8px; align-items:center;">
+        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+        <span style="flex:1;">${displayUsername(u)}</span>
+        <span style="font-size:0.8rem; color:var(--text-secondary);">${u.phone || ''}</span>
+      </div>`).join('');
+    lookupDropdown.style.display = 'block';
+    lookupDropdown.querySelectorAll('.lookup-item').forEach(item => {
+      item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.07)');
+      item.addEventListener('mouseleave', () => item.style.background = '');
+      item.addEventListener('click', () => {
+        const u = sortedLookupUsers.find(x => x.id === item.dataset.id);
+        lookupInput.value = displayUsername(u) + (u.phone ? ' · ' + u.phone : '');
+        lookupDropdown.style.display = 'none';
+        lookupRunForUser(item.dataset.id);
+      });
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!lookupInput?.contains(e.target) && !lookupDropdown?.contains(e.target)) {
+      lookupDropdown.style.display = 'none';
+    }
+  }, { once: false });
+
+  // Users tab: create user toggle
   const createUserToggle = document.getElementById('create-user-toggle');
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
@@ -1253,6 +1568,58 @@ async function renderAdminPanel() {
         await store.deleteUserFromDB(btn.dataset.id);
         renderAdminPanel();
       }
+    });
+  });
+
+  // Circles tab: collapse/expand on title click
+  document.querySelectorAll('.circle-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const circleId = btn.dataset.circle;
+      const wrap = document.querySelector(`.circle-members-wrap[data-circle="${circleId}"]`);
+      const chevron = btn.querySelector('span');
+      const open = wrap.style.display === 'none';
+      wrap.style.display = open ? 'block' : 'none';
+      chevron.textContent = open ? '▲' : '▼';
+      if (open) openCircles.add(circleId); else openCircles.delete(circleId);
+    });
+  });
+
+  // Circles tab: add player to circle
+  document.querySelectorAll('.circle-add-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const circleId = btn.dataset.circle;
+      const sel = document.querySelector(`.circle-add-select[data-circle="${circleId}"]`);
+      const userId = sel?.value;
+      if (!userId) { showToast('Тоглогч сонгоно уу', 'warning'); return; }
+      const u = users.find(x => x.id === userId);
+      if (!u) return;
+      const coms = userCommunityIds(u);
+      if (!coms.includes(circleId)) {
+        u.communities = [...coms, circleId];
+        await store.adminUpdateUser(u);
+        showToast(`✅ ${displayUsername(u)}-г нэмлээ`, 'success');
+        openCircles.add(circleId);
+        renderAdminPanel().then(() => {
+          document.getElementById('admin-tab-btn-circles')?.click();
+        });
+      }
+    });
+  });
+
+  // Circles tab: remove player from circle
+  document.querySelectorAll('.circle-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const circleId = btn.dataset.circle;
+      const userId = btn.dataset.user;
+      const u = users.find(x => x.id === userId);
+      if (!u) return;
+      u.communities = userCommunityIds(u).filter(id => id !== circleId);
+      await store.adminUpdateUser(u);
+      showToast(`✅ ${displayUsername(u)}-г хаслаа`, 'success');
+      openCircles.add(circleId);
+      renderAdminPanel().then(() => {
+        document.getElementById('admin-tab-btn-circles')?.click();
+      });
     });
   });
 }
@@ -1383,7 +1750,7 @@ async function renderUsersList() {
   allUsersMap = {};
   users.forEach(u => { if (u && u.id) allUsersMap[u.id] = u; });
 
-  const sortedUsers = users.filter(u => u.role !== 'admin').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  const sortedUsers = users.filter(u => u.id !== 'admin_uid').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
 
   main().innerHTML = `
     <div class="detail-container fade-in">
@@ -1517,6 +1884,7 @@ async function renderEditGame(gameId) {
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/game/${game.id}" class="back-link">← ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
       <div class="create-card glass-card">
         <h2 class="card-title">✏️ Edit Game</h2>
         <form id="edit-form" class="create-form">
@@ -1627,10 +1995,11 @@ async function renderEditGame(gameId) {
     await store.saveGame(game);
 
     if (changes.length > 0) {
+      const changesText = changes.join(', ');
       const notifPayload = {
         type: 'game_updated',
         from: displayUsername(currentUser),
-        changes: changes.join(', '),
+        changes: changesText,
         gameId: game.id,
         gameDate: game.date,
         gameTime: game.time,
@@ -1641,7 +2010,8 @@ async function renderEditGame(gameId) {
         .concat(ensureArray(game.waitingList))
         .map(p => p?.id)
         .filter(id => id && id !== currentUser.id);
-      await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, notifPayload)));
+      const uniqueJoinedIds = [...new Set(joinedIds)];
+      await Promise.all(uniqueJoinedIds.map(uid => store.saveNotification(uid, notifPayload)));
     }
 
     showToast('✅ Saved!', 'success');
@@ -1664,6 +2034,7 @@ async function renderEditGame(gameId) {
 // ---- Add / Remove Player ----
 async function handleAddPlayer(game, onSaved = null) {
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
 
   const modal = document.createElement('div');
@@ -1676,7 +2047,7 @@ async function handleAddPlayer(game, onSaved = null) {
 
   const users = await store.loadAllUsers();
   // Filter out admin and people already in game
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== 'admin_uid' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
     modal.innerHTML = `<h3>Тоглогч нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Бүх хүн тоглолтод орсон эсвэл нэмэх хүн алга байна.</p><button class="btn btn-ghost" id="close-modal-btn">Хаах</button>`;
@@ -1711,6 +2082,7 @@ async function handleAddPlayer(game, onSaved = null) {
 
 function openPlayerSearchModal(title, availableUsers, onConfirm) {
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
@@ -1772,6 +2144,7 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   }
 
   const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
   const modal = document.createElement('div');
   modal.className = 'glass-card fade-in';
@@ -1781,7 +2154,7 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   document.body.appendChild(overlay);
 
   const users = await store.loadAllUsers();
-  const availableUsers = users.filter(u => u.status !== 'hold' && u.role !== 'admin' && !isPlayerInGame(game, u.id));
+  const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== 'admin_uid' && !isPlayerInGame(game, u.id));
 
   if (availableUsers.length === 0) {
     modal.innerHTML = `<h3>Групп ${groupIndex + 1}-д нэмэх</h3><p style="margin:20px 0;color:var(--text-secondary);">Нэмэх боломжтой хэрэглэгч байхгүй.</p><button class="btn btn-ghost" id="close-atg-btn">Хаах</button>`;
@@ -1970,6 +2343,13 @@ export function initApp() {
   document.getElementById('profile-trigger')?.addEventListener('click', () => {
     if (!currentUser) return;
     showProfileModal(currentUser);
+  });
+
+  // Close any modal/popup when its backdrop is clicked
+  document.body.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('modal-overlay') || e.target.classList?.contains('popup-overlay')) {
+      e.target.remove();
+    }
   });
 
   document.body.addEventListener('click', async (e) => {

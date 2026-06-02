@@ -23,7 +23,11 @@ exports.sendPushOnNotification = functions.database
         ? `${notif.from} тоглолтод нэгдлээ!`
         : notif.type === 'player_left'
           ? `${notif.from} тоглолтоос гарлаа!`
-          : `${notif.from} шинэ тоглолт үүсгэлээ!`;
+          : notif.type === 'game_updated'
+            ? `Тоглолт засагдлаа${notif.changes ? ': ' + notif.changes : ''}`
+            : notif.type === 'game_deleted'
+              ? `${notif.from} тоглолтыг цуцаллаа`
+              : `${notif.from} шинэ тоглолт үүсгэлээ!`;
     const body = `${notif.gameDate} ${notif.gameTime} - ${notif.gameLocation}`;
 
     await admin.messaging().send({
