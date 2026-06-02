@@ -13,12 +13,13 @@ claude/beldey-nguk4
 ### Changed Files
 - `src/app.js`
 - `src/i18n.js`
+- `src/store.js`
 
 ### Summary
-Implemented split-tee (Hole 1 + Hole 10) feature. Games now have `holes` (9 or 18) and `startingHole` (1 or 10) fields. Create/edit forms include radio toggles for these fields with visual highlight. Slot conflict validation blocks two games at the same date+time+startingHole. Personal time conflict check updated to use holes-based duration (9h = 2h, 18h = 4.5h) with window overlap logic. Game cards and detail view display holes/startingHole info.
+Added game event notifications: edit (game_updated), join/leave (player_joined/player_left), and delete (game_deleted). All joined players receive notifications — not just the creator. Edit form tracks what changed (date/time/location/group size/description) and includes the diff in the notification. game_deleted notification has no View button. store.saveNotification dedup bypassed for event types that repeat per-user.
 
 ### Risk
-Low. Additive feature; existing games without the new fields fall back to defaults (18 holes, Hole 1).
+Low. Additive feature; no UI layout changes.
 
 ## 2026-05-21
 

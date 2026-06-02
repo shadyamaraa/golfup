@@ -397,24 +397,31 @@ function renderNotifications(notifs) {
       <h2 class="section-title">🔔 ${t('pendingNotifications')} <span class="notif-badge">${notifs.length}</span></h2>
       <div class="notif-list">
         ${notifs.map(n => {
-          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : '⛳';
+          const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
           const title = n.type === 'invite' ? t('inviteNotif')
             : n.type === 'new_game' ? t('newGameNotif')
             : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
+            : n.type === 'player_left' ? `${n.from} ${t('playerLeft')}`
+            : n.type === 'game_updated' ? t('gameUpdatedNotif')
+            : n.type === 'game_deleted' ? t('gameDeletedNotif')
             : `${n.from} ${t('playerLeft')}`;
           const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
+          const isDeleted = n.type === 'game_deleted';
           const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
+          const sub = n.type === 'game_updated'
+            ? `${n.changes ? n.changes + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`
+            : `${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`;
           return `
           <div class="notif-item glass-card">
             <div class="notif-content">
               <span class="notif-icon">${icon}</span>
               <div>
                 <div class="notif-title">${title}</div>
-                <div class="notif-sub">${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}</div>
+                <div class="notif-sub">${sub}</div>
               </div>
             </div>
             <div class="notif-actions">
-              <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>
+              ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
               <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
             </div>
           </div>`;
@@ -521,7 +528,6 @@ function renderGamesCards(games, isPast = false) {
           <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
             <span>🕐 ${g.time}</span>
             <span>👤 ${g.creatorName || '-'}</span>
-            ${g.holes !== undefined ? `<span>⛳ ${g.holes}н · H${g.startingHole || 1}</span>` : ''}
           </div>
         </div>
         <div class="game-card-footer">
@@ -596,28 +602,6 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
-            <label>${t('holeCount')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="holes-18-label">
-                <input type="radio" name="holes" value="18" checked style="width:16px;height:16px;"> ${t('holes18')}
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="holes-9-label">
-                <input type="radio" name="holes" value="9" style="width:16px;height:16px;"> ${t('holes9')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group">
-            <label>${t('startingHole')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="hole1-label">
-                <input type="radio" name="startingHole" value="1" checked style="width:16px;height:16px;"> ${t('hole1')}
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="hole10-label">
-                <input type="radio" name="startingHole" value="10" style="width:16px;height:16px;"> ${t('hole10')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group">
             <label for="game-desc">${t('description')}</label>
             <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
           </div>
@@ -681,22 +665,6 @@ async function renderCreateGame() {
     });
   });
   document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
-  document.getElementById('holes-18-label').style.borderColor = 'var(--emerald)';
-  document.getElementById('hole1-label').style.borderColor = 'var(--emerald)';
-  document.querySelectorAll('input[name="holes"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const val = document.querySelector('input[name="holes"]:checked').value;
-      document.getElementById('holes-18-label').style.borderColor = val === '18' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('holes-9-label').style.borderColor = val === '9' ? 'var(--emerald)' : 'transparent';
-    });
-  });
-  document.querySelectorAll('input[name="startingHole"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const val = document.querySelector('input[name="startingHole"]:checked').value;
-      document.getElementById('hole1-label').style.borderColor = val === '1' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('hole10-label').style.borderColor = val === '10' ? 'var(--emerald)' : 'transparent';
-    });
-  });
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('create-submit-btn').disabled = true;
@@ -712,22 +680,7 @@ async function renderCreateGame() {
       return;
     }
 
-    const holes = +document.querySelector('input[name="holes"]:checked').value;
-    const startingHole = +document.querySelector('input[name="startingHole"]:checked').value;
-
-    const allGamesForSlot = await store.loadAllGames();
-    const slotTaken = allGamesForSlot.find(g =>
-      g.date === date &&
-      g.time === hour + ':' + min &&
-      (g.startingHole || 1) === startingHole
-    );
-    if (slotTaken) {
-      showToast(`Hole ${startingHole}-ийн ${hour}:${min} цагийн slot аль хэдийн бүртгэгдсэн байна!`, 'error');
-      document.getElementById('create-submit-btn').disabled = false;
-      return;
-    }
-
-    const conflict = await checkTimeConflict(currentUser.id, { date, time: hour + ':' + min, holes, startingHole });
+    const conflict = await checkTimeConflict(currentUser.id, { date, time: hour + ':' + min });
     if (conflict) {
       showToast(t('conflictError'), 'error');
       document.getElementById('create-submit-btn').disabled = false;
@@ -759,8 +712,6 @@ async function renderCreateGame() {
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
-      holes,
-      startingHole,
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
@@ -866,7 +817,6 @@ function renderGameView(game) {
         <div class="detail-meta">
           <span>🕐 ${game.time}</span>
           <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
-          ${game.holes !== undefined ? `<span>⛳ ${game.holes} ${t('holeCount')} · 🏁 Hole ${game.startingHole || 1}</span>` : ''}
         </div>
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
@@ -1035,12 +985,9 @@ async function handleJoin(game) {
   game.waitingList = waitingList;
 
   await store.saveGame(game);
-  if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, {
-      type: 'player_joined', from: displayUsername(currentUser),
-      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
-    });
-  }
+  const joinedIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
+  const notifPayload = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, notifPayload)));
   if (isPlayerInGroup(game, currentUser.id)) {
     removeFromConflictingWaitlists(currentUser.id, game);
   }
@@ -1078,19 +1025,19 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
-  if (game.createdBy && game.createdBy !== currentUser.id) {
-    store.saveNotification(game.createdBy, {
-      type: 'player_left', from: displayUsername(currentUser),
-      gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location
-    });
-  }
+  const remainingIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
+  const leavePayload = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  await Promise.all([...new Set(remainingIds)].map(uid => store.saveNotification(uid, leavePayload)));
   renderGameView(game);
   showToast('👋 ' + t('leave'), 'info');
 }
 
 async function handleDelete(game) {
   if (!confirm(t('confirmDelete'))) return;
+  const joinedIds = ensureGroups(game.groups).flatMap(g => ensureArray(g)).concat(ensureArray(game.waitingList)).map(p => p?.id).filter(id => id && id !== currentUser.id);
   await store.deleteGame(game.id);
+  const deletePayload = { type: 'game_deleted', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, deletePayload)));
   showToast('🗑️ ' + t('gameDeleted'), 'info');
   location.hash = '#/';
 }
@@ -1570,28 +1517,6 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
-            <label>${t('holeCount')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="edit-holes-18-label">
-                <input type="radio" name="edit-holes" value="18" ${(game.holes || 18) === 18 ? 'checked' : ''} style="width:16px;height:16px;"> ${t('holes18')}
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="edit-holes-9-label">
-                <input type="radio" name="edit-holes" value="9" ${(game.holes || 18) === 9 ? 'checked' : ''} style="width:16px;height:16px;"> ${t('holes9')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group">
-            <label>${t('startingHole')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="edit-hole1-label">
-                <input type="radio" name="edit-startingHole" value="1" ${(game.startingHole || 1) === 1 ? 'checked' : ''} style="width:16px;height:16px;"> ${t('hole1')}
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,0.05);padding:10px 16px;border-radius:8px;flex:1;border:2px solid transparent;" id="edit-hole10-label">
-                <input type="radio" name="edit-startingHole" value="10" ${(game.startingHole || 1) === 10 ? 'checked' : ''} style="width:16px;height:16px;"> ${t('hole10')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group">
             <label for="edit-desc">${t('description')}</label>
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
@@ -1632,33 +1557,12 @@ async function renderEditGame(gameId) {
     editSizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +editSizeInput.value + 1);
   });
 
-  const eH18 = document.getElementById('edit-holes-18-label');
-  const eH9 = document.getElementById('edit-holes-9-label');
-  const eHole1 = document.getElementById('edit-hole1-label');
-  const eHole10 = document.getElementById('edit-hole10-label');
-  eH18.style.borderColor = (game.holes || 18) === 18 ? 'var(--emerald)' : 'transparent';
-  eH9.style.borderColor = (game.holes || 18) === 9 ? 'var(--emerald)' : 'transparent';
-  eHole1.style.borderColor = (game.startingHole || 1) === 1 ? 'var(--emerald)' : 'transparent';
-  eHole10.style.borderColor = (game.startingHole || 1) === 10 ? 'var(--emerald)' : 'transparent';
-  document.querySelectorAll('input[name="edit-holes"]').forEach(r => r.addEventListener('change', () => {
-    const v = document.querySelector('input[name="edit-holes"]:checked').value;
-    eH18.style.borderColor = v === '18' ? 'var(--emerald)' : 'transparent';
-    eH9.style.borderColor = v === '9' ? 'var(--emerald)' : 'transparent';
-  }));
-  document.querySelectorAll('input[name="edit-startingHole"]').forEach(r => r.addEventListener('change', () => {
-    const v = document.querySelector('input[name="edit-startingHole"]:checked').value;
-    eHole1.style.borderColor = v === '1' ? 'var(--emerald)' : 'transparent';
-    eHole10.style.borderColor = v === '10' ? 'var(--emerald)' : 'transparent';
-  }));
-
   document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const date = document.getElementById('edit-date').value;
     const hour = document.getElementById('edit-hour').value;
     const min = document.getElementById('edit-minute').value;
     const groupSize = Number(document.getElementById('edit-group-size').value);
-    const holes = +document.querySelector('input[name="edit-holes"]:checked').value;
-    const startingHole = +document.querySelector('input[name="edit-startingHole"]:checked').value;
 
     const selectedTime = new Date(`${date}T${hour}:${min}`).getTime();
     if (selectedTime < Date.now()) {
@@ -1671,29 +1575,11 @@ async function renderEditGame(gameId) {
     const oldLocation = game.location;
     const oldGroupSize = game.groupSize;
     const oldDescription = game.description;
-    const oldHoles = game.holes || 18;
-    const oldStartingHole = game.startingHole || 1;
-
-    if (date !== oldDate || hour + ':' + min !== oldTime || startingHole !== oldStartingHole) {
-      const allGamesForSlot = await store.loadAllGames();
-      const slotTaken = allGamesForSlot.find(g =>
-        g.id !== game.id &&
-        g.date === date &&
-        g.time === hour + ':' + min &&
-        (g.startingHole || 1) === startingHole
-      );
-      if (slotTaken) {
-        showToast(`Hole ${startingHole}-ийн ${hour}:${min} цагийн slot аль хэдийн бүртгэгдсэн байна!`, 'error');
-        return;
-      }
-    }
 
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
     game.groupSize = groupSize;
-    game.holes = holes;
-    game.startingHole = startingHole;
     reflowGroupsBySize(game);
     game.description = document.getElementById('edit-desc').value.trim();
 
@@ -1702,18 +1588,15 @@ async function renderEditGame(gameId) {
     if (oldTime !== game.time) changes.push(`Цаг: ${oldTime} → ${game.time}`);
     if (oldLocation !== game.location) changes.push(`Байршил: ${oldLocation} → ${game.location}`);
     if (oldGroupSize !== game.groupSize) changes.push(`Тоглогч: ${oldGroupSize} → ${game.groupSize}`);
-    if (oldHoles !== holes) changes.push(`Нүх: ${oldHoles} → ${holes}`);
-    if (oldStartingHole !== startingHole) changes.push(`Эхлэх нүх: Hole ${oldStartingHole} → Hole ${startingHole}`);
     if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
 
     await store.saveGame(game);
 
     if (changes.length > 0) {
-      const changesText = changes.join(', ');
       const notifPayload = {
         type: 'game_updated',
         from: displayUsername(currentUser),
-        changes: changesText,
+        changes: changes.join(', '),
         gameId: game.id,
         gameDate: game.date,
         gameTime: game.time,
@@ -1724,8 +1607,7 @@ async function renderEditGame(gameId) {
         .concat(ensureArray(game.waitingList))
         .map(p => p?.id)
         .filter(id => id && id !== currentUser.id);
-      const uniqueJoinedIds = [...new Set(joinedIds)];
-      await Promise.all(uniqueJoinedIds.map(uid => store.saveNotification(uid, notifPayload)));
+      await Promise.all([...new Set(joinedIds)].map(uid => store.saveNotification(uid, notifPayload)));
     }
 
     showToast('✅ Saved!', 'success');
@@ -2086,17 +1968,15 @@ export function initApp() {
 async function checkTimeConflict(userId, newGame) {
   const allGames = await store.loadAllGames();
   const newTime = new Date(`${newGame.date}T${newGame.time.padStart(5, '0')}`).getTime();
-  const newDuration = (newGame.holes === 9 ? 2 : 4.5) * 60 * 60 * 1000;
-  const newEnd = newTime + newDuration;
 
   for (const g of allGames) {
     if (g.id === newGame.id) continue;
     if (isPlayerInGroup(g, userId)) {
       const gTime = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
-      const gDuration = (g.holes === 9 ? 2 : 4.5) * 60 * 60 * 1000;
-      const gEnd = gTime + gDuration;
+      const diffMs = Math.abs(newTime - gTime);
+      const diffHrs = diffMs / (1000 * 60 * 60);
 
-      if (newTime < gEnd && gTime < newEnd) {
+      if (diffHrs < 2) {
         return { time: g.time, game: g };
       }
     }

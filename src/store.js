@@ -220,7 +220,7 @@ export async function getFollowerIds(targetUserId) {
 // ---- Notifications ----
 export async function saveNotification(targetUserId, notif) {
   if (useFirebase && db) {
-    if (notif?.gameId && notif?.type) {
+    if (notif?.gameId && notif?.type && !['game_updated', 'player_joined', 'player_left', 'game_deleted'].includes(notif.type)) {
       const snap = await get(ref(db, `notifications/${targetUserId}`));
       if (snap.exists()) {
         const duplicate = Object.values(snap.val()).find(n =>
