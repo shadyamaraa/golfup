@@ -418,18 +418,20 @@ function renderNotifications(notifs) {
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
-            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : '⛳';
+            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
             const title = n.type === 'invite' ? t('inviteNotif')
               : n.type === 'new_game' ? t('newGameNotif')
               : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
               : n.type === 'player_left' ? `${n.from} ${t('playerLeft')}`
               : n.type === 'game_updated' ? t('gameUpdatedNotif')
+              : n.type === 'game_deleted' ? t('gameDeletedNotif')
               : t('newGameNotif');
             const isInviteOrNew = n.type === 'invite' || n.type === 'new_game';
             const joinLabel = n.type === 'invite' ? t('join') : t('viewGame');
             const sub = n.type === 'game_updated' && n.changes
               ? `${n.changes} · ${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`
               : `${isInviteOrNew ? n.from + ' · ' : ''}${formatDate(n.gameDate)} ${n.gameTime} · ${n.gameLocation}`;
+            const isDeleted = n.type === 'game_deleted';
             return `
             <div class="notif-item glass-card">
               <div class="notif-content">
@@ -440,7 +442,7 @@ function renderNotifications(notifs) {
                 </div>
               </div>
               <div class="notif-actions">
-                <button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>
+                ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
                 <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
               </div>
             </div>`;
@@ -1120,7 +1122,28 @@ async function handleLeave(game) {
 
 async function handleDelete(game) {
   if (!confirm(t('confirmDelete'))) return;
+
+  const joinedIds = [...new Set(
+    ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
+      .concat(ensureArray(game.waitingList))
+      .map(p => p?.id)
+      .filter(id => id && id !== currentUser.id)
+  )];
+
   await store.deleteGame(game.id);
+
+  if (joinedIds.length > 0) {
+    const notifPayload = {
+      type: 'game_deleted',
+      from: displayUsername(currentUser),
+      gameId: game.id,
+      gameDate: game.date,
+      gameTime: game.time,
+      gameLocation: game.location
+    };
+    joinedIds.forEach(uid => store.saveNotification(uid, notifPayload));
+  }
+
   showToast('🗑️ ' + t('gameDeleted'), 'info');
   location.hash = '#/';
 }
