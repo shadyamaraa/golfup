@@ -1924,6 +1924,12 @@ async function renderEditGame(gameId) {
   const isPast = !isNaN(gDate) && gDate < Date.now();
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
+  const myCommunities = userCommunityIds(currentUser);
+  const savedTargetCommunities = Array.isArray(game.targetCommunities) ? game.targetCommunities : [];
+  const currentVisibility = game.isPrivate ? 'private'
+    : savedTargetCommunities.length > 0 && savedTargetCommunities.length === myCommunities.length && savedTargetCommunities.every(id => myCommunities.includes(id)) ? 'my-circles'
+    : savedTargetCommunities.length > 0 ? 'selected-circles'
+    : 'public';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -1967,6 +1973,29 @@ async function renderEditGame(gameId) {
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
           <div class="input-group">
+            <label>${t('gameVisibility')}</label>
+            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
+                <input type="radio" name="edit-visibility" value="public" ${currentVisibility === 'public' ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
+                <input type="radio" name="edit-visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'my-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
+                <input type="radio" name="edit-visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'selected-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
+                <input type="radio" name="edit-visibility" value="private" ${currentVisibility === 'private' ? 'checked' : ''} style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group" id="edit-communities-wrap" style="display:${currentVisibility === 'selected-circles' ? 'block' : 'none'};">
+            <label>${t('gameCommunity')}</label>
+            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+              ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
+            </div>
+          </div>
+          <div class="input-group">
             <label>Players</label>
             <button type="button" class="btn btn-outline" id="edit-add-player-btn">➕ Add Player</button>
           </div>
@@ -2003,6 +2032,20 @@ async function renderEditGame(gameId) {
     editSizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +editSizeInput.value + 1);
   });
 
+  // Highlight selected visibility and toggle circles panel
+  const editVisLabels = { public: 'edit-vis-public-label', 'my-circles': 'edit-vis-my-circles-label', 'selected-circles': 'edit-vis-selected-circles-label', private: 'edit-vis-private-label' };
+  function updateEditVisHighlight() {
+    const v = document.querySelector('input[name="edit-visibility"]:checked')?.value || 'public';
+    Object.entries(editVisLabels).forEach(([val, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.style.borderColor = v === val ? 'var(--emerald)' : 'transparent';
+    });
+    const wrap = document.getElementById('edit-communities-wrap');
+    if (wrap) wrap.style.display = v === 'selected-circles' ? 'block' : 'none';
+  }
+  document.querySelectorAll('input[name="edit-visibility"]').forEach(r => r.addEventListener('change', updateEditVisHighlight));
+  updateEditVisHighlight();
+
   document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const date = document.getElementById('edit-date').value;
@@ -2021,12 +2064,27 @@ async function renderEditGame(gameId) {
     const oldLocation = game.location;
     const oldGroupSize = game.groupSize;
     const oldDescription = game.description;
+    const oldIsPrivate = game.isPrivate;
+
+    const editVisibility = document.querySelector('input[name="edit-visibility"]:checked')?.value || 'public';
+    const editIsPrivate = editVisibility === 'private';
+    const editTargetCommunities = editVisibility === 'my-circles' ? userCommunityIds(currentUser)
+      : editVisibility === 'selected-circles' ? selectedCommunities('edit-communities')
+      : [];
+
+    if ((editVisibility === 'my-circles' || editVisibility === 'selected-circles') && editTargetCommunities.length === 0) {
+      showToast(t('selectCircleError'), 'error');
+      return;
+    }
 
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
     game.groupSize = groupSize;
+    game.isPrivate = editIsPrivate;
+    game.targetCommunities = editTargetCommunities;
     reflowGroupsBySize(game);
+    fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
 
     const changes = [];
@@ -2035,6 +2093,7 @@ async function renderEditGame(gameId) {
     if (oldLocation !== game.location) changes.push(`Байршил: ${oldLocation} → ${game.location}`);
     if (oldGroupSize !== game.groupSize) changes.push(`Тоглогч: ${oldGroupSize} → ${game.groupSize}`);
     if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
+    if (oldIsPrivate !== game.isPrivate) changes.push(`Харагдах хүрээ өөрчлөгдлөө`);
 
     await store.saveGame(game);
 
