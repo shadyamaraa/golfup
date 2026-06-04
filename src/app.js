@@ -624,6 +624,10 @@ async function renderCreateGame() {
   // Filter out hold status, the current user, AND the System Admin
   const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
   const myCommunities = userCommunityIds(currentUser);
+  const availableById = Object.fromEntries(availableUsers.map(u => [u.id, u]));
+  const followedInviteUsers = availableUsers.filter(u => !!currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  let selectedInviteIds = [];
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -690,14 +694,8 @@ async function renderCreateGame() {
           </div>
           <div class="input-group">
             <label>${t('invitePlayers')}</label>
-            <div style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
-              ${availableUsers.length > 0 ? availableUsers.map(u => `
-                <label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer;">
-                  <input type="checkbox" class="create-player-cb" value="${u.id}" data-name="${u.name}" style="width:18px; height:18px;">
-                  <span>${u.name}</span>
-                </label>
-              `).join('') : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
-            </div>
+            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%;">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
           </div>
           <div class="form-actions">
             <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
@@ -725,6 +723,30 @@ async function renderCreateGame() {
     });
   });
   document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+
+  function refreshInviteChips() {
+    const container = document.getElementById('invite-chips-container');
+    if (!container) return;
+    container.innerHTML = selectedInviteIds.map(id => {
+      const u = availableById[id];
+      const name = u ? displayUsername(u) : id;
+      return `<span style="background:rgba(255,255,255,0.1);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+    }).join('');
+    container.querySelectorAll('.rm-invite-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedInviteIds = selectedInviteIds.filter(id => id !== btn.dataset.id);
+        refreshInviteChips();
+      });
+    });
+  }
+
+  document.getElementById('open-invite-modal-btn')?.addEventListener('click', () => {
+    openInviteSelectModal(followedInviteUsers, otherInviteUsers, selectedInviteIds, (ids) => {
+      selectedInviteIds = ids;
+      refreshInviteChips();
+    });
+  });
+
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('create-submit-btn').disabled = true;
@@ -748,7 +770,7 @@ async function renderCreateGame() {
     }
 
     const groupSize = +document.getElementById('game-group-size').value;
-    const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
+    const invitedIds = [...selectedInviteIds];
     const visibility = document.querySelector('input[name="visibility"]:checked').value;
     const isPrivate = visibility === 'private';
     const targetCommunities = visibility === 'my-circles'
@@ -873,6 +895,14 @@ function renderGameView(game) {
 
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
+  const _joinedIdsView = new Set(groups.flatMap(g => ensureArray(g)).map(p => p?.id).filter(Boolean));
+  const _waitingIdsView = new Set(waitingList.map(p => p?.id).filter(Boolean));
+
+  function inviteStatusBadge(uid) {
+    if (_joinedIdsView.has(uid)) return { label: t('statusJoined'), color: '#4caf50' };
+    if (_waitingIdsView.has(uid)) return { label: t('statusWaiting'), color: '#ff9800' };
+    return { label: t('statusInvited'), color: '#2196f3' };
+  }
 
   main().innerHTML = `
     <div class="detail-container fade-in">
@@ -902,6 +932,18 @@ function renderGameView(game) {
         </div>
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
+        ${(isCreator || currentUser?.role === 'admin') && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
+          <div class="game-description" style="margin-top:10px;">
+            <span class="desc-label">✉️ ${t('manageInvites')} (${game.invitedIds.length})</span>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+              ${game.invitedIds.map(uid => {
+                const u = allUsersMap[uid];
+                const name = u ? displayUsername(u) : uid;
+                const st = inviteStatusBadge(uid);
+                return `<span style="font-size:0.82rem;padding:3px 9px;border-radius:12px;background:${st.color}18;border:1px solid ${st.color}44;color:var(--text-primary);">${name} <span style="color:${st.color};font-weight:600;">${st.label}</span></span>`;
+              }).join('')}
+            </div>
+          </div>` : ''}
       </div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
@@ -2187,6 +2229,60 @@ async function handleInvite(game) {
   }
 
   renderInviteModal();
+}
+
+function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onConfirm) {
+  const selected = new Set(currentSelected);
+
+  function rowHTML(u) {
+    const isSel = selected.has(u.id);
+    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:rgba(255,255,255,0.07);' : ''}">
+      <span class="ism-check" style="width:20px;text-align:center;font-size:1.1rem;color:var(--primary-color);">${isSel ? '✓' : ''}</span>
+      <span style="font-size:0.95rem;">${displayUsername(u)}</span>
+    </div>`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div class="glass-card fade-in" style="width:100%;max-width:400px;padding:20px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 12px;">${t('invitePlayers')}</h3>
+      <div style="flex:1;overflow-y:auto;margin:0 -4px;padding:0 4px;">
+        ${followedUsers.length > 0 ? `
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">⭐ ${t('followedGroup')}</div>
+          ${followedUsers.map(u => rowHTML(u)).join('')}
+          ${otherUsers.length > 0 ? '<div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>' : ''}
+        ` : ''}
+        ${otherUsers.length > 0 ? `
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">${t('othersGroup')}</div>
+          ${otherUsers.map(u => rowHTML(u)).join('')}
+        ` : ''}
+        ${followedUsers.length === 0 && otherUsers.length === 0 ? `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${t('noUsersFound')}</p>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-ghost" id="ism-cancel" style="flex:1;">${t('cancel')}</button>
+        <button class="btn btn-primary" id="ism-confirm" style="flex:1;">${t('done')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#ism-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#ism-confirm').onclick = () => { overlay.remove(); onConfirm([...selected]); };
+
+  overlay.querySelectorAll('.ism-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const uid = row.dataset.id;
+      if (selected.has(uid)) {
+        selected.delete(uid);
+        row.querySelector('.ism-check').textContent = '';
+        row.style.background = '';
+      } else {
+        selected.add(uid);
+        row.querySelector('.ism-check').textContent = '✓';
+        row.style.background = 'rgba(255,255,255,0.07)';
+      }
+    });
+  });
 }
 
 function openPlayerSearchModal(title, availableUsers, onConfirm) {
