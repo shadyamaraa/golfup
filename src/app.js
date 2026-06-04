@@ -896,6 +896,7 @@ function renderGameView(game) {
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
           ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">➕ Add Player</button>` : ''}
+          ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
@@ -940,6 +941,7 @@ function renderGameView(game) {
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
   document.getElementById('copy-link-btn')?.addEventListener('click', () => copyGameLink(game));
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
+  document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
   document.querySelectorAll('.remove-player-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       if (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || e.currentTarget.dataset.id === currentUser?.id) {
@@ -2078,6 +2080,113 @@ async function handleAddPlayer(game, onSaved = null) {
     else renderGameView(game);
     showToast('✅ Added ' + selectedUser.name, 'success');
   });
+}
+
+async function handleInvite(game) {
+  const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:400px;padding:20px;max-height:80vh;overflow-y:auto;';
+  modal.innerHTML = `<h3 style="margin:0 0 16px;">${t('manageInvites')}</h3><div class="loading-spinner" style="margin:20px auto;"></div>`;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const allUsers = await store.loadAllUsers();
+  const usersById = Object.fromEntries(allUsers.map(u => [u.id, u]));
+  const invitedIds = Array.isArray(game.invitedIds) ? [...game.invitedIds] : [];
+  const allJoinedIds = new Set(ensureGroups(game.groups).flatMap(g => ensureArray(g)).map(p => p?.id).filter(Boolean));
+  const waitingIds = new Set(ensureArray(game.waitingList).map(p => p?.id).filter(Boolean));
+
+  function getInviteStatus(uid) {
+    if (allJoinedIds.has(uid)) return { label: t('statusJoined'), color: '#4caf50' };
+    if (waitingIds.has(uid)) return { label: t('statusWaiting'), color: '#ff9800' };
+    return { label: t('statusInvited'), color: '#2196f3' };
+  }
+
+  function renderInviteModal() {
+    const availableToInvite = allUsers.filter(u =>
+      u.status !== 'hold' &&
+      u.id !== 'admin_uid' &&
+      u.role !== 'admin' &&
+      !invitedIds.includes(u.id) &&
+      !allJoinedIds.has(u.id) &&
+      !waitingIds.has(u.id) &&
+      u.id !== currentUser.id
+    );
+
+    modal.innerHTML = `
+      <h3 style="margin:0 0 16px;">${t('manageInvites')}</h3>
+      ${invitedIds.length > 0 ? `
+        <div style="margin-bottom:16px;">
+          ${invitedIds.map(uid => {
+            const user = usersById[uid] || { id: uid, name: uid };
+            const st = getInviteStatus(uid);
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color);">
+              <span style="font-size:0.95rem;">${displayUsername(user)}</span>
+              <span style="font-size:0.78rem;padding:2px 8px;border-radius:12px;background:${st.color}22;color:${st.color};font-weight:600;">${st.label}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : `<p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:16px;">${t('noInvitedYet')}</p>`}
+      ${availableToInvite.length > 0 ? `
+        <div style="border-top:1px solid var(--border-color);padding-top:14px;">
+          <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">${t('inviteMore')}</div>
+          <div style="position:relative;">
+            <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
+              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
+            <div id="inv-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);z-index:10;max-height:160px;overflow-y:auto;"></div>
+          </div>
+        </div>
+      ` : ''}
+      <button class="btn btn-ghost" id="inv-close" style="width:100%;margin-top:14px;">${t('cancel')}</button>
+    `;
+
+    modal.querySelector('#inv-close').onclick = () => overlay.remove();
+
+    const inp = modal.querySelector('#inv-input');
+    const resultsEl = modal.querySelector('#inv-results');
+    if (!inp) return;
+    inp.focus();
+
+    inp.addEventListener('input', () => {
+      const q = inp.value.trim().toLowerCase();
+      if (!q) { resultsEl.style.display = 'none'; return; }
+      const matches = availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q));
+      if (!matches.length) { resultsEl.style.display = 'none'; return; }
+      resultsEl.innerHTML = matches.map(u =>
+        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`
+      ).join('');
+      resultsEl.style.display = 'block';
+      resultsEl.querySelectorAll('.ps-item').forEach(item => {
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', async () => {
+          const selected = availableToInvite.find(u => u.id === item.dataset.id);
+          if (!selected) return;
+          if (!Array.isArray(game.invitedIds)) game.invitedIds = [];
+          if (!game.invitedIds.includes(selected.id)) {
+            game.invitedIds.push(selected.id);
+            invitedIds.push(selected.id);
+          }
+          await store.saveGame(game);
+          await store.saveNotification(selected.id, {
+            type: 'invite',
+            from: displayUsername(currentUser),
+            gameId: game.id,
+            gameDate: game.date,
+            gameTime: game.time,
+            gameLocation: game.location
+          });
+          showToast(`✉️ ${displayUsername(selected)}`, 'success');
+          renderInviteModal();
+        });
+      });
+    });
+  }
+
+  renderInviteModal();
 }
 
 function openPlayerSearchModal(title, availableUsers, onConfirm) {
