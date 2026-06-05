@@ -743,7 +743,7 @@ async function renderCreateGame() {
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
     el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
-      ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${t('bookTee')} ${selectedTeeSlot.tee} ${price ? `· ${price}` : ''}
+      ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)} ${price ? `· ${price}` : ''}
       <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
     </div>`;
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
@@ -761,7 +761,7 @@ async function renderCreateGame() {
     container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
     try {
       const data = await mtbogd.getTeeTimes(date, groupSize, teeHoles);
-      const slots = (data.slots || []).filter(s => s.available);
+      const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
         container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
         return;
@@ -770,7 +770,7 @@ async function renderCreateGame() {
         slots.map(s => {
           const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
           const isSelected = selectedTeeSlot?.slotId === s.slotId;
-          return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} T${s.tee?.replace(/\D/g, '') || s.tee}${price ? ` ₮${price}` : ''}</button>`;
+          return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
         }).join('')
       }</div>`;
       container.querySelectorAll('.slot-btn').forEach(btn => {
@@ -2035,7 +2035,7 @@ async function renderBookingView() {
     if (!bvSlot) { el.innerHTML = ''; form.style.display = 'none'; return; }
     const price = bvSlot.price ? `${(bvSlot.price / 1000).toFixed(0)}K₮` : '';
     el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
-      ✅ ${t('bookSlotSelected')}: <strong>${bvSlot.time}</strong> · ${t('bookTee')} ${bvSlot.tee} ${price ? `· ${price}` : ''}
+      ✅ ${t('bookSlotSelected')}: <strong>${bvSlot.time}</strong> · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} ${price ? `· ${price}` : ''}
       <button type="button" id="bv-clear-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
     </div>`;
     form.style.display = 'block';
@@ -2052,7 +2052,7 @@ async function renderBookingView() {
     container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
     try {
       const data = await mtbogd.getTeeTimes(date, bvPlayers, bvHoles);
-      const slots = (data.slots || []).filter(s => s.available);
+      const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
         container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
         return;
@@ -2061,7 +2061,7 @@ async function renderBookingView() {
         slots.map(s => {
           const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
           const isSel = bvSlot?.slotId === s.slotId;
-          return `<button type="button" class="bv-slot-btn btn btn-sm ${isSel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} T${s.tee?.replace(/\D/g, '') || s.tee}${price ? ` ₮${price}` : ''}</button>`;
+          return `<button type="button" class="bv-slot-btn btn btn-sm ${isSel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
         }).join('')
       }</div>`;
       container.querySelectorAll('.bv-slot-btn').forEach(btn => {
@@ -2094,7 +2094,7 @@ async function renderBookingView() {
       result.innerHTML = `<div style="margin-top:16px; padding:16px; border-radius:10px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; text-align:center;">
         <div style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">${t('bookConfirmed')}</div>
         <div style="font-family:monospace; font-size:1.8rem; font-weight:700; letter-spacing:4px; color:var(--emerald);">${confirmed.bookingCode}</div>
-        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:6px;">${bvSlot.time} · ${t('bookTee')} ${bvSlot.tee} · ${bvPlayers} ${t('bookPlayers')} · ${bvHoles} ${t('bookHoles')}</div>
+        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:6px;">${bvSlot.time} · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} · ${bvPlayers} ${t('bookPlayers')} · ${bvHoles} ${t('bookHoles')}</div>
       </div>`;
       document.getElementById('bv-confirm-form').style.display = 'none';
       document.getElementById('bv-selected-display').innerHTML = '';
