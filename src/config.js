@@ -22,3 +22,8 @@ export const VAPID_KEY = 'BIt5RECplMZ2lTHXUVp63cKkASA_EeerU1A6X0F9XB4hNUvskVcThD
 export function isFirebaseConfigured() {
   return !!firebaseConfig.apiKey && !!firebaseConfig.databaseURL;
 }
+
+export const MTBOGD_CONFIG = {
+  apiUrl: 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api',
+  locationName: 'Sky Resort Golf Club',
+};

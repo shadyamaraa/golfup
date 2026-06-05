@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-06-05
+
+### Tool
+Claude Code
+
+### Branch
+feature/mtbogd-booking
+
+### Changed Files
+- `src/config.js`
+- `src/booking.js` (new)
+- `src/app.js`
+- `src/i18n.js`
+
+### Summary
+MTBogd Golf Course booking integration (preview channel only — not yet merged to main). Three parts:
+1. **`src/booking.js`** — API helpers for MTBogd public guest endpoints: `getPublicSettings()`, `getTeeTimes(date, players, holes)`, `createHold(slotId, players, holes, cartCount)`, `confirmBooking(holdId, customer, players, notes)`.
+2. **Game creation tee-time picker** — when "Sky Resort Golf Club" is selected, a section appears with holes (9/18), cart count, and "Боломжит цаг харах" button. Slots load from MTBogd API; selecting one auto-fills the time. On game submit: hold is created → booking confirmed → `bookingCode`/`bookingId`/`bookingSlotId` stored in the game. Booking code shown in game detail for creator.
+3. **Standalone booking view** (`#/booking`) — date / players / holes / cart pickers, slot grid, customer name+phone+notes form, booking confirmation with code display. Linked from home screen hero button.
+
+### Risk
+Medium. New external API dependency (MTBogd Cloud Functions). No changes to Firebase data model for existing games. Booking fields (`bookingCode` etc.) are additive. Preview channel URL: https://golfup-app--mtbogd-preview-v3mu79tt.web.app
+
+
+
 Track meaningful AI-assisted changes here so work done across two PCs and multiple tools stays understandable.
 
 ## 2026-06-02

@@ -61,7 +61,14 @@ const T = {
     gameVisibility: 'Харагдах хүрээ', gamePublic: 'Бүгдэд', gameCircles: 'Тойргоор', gameMyCircles: 'Миний тойргуудад', gameSelectedCircles: 'Сонгосон тойргуудад', gamePrivate: 'Зөвхөн урьсан',
     communities: 'Тойрог', community: 'Тойрог', gameCommunity: 'Тойрогт харуулах', communityAll: 'Бүх тойрог',
     clubCircles: 'Тойрогууд', interestCircles: 'Сонирхлын тойргууд',
-    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу'
+    noCommunitiesAssigned: 'Одоогоор тойрог оноогоогүй байна', selectCircleError: 'Харуулах тойргоо сонгоно уу',
+    bookingTab: 'Захиалга', bookTeetime: 'Tee Time захиалах', bookHoles: 'Нүх', bookPlayers: 'Тоглогч',
+    bookViewSlots: 'Боломжит цаг харах', bookSelectSlot: 'Цаг сонгох', bookLoading: 'Ачааллаж байна...',
+    bookNoSlots: 'Боломжит цаг байхгүй байна', bookCode: 'Захиалгын код', bookConfirmed: '✅ Захиалга баталгаажлаа!',
+    bookFailed: 'Захиалга амжилтгүй болсон', bookSlotSelected: 'Сонгосон цаг', bookNotes: 'Нэмэлт тэмдэглэл',
+    bookSubmit: 'Захиалах', bookCartCount: 'Тэрэг', bookPrice: 'Үнэ', bookTee: 'Тии',
+    bookClearSlot: 'Цаг арилгах', bookMyBookings: 'Миний захиалгууд', bookNoBookings: 'Захиалга байхгүй',
+    bookCustomerName: 'Захиалагчийн нэр', bookCustomerPhone: 'Утас'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -125,7 +132,14 @@ const T = {
     gameVisibility: 'Visibility', gamePublic: 'Everyone', gameCircles: 'By circle', gameMyCircles: 'My circles', gameSelectedCircles: 'Selected circles', gamePrivate: 'Invited only',
     communities: 'Circles', community: 'Circle', gameCommunity: 'Show to circle', communityAll: 'All circles',
     clubCircles: 'Circles', interestCircles: 'Interest circles',
-    noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle'
+    noCommunitiesAssigned: 'No circle assigned yet', selectCircleError: 'Please select at least one circle',
+    bookingTab: 'Book', bookTeetime: 'Book a Tee Time', bookHoles: 'Holes', bookPlayers: 'Players',
+    bookViewSlots: 'View Available Times', bookSelectSlot: 'Select a time', bookLoading: 'Loading...',
+    bookNoSlots: 'No available slots', bookCode: 'Booking code', bookConfirmed: '✅ Booking confirmed!',
+    bookFailed: 'Booking failed', bookSlotSelected: 'Selected slot', bookNotes: 'Notes',
+    bookSubmit: 'Book Now', bookCartCount: 'Carts', bookPrice: 'Price', bookTee: 'Tee',
+    bookClearSlot: 'Clear slot', bookMyBookings: 'My Bookings', bookNoBookings: 'No bookings yet',
+    bookCustomerName: 'Customer name', bookCustomerPhone: 'Phone'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -189,7 +203,14 @@ const T = {
     gameVisibility: '공개 범위', gamePublic: '모두', gameCircles: '서클별', gameMyCircles: '내 서클', gameSelectedCircles: '선택한 서클', gamePrivate: '초대받은 사람만',
     communities: '서클', community: '서클', gameCommunity: '서클에 표시', communityAll: '모든 서클',
     clubCircles: '서클', interestCircles: '관심 서클',
-    noCommunitiesAssigned: '아직 서클이 없습니다', selectCircleError: '서클을 선택해주세요'
+    noCommunitiesAssigned: '아직 서클이 없습니다', selectCircleError: '서클을 선택해주세요',
+    bookingTab: '예약', bookTeetime: '티 타임 예약', bookHoles: '홀', bookPlayers: '플레이어',
+    bookViewSlots: '가능한 시간 보기', bookSelectSlot: '시간 선택', bookLoading: '로딩 중...',
+    bookNoSlots: '예약 가능한 슬롯 없음', bookCode: '예약 코드', bookConfirmed: '✅ 예약 확인됨!',
+    bookFailed: '예약 실패', bookSlotSelected: '선택된 슬롯', bookNotes: '메모',
+    bookSubmit: '예약하기', bookCartCount: '카트', bookPrice: '가격', bookTee: '티',
+    bookClearSlot: '슬롯 취소', bookMyBookings: '내 예약', bookNoBookings: '예약 없음',
+    bookCustomerName: '예약자 이름', bookCustomerPhone: '전화번호'
   }
 };
 
