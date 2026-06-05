@@ -926,7 +926,7 @@ async function renderCreateGame() {
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles, cartCount);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
-        const confirmed = await mtbogd.confirmBooking(hold.holdId, { name: playerName, phone: playerPhone }, playerList);
+        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
@@ -2090,7 +2090,7 @@ async function renderBookingView() {
       const notes = document.getElementById('bv-notes').value.trim();
       const hold = await mtbogd.createHold(bvSlot.slotId, bvPlayers, bvHoles, bvCart);
       const playerList = Array.from({ length: bvPlayers }, () => ({ name: custName }));
-      const confirmed = await mtbogd.confirmBooking(hold.holdId, { name: custName, phone: custPhone }, playerList, notes);
+      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: custName, phone: custPhone }, playerList, notes);
       result.innerHTML = `<div style="margin-top:16px; padding:16px; border-radius:10px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; text-align:center;">
         <div style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">${t('bookConfirmed')}</div>
         <div style="font-family:monospace; font-size:1.8rem; font-weight:700; letter-spacing:4px; color:var(--emerald);">${confirmed.bookingCode}</div>
