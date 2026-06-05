@@ -68,7 +68,8 @@ const T = {
     bookFailed: 'Захиалга амжилтгүй болсон', bookSlotSelected: 'Сонгосон цаг', bookNotes: 'Нэмэлт тэмдэглэл',
     bookSubmit: 'Захиалах', bookCartCount: 'Тэрэг', bookPrice: 'Үнэ', bookTee: 'Тии',
     bookClearSlot: 'Цаг арилгах', bookMyBookings: 'Миний захиалгууд', bookNoBookings: 'Захиалга байхгүй',
-    bookCustomerName: 'Захиалагчийн нэр', bookCustomerPhone: 'Утас'
+    bookCustomerName: 'Захиалагчийн нэр', bookCustomerPhone: 'Утас',
+    payClubhouse: 'Clubhouse-д төлөх', payQpay: 'QPay', payComingSoon: 'Удахгүй'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -139,7 +140,8 @@ const T = {
     bookFailed: 'Booking failed', bookSlotSelected: 'Selected slot', bookNotes: 'Notes',
     bookSubmit: 'Book Now', bookCartCount: 'Carts', bookPrice: 'Price', bookTee: 'Tee',
     bookClearSlot: 'Clear slot', bookMyBookings: 'My Bookings', bookNoBookings: 'No bookings yet',
-    bookCustomerName: 'Customer name', bookCustomerPhone: 'Phone'
+    bookCustomerName: 'Customer name', bookCustomerPhone: 'Phone',
+    payClubhouse: 'Pay at Clubhouse', payQpay: 'QPay', payComingSoon: 'Coming soon'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -210,7 +212,8 @@ const T = {
     bookFailed: '예약 실패', bookSlotSelected: '선택된 슬롯', bookNotes: '메모',
     bookSubmit: '예약하기', bookCartCount: '카트', bookPrice: '가격', bookTee: '티',
     bookClearSlot: '슬롯 취소', bookMyBookings: '내 예약', bookNoBookings: '예약 없음',
-    bookCustomerName: '예약자 이름', bookCustomerPhone: '전화번호'
+    bookCustomerName: '예약자 이름', bookCustomerPhone: '전화번호',
+    payClubhouse: '클럽하우스 결제', payQpay: 'QPay', payComingSoon: '곧 출시'
   }
 };
 

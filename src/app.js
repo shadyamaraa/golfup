@@ -745,6 +745,18 @@ async function renderCreateGame() {
     el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
       ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)} ${price ? `· ${price}` : ''}
       <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
+    </div>
+    <div style="margin-top:8px;">
+      <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+        </label>
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
+          <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
+        </label>
+      </div>
     </div>`;
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
       selectedTeeSlot = null;
@@ -1999,6 +2011,18 @@ async function renderBookingView() {
             <div class="input-group">
               <label>${t('bookNotes')}</label>
               <textarea id="bv-notes" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
+            </div>
+            <div class="input-group" style="margin-top:12px;">
+              <label style="font-size:0.85rem; color:var(--text-secondary);">Төлбөрийн арга</label>
+              <div style="display:flex; gap:10px; margin-top:6px;">
+                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08);">
+                  <input type="radio" name="bv-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+                </label>
+                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none;">
+                  <input type="radio" name="bv-payment" value="qpay" disabled> 📱 ${t('payQpay')}
+                  <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
+                </label>
+              </div>
             </div>
             <button type="button" id="bv-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px;">${t('bookSubmit')}</button>
           </div>
