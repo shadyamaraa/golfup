@@ -224,8 +224,6 @@ function renderAuth() {
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
         <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" />
-        <h1 class="auth-title">${t('appName')}</h1>
-        <p class="auth-tagline">${t('tagline')}</p>
         <form id="auth-form" class="auth-form">
           <div class="input-group">
             <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
