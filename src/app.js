@@ -785,23 +785,70 @@ async function renderCreateGame() {
         slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
         return;
       }
-      slotsEl.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
-        slots.map(s => {
-          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
-          const isSelected = selectedTeeSlot?.slotId === s.slotId;
-          return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
-        }).join('')
-      }</div>`;
-      slotsEl.querySelectorAll('.slot-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          selectedTeeSlot = JSON.parse(btn.dataset.slot);
-          const [h, m] = (selectedTeeSlot.time || '08:00').split(':');
-          document.getElementById('game-hour').value = h;
-          document.getElementById('game-minute').value = m;
-          updateSelectedSlotDisplay();
-          overlay.remove();
+
+      const hourOf = s => parseInt((s.time || '0').split(':')[0], 10);
+      const groups = {
+        am: slots.filter(s => hourOf(s) < 12),
+        pm: slots.filter(s => hourOf(s) >= 12),
+      };
+      const timesOf = arr => [...new Set(arr.map(s => s.time))].sort();
+      const secOpen = { am: groups.am.length > 0, pm: groups.am.length === 0 };
+      let openTime = null;
+
+      function selectSlot(slot) {
+        selectedTeeSlot = slot;
+        const [h, m] = (slot.time || '08:00').split(':');
+        document.getElementById('game-hour').value = h;
+        document.getElementById('game-minute').value = m;
+        updateSelectedSlotDisplay();
+        overlay.remove();
+      }
+
+      function sectionHtml(key, label, arr) {
+        if (arr.length === 0) return '';
+        const times = timesOf(arr);
+        const body = secOpen[key] ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">${
+          times.map(time => {
+            const tees = arr.filter(s => s.time === time);
+            const isOpen = openTime === key + '|' + time;
+            const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 10px;">${
+              tees.map(s => {
+                const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
+                const sel = selectedTeeSlot?.slotId === s.slotId;
+                return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
+              }).join('')
+            }</div>` : '';
+            return `<div>
+              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);cursor:pointer;font-size:0.95rem;">
+                <span>${time}</span><span style="color:var(--text-secondary);font-size:0.8rem;">${isOpen ? '▲' : '▼'}</span>
+              </button>${teeRow}
+            </div>`;
+          }).join('')
+        }</div>` : '';
+        return `<div style="margin-bottom:10px;">
+          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+            <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${times.length})</span></span>
+            <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
+          </button>${body}
+        </div>`;
+      }
+
+      function renderGroups() {
+        slotsEl.innerHTML = sectionHtml('am', t('bookAM'), groups.am) + sectionHtml('pm', t('bookPM'), groups.pm);
+        slotsEl.querySelectorAll('.ttp-sec').forEach(b => b.onclick = () => {
+          const k = b.dataset.sec;
+          secOpen[k] = !secOpen[k];
+          openTime = null;
+          renderGroups();
         });
-      });
+        slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
+          const id = b.dataset.key + '|' + b.dataset.time;
+          openTime = (openTime === id) ? null : id;
+          renderGroups();
+        });
+        slotsEl.querySelectorAll('.ttp-tee').forEach(b => b.onclick = () => selectSlot(JSON.parse(b.dataset.slot)));
+      }
+      renderGroups();
     } catch (err) {
       slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
     }
