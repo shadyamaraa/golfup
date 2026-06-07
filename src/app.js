@@ -187,7 +187,6 @@ export async function router() {
     if (hash === '#/' || hash === '#/home') await renderHome();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
-    else if (hash === '#/booking') await renderBookingView();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -346,7 +345,6 @@ async function renderHome() {
           <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
             <span class="btn-icon-left">+</span> ${t('createGame')}
           </a>
-          <a href="#/booking" class="btn btn-outline btn-lg">⛳ ${t('bookingTab')}</a>
         </div>
       </div>
       <div id="notifications-section"></div>
@@ -1961,182 +1959,6 @@ function showAdminEditUserModal(user, onSaved) {
     modal.remove();
     if (onSaved) onSaved();
   };
-}
-
-// ---- Standalone Booking View ----
-async function renderBookingView() {
-  const today = new Date().toISOString().split('T')[0];
-  main().innerHTML = `
-    <div class="create-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
-      <div class="create-card glass-card">
-        <h2 class="card-title">⛳ ${t('bookTeetime')}</h2>
-        <div class="create-form">
-          <div class="input-group">
-            <label>${t('date')}</label>
-            <input type="date" id="bv-date" value="${today}" min="${today}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-          </div>
-          <div class="input-group">
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" id="bv-holes-9" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
-                  <button type="button" id="bv-holes-18" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
-                </div>
-              </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookPlayers')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="bv-players-minus">−</button>
-                  <span id="bv-players-display" style="min-width:20px; text-align:center;">4</span>
-                  <button type="button" class="stepper-btn" id="bv-players-plus">+</button>
-                </div>
-              </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="bv-cart-minus">−</button>
-                  <span id="bv-cart-display" style="min-width:20px; text-align:center;">0</span>
-                  <button type="button" class="stepper-btn" id="bv-cart-plus">+</button>
-                </div>
-              </div>
-              <button type="button" id="bv-fetch-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
-            </div>
-          </div>
-          <div id="bv-slots-container"></div>
-          <div id="bv-selected-display"></div>
-          <div id="bv-confirm-form" style="display:none;">
-            <div class="input-group" style="margin-top:12px;">
-              <label>${t('bookCustomerName')}</label>
-              <input type="text" id="bv-cust-name" value="${currentUser?.fullName || displayUsername(currentUser) || ''}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-            </div>
-            <div class="input-group">
-              <label>${t('bookCustomerPhone')}</label>
-              <input type="text" id="bv-cust-phone" value="${currentUser?.phone || ''}" placeholder="+97699112233" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-            </div>
-            <div class="input-group">
-              <label>${t('bookNotes')}</label>
-              <textarea id="bv-notes" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
-            </div>
-            <div class="input-group" style="margin-top:12px;">
-              <label style="font-size:0.85rem; color:var(--text-secondary);">Төлбөрийн арга</label>
-              <div style="display:flex; gap:10px; margin-top:6px;">
-                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08);">
-                  <input type="radio" name="bv-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
-                </label>
-                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none;">
-                  <input type="radio" name="bv-payment" value="qpay" disabled> 📱 ${t('payQpay')}
-                  <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-                </label>
-              </div>
-            </div>
-            <button type="button" id="bv-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px;">${t('bookSubmit')}</button>
-          </div>
-          <div id="bv-result"></div>
-        </div>
-      </div>
-    </div>`;
-
-  let bvHoles = 18;
-  let bvPlayers = 4;
-  let bvCart = 0;
-  let bvSlot = null;
-
-  function updateBvStepper(id, val) { document.getElementById(id).textContent = val; }
-
-  document.getElementById('bv-holes-9').addEventListener('click', () => {
-    bvHoles = 9;
-    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-primary';
-    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-outline';
-  });
-  document.getElementById('bv-holes-18').addEventListener('click', () => {
-    bvHoles = 18;
-    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-primary';
-    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-outline';
-  });
-  document.getElementById('bv-players-minus').addEventListener('click', () => { bvPlayers = Math.max(1, bvPlayers - 1); updateBvStepper('bv-players-display', bvPlayers); });
-  document.getElementById('bv-players-plus').addEventListener('click', () => { bvPlayers = Math.min(8, bvPlayers + 1); updateBvStepper('bv-players-display', bvPlayers); });
-  document.getElementById('bv-cart-minus').addEventListener('click', () => { bvCart = Math.max(0, bvCart - 1); updateBvStepper('bv-cart-display', bvCart); });
-  document.getElementById('bv-cart-plus').addEventListener('click', () => { bvCart = Math.min(10, bvCart + 1); updateBvStepper('bv-cart-display', bvCart); });
-
-  function renderBvSlotDisplay() {
-    const el = document.getElementById('bv-selected-display');
-    const form = document.getElementById('bv-confirm-form');
-    if (!bvSlot) { el.innerHTML = ''; form.style.display = 'none'; return; }
-    const price = bvSlot.price ? `${(bvSlot.price / 1000).toFixed(0)}K₮` : '';
-    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
-      ✅ ${t('bookSlotSelected')}: <strong>${bvSlot.time}</strong> · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} ${price ? `· ${price}` : ''}
-      <button type="button" id="bv-clear-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
-    </div>`;
-    form.style.display = 'block';
-    document.getElementById('bv-clear-btn')?.addEventListener('click', () => {
-      bvSlot = null;
-      renderBvSlotDisplay();
-      document.getElementById('bv-slots-container').innerHTML = '';
-    });
-  }
-
-  async function fetchBvSlots() {
-    const container = document.getElementById('bv-slots-container');
-    const date = document.getElementById('bv-date').value;
-    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
-    try {
-      const data = await mtbogd.getTeeTimes(date, bvPlayers, bvHoles);
-      const slots = (data.times || []).filter(s => s.status === 'available');
-      if (slots.length === 0) {
-        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
-        return;
-      }
-      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
-        slots.map(s => {
-          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
-          const isSel = bvSlot?.slotId === s.slotId;
-          return `<button type="button" class="bv-slot-btn btn btn-sm ${isSel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
-        }).join('')
-      }</div>`;
-      container.querySelectorAll('.bv-slot-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          bvSlot = JSON.parse(btn.dataset.slot);
-          renderBvSlotDisplay();
-          fetchBvSlots();
-        });
-      });
-    } catch (err) {
-      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
-    }
-  }
-
-  document.getElementById('bv-fetch-btn').addEventListener('click', fetchBvSlots);
-
-  document.getElementById('bv-submit-btn')?.addEventListener('click', async () => {
-    if (!bvSlot) return;
-    const submitBtn = document.getElementById('bv-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = t('bookLoading');
-    const result = document.getElementById('bv-result');
-    try {
-      const custName = document.getElementById('bv-cust-name').value.trim() || displayUsername(currentUser) || 'Guest';
-      const custPhone = document.getElementById('bv-cust-phone').value.trim();
-      const notes = document.getElementById('bv-notes').value.trim();
-      const hold = await mtbogd.createHold(bvSlot.slotId, bvPlayers, bvHoles, bvCart);
-      const playerList = Array.from({ length: bvPlayers }, () => ({ name: custName }));
-      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: custName, phone: custPhone }, playerList, notes);
-      result.innerHTML = `<div style="margin-top:16px; padding:16px; border-radius:10px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; text-align:center;">
-        <div style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">${t('bookConfirmed')}</div>
-        <div style="font-family:monospace; font-size:1.8rem; font-weight:700; letter-spacing:4px; color:var(--emerald);">${confirmed.bookingCode}</div>
-        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:6px;">${bvSlot.time} · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} · ${bvPlayers} ${t('bookPlayers')} · ${bvHoles} ${t('bookHoles')}</div>
-      </div>`;
-      document.getElementById('bv-confirm-form').style.display = 'none';
-      document.getElementById('bv-selected-display').innerHTML = '';
-      document.getElementById('bv-slots-container').innerHTML = '';
-      bvSlot = null;
-    } catch (err) {
-      result.innerHTML = `<p style="color:var(--danger-color); margin-top:12px;">${t('bookFailed')}: ${err.message}</p>`;
-      submitBtn.disabled = false;
-      submitBtn.textContent = t('bookSubmit');
-    }
-  });
 }
 
 // ---- Users List View ----
