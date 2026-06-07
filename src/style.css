@@ -95,6 +95,8 @@ input, button { font-family: var(--font); }
 .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.15rem; }
 .logo-icon { font-size: 1.4rem; }
 .logo-text { background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.logo-img { height: 44px; width: auto; display: block; }
+.auth-logo-img { width: 132px; height: 132px; margin-bottom: 8px; animation: float 4s ease-in-out infinite; }
 
 .header-nav { display: flex; align-items: center; gap: 12px; }
 
@@ -166,11 +168,12 @@ input, button { font-family: var(--font); }
   align-items: center; justify-content: center; padding: 20px;
   position: relative; overflow: hidden;
 }
-.auth-card { padding: 48px 36px; text-align: center; max-width: 380px; width: 100%; position: relative; z-index: 2; }
+.auth-card { padding: 40px 36px 36px; text-align: center; max-width: 360px; width: 100%; position: relative; z-index: 2; }
 .auth-logo { font-size: 4rem; margin-bottom: 8px; animation: float 4s ease-in-out infinite; }
+.auth-logo-img { width: 200px; height: auto; margin-bottom: 28px; animation: float 4s ease-in-out infinite; display: block; margin-left: auto; margin-right: auto; }
 .auth-title { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px; }
 .auth-tagline { color: var(--text-secondary); margin-bottom: 32px; font-size: 0.95rem; }
-.auth-form { display: flex; flex-direction: column; gap: 16px; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
 
 .auth-bg-decoration { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .golf-ball {
