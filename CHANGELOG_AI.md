@@ -2,6 +2,17 @@
 
 ## 2026-06-07
 
+### Secured MTBogd API behind a server-side proxy — `functions/index.js`, `firebase.json`, `src/booking.js`
+
+The MTBogd external API now requires an `x-api-key`. To avoid exposing the
+live key in the client bundle, all booking calls go through a Firebase
+Function proxy (`mtbogdProxy`) reachable at `/api/mtbogd/*` via a hosting
+rewrite. The proxy injects the key (stored in Cloud Secret Manager as
+`MTBOGD_API_KEY`) and forwards to the MTBogd `external/v1/*` endpoints.
+`src/booking.js` calls the same-origin proxy; no key in frontend code.
+`getPublicSettings()` still hits the public `settings/public` endpoint
+directly (no key needed).
+
 ### Added `handleBookTeeTime(game)` — `src/app.js`
 
 Added the missing function body for the "⛳ Book Tee Time" button that already existed in the game detail view. The modal lets the creator select holes (9/18), cart count, fetch available tee time slots from the MTBogd API, pick a slot, and confirm the booking. On success, `bookingCode`, `bookingId`, and `bookingSlotId` are saved to the game via `store.saveGame` and the view re-renders.

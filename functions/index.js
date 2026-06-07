@@ -7,13 +7,16 @@ const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/extern
 
 // Proxy MTBogd external API — keeps the API key server-side.
 // Reachable at /api/mtbogd/<path> via Firebase Hosting rewrite.
-exports.mtbogdProxy = functions.https.onRequest(async (req, res) => {
+// The key is stored in Cloud Secret Manager as MTBOGD_API_KEY.
+exports.mtbogdProxy = functions
+  .runWith({ secrets: ['MTBOGD_API_KEY'] })
+  .https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
-  const apiKey = functions.config().mtbogd?.apikey;
+  const apiKey = process.env.MTBOGD_API_KEY;
   if (!apiKey) { res.status(500).json({ error: 'Proxy not configured' }); return; }
 
   // Strip /api/mtbogd prefix; forward remaining path + query string
