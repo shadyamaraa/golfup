@@ -223,7 +223,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" />
+        <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
         <form id="auth-form" class="auth-form">
           <div class="input-group">
             <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
@@ -236,9 +236,6 @@ function renderAuth() {
           </div>
           <button type="submit" class="btn btn-primary btn-lg" id="auth-submit-btn">${t('start')}</button>
         </form>
-        <div style="margin-top: 15px; text-align: center;">
-          <a href="#" id="admin-login-link" style="color: var(--text-secondary); font-size: 0.8rem; text-decoration: none;">System Admin</a>
-        </div>
       </div>
       <div class="auth-bg-decoration">
         <div class="golf-ball"></div>
