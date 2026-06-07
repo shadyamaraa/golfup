@@ -627,7 +627,8 @@ function renderPlayerDots(game) {
 // ---- Create Game View ----
 async function renderCreateGame() {
   main().innerHTML = `<div class="create-container fade-in"><div class="loading-spinner"></div></div>`;
-  const today = new Date().toISOString().split('T')[0];
+  const _td = new Date();
+  const today = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
   const users = await store.loadAllUsers();
   // Filter out hold status, the current user, AND the System Admin
   const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
