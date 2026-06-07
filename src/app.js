@@ -807,20 +807,20 @@ async function renderCreateGame() {
       function sectionHtml(key, label, arr) {
         if (arr.length === 0) return '';
         const times = timesOf(arr);
-        const body = secOpen[key] ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">${
+        const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
           times.map(time => {
             const tees = arr.filter(s => s.time === time);
             const isOpen = openTime === key + '|' + time;
-            const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 10px;">${
+            const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
               tees.map(s => {
                 const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
                 const sel = selectedTeeSlot?.slotId === s.slotId;
                 return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
               }).join('')
             }</div>` : '';
-            return `<div>
-              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);cursor:pointer;font-size:0.95rem;">
-                <span>${time}</span><span style="color:var(--text-secondary);font-size:0.8rem;">${isOpen ? '▲' : '▼'}</span>
+            return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
+              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+                ${time}
               </button>${teeRow}
             </div>`;
           }).join('')
