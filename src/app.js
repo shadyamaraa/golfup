@@ -675,17 +675,8 @@ async function renderCreateGame() {
                   <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
                 </div>
               </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="cart-minus">−</button>
-                  <span id="cart-count-display" style="min-width:20px; text-align:center;">0</span>
-                  <button type="button" class="stepper-btn" id="cart-plus">+</button>
-                </div>
-              </div>
               <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
             </div>
-            <div id="teetime-slots-container"></div>
             <div id="selected-slot-display"></div>
           </div>
           <div class="input-group">
@@ -738,7 +729,6 @@ async function renderCreateGame() {
 
   let selectedTeeSlot = null;
   let teeHoles = 18;
-  let cartCount = 0;
 
   function updateSelectedSlotDisplay() {
     const el = document.getElementById('selected-slot-display');
@@ -764,42 +754,56 @@ async function renderCreateGame() {
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
-      document.getElementById('teetime-slots-container').innerHTML = '';
     });
   }
 
-  async function fetchAndRenderSlots() {
-    const container = document.getElementById('teetime-slots-container');
-    if (!container) return;
+  async function openTeeTimePopup() {
     const date = document.getElementById('game-date').value;
     const groupSize = +document.getElementById('game-group-size').value;
-    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'popup-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    const modal = document.createElement('div');
+    modal.className = 'glass-card fade-in';
+    modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;">⛳ ${t('bookViewSlots')}</h3>
+        <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+      </div>
+      <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector('#ttp-close').onclick = () => overlay.remove();
+
+    const slotsEl = modal.querySelector('#ttp-slots');
     try {
       const data = await mtbogd.getTeeTimes(date, groupSize, teeHoles);
       const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
-        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
+        slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
         return;
       }
-      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
+      slotsEl.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
         slots.map(s => {
           const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
           const isSelected = selectedTeeSlot?.slotId === s.slotId;
           return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
         }).join('')
       }</div>`;
-      container.querySelectorAll('.slot-btn').forEach(btn => {
+      slotsEl.querySelectorAll('.slot-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           selectedTeeSlot = JSON.parse(btn.dataset.slot);
           const [h, m] = (selectedTeeSlot.time || '08:00').split(':');
           document.getElementById('game-hour').value = h;
           document.getElementById('game-minute').value = m;
           updateSelectedSlotDisplay();
-          fetchAndRenderSlots();
+          overlay.remove();
         });
       });
     } catch (err) {
-      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
+      slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
     }
   }
 
@@ -821,9 +825,6 @@ async function renderCreateGame() {
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
     updateSelectedSlotDisplay();
-    if (document.getElementById('mtbogd-section')?.style.display !== 'none') {
-      document.getElementById('teetime-slots-container').innerHTML = '';
-    }
   });
 
   document.getElementById('holes-9-btn')?.addEventListener('click', () => {
@@ -837,19 +838,7 @@ async function renderCreateGame() {
     document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
   });
 
-  let _cartCount = 0;
-  document.getElementById('cart-minus')?.addEventListener('click', () => {
-    _cartCount = Math.max(0, _cartCount - 1);
-    document.getElementById('cart-count-display').textContent = _cartCount;
-    cartCount = _cartCount;
-  });
-  document.getElementById('cart-plus')?.addEventListener('click', () => {
-    _cartCount = Math.min(10, _cartCount + 1);
-    document.getElementById('cart-count-display').textContent = _cartCount;
-    cartCount = _cartCount;
-  });
-
-  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', fetchAndRenderSlots);
+  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', openTeeTimePopup);
 
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
@@ -939,7 +928,7 @@ async function renderCreateGame() {
       try {
         const playerName = currentUser.fullName || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
-        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles, cartCount);
+        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
         bookingCode = confirmed.bookingCode || null;
@@ -2368,7 +2357,6 @@ async function handleBookTeeTime(game) {
   modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
 
   let btHoles = 18;
-  let btCart = 0;
   let btSlot = null;
   const groupSize = game.groupSize || 4;
 
@@ -2391,14 +2379,6 @@ async function handleBookTeeTime(game) {
             <button type="button" id="bt-18" class="btn btn-sm ${btHoles === 18 ? 'btn-primary' : 'btn-outline'}" style="min-width:40px;">18</button>
           </div>
         </div>
-        <div>
-          <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px;">${t('bookCartCount')}</div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button type="button" class="stepper-btn" id="bt-cart-minus">−</button>
-            <span id="bt-cart-val" style="min-width:18px;text-align:center;">${btCart}</span>
-            <button type="button" class="stepper-btn" id="bt-cart-plus">+</button>
-          </div>
-        </div>
         <button type="button" id="bt-fetch" class="btn btn-outline" style="flex:1;min-width:130px;">${t('bookViewSlots')}</button>
       </div>
       <div id="bt-slots"></div>
@@ -2413,8 +2393,6 @@ async function handleBookTeeTime(game) {
     document.getElementById('bt-close').onclick = () => overlay.remove();
     document.getElementById('bt-9').onclick = () => { btHoles = 9; renderModal(); };
     document.getElementById('bt-18').onclick = () => { btHoles = 18; renderModal(); };
-    document.getElementById('bt-cart-minus').onclick = () => { btCart = Math.max(0, btCart - 1); document.getElementById('bt-cart-val').textContent = btCart; };
-    document.getElementById('bt-cart-plus').onclick = () => { btCart = Math.min(10, btCart + 1); document.getElementById('bt-cart-val').textContent = btCart; };
     document.getElementById('bt-fetch').onclick = fetchSlots;
     document.getElementById('bt-confirm')?.addEventListener('click', confirmBook);
   }
@@ -2445,7 +2423,7 @@ async function handleBookTeeTime(game) {
     const errEl = document.getElementById('bt-error');
     try {
       const playerName = currentUser.fullName || displayUsername(currentUser);
-      const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles, btCart);
+      const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles);
       const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
       const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '' }, playerList);
       game.bookingCode = confirmed.bookingCode;

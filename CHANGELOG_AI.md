@@ -2,6 +2,16 @@
 
 ## 2026-06-07
 
+### Tee-time slots → popup picker; remove cart selector — `src/app.js`
+
+In game creation, the available tee-times no longer render as a long inline
+list inside the form. The "Боломжит цаг харах" button now opens a popup
+(reusing the `.popup-overlay` + `.glass-card` pattern); picking a time fills the
+manual hour/minute picker and closes the popup. The Нүх (9/18) control stays
+inline. The Тэрэг (cart) selector was removed from both the create form and the
+game-detail booking popup (`handleBookTeeTime`); `createHold` now uses its
+default `cartCount = 0`.
+
 ### Secured MTBogd API behind a server-side proxy — `functions/index.js`, `firebase.json`, `src/booking.js`
 
 The MTBogd external API now requires an `x-api-key`. To avoid exposing the
