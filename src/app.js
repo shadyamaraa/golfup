@@ -223,7 +223,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <img src="/logo.svg" alt="UB Golf" class="auth-logo-img" />
+        <img src="/logo.png" alt="UB Golf" class="auth-logo-img" />
         <h1 class="auth-title">${t('appName')}</h1>
         <p class="auth-tagline">${t('tagline')}</p>
         <form id="auth-form" class="auth-form">
