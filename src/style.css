@@ -95,6 +95,8 @@ input, button { font-family: var(--font); }
 .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.15rem; }
 .logo-icon { font-size: 1.4rem; }
 .logo-text { background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.logo-img { height: 44px; width: auto; display: block; }
+.auth-logo-img { width: 132px; height: 132px; margin-bottom: 8px; animation: float 4s ease-in-out infinite; }
 
 .header-nav { display: flex; align-items: center; gap: 12px; }
 
