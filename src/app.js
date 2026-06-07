@@ -1,6 +1,7 @@
 import { t, getLang, toggleLang } from './i18n.js';
-import { APP_CONFIG, VAPID_KEY } from './config.js';
+import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
+import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 let currentUser = null;
@@ -186,6 +187,7 @@ export async function router() {
     if (hash === '#/' || hash === '#/home') await renderHome();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
+    else if (hash === '#/booking') await renderBookingView();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -335,9 +337,12 @@ async function renderHome() {
       <div class="hero-section">
         <h1 class="hero-title">${t('appName')}</h1>
         <p class="hero-subtitle">${t('tagline')}</p>
-        <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
-          <span class="btn-icon-left">+</span> ${t('createGame')}
-        </a>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+          <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
+            <span class="btn-icon-left">+</span> ${t('createGame')}
+          </a>
+          <a href="#/booking" class="btn btn-outline btn-lg">⛳ ${t('bookingTab')}</a>
+        </div>
       </div>
       <div id="notifications-section"></div>
       <div class="section">
@@ -624,6 +629,10 @@ async function renderCreateGame() {
   // Filter out hold status, the current user, AND the System Admin
   const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
   const myCommunities = userCommunityIds(currentUser);
+  const availableById = Object.fromEntries(availableUsers.map(u => [u.id, u]));
+  const followedInviteUsers = availableUsers.filter(u => !!currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
+  let selectedInviteIds = [];
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -652,6 +661,29 @@ async function renderCreateGame() {
               <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
               <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
             </select>
+          </div>
+          <div class="input-group" id="mtbogd-section" style="display:none;">
+            <label>⛳ ${t('bookTeetime')}</label>
+            <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" id="holes-9-btn" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
+                  <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="stepper-btn" id="cart-minus">−</button>
+                  <span id="cart-count-display" style="min-width:20px; text-align:center;">0</span>
+                  <button type="button" class="stepper-btn" id="cart-plus">+</button>
+                </div>
+              </div>
+              <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
+            </div>
+            <div id="teetime-slots-container"></div>
+            <div id="selected-slot-display"></div>
           </div>
           <div class="input-group">
             <label for="game-group-size">${t('groupSize')}</label>
@@ -690,14 +722,8 @@ async function renderCreateGame() {
           </div>
           <div class="input-group">
             <label>${t('invitePlayers')}</label>
-            <div style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
-              ${availableUsers.length > 0 ? availableUsers.map(u => `
-                <label style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer;">
-                  <input type="checkbox" class="create-player-cb" value="${u.id}" data-name="${u.name}" style="width:18px; height:18px;">
-                  <span>${u.name}</span>
-                </label>
-              `).join('') : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
-            </div>
+            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%;">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
           </div>
           <div class="form-actions">
             <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
@@ -706,6 +732,121 @@ async function renderCreateGame() {
         </form>
       </div>
     </div>`;
+
+  let selectedTeeSlot = null;
+  let teeHoles = 18;
+  let cartCount = 0;
+
+  function updateSelectedSlotDisplay() {
+    const el = document.getElementById('selected-slot-display');
+    if (!el) return;
+    if (!selectedTeeSlot) { el.innerHTML = ''; return; }
+    const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
+    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
+      ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)} ${price ? `· ${price}` : ''}
+      <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
+    </div>
+    <div style="margin-top:8px;">
+      <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+        </label>
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
+          <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
+        </label>
+      </div>
+    </div>`;
+    document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
+      selectedTeeSlot = null;
+      updateSelectedSlotDisplay();
+      document.getElementById('teetime-slots-container').innerHTML = '';
+    });
+  }
+
+  async function fetchAndRenderSlots() {
+    const container = document.getElementById('teetime-slots-container');
+    if (!container) return;
+    const date = document.getElementById('game-date').value;
+    const groupSize = +document.getElementById('game-group-size').value;
+    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
+    try {
+      const data = await mtbogd.getTeeTimes(date, groupSize, teeHoles);
+      const slots = (data.times || []).filter(s => s.status === 'available');
+      if (slots.length === 0) {
+        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
+        return;
+      }
+      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
+        slots.map(s => {
+          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
+          const isSelected = selectedTeeSlot?.slotId === s.slotId;
+          return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
+        }).join('')
+      }</div>`;
+      container.querySelectorAll('.slot-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedTeeSlot = JSON.parse(btn.dataset.slot);
+          const [h, m] = (selectedTeeSlot.time || '08:00').split(':');
+          document.getElementById('game-hour').value = h;
+          document.getElementById('game-minute').value = m;
+          updateSelectedSlotDisplay();
+          fetchAndRenderSlots();
+        });
+      });
+    } catch (err) {
+      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
+    }
+  }
+
+  function updateMtbogdSectionVisibility() {
+    const loc = document.getElementById('game-location').value;
+    const section = document.getElementById('mtbogd-section');
+    if (section) section.style.display = loc === MTBOGD_CONFIG.locationName ? 'block' : 'none';
+    if (loc !== MTBOGD_CONFIG.locationName) {
+      selectedTeeSlot = null;
+      updateSelectedSlotDisplay();
+    }
+  }
+
+  document.getElementById('game-location').addEventListener('change', () => {
+    updateMtbogdSectionVisibility();
+  });
+  updateMtbogdSectionVisibility();
+
+  document.getElementById('game-date').addEventListener('change', () => {
+    selectedTeeSlot = null;
+    updateSelectedSlotDisplay();
+    if (document.getElementById('mtbogd-section')?.style.display !== 'none') {
+      document.getElementById('teetime-slots-container').innerHTML = '';
+    }
+  });
+
+  document.getElementById('holes-9-btn')?.addEventListener('click', () => {
+    teeHoles = 9;
+    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
+    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
+  });
+  document.getElementById('holes-18-btn')?.addEventListener('click', () => {
+    teeHoles = 18;
+    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
+    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
+  });
+
+  let _cartCount = 0;
+  document.getElementById('cart-minus')?.addEventListener('click', () => {
+    _cartCount = Math.max(0, _cartCount - 1);
+    document.getElementById('cart-count-display').textContent = _cartCount;
+    cartCount = _cartCount;
+  });
+  document.getElementById('cart-plus')?.addEventListener('click', () => {
+    _cartCount = Math.min(10, _cartCount + 1);
+    document.getElementById('cart-count-display').textContent = _cartCount;
+    cartCount = _cartCount;
+  });
+
+  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', fetchAndRenderSlots);
 
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
@@ -725,6 +866,30 @@ async function renderCreateGame() {
     });
   });
   document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+
+  function refreshInviteChips() {
+    const container = document.getElementById('invite-chips-container');
+    if (!container) return;
+    container.innerHTML = selectedInviteIds.map(id => {
+      const u = availableById[id];
+      const name = u ? displayUsername(u) : id;
+      return `<span style="background:rgba(255,255,255,0.1);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+    }).join('');
+    container.querySelectorAll('.rm-invite-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedInviteIds = selectedInviteIds.filter(id => id !== btn.dataset.id);
+        refreshInviteChips();
+      });
+    });
+  }
+
+  document.getElementById('open-invite-modal-btn')?.addEventListener('click', () => {
+    openInviteSelectModal(followedInviteUsers, otherInviteUsers, selectedInviteIds, (ids) => {
+      selectedInviteIds = ids;
+      refreshInviteChips();
+    });
+  });
+
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('create-submit-btn').disabled = true;
@@ -748,7 +913,7 @@ async function renderCreateGame() {
     }
 
     const groupSize = +document.getElementById('game-group-size').value;
-    const invitedIds = Array.from(document.querySelectorAll('.create-player-cb:checked')).map(cb => cb.value);
+    const invitedIds = [...selectedInviteIds];
     const visibility = document.querySelector('input[name="visibility"]:checked').value;
     const isPrivate = visibility === 'private';
     const targetCommunities = visibility === 'my-circles'
@@ -761,6 +926,28 @@ async function renderCreateGame() {
       showToast(t('selectCircleError'), 'error');
       document.getElementById('create-submit-btn').disabled = false;
       return;
+    }
+
+    let bookingCode = null;
+    let bookingId = null;
+    let bookingSlotId = null;
+
+    if (selectedTeeSlot) {
+      try {
+        const playerName = currentUser.fullName || displayUsername(currentUser);
+        const playerPhone = currentUser.phone || '';
+        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles, cartCount);
+        const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
+        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+        bookingCode = confirmed.bookingCode || null;
+        bookingId = confirmed.bookingId || null;
+        bookingSlotId = selectedTeeSlot.slotId;
+        showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
+      } catch (err) {
+        showToast(t('bookFailed') + ': ' + err.message, 'error');
+        document.getElementById('create-submit-btn').disabled = false;
+        return;
+      }
     }
 
     const game = {
@@ -778,7 +965,8 @@ async function renderCreateGame() {
       status: 'open',
       isPrivate,
       targetCommunities,
-      invitedIds
+      invitedIds,
+      ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
     };
     await store.saveGame(game);
 
@@ -873,6 +1061,14 @@ function renderGameView(game) {
 
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
+  const _joinedIdsView = new Set(groups.flatMap(g => ensureArray(g)).map(p => p?.id).filter(Boolean));
+  const _waitingIdsView = new Set(waitingList.map(p => p?.id).filter(Boolean));
+
+  function inviteStatusBadge(uid) {
+    if (_joinedIdsView.has(uid)) return { label: t('statusJoined'), color: '#4caf50' };
+    if (_waitingIdsView.has(uid)) return { label: t('statusWaiting'), color: '#ff9800' };
+    return { label: t('statusInvited'), color: '#2196f3' };
+  }
 
   main().innerHTML = `
     <div class="detail-container fade-in">
@@ -903,6 +1099,23 @@ function renderGameView(game) {
         </div>
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
+        ${isCreator && game.bookingCode ? `
+          <div class="game-description" style="margin-top:10px;">
+            <span class="desc-label">🏌️ ${t('bookCode')}</span>
+            <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
+          </div>` : ''}
+        ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
+          <div class="game-description" style="margin-top:10px;">
+            <span class="desc-label">✉️ ${t('manageInvites')} (${game.invitedIds.length})</span>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+              ${game.invitedIds.map(uid => {
+                const u = allUsersMap[uid];
+                const name = u ? displayUsername(u) : uid;
+                const st = inviteStatusBadge(uid);
+                return `<span style="font-size:0.82rem;padding:3px 9px;border-radius:12px;background:${st.color}18;border:1px solid ${st.color}44;color:var(--text-primary);">${name} <span style="color:${st.color};font-weight:600;">${st.label}</span></span>`;
+              }).join('')}
+            </div>
+          </div>` : ''}
       </div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
@@ -1745,6 +1958,182 @@ function showAdminEditUserModal(user, onSaved) {
   };
 }
 
+// ---- Standalone Booking View ----
+async function renderBookingView() {
+  const today = new Date().toISOString().split('T')[0];
+  main().innerHTML = `
+    <div class="create-container fade-in">
+      <a href="#/" class="back-link">← ${t('back')}</a>
+      <div class="create-card glass-card">
+        <h2 class="card-title">⛳ ${t('bookTeetime')}</h2>
+        <div class="create-form">
+          <div class="input-group">
+            <label>${t('date')}</label>
+            <input type="date" id="bv-date" value="${today}" min="${today}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+          </div>
+          <div class="input-group">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" id="bv-holes-9" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
+                  <button type="button" id="bv-holes-18" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookPlayers')}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="stepper-btn" id="bv-players-minus">−</button>
+                  <span id="bv-players-display" style="min-width:20px; text-align:center;">4</span>
+                  <button type="button" class="stepper-btn" id="bv-players-plus">+</button>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="stepper-btn" id="bv-cart-minus">−</button>
+                  <span id="bv-cart-display" style="min-width:20px; text-align:center;">0</span>
+                  <button type="button" class="stepper-btn" id="bv-cart-plus">+</button>
+                </div>
+              </div>
+              <button type="button" id="bv-fetch-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
+            </div>
+          </div>
+          <div id="bv-slots-container"></div>
+          <div id="bv-selected-display"></div>
+          <div id="bv-confirm-form" style="display:none;">
+            <div class="input-group" style="margin-top:12px;">
+              <label>${t('bookCustomerName')}</label>
+              <input type="text" id="bv-cust-name" value="${currentUser?.fullName || displayUsername(currentUser) || ''}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <div class="input-group">
+              <label>${t('bookCustomerPhone')}</label>
+              <input type="text" id="bv-cust-phone" value="${currentUser?.phone || ''}" placeholder="+97699112233" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <div class="input-group">
+              <label>${t('bookNotes')}</label>
+              <textarea id="bv-notes" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
+            </div>
+            <div class="input-group" style="margin-top:12px;">
+              <label style="font-size:0.85rem; color:var(--text-secondary);">Төлбөрийн арга</label>
+              <div style="display:flex; gap:10px; margin-top:6px;">
+                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08);">
+                  <input type="radio" name="bv-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+                </label>
+                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none;">
+                  <input type="radio" name="bv-payment" value="qpay" disabled> 📱 ${t('payQpay')}
+                  <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
+                </label>
+              </div>
+            </div>
+            <button type="button" id="bv-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px;">${t('bookSubmit')}</button>
+          </div>
+          <div id="bv-result"></div>
+        </div>
+      </div>
+    </div>`;
+
+  let bvHoles = 18;
+  let bvPlayers = 4;
+  let bvCart = 0;
+  let bvSlot = null;
+
+  function updateBvStepper(id, val) { document.getElementById(id).textContent = val; }
+
+  document.getElementById('bv-holes-9').addEventListener('click', () => {
+    bvHoles = 9;
+    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-primary';
+    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-outline';
+  });
+  document.getElementById('bv-holes-18').addEventListener('click', () => {
+    bvHoles = 18;
+    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-primary';
+    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-outline';
+  });
+  document.getElementById('bv-players-minus').addEventListener('click', () => { bvPlayers = Math.max(1, bvPlayers - 1); updateBvStepper('bv-players-display', bvPlayers); });
+  document.getElementById('bv-players-plus').addEventListener('click', () => { bvPlayers = Math.min(8, bvPlayers + 1); updateBvStepper('bv-players-display', bvPlayers); });
+  document.getElementById('bv-cart-minus').addEventListener('click', () => { bvCart = Math.max(0, bvCart - 1); updateBvStepper('bv-cart-display', bvCart); });
+  document.getElementById('bv-cart-plus').addEventListener('click', () => { bvCart = Math.min(10, bvCart + 1); updateBvStepper('bv-cart-display', bvCart); });
+
+  function renderBvSlotDisplay() {
+    const el = document.getElementById('bv-selected-display');
+    const form = document.getElementById('bv-confirm-form');
+    if (!bvSlot) { el.innerHTML = ''; form.style.display = 'none'; return; }
+    const price = bvSlot.price ? `${(bvSlot.price / 1000).toFixed(0)}K₮` : '';
+    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
+      ✅ ${t('bookSlotSelected')}: <strong>${bvSlot.time}</strong> · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} ${price ? `· ${price}` : ''}
+      <button type="button" id="bv-clear-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
+    </div>`;
+    form.style.display = 'block';
+    document.getElementById('bv-clear-btn')?.addEventListener('click', () => {
+      bvSlot = null;
+      renderBvSlotDisplay();
+      document.getElementById('bv-slots-container').innerHTML = '';
+    });
+  }
+
+  async function fetchBvSlots() {
+    const container = document.getElementById('bv-slots-container');
+    const date = document.getElementById('bv-date').value;
+    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
+    try {
+      const data = await mtbogd.getTeeTimes(date, bvPlayers, bvHoles);
+      const slots = (data.times || []).filter(s => s.status === 'available');
+      if (slots.length === 0) {
+        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
+        return;
+      }
+      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
+        slots.map(s => {
+          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
+          const isSel = bvSlot?.slotId === s.slotId;
+          return `<button type="button" class="bv-slot-btn btn btn-sm ${isSel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
+        }).join('')
+      }</div>`;
+      container.querySelectorAll('.bv-slot-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          bvSlot = JSON.parse(btn.dataset.slot);
+          renderBvSlotDisplay();
+          fetchBvSlots();
+        });
+      });
+    } catch (err) {
+      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
+    }
+  }
+
+  document.getElementById('bv-fetch-btn').addEventListener('click', fetchBvSlots);
+
+  document.getElementById('bv-submit-btn')?.addEventListener('click', async () => {
+    if (!bvSlot) return;
+    const submitBtn = document.getElementById('bv-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = t('bookLoading');
+    const result = document.getElementById('bv-result');
+    try {
+      const custName = document.getElementById('bv-cust-name').value.trim() || displayUsername(currentUser) || 'Guest';
+      const custPhone = document.getElementById('bv-cust-phone').value.trim();
+      const notes = document.getElementById('bv-notes').value.trim();
+      const hold = await mtbogd.createHold(bvSlot.slotId, bvPlayers, bvHoles, bvCart);
+      const playerList = Array.from({ length: bvPlayers }, () => ({ name: custName }));
+      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: custName, phone: custPhone }, playerList, notes);
+      result.innerHTML = `<div style="margin-top:16px; padding:16px; border-radius:10px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; text-align:center;">
+        <div style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">${t('bookConfirmed')}</div>
+        <div style="font-family:monospace; font-size:1.8rem; font-weight:700; letter-spacing:4px; color:var(--emerald);">${confirmed.bookingCode}</div>
+        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:6px;">${bvSlot.time} · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} · ${bvPlayers} ${t('bookPlayers')} · ${bvHoles} ${t('bookHoles')}</div>
+      </div>`;
+      document.getElementById('bv-confirm-form').style.display = 'none';
+      document.getElementById('bv-selected-display').innerHTML = '';
+      document.getElementById('bv-slots-container').innerHTML = '';
+      bvSlot = null;
+    } catch (err) {
+      result.innerHTML = `<p style="color:var(--danger-color); margin-top:12px;">${t('bookFailed')}: ${err.message}</p>`;
+      submitBtn.disabled = false;
+      submitBtn.textContent = t('bookSubmit');
+    }
+  });
+}
+
 // ---- Users List View ----
 async function renderUsersList() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
@@ -1884,6 +2273,12 @@ async function renderEditGame(gameId) {
   const isPast = !isNaN(gDate) && gDate < Date.now();
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
+  const myCommunities = userCommunityIds(currentUser);
+  const savedTargetCommunities = Array.isArray(game.targetCommunities) ? game.targetCommunities : [];
+  const currentVisibility = game.isPrivate ? 'private'
+    : savedTargetCommunities.length > 0 && savedTargetCommunities.length === myCommunities.length && savedTargetCommunities.every(id => myCommunities.includes(id)) ? 'my-circles'
+    : savedTargetCommunities.length > 0 ? 'selected-circles'
+    : 'public';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -1927,6 +2322,29 @@ async function renderEditGame(gameId) {
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
           <div class="input-group">
+            <label>${t('gameVisibility')}</label>
+            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
+                <input type="radio" name="edit-visibility" value="public" ${currentVisibility === 'public' ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
+                <input type="radio" name="edit-visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'my-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
+                <input type="radio" name="edit-visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'selected-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
+                <input type="radio" name="edit-visibility" value="private" ${currentVisibility === 'private' ? 'checked' : ''} style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
+              </label>
+            </div>
+          </div>
+          <div class="input-group" id="edit-communities-wrap" style="display:${currentVisibility === 'selected-circles' ? 'block' : 'none'};">
+            <label>${t('gameCommunity')}</label>
+            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+              ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
+            </div>
+          </div>
+          <div class="input-group">
             <label>Players</label>
             <button type="button" class="btn btn-outline" id="edit-add-player-btn">➕ Add Player</button>
           </div>
@@ -1963,6 +2381,20 @@ async function renderEditGame(gameId) {
     editSizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +editSizeInput.value + 1);
   });
 
+  // Highlight selected visibility and toggle circles panel
+  const editVisLabels = { public: 'edit-vis-public-label', 'my-circles': 'edit-vis-my-circles-label', 'selected-circles': 'edit-vis-selected-circles-label', private: 'edit-vis-private-label' };
+  function updateEditVisHighlight() {
+    const v = document.querySelector('input[name="edit-visibility"]:checked')?.value || 'public';
+    Object.entries(editVisLabels).forEach(([val, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.style.borderColor = v === val ? 'var(--emerald)' : 'transparent';
+    });
+    const wrap = document.getElementById('edit-communities-wrap');
+    if (wrap) wrap.style.display = v === 'selected-circles' ? 'block' : 'none';
+  }
+  document.querySelectorAll('input[name="edit-visibility"]').forEach(r => r.addEventListener('change', updateEditVisHighlight));
+  updateEditVisHighlight();
+
   document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const date = document.getElementById('edit-date').value;
@@ -1981,12 +2413,27 @@ async function renderEditGame(gameId) {
     const oldLocation = game.location;
     const oldGroupSize = game.groupSize;
     const oldDescription = game.description;
+    const oldIsPrivate = game.isPrivate;
+
+    const editVisibility = document.querySelector('input[name="edit-visibility"]:checked')?.value || 'public';
+    const editIsPrivate = editVisibility === 'private';
+    const editTargetCommunities = editVisibility === 'my-circles' ? userCommunityIds(currentUser)
+      : editVisibility === 'selected-circles' ? selectedCommunities('edit-communities')
+      : [];
+
+    if ((editVisibility === 'my-circles' || editVisibility === 'selected-circles') && editTargetCommunities.length === 0) {
+      showToast(t('selectCircleError'), 'error');
+      return;
+    }
 
     game.date = date;
     game.time = hour + ':' + min;
     game.location = document.getElementById('edit-location').value.trim();
     game.groupSize = groupSize;
+    game.isPrivate = editIsPrivate;
+    game.targetCommunities = editTargetCommunities;
     reflowGroupsBySize(game);
+    fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
 
     const changes = [];
@@ -1995,6 +2442,7 @@ async function renderEditGame(gameId) {
     if (oldLocation !== game.location) changes.push(`Байршил: ${oldLocation} → ${game.location}`);
     if (oldGroupSize !== game.groupSize) changes.push(`Тоглогч: ${oldGroupSize} → ${game.groupSize}`);
     if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
+    if (oldIsPrivate !== game.isPrivate) changes.push(`Харагдах хүрээ өөрчлөгдлөө`);
 
     await store.saveGame(game);
 
