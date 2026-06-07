@@ -15,6 +15,10 @@
         "function": "mtbogdProxy"
       },
       {
+        "source": "/api/admin-login",
+        "function": "adminLogin"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

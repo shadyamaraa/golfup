@@ -310,16 +310,26 @@ function renderAuth() {
     }
   });
 
-  document.getElementById('admin-login-link').addEventListener('click', (e) => {
+  document.getElementById('admin-login-link').addEventListener('click', async (e) => {
     e.preventDefault();
     const pwd = prompt("System Admin Password:");
-    if (pwd === "ASMadmin2026@") {
-      currentUser = { id: "admin_uid", name: "System Admin", role: "admin", status: "active", createdAt: Date.now() };
-      store.saveUser(currentUser);
-      location.hash = '#/admin';
-      router();
-    } else if (pwd) {
-      showToast("Incorrect password", "error");
+    if (!pwd) return;
+    try {
+      const res = await fetch('/api/admin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+      });
+      if (res.ok) {
+        currentUser = { id: "admin_uid", name: "System Admin", role: "admin", status: "active", createdAt: Date.now() };
+        store.saveUser(currentUser);
+        location.hash = '#/admin';
+        router();
+      } else {
+        showToast("Incorrect password", "error");
+      }
+    } catch (_) {
+      showToast("Алдаа гарлаа.", "error");
     }
   });
 }

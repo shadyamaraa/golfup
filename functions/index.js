@@ -5,6 +5,27 @@ admin.initializeApp();
 
 const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/external/v1';
 
+// Verify the system-admin password server-side so it is never shipped in the
+// client bundle. Password is stored in Secret Manager as ADMIN_PASSWORD.
+// Reachable at /api/admin-login via a hosting rewrite.
+exports.adminLogin = functions
+  .runWith({ secrets: ['ADMIN_PASSWORD'] })
+  .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
+
+    const expected = process.env.ADMIN_PASSWORD;
+    const provided = (req.body && req.body.password) || '';
+    if (expected && provided === expected) {
+      res.status(200).json({ ok: true });
+    } else {
+      res.status(401).json({ ok: false });
+    }
+  });
+
 // Proxy MTBogd external API — keeps the API key server-side.
 // Reachable at /api/mtbogd/<path> via Firebase Hosting rewrite.
 // The key is stored in Cloud Secret Manager as MTBOGD_API_KEY.
