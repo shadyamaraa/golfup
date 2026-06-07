@@ -3,6 +3,39 @@ const functions = require('firebase-functions/v1');
 
 admin.initializeApp();
 
+const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/external/v1';
+
+// Proxy MTBogd external API — keeps the API key server-side.
+// Reachable at /api/mtbogd/<path> via Firebase Hosting rewrite.
+exports.mtbogdProxy = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  const apiKey = functions.config().mtbogd?.apikey;
+  if (!apiKey) { res.status(500).json({ error: 'Proxy not configured' }); return; }
+
+  // Strip /api/mtbogd prefix; forward remaining path + query string
+  const subPath = req.path.replace(/^\/api\/mtbogd/, '');
+  const qs = Object.keys(req.query).length ? '?' + new URLSearchParams(req.query).toString() : '';
+  const upstream = `${MTBOGD_BASE}${subPath}${qs}`;
+
+  const opts = {
+    method: req.method,
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+  };
+  if (req.method === 'POST') opts.body = JSON.stringify(req.body);
+
+  try {
+    const upRes = await fetch(upstream, opts);
+    const data = await upRes.json();
+    res.status(upRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 const APP_URL = 'https://ubgolf.club';
 
 // Triggered when a new notification is written to /notifications/{userId}/{notifId}
