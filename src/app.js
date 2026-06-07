@@ -1412,7 +1412,7 @@ async function handleDelete(game) {
     showToast(t('cannotDeletePast'), 'error');
     return;
   }
-  if (!confirm(t('confirmDelete'))) return;
+  if (!confirm(game.bookingCode ? t('confirmDeleteBooking') : t('confirmDelete'))) return;
 
   const joinedIds = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
