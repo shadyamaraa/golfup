@@ -1,5 +1,11 @@
 # CHANGELOG_AI.md
 
+## 2026-06-07
+
+### Added `handleBookTeeTime(game)` — `src/app.js`
+
+Added the missing function body for the "⛳ Book Tee Time" button that already existed in the game detail view. The modal lets the creator select holes (9/18), cart count, fetch available tee time slots from the MTBogd API, pick a slot, and confirm the booking. On success, `bookingCode`, `bookingId`, and `bookingSlotId` are saved to the game via `store.saveGame` and the view re-renders.
+
 Track meaningful AI-assisted changes here so work done across two PCs and multiple tools stays understandable.
 
 ## 2026-06-02

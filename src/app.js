@@ -896,6 +896,8 @@ function renderGameView(game) {
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
           ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">➕ Add Player</button>` : ''}
+          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
+          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
@@ -940,6 +942,8 @@ function renderGameView(game) {
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
   document.getElementById('copy-link-btn')?.addEventListener('click', () => copyGameLink(game));
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
+  document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
+  document.getElementById('book-teetime-btn')?.addEventListener('click', () => handleBookTeeTime(game));
   document.querySelectorAll('.remove-player-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       if (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || e.currentTarget.dataset.id === currentUser?.id) {
@@ -2077,6 +2081,274 @@ async function handleAddPlayer(game, onSaved = null) {
     if (onSaved) onSaved();
     else renderGameView(game);
     showToast('✅ Added ' + selectedUser.name, 'success');
+  });
+}
+
+async function handleBookTeeTime(game) {
+  const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
+
+  let btHoles = 18;
+  let btCart = 0;
+  let btSlot = null;
+  const groupSize = game.groupSize || 4;
+
+  function slotLabel(s) {
+    const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
+    return `${s.time} ${s.teeLabel || ('T' + s.startTee)}${price}`;
+  }
+
+  function renderModal() {
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;">⛳ ${t('bookTeeTimeBtn')}</h3>
+        <button id="bt-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+        <div>
+          <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px;">${t('bookHoles')}</div>
+          <div style="display:flex;gap:6px;">
+            <button type="button" id="bt-9" class="btn btn-sm ${btHoles === 9 ? 'btn-primary' : 'btn-outline'}" style="min-width:40px;">9</button>
+            <button type="button" id="bt-18" class="btn btn-sm ${btHoles === 18 ? 'btn-primary' : 'btn-outline'}" style="min-width:40px;">18</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px;">${t('bookCartCount')}</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button type="button" class="stepper-btn" id="bt-cart-minus">−</button>
+            <span id="bt-cart-val" style="min-width:18px;text-align:center;">${btCart}</span>
+            <button type="button" class="stepper-btn" id="bt-cart-plus">+</button>
+          </div>
+        </div>
+        <button type="button" id="bt-fetch" class="btn btn-outline" style="flex:1;min-width:130px;">${t('bookViewSlots')}</button>
+      </div>
+      <div id="bt-slots"></div>
+      ${btSlot ? `
+        <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(76,175,80,0.12);border:1px solid #4caf5044;font-size:0.9rem;">
+          ✅ ${t('bookSlotSelected')}: <strong>${slotLabel(btSlot)}</strong>
+        </div>
+        <button type="button" id="bt-confirm" class="btn btn-primary" style="width:100%;margin-top:10px;">${t('bookSubmit')}</button>
+      ` : ''}
+      <div id="bt-error"></div>`;
+
+    document.getElementById('bt-close').onclick = () => overlay.remove();
+    document.getElementById('bt-9').onclick = () => { btHoles = 9; renderModal(); };
+    document.getElementById('bt-18').onclick = () => { btHoles = 18; renderModal(); };
+    document.getElementById('bt-cart-minus').onclick = () => { btCart = Math.max(0, btCart - 1); document.getElementById('bt-cart-val').textContent = btCart; };
+    document.getElementById('bt-cart-plus').onclick = () => { btCart = Math.min(10, btCart + 1); document.getElementById('bt-cart-val').textContent = btCart; };
+    document.getElementById('bt-fetch').onclick = fetchSlots;
+    document.getElementById('bt-confirm')?.addEventListener('click', confirmBook);
+  }
+
+  async function fetchSlots() {
+    const slotsEl = document.getElementById('bt-slots');
+    slotsEl.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
+    try {
+      const data = await mtbogd.getTeeTimes(game.date, groupSize, btHoles);
+      const slots = (data.times || []).filter(s => s.status === 'available');
+      if (!slots.length) { slotsEl.innerHTML = `<p style="font-size:0.85rem;color:var(--text-secondary);margin:8px 0;">${t('bookNoSlots')}</p>`; return; }
+      slotsEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${
+        slots.map(s => `<button type="button" class="bt-slot btn btn-sm ${btSlot?.slotId === s.slotId ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 10px;">${slotLabel(s)}</button>`).join('')
+      }</div>`;
+      slotsEl.querySelectorAll('.bt-slot').forEach(btn => {
+        btn.onclick = () => { btSlot = JSON.parse(btn.dataset.slot); renderModal(); fetchSlots(); };
+      });
+    } catch (err) {
+      slotsEl.innerHTML = `<p style="font-size:0.85rem;color:var(--danger-color);margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
+    }
+  }
+
+  async function confirmBook() {
+    const confirmBtn = document.getElementById('bt-confirm');
+    if (!btSlot || !confirmBtn) return;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = t('bookLoading');
+    const errEl = document.getElementById('bt-error');
+    try {
+      const playerName = currentUser.fullName || displayUsername(currentUser);
+      const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles, btCart);
+      const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
+      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '' }, playerList);
+      game.bookingCode = confirmed.bookingCode;
+      game.bookingId = confirmed.bookingId;
+      game.bookingSlotId = btSlot.slotId;
+      await store.saveGame(game);
+      overlay.remove();
+      showToast(t('bookConfirmed') + ' ' + confirmed.bookingCode, 'success');
+      renderGameView(game);
+    } catch (err) {
+      errEl.innerHTML = `<p style="color:var(--danger-color);margin-top:8px;font-size:0.85rem;">${t('bookFailed')}: ${err.message}</p>`;
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = t('bookSubmit'); }
+    }
+  }
+
+  renderModal();
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+async function handleInvite(game) {
+  const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:400px;padding:20px;max-height:80vh;overflow-y:auto;';
+  modal.innerHTML = `<h3 style="margin:0 0 16px;">${t('manageInvites')}</h3><div class="loading-spinner" style="margin:20px auto;"></div>`;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const allUsers = await store.loadAllUsers();
+  const usersById = Object.fromEntries(allUsers.map(u => [u.id, u]));
+  const invitedIds = Array.isArray(game.invitedIds) ? [...game.invitedIds] : [];
+  const allJoinedIds = new Set(ensureGroups(game.groups).flatMap(g => ensureArray(g)).map(p => p?.id).filter(Boolean));
+  const waitingIds = new Set(ensureArray(game.waitingList).map(p => p?.id).filter(Boolean));
+
+  function getInviteStatus(uid) {
+    if (allJoinedIds.has(uid)) return { label: t('statusJoined'), color: '#4caf50' };
+    if (waitingIds.has(uid)) return { label: t('statusWaiting'), color: '#ff9800' };
+    return { label: t('statusInvited'), color: '#2196f3' };
+  }
+
+  function renderInviteModal() {
+    const availableToInvite = allUsers.filter(u =>
+      u.status !== 'hold' &&
+      u.id !== 'admin_uid' &&
+      u.role !== 'admin' &&
+      !invitedIds.includes(u.id) &&
+      !allJoinedIds.has(u.id) &&
+      !waitingIds.has(u.id) &&
+      u.id !== currentUser.id
+    );
+
+    modal.innerHTML = `
+      <h3 style="margin:0 0 16px;">${t('manageInvites')}</h3>
+      ${invitedIds.length > 0 ? `
+        <div style="margin-bottom:16px;">
+          ${invitedIds.map(uid => {
+            const user = usersById[uid] || { id: uid, name: uid };
+            const st = getInviteStatus(uid);
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color);">
+              <span style="font-size:0.95rem;">${displayUsername(user)}</span>
+              <span style="font-size:0.78rem;padding:2px 8px;border-radius:12px;background:${st.color}22;color:${st.color};font-weight:600;">${st.label}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : `<p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:16px;">${t('noInvitedYet')}</p>`}
+      ${availableToInvite.length > 0 ? `
+        <div style="border-top:1px solid var(--border-color);padding-top:14px;">
+          <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">${t('inviteMore')}</div>
+          <div style="position:relative;">
+            <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
+              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
+            <div id="inv-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);z-index:10;max-height:160px;overflow-y:auto;"></div>
+          </div>
+        </div>
+      ` : ''}
+      <button class="btn btn-ghost" id="inv-close" style="width:100%;margin-top:14px;">${t('cancel')}</button>
+    `;
+
+    modal.querySelector('#inv-close').onclick = () => overlay.remove();
+
+    const inp = modal.querySelector('#inv-input');
+    const resultsEl = modal.querySelector('#inv-results');
+    if (!inp) return;
+    inp.focus();
+
+    inp.addEventListener('input', () => {
+      const q = inp.value.trim().toLowerCase();
+      if (!q) { resultsEl.style.display = 'none'; return; }
+      const matches = availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q));
+      if (!matches.length) { resultsEl.style.display = 'none'; return; }
+      resultsEl.innerHTML = matches.map(u =>
+        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`
+      ).join('');
+      resultsEl.style.display = 'block';
+      resultsEl.querySelectorAll('.ps-item').forEach(item => {
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', async () => {
+          const selected = availableToInvite.find(u => u.id === item.dataset.id);
+          if (!selected) return;
+          if (!Array.isArray(game.invitedIds)) game.invitedIds = [];
+          if (!game.invitedIds.includes(selected.id)) {
+            game.invitedIds.push(selected.id);
+            invitedIds.push(selected.id);
+          }
+          await store.saveGame(game);
+          await store.saveNotification(selected.id, {
+            type: 'invite',
+            from: displayUsername(currentUser),
+            gameId: game.id,
+            gameDate: game.date,
+            gameTime: game.time,
+            gameLocation: game.location
+          });
+          showToast(`✉️ ${displayUsername(selected)}`, 'success');
+          renderInviteModal();
+        });
+      });
+    });
+  }
+
+  renderInviteModal();
+}
+
+function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onConfirm) {
+  const selected = new Set(currentSelected);
+
+  function rowHTML(u) {
+    const isSel = selected.has(u.id);
+    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:rgba(255,255,255,0.07);' : ''}">
+      <span class="ism-check" style="width:20px;text-align:center;font-size:1.1rem;color:var(--primary-color);">${isSel ? '✓' : ''}</span>
+      <span style="font-size:0.95rem;">${displayUsername(u)}</span>
+    </div>`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div class="glass-card fade-in" style="width:100%;max-width:400px;padding:20px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 12px;">${t('invitePlayers')}</h3>
+      <div style="flex:1;overflow-y:auto;margin:0 -4px;padding:0 4px;">
+        ${followedUsers.length > 0 ? `
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">⭐ ${t('followedGroup')}</div>
+          ${followedUsers.map(u => rowHTML(u)).join('')}
+          ${otherUsers.length > 0 ? '<div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>' : ''}
+        ` : ''}
+        ${otherUsers.length > 0 ? `
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">${t('othersGroup')}</div>
+          ${otherUsers.map(u => rowHTML(u)).join('')}
+        ` : ''}
+        ${followedUsers.length === 0 && otherUsers.length === 0 ? `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${t('noUsersFound')}</p>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-ghost" id="ism-cancel" style="flex:1;">${t('cancel')}</button>
+        <button class="btn btn-primary" id="ism-confirm" style="flex:1;">${t('done')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#ism-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#ism-confirm').onclick = () => { overlay.remove(); onConfirm([...selected]); };
+
+  overlay.querySelectorAll('.ism-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const uid = row.dataset.id;
+      if (selected.has(uid)) {
+        selected.delete(uid);
+        row.querySelector('.ism-check').textContent = '';
+        row.style.background = '';
+      } else {
+        selected.add(uid);
+        row.querySelector('.ism-check').textContent = '✓';
+        row.style.background = 'rgba(255,255,255,0.07)';
+      }
+    });
   });
 }
 
