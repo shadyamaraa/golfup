@@ -52,6 +52,7 @@ const COMMUNITY_OPTIONS = [
   { id: 'star', label: 'Star', type: 'club' },
   { id: 'vista', label: 'Vista', type: 'club' },
   { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
+  { id: 'samraajid', label: 'Самраажид', type: 'club' },
   { id: 'bulaa', label: 'Булаа', type: 'interest' },
   { id: 'senior', label: 'Сениор', type: 'interest' },
   { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' }
