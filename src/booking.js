@@ -36,3 +36,11 @@ export async function confirmBooking(holdId, customer, players, notes = '') {
     body: JSON.stringify({ holdId, customer, players, notes }),
   }));
 }
+
+export async function updateBookingPlayers(bookingId, players) {
+  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/players`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ players }),
+  }));
+}

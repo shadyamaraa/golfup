@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-06-09
+
+### Sync MTBogd booking player list on join/leave/kick — `src/booking.js`, `src/app.js`
+
+Added `updateBookingPlayers(bookingId, players)` to `src/booking.js` which calls
+`PATCH /api/mtbogd/bookings/:bookingId/players` (proxied to MTBogd external API).
+Called from `handleJoin` (only when player lands in a group, not waiting list),
+`handleLeave`, and `handleRemovePlayer` whenever `game.bookingId` is set.
+Errors are non-fatal — game is always saved to Firebase first; a warning toast
+shows if the MTBogd sync fails.
+
 ## 2026-06-07
 
 ### Tee-time slots → popup picker; remove cart selector — `src/app.js`

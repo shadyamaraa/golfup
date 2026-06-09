@@ -1350,6 +1350,16 @@ async function handleJoin(game) {
   game.waitingList = waitingList;
 
   await store.saveGame(game);
+
+  if (game.bookingId && isPlayerInGroup(game, currentUser.id)) {
+    try {
+      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: p.name }));
+      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+    } catch (err) {
+      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+    }
+  }
+
   const joinNotif = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
   const joinedAfter = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
@@ -1395,6 +1405,16 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
+
+  if (game.bookingId) {
+    try {
+      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: p.name }));
+      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+    } catch (err) {
+      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+    }
+  }
+
   const leaveNotif = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
   const remainingAfter = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
@@ -2774,6 +2794,16 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
+
+  if (game.bookingId) {
+    try {
+      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: p.name }));
+      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+    } catch (err) {
+      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+    }
+  }
+
   if (onSaved) onSaved();
   else renderGameView(game);
   showToast('❌ Removed', 'info');
