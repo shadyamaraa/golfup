@@ -1132,7 +1132,6 @@ function renderGameView(game) {
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">➕ Add Player</button>` : ''}
           ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
@@ -2228,10 +2227,6 @@ async function renderEditGame(gameId) {
             <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
               ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
-          </div>
-          <div class="input-group">
-            <label>Players</label>
-            <button type="button" class="btn btn-outline" id="edit-add-player-btn">➕ Add Player</button>
           </div>
           <div class="form-actions">
             <a href="#/game/${game.id}" class="btn btn-ghost">${t('cancel')}</a>
