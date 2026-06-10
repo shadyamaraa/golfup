@@ -2574,10 +2574,11 @@ async function handleInvite(game) {
     if (!inp) return;
     inp.focus();
 
-    inp.addEventListener('input', () => {
+    function renderResults() {
       const q = inp.value.trim().toLowerCase();
-      if (!q) { resultsEl.style.display = 'none'; return; }
-      const matches = availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q));
+      const matches = q
+        ? availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q))
+        : availableToInvite;
       if (!matches.length) { resultsEl.style.display = 'none'; return; }
       resultsEl.innerHTML = matches.map(u =>
         `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`
@@ -2607,7 +2608,11 @@ async function handleInvite(game) {
           renderInviteModal();
         });
       });
-    });
+    }
+
+    inp.addEventListener('focus', renderResults);
+    inp.addEventListener('input', renderResults);
+    renderResults();
   }
 
   renderInviteModal();
