@@ -2564,11 +2564,9 @@ async function handleInvite(game) {
       ${availableToInvite.length > 0 ? `
         <div style="border-top:1px solid var(--border-color);padding-top:14px;">
           <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">${t('inviteMore')}</div>
-          <div style="position:relative;">
-            <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
-              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
-            <div id="inv-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);z-index:10;max-height:160px;overflow-y:auto;"></div>
-          </div>
+          <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
+            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
+          <div id="inv-results" style="display:none;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);margin-top:4px;max-height:180px;overflow-y:auto;"></div>
         </div>
       ` : ''}
       <button class="btn btn-ghost" id="inv-close" style="width:100%;margin-top:14px;">${t('cancel')}</button>
