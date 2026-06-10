@@ -2580,9 +2580,16 @@ async function handleInvite(game) {
         ? availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q))
         : availableToInvite;
       if (!matches.length) { resultsEl.style.display = 'none'; return; }
-      resultsEl.innerHTML = matches.map(u =>
-        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`
-      ).join('');
+      const byName = (a, b) => displayUsername(a).localeCompare(displayUsername(b));
+      const followed = matches.filter(u => !!currentUserFollows[u.id]).sort(byName);
+      const others = matches.filter(u => !currentUserFollows[u.id]).sort(byName);
+      const itemHtml = u =>
+        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`;
+      const headerHtml = label =>
+        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:rgba(255,255,255,0.04);">${label}</div>`;
+      resultsEl.innerHTML =
+        (followed.length ? headerHtml(t('followedGroup')) + followed.map(itemHtml).join('') : '') +
+        (others.length ? headerHtml(t('othersGroup')) + others.map(itemHtml).join('') : '');
       resultsEl.style.display = 'block';
       resultsEl.querySelectorAll('.ps-item').forEach(item => {
         item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
