@@ -765,10 +765,26 @@ async function renderCreateGame() {
     });
   }
 
-  async function openTeeTimePopup() {
+  // Prefetch + 60s cache so the popup opens instantly
+  const slotsCache = {};
+  const SLOTS_TTL = 60 * 1000;
+  function fetchTeeTimes() {
     const date = document.getElementById('game-date').value;
     const groupSize = +document.getElementById('game-group-size').value;
+    const key = `${date}|${groupSize}|${teeHoles}`;
+    const hit = slotsCache[key];
+    if (hit && Date.now() - hit.ts < SLOTS_TTL) return hit.promise;
+    const promise = mtbogd.getTeeTimes(date, groupSize, teeHoles)
+      .catch(err => { delete slotsCache[key]; throw err; });
+    slotsCache[key] = { ts: Date.now(), promise };
+    return promise;
+  }
+  function prefetchTeeTimes() {
+    if (document.getElementById('game-location').value !== MTBOGD_CONFIG.locationName) return;
+    fetchTeeTimes().catch(() => {});
+  }
 
+  async function openTeeTimePopup() {
     const overlay = document.createElement('div');
     overlay.className = 'popup-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -787,7 +803,7 @@ async function renderCreateGame() {
 
     const slotsEl = modal.querySelector('#ttp-slots');
     try {
-      const data = await mtbogd.getTeeTimes(date, groupSize, teeHoles);
+      const data = await fetchTeeTimes();
       const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
         slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
@@ -869,6 +885,8 @@ async function renderCreateGame() {
     if (loc !== MTBOGD_CONFIG.locationName) {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
+    } else {
+      prefetchTeeTimes();
     }
   }
 
@@ -880,17 +898,20 @@ async function renderCreateGame() {
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
     updateSelectedSlotDisplay();
+    prefetchTeeTimes();
   });
 
   document.getElementById('holes-9-btn')?.addEventListener('click', () => {
     teeHoles = 9;
     document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
     document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
+    prefetchTeeTimes();
   });
   document.getElementById('holes-18-btn')?.addEventListener('click', () => {
     teeHoles = 18;
     document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
     document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
+    prefetchTeeTimes();
   });
 
   document.getElementById('fetch-teetimes-btn')?.addEventListener('click', openTeeTimePopup);
@@ -898,9 +919,11 @@ async function renderCreateGame() {
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
     sizeInput.value = Math.max(APP_CONFIG.minGroupSize, +sizeInput.value - 1);
+    prefetchTeeTimes();
   });
   document.getElementById('size-plus').addEventListener('click', () => {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
+    prefetchTeeTimes();
   });
   document.querySelectorAll('input[name="visibility"]').forEach(radio => {
     radio.addEventListener('change', () => {
