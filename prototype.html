@@ -3,347 +3,263 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>UB Golf — PGA Tour Style Prototype</title>
+<title>UB Golf — Minimal B/W Prototype</title>
 <style>
   :root {
-    --navy-900: #060d1a;
-    --navy-800: #0a1628;
-    --navy-700: #102240;
-    --navy-600: #16305a;
-    --card: #0f1e36;
-    --card-2: #14274a;
-    --line: #1d3354;
-    --gold: #d4af37;
-    --gold-soft: #e8c75a;
-    --blue: #2f7de1;
-    --blue-soft: #5ea3f5;
-    --text: #eef3fa;
-    --muted: #7e93b4;
-    --green: #2ecc71;
-    --red: #e74c3c;
+    --bg: #ffffff;
+    --ink: #111111;
+    --muted: #8a8a8a;
+    --line: #ebebeb;
+    --soft: #f6f6f6;
+    --accent: #0a66ff;
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { background:#02060d; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:var(--text); display:flex; justify-content:center; }
+  body { background:#dcdcdc; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:var(--ink); display:flex; justify-content:center; }
 
   /* ---- Phone frame ---- */
-  .phone { width:390px; height:844px; position:relative; overflow:hidden; border-radius:42px; border:8px solid #0d1626; box-shadow:0 30px 90px #000e; background:var(--navy-900); margin:24px 0 90px; }
-  .statusbar { height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 22px; position:relative; z-index:60; }
-  .statusbar span { font-size:13px; font-weight:700; }
+  .phone { width:390px; height:844px; position:relative; overflow:hidden; border-radius:42px; border:8px solid #111; box-shadow:0 30px 90px #0007; background:var(--bg); margin:24px 0 90px; }
 
-  .screen { display:none; height:calc(844px - 44px - 66px); overflow-y:auto; scrollbar-width:none; }
+  .statusbar { position:absolute; top:0; left:0; right:0; height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 24px; z-index:90; transition:color .2s; }
+  .statusbar span { font-size:13px; font-weight:700; }
+  .statusbar.light { color:#fff; }
+  .statusbar.dark { color:#111; }
+  .statusbar.light svg .fill { fill:#fff; } .statusbar.light svg .stroke { stroke:#fff; }
+  .statusbar.dark svg .fill { fill:#111; } .statusbar.dark svg .stroke { stroke:#111; }
+
+  .screen { display:none; height:calc(844px - 64px); overflow-y:auto; scrollbar-width:none; background:var(--bg); }
   .screen::-webkit-scrollbar { display:none; }
   .screen.active { display:block; }
-  .page-enter { animation: slideIn .24s cubic-bezier(.4,0,.2,1); }
-  @keyframes slideIn { from { transform:translateX(26px); opacity:0 } to { transform:translateX(0); opacity:1 } }
+  .screen.pad-top { padding-top:44px; }
+  .page-enter { animation: fadeUp .22s cubic-bezier(.4,0,.2,1); }
+  @keyframes fadeUp { from { transform:translateY(10px); opacity:0 } to { transform:translateY(0); opacity:1 } }
 
-  /* ---- HERO BANNER (PGA Tour style) ---- */
-  .hero { position:relative; margin:6px 14px 0; border-radius:20px; overflow:hidden; height:210px; box-shadow:0 12px 32px #0008; }
-  .hero-bg { position:absolute; inset:0; }
-  .hero-overlay { position:absolute; inset:0; background:linear-gradient(180deg, transparent 20%, #060d1aee 92%); }
-  .hero-content { position:absolute; bottom:0; left:0; right:0; padding:16px 18px; }
-  .hero-tag { display:inline-flex; align-items:center; gap:5px; background:var(--gold); color:#1a1303; font-size:10px; font-weight:800; letter-spacing:1.2px; padding:4px 10px; border-radius:6px; text-transform:uppercase; margin-bottom:8px; }
-  .hero-title { font-size:21px; font-weight:900; letter-spacing:-.4px; line-height:1.15; text-shadow:0 2px 12px #000a; }
-  .hero-sub { font-size:12.5px; color:#c6d4e8; margin-top:4px; font-weight:500; }
-  .hero-cta { display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#ffffff14; backdrop-filter:blur(8px); border:1px solid #ffffff2e; border-radius:10px; padding:8px 14px; font-size:12.5px; font-weight:700; color:#fff; cursor:pointer; transition:transform .1s; }
-  .hero-cta:active { transform:scale(.96); }
-  .hero-dots { position:absolute; top:14px; right:14px; display:flex; gap:5px; }
-  .hero-dots i { width:6px; height:6px; border-radius:50%; background:#ffffff55; }
-  .hero-dots i.on { background:var(--gold); width:16px; border-radius:4px; }
+  /* ---- FULL-BLEED HERO (Memorial Tournament style) ---- */
+  .hero-full { position:relative; height:380px; overflow:hidden; }
+  .hero-art { position:absolute; inset:0; }
+  .hero-shade { position:absolute; inset:0; background:linear-gradient(180deg, #00000055 0%, #00000022 30%, #00000077 100%); }
+  .hero-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:44px 28px 24px; }
+  .hero-logo { width:58px; height:58px; border-radius:50%; background:#ffffffee; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; box-shadow:0 4px 18px #0005; }
+  .hero-logo b { font-size:20px; line-height:1; }
+  .hero-logo i { font-style:normal; font-size:6.5px; font-weight:800; letter-spacing:1px; color:#333; margin-top:2px; }
+  .hero-h1 { font-size:27px; font-weight:800; color:#fff; line-height:1.25; letter-spacing:-.3px; text-shadow:0 2px 16px #0009; max-width:300px; }
+  .hero-pill { margin-top:18px; background:#00000080; backdrop-filter:blur(6px); color:#fff; font-size:11px; font-weight:800; letter-spacing:1.6px; padding:8px 18px; border-radius:6px; text-transform:uppercase; }
+  .hero-presented { position:absolute; top:50px; right:18px; font-size:8.5px; font-weight:700; letter-spacing:.8px; color:#ffffffcc; }
+  .hero-back { position:absolute; top:52px; left:16px; width:34px; height:34px; border-radius:50%; background:#000000a0; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:10; }
 
-  /* ---- Section headers ---- */
-  .sec { display:flex; align-items:baseline; justify-content:space-between; padding:0 18px; margin:22px 0 12px; }
-  .sec h2 { font-size:15px; font-weight:900; letter-spacing:.2px; text-transform:uppercase; }
-  .sec h2 em { font-style:normal; color:var(--gold); }
-  .sec a { font-size:12px; color:var(--blue-soft); font-weight:700; text-decoration:none; cursor:pointer; }
+  /* ---- Underline tabs (Overview Field Course style) ---- */
+  .utabs { display:flex; border-bottom:1px solid var(--line); padding:0 6px; background:var(--bg); position:sticky; top:0; z-index:40; }
+  .utab { padding:15px 14px 13px; font-size:14.5px; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2.5px solid transparent; white-space:nowrap; transition:color .15s; }
+  .utab.on { color:var(--ink); font-weight:800; border-bottom-color:var(--ink); }
 
-  /* ---- Game cards (banner-topped, PGA event card style) ---- */
-  .carousel { display:flex; gap:12px; overflow-x:auto; padding:2px 18px 6px; scroll-snap-type:x mandatory; scrollbar-width:none; }
-  .carousel::-webkit-scrollbar { display:none; }
-  .ecard { min-width:80%; scroll-snap-align:start; background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; cursor:pointer; transition:transform .12s, box-shadow .12s; }
-  .ecard:active { transform:scale(.975); }
-  .ecard-banner { height:92px; position:relative; }
-  .ecard-banner .ribbon { position:absolute; top:10px; left:10px; background:#060d1ac9; backdrop-filter:blur(6px); border:1px solid #ffffff22; padding:4px 10px; border-radius:8px; font-size:10.5px; font-weight:800; letter-spacing:.6px; color:var(--gold-soft); }
-  .ecard-banner .status { position:absolute; top:10px; right:10px; padding:4px 10px; border-radius:8px; font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; }
-  .st-confirmed { background:#0c3d24cc; color:#4ade80; border:1px solid #4ade8044; }
-  .st-open { background:#3d300ccc; color:var(--gold-soft); border:1px solid #d4af3744; }
-  .ecard-body { padding:13px 15px 14px; }
-  .ecard-row1 { display:flex; justify-content:space-between; align-items:flex-start; }
-  .ecard-time { font-size:22px; font-weight:900; letter-spacing:-.5px; }
-  .ecard-loc { font-size:12.5px; color:var(--muted); font-weight:600; margin-top:2px; display:flex; align-items:center; gap:5px; }
-  .ecard-holes { text-align:right; font-size:11px; color:var(--muted); font-weight:700; }
-  .ecard-holes b { display:block; color:var(--text); font-size:15px; }
-  .ecard-divider { height:1px; background:var(--line); margin:11px 0; }
-  .ecard-row2 { display:flex; justify-content:space-between; align-items:center; }
-  .avs { display:flex; }
-  .av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; border:2px solid var(--card); margin-left:-9px; }
+  /* ---- Sections ---- */
+  .sec-h { font-size:21px; font-weight:800; letter-spacing:-.4px; padding:22px 20px 14px; }
+  .sec-h small { display:block; font-size:12px; font-weight:600; color:var(--muted); letter-spacing:0; margin-top:3px; }
+
+  /* ---- Course row (Muirfield Village style) ---- */
+  .crow { display:flex; align-items:center; gap:14px; padding:14px 20px; cursor:pointer; transition:background .12s; }
+  .crow:active { background:var(--soft); }
+  .crow + .crow { border-top:1px solid var(--line); }
+  .cthumb { width:54px; height:54px; border-radius:50%; overflow:hidden; flex-shrink:0; position:relative; border:1px solid var(--line); }
+  .crow-name { font-size:15.5px; font-weight:800; letter-spacing:-.2px; }
+  .crow-meta { display:flex; gap:18px; margin-top:5px; }
+  .crow-meta div { font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.4px; }
+  .crow-meta b { color:var(--ink); font-weight:800; margin-left:4px; }
+  .crow-right { margin-left:auto; text-align:right; }
+
+  .pill-btn { display:inline-flex; align-items:center; gap:7px; background:var(--ink); color:#fff; border:none; border-radius:24px; padding:11px 22px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; transition:transform .1s, opacity .15s; margin:6px 20px 4px; }
+  .pill-btn:active { transform:scale(.96); }
+  .pill-btn.ghost { background:transparent; color:var(--ink); border:1.5px solid var(--ink); }
+
+  /* avatars */
+  .av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; background:#111; border:2px solid #fff; margin-left:-9px; }
   .av:first-child { margin-left:0; }
-  .av.empty { background:var(--navy-700); border:2px dashed var(--line); }
-  .slots { font-size:12px; font-weight:800; padding:5px 11px; border-radius:9px; }
-  .slots.full { background:#0c3d24; color:#4ade80; }
-  .slots.need { background:#3d300c; color:var(--gold-soft); }
+  .av.g2 { background:#444; } .av.g3 { background:#777; } .av.g4 { background:#a3a3a3; }
+  .av.empty { background:#fff; border:2px dashed #c9c9c9; }
 
-  /* List card (vertical) */
-  .lcard { display:flex; gap:0; margin:0 18px 10px; background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; cursor:pointer; transition:transform .12s; }
-  .lcard:active { transform:scale(.98); }
-  .lcard-stripe { width:64px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
-  .lcard-stripe b { font-size:17px; font-weight:900; color:#fff; }
-  .lcard-stripe span { font-size:9.5px; font-weight:800; color:#ffffffb0; letter-spacing:1px; text-transform:uppercase; }
-  .lcard-body { padding:12px 14px; flex:1; }
+  .badge { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.8px; padding:4px 10px; border-radius:5px; text-transform:uppercase; }
+  .badge.solid { background:var(--ink); color:#fff; }
+  .badge.line { border:1.5px solid var(--ink); color:var(--ink); }
+  .badge.gray { background:var(--soft); color:var(--muted); }
 
-  /* ---- Banner gradients (course art) ---- */
-  .bg-course-1 { background:linear-gradient(118deg,#0c2f56 0%,#155a8a 45%,#1d7a4f 100%); }
-  .bg-course-2 { background:linear-gradient(118deg,#3d1d56 0%,#16305a 55%,#1d6a7a 100%); }
-  .bg-course-3 { background:linear-gradient(118deg,#56301d 0%,#5a3a16 40%,#1d7a4f 100%); }
-  .bg-sunrise  { background:linear-gradient(118deg,#1a1340 0%,#54307a 45%,#d4742a 100%); }
-  .course-art { position:absolute; inset:0; overflow:hidden; }
+  /* ---- FAB (blue + like screenshot) ---- */
+  .fab { position:absolute; bottom:84px; right:20px; width:54px; height:54px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 24px #0a66ff55; cursor:pointer; z-index:60; transition:transform .1s; }
+  .fab:active { transform:scale(.92); }
 
-  /* ---- Header bar ---- */
-  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 18px 12px; position:sticky; top:0; background:linear-gradient(180deg, var(--navy-900) 75%, transparent); z-index:40; }
-  .brand { display:flex; align-items:center; gap:9px; }
-  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--navy-600),var(--blue)); display:flex; align-items:center; justify-content:center; font-size:17px; box-shadow:0 4px 14px #2f7de144; }
-  .brand-name { font-size:16px; font-weight:900; letter-spacing:.6px; }
-  .brand-name small { display:block; font-size:8.5px; font-weight:800; letter-spacing:2.4px; color:var(--gold); }
-  .icon-btn { width:38px; height:38px; border-radius:11px; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; }
-  .ndot { position:absolute; top:-3px; right:-3px; width:9px; height:9px; background:var(--red); border-radius:50%; border:2px solid var(--navy-900); }
-
-  /* ---- Tabs ---- */
-  .tabs { display:flex; gap:6px; padding:2px 18px 4px; }
-  .tab { padding:7px 16px; border-radius:18px; font-size:12.5px; font-weight:700; color:var(--muted); cursor:pointer; border:1px solid transparent; transition:all .15s; }
-  .tab.on { background:var(--navy-600); color:#fff; border-color:#2f7de166; }
-
-  /* ---- Bottom nav ---- */
-  .bnav { position:absolute; bottom:0; left:0; right:0; height:66px; background:#0a1424f2; backdrop-filter:blur(14px); border-top:1px solid var(--line); display:flex; z-index:50; }
+  /* ---- Bottom nav (white, PGA style) ---- */
+  .bnav { position:absolute; bottom:0; left:0; right:0; height:64px; background:#fff; border-top:1px solid var(--line); display:flex; z-index:70; }
   .bnav button { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:none; border:none; cursor:pointer; }
-  .bnav span { font-size:9.5px; font-weight:700; color:var(--muted); letter-spacing:.3px; }
-  .bnav svg { stroke:var(--muted); transition:all .15s; }
-  .bnav button.on svg { stroke:var(--gold); filter:drop-shadow(0 0 8px #d4af3766); }
-  .bnav button.on span { color:var(--gold); }
-  .bnav .fab { flex:0 0 76px; position:relative; }
-  .bnav .fab > div { position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:54px; height:54px; border-radius:18px; background:linear-gradient(135deg,var(--gold),#a8841f); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 24px #d4af3755; transition:transform .1s; }
-  .bnav .fab:active > div { transform:translateX(-50%) scale(.92); }
+  .bnav span { font-size:9.5px; font-weight:600; color:var(--muted); }
+  .bnav svg { stroke:#9a9a9a; transition:all .15s; }
+  .bnav button.on svg { stroke:var(--ink); }
+  .bnav button.on span { color:var(--ink); font-weight:800; }
 
   /* ---- Forms ---- */
-  .label { font-size:10.5px; font-weight:800; color:var(--muted); letter-spacing:1.4px; text-transform:uppercase; margin-bottom:9px; }
-  .inp { width:100%; background:var(--card); border:1.5px solid var(--line); border-radius:13px; color:var(--text); padding:13px 15px; font-size:15px; outline:none; transition:border-color .15s; font-family:inherit; }
-  .inp:focus { border-color:var(--blue); }
-  .chip { border-radius:11px; padding:11px 8px; font-size:13px; font-weight:700; background:var(--card); border:1.5px solid var(--line); color:var(--text); cursor:pointer; text-align:center; transition:all .12s; }
+  .label { font-size:11px; font-weight:800; color:var(--muted); letter-spacing:1.4px; text-transform:uppercase; margin-bottom:9px; }
+  .inp { width:100%; background:#fff; border:1.5px solid #dedede; border-radius:12px; color:var(--ink); padding:13px 15px; font-size:15px; outline:none; transition:border-color .15s; font-family:inherit; }
+  .inp:focus { border-color:var(--ink); }
+  .chip { border-radius:10px; padding:11px 8px; font-size:13px; font-weight:700; background:#fff; border:1.5px solid #dedede; color:var(--ink); cursor:pointer; text-align:center; transition:all .12s; }
   .chip:active { transform:scale(.95); }
-  .chip.on { background:var(--navy-600); border-color:var(--blue); color:#fff; box-shadow:0 0 0 1px var(--blue) inset; }
-  .btn-gold { width:100%; background:linear-gradient(135deg,var(--gold),#b9952a); color:#190; color:#1a1303; border:none; border-radius:14px; padding:16px; font-size:15.5px; font-weight:900; letter-spacing:.4px; cursor:pointer; transition:transform .1s; font-family:inherit; }
-  .btn-gold:active { transform:scale(.97); }
-  .btn-line { width:100%; background:transparent; border:1.5px solid var(--line); border-radius:14px; padding:14px; font-size:14px; font-weight:700; color:var(--muted); cursor:pointer; font-family:inherit; }
+  .chip.on { background:var(--ink); border-color:var(--ink); color:#fff; }
+  .btn-main { width:100%; background:var(--ink); color:#fff; border:none; border-radius:13px; padding:16px; font-size:15px; font-weight:800; letter-spacing:.3px; cursor:pointer; transition:transform .1s; font-family:inherit; }
+  .btn-main:active { transform:scale(.97); }
+  .btn-line { width:100%; background:#fff; border:1.5px solid #dedede; border-radius:13px; padding:14px; font-size:14px; font-weight:700; color:var(--muted); cursor:pointer; font-family:inherit; }
 
   /* ---- Sheets ---- */
-  .sheet-overlay { position:absolute; inset:0; background:#000a; z-index:80; display:none; align-items:flex-end; }
+  .sheet-overlay { position:absolute; inset:0; background:#00000066; z-index:100; display:none; align-items:flex-end; }
   .sheet-overlay.show { display:flex; }
-  .sheet { background:var(--navy-800); border-radius:24px 24px 0 0; width:100%; max-height:82%; overflow-y:auto; animation:up .26s cubic-bezier(.34,1.2,.4,1); border-top:1px solid var(--line); }
+  .sheet { background:#fff; border-radius:22px 22px 0 0; width:100%; max-height:82%; overflow-y:auto; animation:up .26s cubic-bezier(.34,1.2,.4,1); }
   @keyframes up { from { transform:translateY(100%) } to { transform:translateY(0) } }
-  .handle { width:42px; height:4px; background:var(--line); border-radius:4px; margin:12px auto 6px; }
+  .handle { width:40px; height:4px; background:#dedede; border-radius:4px; margin:12px auto 6px; }
 
   /* ---- Demo switcher ---- */
-  .demo-bar { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); display:flex; gap:6px; background:#0f1e36; border:1px solid var(--line); border-radius:20px; padding:6px 10px; z-index:200; }
-  .demo-bar button { padding:7px 13px; border-radius:13px; background:transparent; border:none; color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
-  .demo-bar button.on { background:var(--navy-600); color:#fff; }
+  .demo-bar { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); display:flex; gap:6px; background:#fff; border:1px solid #ddd; border-radius:20px; padding:6px 10px; z-index:200; box-shadow:0 8px 28px #0002; }
+  .demo-bar button { padding:7px 13px; border-radius:13px; background:transparent; border:none; color:#888; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .demo-bar button.on { background:#111; color:#fff; }
 </style>
 </head>
 <body>
 
 <div class="phone">
 
-  <!-- Status bar -->
-  <div class="statusbar">
+  <!-- Status bar (overlays banner on home) -->
+  <div class="statusbar light" id="statusbar">
     <span>9:41</span>
     <div style="display:flex;gap:6px;align-items:center;">
-      <svg width="16" height="12" viewBox="0 0 16 12" fill="#eef3fa"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1"/><rect x="9" y="1" width="3" height="11" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
-      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0" y="1" width="22" height="10" rx="3" stroke="#eef3fa" stroke-width="1.3"/><rect x="1.5" y="2.5" width="16" height="7" rx="2" fill="#d4af37"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12"><rect class="fill" x="0" y="4" width="3" height="8" rx="1"/><rect class="fill" x="4.5" y="2.5" width="3" height="9.5" rx="1"/><rect class="fill" x="9" y="1" width="3" height="11" rx="1"/><rect class="fill" x="13.5" y="0" width="3" height="12" rx="1" opacity=".35"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect class="stroke" x="0" y="1" width="22" height="10" rx="3" stroke-width="1.3"/><rect class="fill" x="1.5" y="2.5" width="16" height="7" rx="2"/></svg>
     </div>
   </div>
 
   <!-- ================= HOME ================= -->
   <div id="screen-home" class="screen active">
 
-    <!-- Top bar -->
-    <div class="topbar">
-      <div class="brand">
-        <div class="brand-mark">⛳</div>
-        <div class="brand-name">UB GOLF<small>CLUB TOUR</small></div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <div class="icon-btn" onclick="showSheet('notif-sheet')">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="ndot"></span>
-        </div>
-        <div class="icon-btn" onclick="navigate('profile')" style="background:linear-gradient(135deg,var(--navy-600),var(--blue));border:none;font-weight:800;font-size:14px;">Б</div>
-      </div>
-    </div>
-
-    <!-- HERO BANNER — PGA Tour featured style -->
-    <div class="hero" onclick="navigate('game')">
-      <div class="hero-bg bg-course-1">
-        <svg class="course-art" viewBox="0 0 390 210" preserveAspectRatio="xMidYMax slice">
-          <ellipse cx="320" cy="215" rx="230" ry="80" fill="#1d8a55" opacity=".55"/>
-          <ellipse cx="80" cy="225" rx="200" ry="70" fill="#176f44" opacity=".7"/>
-          <ellipse cx="265" cy="178" rx="60" ry="14" fill="#27a566" opacity=".8"/>
-          <circle cx="265" cy="176" r="3.2" fill="#0d1626"/>
-          <line x1="265" y1="176" x2="265" y2="128" stroke="#e8e8e8" stroke-width="2.2"/>
-          <path d="M265 128 L292 136 L265 144 Z" fill="#e74c3c"/>
-          <circle cx="330" cy="48" r="22" fill="#fff8e1" opacity=".92"/>
-          <circle cx="60" cy="80" r="2" fill="#fff" opacity=".5"/>
-          <circle cx="110" cy="40" r="1.5" fill="#fff" opacity=".4"/>
-          <circle cx="180" cy="65" r="1.8" fill="#fff" opacity=".35"/>
-          <path d="M0 150 Q60 120 130 142 T290 150 L390 140 L390 210 L0 210 Z" fill="#0e3d28" opacity=".5"/>
-        </svg>
-      </div>
-      <div class="hero-overlay"></div>
-      <div class="hero-dots"><i class="on"></i><i></i><i></i></div>
-      <div class="hero-content">
-        <span class="hero-tag">★ Өнөөдөр · Шууд</span>
-        <div class="hero-title">MT Bogd Морьтон Цомын Өдөрлөг</div>
-        <div class="hero-sub">10:00 · MT Bogd Golf Club · 18 нүх · 12 тоглогч</div>
-        <div class="hero-cta">Дэлгэрэнгүй
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
-        </div>
+    <!-- FULL-BLEED HERO — edge to edge, under status bar -->
+    <div class="hero-full">
+      <svg class="hero-art" viewBox="0 0 390 380" preserveAspectRatio="xMidYMid slice">
+        <!-- sunrise sky -->
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2c3e2e"/>
+            <stop offset="42%" stop-color="#7a6a3a"/>
+            <stop offset="62%" stop-color="#e8a13c"/>
+            <stop offset="78%" stop-color="#f5c873"/>
+            <stop offset="100%" stop-color="#3a5a3c"/>
+          </linearGradient>
+          <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff6d8"/>
+            <stop offset="55%" stop-color="#ffd97a" stop-opacity=".85"/>
+            <stop offset="100%" stop-color="#ffd97a" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="390" height="380" fill="url(#sky)"/>
+        <circle cx="195" cy="252" r="95" fill="url(#sun)"/>
+        <circle cx="195" cy="252" r="26" fill="#fff3c8"/>
+        <!-- tree silhouettes -->
+        <path d="M0 270 Q30 215 60 262 Q80 230 105 266 L105 380 L0 380 Z" fill="#1d2b1e"/>
+        <path d="M285 268 Q310 218 340 260 Q360 236 390 264 L390 380 L285 380 Z" fill="#1d2b1e"/>
+        <!-- fairway -->
+        <path d="M0 300 Q100 270 195 290 T390 296 L390 380 L0 380 Z" fill="#2a4a2c"/>
+        <path d="M60 380 Q140 308 195 302 Q255 308 330 380 Z" fill="#3a6440"/>
+        <!-- green + flag -->
+        <ellipse cx="195" cy="330" rx="58" ry="13" fill="#4a7a50"/>
+        <circle cx="195" cy="328" r="3" fill="#16281a"/>
+        <line x1="195" y1="328" x2="195" y2="280" stroke="#f2efe6" stroke-width="2.2"/>
+        <path d="M195 280 L222 287 L195 294 Z" fill="#e8b53c"/>
+      </svg>
+      <div class="hero-shade"></div>
+      <div class="hero-presented">App presented by ⛳ UB GOLF</div>
+      <div class="hero-center">
+        <div class="hero-logo"><b>⛳</b><i>UB GOLF</i></div>
+        <div class="hero-h1">MT Bogd<br/>Морьтон Цомын<br/>Өдөрлөг</div>
+        <div class="hero-pill">Улаанбаатар, Монгол · 6.11</div>
       </div>
     </div>
 
-    <!-- Filter tabs -->
-    <div class="tabs" style="margin-top:16px;">
-      <div class="tab on" onclick="setTab(this)">Миний</div>
-      <div class="tab" onclick="setTab(this)">Бүгд</div>
-      <div class="tab" onclick="setTab(this)">Клуб</div>
-      <div class="tab" onclick="setTab(this)">Түүх</div>
+    <!-- Underline tabs -->
+    <div class="utabs">
+      <div class="utab" onclick="setUTab(this)">Тойм</div>
+      <div class="utab on" onclick="setUTab(this)">Миний</div>
+      <div class="utab" onclick="setUTab(this)">Бүгд</div>
+      <div class="utab" onclick="setUTab(this)">Клуб</div>
+      <div class="utab" onclick="setUTab(this)">Түүх</div>
     </div>
 
-    <!-- Today carousel -->
-    <div class="sec"><h2>Өнөөдөр · <em>6.11</em></h2><a>Бүгдийг харах</a></div>
-    <div class="carousel">
+    <!-- Today -->
+    <div class="sec-h">Өнөөдөр<small>2026 оны 6-р сарын 11</small></div>
 
-      <div class="ecard" onclick="navigate('game')">
-        <div class="ecard-banner bg-course-1">
-          <svg class="course-art" viewBox="0 0 320 92" preserveAspectRatio="xMidYMax slice">
-            <ellipse cx="250" cy="100" rx="180" ry="42" fill="#1d8a55" opacity=".6"/>
-            <ellipse cx="60" cy="105" rx="150" ry="38" fill="#176f44" opacity=".7"/>
-            <ellipse cx="225" cy="74" rx="42" ry="9" fill="#27a566" opacity=".85"/>
-            <line x1="225" y1="73" x2="225" y2="38" stroke="#e8e8e8" stroke-width="1.8"/>
-            <path d="M225 38 L245 44 L225 50 Z" fill="#e74c3c"/>
-          </svg>
-          <span class="ribbon">⛳ MT BOGD</span>
-          <span class="status st-confirmed">Захиалсан</span>
+    <div class="crow" onclick="navigate('game')">
+      <div class="cthumb">
+        <svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#3a6440"/><circle cx="27" cy="16" r="9" fill="#ffd97a"/><path d="M0 34 Q16 26 27 31 T54 33 L54 54 L0 54 Z" fill="#2a4a2c"/><line x1="27" y1="40" x2="27" y2="26" stroke="#fff" stroke-width="1.6"/><path d="M27 26 L37 29 L27 32 Z" fill="#e8b53c"/></svg>
+      </div>
+      <div>
+        <div class="crow-name">MT Bogd Golf Club</div>
+        <div class="crow-meta">
+          <div>ЦАГ<b>10:00</b></div>
+          <div>НҮХ<b>18</b></div>
+          <div>КОД<b>MBG-2847</b></div>
         </div>
-        <div class="ecard-body">
-          <div class="ecard-row1">
-            <div>
-              <div class="ecard-time">10:00</div>
-              <div class="ecard-loc">📋 MBG-2847 · T1</div>
-            </div>
-            <div class="ecard-holes"><b>18</b>нүх</div>
-          </div>
-          <div class="ecard-divider"></div>
-          <div class="ecard-row2">
-            <div class="avs">
-              <div class="av" style="background:linear-gradient(135deg,#16305a,#2f7de1)">Б</div>
-              <div class="av" style="background:linear-gradient(135deg,#1d5a40,#2ecc71)">Э</div>
-              <div class="av" style="background:linear-gradient(135deg,#5a3016,#e67e22)">Т</div>
-              <div class="av" style="background:linear-gradient(135deg,#3d1d56,#9b59b6)">Д</div>
-            </div>
-            <span class="slots full">4/4 БҮРДСЭН</span>
-          </div>
+        <div style="display:flex;margin-top:9px;">
+          <div class="av">Б</div><div class="av g2">Э</div><div class="av g3">Т</div><div class="av g4">Д</div>
         </div>
       </div>
-
-      <div class="ecard" onclick="navigate('game')">
-        <div class="ecard-banner bg-sunrise">
-          <svg class="course-art" viewBox="0 0 320 92" preserveAspectRatio="xMidYMax slice">
-            <circle cx="260" cy="40" r="18" fill="#ffd98a" opacity=".9"/>
-            <ellipse cx="160" cy="105" rx="200" ry="40" fill="#42275a" opacity=".7"/>
-            <ellipse cx="90" cy="78" rx="38" ry="8" fill="#6a4585" opacity=".9"/>
-            <line x1="90" y1="77" x2="90" y2="42" stroke="#f0e6d0" stroke-width="1.8"/>
-            <path d="M90 42 L110 48 L90 54 Z" fill="#d4af37"/>
-          </svg>
-          <span class="ribbon">🌄 САМРААЖИД</span>
-          <span class="status st-open">2 СУЛ</span>
-        </div>
-        <div class="ecard-body">
-          <div class="ecard-row1">
-            <div>
-              <div class="ecard-time">14:30</div>
-              <div class="ecard-loc">Нээлттэй тоглолт</div>
-            </div>
-            <div class="ecard-holes"><b>9</b>нүх</div>
-          </div>
-          <div class="ecard-divider"></div>
-          <div class="ecard-row2">
-            <div class="avs">
-              <div class="av" style="background:linear-gradient(135deg,#3d1d56,#9b59b6)">Д</div>
-              <div class="av" style="background:linear-gradient(135deg,#1d4456,#3498db)">М</div>
-              <div class="av empty"></div>
-              <div class="av empty"></div>
-            </div>
-            <span class="slots need">2/4 НЭГДЭХ</span>
-          </div>
-        </div>
-      </div>
+      <div class="crow-right"><span class="badge solid">4/4</span></div>
     </div>
 
-    <!-- Tomorrow list -->
-    <div class="sec"><h2>Маргааш · <em>6.12</em></h2></div>
-
-    <div class="lcard" onclick="navigate('game')">
-      <div class="lcard-stripe bg-course-1"><b>08:00</b><span>MT Bogd</span></div>
-      <div class="lcard-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-size:13.5px;font-weight:800;">Өглөөний 18 нүх</div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">📋 MBG-2901 · Бат-Эрдэнэ</div>
-          </div>
-          <span class="slots need" style="font-size:11px;">1/4</span>
+    <div class="crow" onclick="navigate('game')">
+      <div class="cthumb">
+        <svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#5a4a6a"/><circle cx="38" cy="14" r="7" fill="#f5c873"/><path d="M0 36 Q20 28 32 33 T54 34 L54 54 L0 54 Z" fill="#3d3450"/><line x1="20" y1="40" x2="20" y2="26" stroke="#fff" stroke-width="1.6"/><path d="M20 26 L30 29 L20 32 Z" fill="#e8b53c"/></svg>
+      </div>
+      <div>
+        <div class="crow-name">Самраажид</div>
+        <div class="crow-meta">
+          <div>ЦАГ<b>14:30</b></div>
+          <div>НҮХ<b>9</b></div>
+        </div>
+        <div style="display:flex;margin-top:9px;">
+          <div class="av g3">Д</div><div class="av g4">М</div><div class="av empty"></div><div class="av empty"></div>
         </div>
       </div>
+      <div class="crow-right"><span class="badge line">2 СУЛ</span></div>
     </div>
 
-    <div class="lcard" onclick="navigate('game')">
-      <div class="lcard-stripe bg-course-3"><b>16:00</b><span>Terelj</span></div>
-      <div class="lcard-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-size:13.5px;font-weight:800;">Zaan Terelj нөхөрсөг</div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Эмэгтэйчүүдийн тойрог</div>
-          </div>
-          <span class="slots full" style="font-size:11px;">3/3</span>
+    <!-- Tomorrow -->
+    <div class="sec-h" style="padding-top:26px;">Маргааш<small>6-р сарын 12</small></div>
+
+    <div class="crow" onclick="navigate('game')">
+      <div class="cthumb">
+        <svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#3a6440"/><circle cx="16" cy="14" r="8" fill="#fff3c8"/><path d="M0 32 Q18 25 30 30 T54 31 L54 54 L0 54 Z" fill="#2a4a2c"/><line x1="34" y1="38" x2="34" y2="24" stroke="#fff" stroke-width="1.6"/><path d="M34 24 L44 27 L34 30 Z" fill="#e74c3c"/></svg>
+      </div>
+      <div>
+        <div class="crow-name">MT Bogd Golf Club</div>
+        <div class="crow-meta">
+          <div>ЦАГ<b>08:00</b></div>
+          <div>НҮХ<b>18</b></div>
+          <div>КОД<b>MBG-2901</b></div>
+        </div>
+        <div style="display:flex;margin-top:9px;">
+          <div class="av">Б</div><div class="av empty"></div><div class="av empty"></div><div class="av empty"></div>
         </div>
       </div>
+      <div class="crow-right"><span class="badge gray">1/4</span></div>
     </div>
 
-    <div style="height:30px;"></div>
+    <button class="pill-btn">Бүх тоглолт харах
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+
+    <div style="height:90px;"></div>
   </div>
 
   <!-- ================= CREATE ================= -->
-  <div id="screen-create" class="screen">
-    <div class="topbar">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div class="icon-btn" onclick="navigate('home')">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </div>
-        <div style="font-size:17px;font-weight:900;">Тоглолт үүсгэх</div>
+  <div id="screen-create" class="screen pad-top">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;">
+      <div onclick="navigate('home')" style="width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </div>
+      <div style="font-size:19px;font-weight:800;letter-spacing:-.3px;">Тоглолт үүсгэх</div>
     </div>
 
-    <!-- Mini banner -->
-    <div style="margin:0 18px 18px;border-radius:16px;overflow:hidden;position:relative;height:84px;" class="bg-course-1">
-      <svg class="course-art" viewBox="0 0 354 84" preserveAspectRatio="xMidYMax slice">
-        <ellipse cx="280" cy="92" rx="170" ry="36" fill="#1d8a55" opacity=".6"/>
-        <ellipse cx="250" cy="66" rx="40" ry="8" fill="#27a566" opacity=".85"/>
-        <line x1="250" y1="65" x2="250" y2="32" stroke="#e8e8e8" stroke-width="1.8"/>
-        <path d="M250 32 L270 38 L250 44 Z" fill="#e74c3c"/>
-      </svg>
-      <div style="position:absolute;inset:0;background:linear-gradient(90deg,#060d1adb 30%,transparent);"></div>
-      <div style="position:absolute;left:16px;top:50%;transform:translateY(-50%);">
-        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--gold);">ШИНЭ ТОГЛОЛТ</div>
-        <div style="font-size:16px;font-weight:900;margin-top:2px;">Найзуудаа цуглуул ⛳</div>
-      </div>
-    </div>
-
-    <div style="padding:0 18px 28px;display:flex;flex-direction:column;gap:18px;">
+    <div style="padding:8px 20px 30px;display:flex;flex-direction:column;gap:18px;">
       <div>
         <div class="label">Талбай</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -385,7 +301,7 @@
 
       <div>
         <div class="label">MT Bogd цаг захиалга</div>
-        <button onclick="showSheet('tee-sheet')" style="width:100%;padding:15px;background:var(--card);border:1.5px dashed #d4af3766;border-radius:14px;color:var(--gold-soft);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;">
+        <button onclick="showSheet('tee-sheet')" style="width:100%;padding:15px;background:#fff;border:1.5px dashed #bbb;border-radius:13px;color:#111;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;">
           🕐 Цаг сонгох...
         </button>
       </div>
@@ -393,181 +309,171 @@
       <div>
         <div class="label">Харагдах байдал</div>
         <div style="display:flex;flex-direction:column;gap:7px;">
-          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--card);border:1.5px solid var(--blue);border-radius:13px;cursor:pointer;">
-            <div style="width:18px;height:18px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><div style="width:7px;height:7px;border-radius:50%;background:#fff;"></div></div>
+          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:#fff;border:1.5px solid var(--ink);border-radius:12px;cursor:pointer;">
+            <div style="width:18px;height:18px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><div style="width:7px;height:7px;border-radius:50%;background:#fff;"></div></div>
             <div><div style="font-size:14px;font-weight:700;">Миний тойрог</div><div style="font-size:11px;color:var(--muted);">Дагагчид · клуб гишүүд</div></div>
           </label>
-          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--card);border:1.5px solid var(--line);border-radius:13px;cursor:pointer;">
-            <div style="width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex-shrink:0;"></div>
+          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:#fff;border:1.5px solid #dedede;border-radius:12px;cursor:pointer;">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid #cfcfcf;flex-shrink:0;"></div>
             <div><div style="font-size:14px;font-weight:700;">Бүх хэрэглэгч</div><div style="font-size:11px;color:var(--muted);">Нийтэд харагдана</div></div>
           </label>
         </div>
       </div>
 
-      <button class="btn-gold">⛳ ТОГЛОЛТ ҮҮСГЭХ</button>
+      <button class="btn-main">⛳ Тоглолт үүсгэх</button>
     </div>
   </div>
 
   <!-- ================= GAME DETAIL ================= -->
   <div id="screen-game" class="screen">
 
-    <!-- Full-bleed banner header -->
-    <div style="position:relative;height:240px;" class="bg-course-1">
-      <svg class="course-art" viewBox="0 0 390 240" preserveAspectRatio="xMidYMax slice">
-        <circle cx="320" cy="55" r="26" fill="#fff8e1" opacity=".9"/>
-        <ellipse cx="300" cy="250" rx="240" ry="90" fill="#1d8a55" opacity=".55"/>
-        <ellipse cx="70" cy="260" rx="210" ry="80" fill="#176f44" opacity=".7"/>
-        <ellipse cx="250" cy="200" rx="68" ry="15" fill="#27a566" opacity=".85"/>
-        <circle cx="250" cy="198" r="3.4" fill="#0d1626"/>
-        <line x1="250" y1="198" x2="250" y2="140" stroke="#e8e8e8" stroke-width="2.4"/>
-        <path d="M250 140 L282 149 L250 158 Z" fill="#e74c3c"/>
-        <path d="M0 175 Q70 142 150 165 T330 172 L390 162 L390 240 L0 240 Z" fill="#0e3d28" opacity=".45"/>
+    <!-- Full-bleed banner -->
+    <div class="hero-full" style="height:280px;">
+      <svg class="hero-art" viewBox="0 0 390 280" preserveAspectRatio="xMidYMid slice">
+        <rect width="390" height="280" fill="url(#sky)"/>
+        <circle cx="195" cy="180" r="75" fill="url(#sun)"/>
+        <circle cx="195" cy="180" r="20" fill="#fff3c8"/>
+        <path d="M0 200 Q30 158 60 194 Q82 168 105 198 L105 280 L0 280 Z" fill="#1d2b1e"/>
+        <path d="M285 198 Q310 156 340 192 Q360 172 390 196 L390 280 L285 280 Z" fill="#1d2b1e"/>
+        <path d="M0 222 Q100 198 195 212 T390 218 L390 280 L0 280 Z" fill="#2a4a2c"/>
+        <ellipse cx="195" cy="245" rx="52" ry="11" fill="#4a7a50"/>
+        <line x1="195" y1="243" x2="195" y2="202" stroke="#f2efe6" stroke-width="2"/>
+        <path d="M195 202 L220 208 L195 214 Z" fill="#e8b53c"/>
       </svg>
-      <div style="position:absolute;inset:0;background:linear-gradient(180deg,#060d1a66 0%,transparent 30%,#060d1af5 96%);"></div>
-      <div style="position:absolute;top:12px;left:16px;right:16px;display:flex;justify-content:space-between;">
-        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="navigate('home')">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </div>
-        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="showSheet('share-sheet')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        </div>
+      <div class="hero-shade"></div>
+      <div class="hero-back" onclick="navigate('home')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </div>
-      <div style="position:absolute;bottom:14px;left:18px;right:18px;">
-        <span class="hero-tag">⛳ MT Bogd Golf Club</span>
-        <div style="font-size:24px;font-weight:900;letter-spacing:-.5px;text-shadow:0 2px 12px #000b;">Маргааш · 10:00</div>
-        <div style="font-size:12.5px;color:#c6d4e8;margin-top:3px;font-weight:600;">6-р сарын 12 · 18 нүх · Зохион байгуулагч: Бат-Эрдэнэ</div>
+      <div class="hero-back" style="left:auto;right:16px;" onclick="showSheet('share-sheet')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </div>
+      <div class="hero-center" style="padding-top:60px;">
+        <div class="hero-h1" style="font-size:24px;">Маргааш · 10:00</div>
+        <div class="hero-pill">MT Bogd Golf Club · 18 нүх</div>
       </div>
     </div>
 
-    <div style="padding:16px 18px 30px;display:flex;flex-direction:column;gap:16px;">
+    <div style="padding:0 0 30px;">
 
-      <!-- Booking confirmation strip -->
-      <div style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:#0c3d2455;border:1px solid #4ade8033;border-radius:14px;">
-        <div style="width:38px;height:38px;border-radius:11px;background:#0c3d24;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        </div>
+      <!-- Booking strip -->
+      <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid var(--line);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <div>
-          <div style="font-size:13px;font-weight:800;color:#4ade80;">MT Bogd захиалга баталгаажсан</div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">Код: <b style="color:var(--gold-soft);">MBG-2901</b> · Tee 1 · 07:20</div>
+          <div style="font-size:13.5px;font-weight:800;">MT Bogd захиалга баталгаажсан</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">Код: <b style="color:#111;">MBG-2901</b> · Tee 1 · 07:20</div>
         </div>
       </div>
 
-      <!-- Players leaderboard-style -->
-      <div>
-        <div class="label" style="margin-bottom:11px;">Тоглогчид · 2/4</div>
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
-          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);">
-            <span style="font-size:12px;font-weight:900;color:var(--gold);width:16px;">1</span>
-            <div class="av" style="position:static;margin:0;width:38px;height:38px;font-size:14px;background:linear-gradient(135deg,#16305a,#2f7de1);border:none;">Б</div>
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:800;">Бат-Эрдэнэ</div>
-              <div style="font-size:11px;color:var(--gold-soft);font-weight:700;">★ Зохион байгуулагч</div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);">
-            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">2</span>
-            <div class="av" style="position:static;margin:0;width:38px;height:38px;font-size:14px;background:linear-gradient(135deg,#1d5a40,#2ecc71);border:none;">Э</div>
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:800;">Энхбаяр</div>
-              <div style="font-size:11px;color:var(--muted);">Гишүүн</div>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);opacity:.75;">
-            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">3</span>
-            <div class="av empty" style="position:static;margin:0;width:38px;height:38px;"></div>
-            <div style="flex:1;font-size:13px;color:var(--muted);">Нэгдэх боломжтой</div>
-            <button onclick="showSheet('invite-sheet')" style="padding:7px 16px;background:var(--navy-600);border:1px solid #2f7de166;border-radius:9px;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">+ Урих</button>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;opacity:.75;">
-            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">4</span>
-            <div class="av empty" style="position:static;margin:0;width:38px;height:38px;"></div>
-            <div style="flex:1;font-size:13px;color:var(--muted);">Нэгдэх боломжтой</div>
-          </div>
+      <div class="sec-h" style="padding-bottom:6px;">Тоглогчид<small>2 / 4 бүртгэгдсэн</small></div>
+
+      <div class="crow" style="cursor:default;">
+        <span style="font-size:13px;font-weight:900;width:14px;color:#111;">1</span>
+        <div class="av" style="position:static;margin:0;width:42px;height:42px;font-size:15px;">Б</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;">Бат-Эрдэнэ</div>
+          <div style="font-size:11.5px;color:var(--muted);font-weight:600;">★ Зохион байгуулагч</div>
+        </div>
+        <div class="crow-right">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
       </div>
+      <div class="crow" style="cursor:default;">
+        <span style="font-size:13px;font-weight:900;width:14px;color:#999;">2</span>
+        <div class="av g2" style="position:static;margin:0;width:42px;height:42px;font-size:15px;">Э</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;">Энхбаяр</div>
+          <div style="font-size:11.5px;color:var(--muted);font-weight:600;">Гишүүн</div>
+        </div>
+      </div>
+      <div class="crow" style="cursor:default;opacity:.75;">
+        <span style="font-size:13px;font-weight:900;width:14px;color:#bbb;">3</span>
+        <div class="av empty" style="position:static;margin:0;width:42px;height:42px;"></div>
+        <div style="font-size:13.5px;color:var(--muted);">Нэгдэх боломжтой</div>
+        <div class="crow-right">
+          <button onclick="showSheet('invite-sheet')" style="padding:7px 16px;background:#fff;border:1.5px solid var(--ink);border-radius:18px;color:var(--ink);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">+ Урих</button>
+        </div>
+      </div>
+      <div class="crow" style="cursor:default;opacity:.6;">
+        <span style="font-size:13px;font-weight:900;width:14px;color:#bbb;">4</span>
+        <div class="av empty" style="position:static;margin:0;width:42px;height:42px;"></div>
+        <div style="font-size:13.5px;color:var(--muted);">Нэгдэх боломжтой</div>
+      </div>
 
-      <button class="btn-gold">✅ ТОГЛОЛТОД НЭГДЭХ</button>
-      <button class="btn-line">Хуваалцах</button>
+      <div style="padding:18px 20px 0;display:flex;flex-direction:column;gap:9px;">
+        <button class="btn-main">✅ Тоглолтод нэгдэх</button>
+        <button class="btn-line" onclick="showSheet('share-sheet')">Хуваалцах</button>
+      </div>
     </div>
   </div>
 
   <!-- ================= PROFILE ================= -->
-  <div id="screen-profile" class="screen">
+  <div id="screen-profile" class="screen pad-top">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;">
+      <div onclick="navigate('home')" style="width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </div>
+      <div style="font-size:19px;font-weight:800;letter-spacing:-.3px;">Профайл</div>
+    </div>
 
-    <!-- Banner header with overlapping avatar -->
-    <div style="position:relative;height:150px;" class="bg-course-2">
-      <svg class="course-art" viewBox="0 0 390 150" preserveAspectRatio="xMidYMax slice">
-        <ellipse cx="300" cy="160" rx="240" ry="60" fill="#1d6a7a" opacity=".4"/>
-        <ellipse cx="90" cy="170" rx="200" ry="55" fill="#16305a" opacity=".6"/>
-        <circle cx="330" cy="40" r="18" fill="#fff8e1" opacity=".6"/>
-      </svg>
-      <div style="position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,#060d1af0 95%);"></div>
-      <div style="position:absolute;top:12px;left:16px;">
-        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="navigate('home')">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 0 6px;">
+      <div style="width:92px;height:92px;border-radius:50%;background:#111;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:900;color:#fff;">Б</div>
+      <div style="text-align:center;">
+        <div style="font-size:21px;font-weight:800;letter-spacing:-.3px;">Бат-Эрдэнэ</div>
+        <div style="font-size:13px;color:var(--muted);font-weight:600;margin-top:2px;">@bat_erdene · Клуб гишүүн</div>
       </div>
     </div>
 
-    <div style="padding:0 18px 30px;margin-top:-44px;position:relative;z-index:10;">
-      <div style="display:flex;align-items:flex-end;gap:14px;margin-bottom:18px;">
-        <div style="width:88px;height:88px;border-radius:24px;background:linear-gradient(135deg,var(--navy-600),var(--blue));display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;color:#fff;border:3px solid var(--gold);box-shadow:0 8px 28px #0009;">Б</div>
-        <div style="padding-bottom:6px;">
-          <div style="font-size:20px;font-weight:900;">Бат-Эрдэнэ</div>
-          <div style="font-size:12.5px;color:var(--muted);font-weight:600;">@bat_erdene · <span style="color:var(--gold-soft);">★ Клуб гишүүн</span></div>
-        </div>
+    <div style="display:flex;justify-content:center;gap:0;padding:14px 40px 22px;">
+      <div style="flex:1;text-align:center;">
+        <div style="font-size:22px;font-weight:900;">47</div>
+        <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;">ТОГЛОЛТ</div>
       </div>
-
-      <!-- Stats row (tour stats style) -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:22px;">
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
-          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">47</div>
-          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ТОГЛОЛТ</div>
-        </div>
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
-          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">12</div>
-          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ДАГАГЧ</div>
-        </div>
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
-          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">8</div>
-          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ДАГАСАН</div>
-        </div>
+      <div style="width:1px;background:var(--line);"></div>
+      <div style="flex:1;text-align:center;">
+        <div style="font-size:22px;font-weight:900;">12</div>
+        <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;">ДАГАГЧ</div>
       </div>
-
-      <div style="display:flex;flex-direction:column;gap:11px;">
-        <div class="label">Мэдээлэл</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ОВОГ</div><input class="inp" value="Бат"/></div>
-          <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">НЭР</div><input class="inp" value="Эрдэнэ"/></div>
-        </div>
-        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ХЭРЭГЛЭГЧИЙН НЭР</div><input class="inp" value="bat_erdene"/></div>
-        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">УТАС</div><input class="inp" value="99119911"/></div>
-        <button class="btn-gold" style="margin-top:6px;">ХАДГАЛАХ</button>
-        <button class="btn-line" style="color:var(--red);border-color:#e74c3c33;">Гарах</button>
+      <div style="width:1px;background:var(--line);"></div>
+      <div style="flex:1;text-align:center;">
+        <div style="font-size:22px;font-weight:900;">8</div>
+        <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;">ДАГАСАН</div>
       </div>
     </div>
+
+    <div style="padding:0 20px 30px;display:flex;flex-direction:column;gap:11px;">
+      <div class="label">Мэдээлэл</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ОВОГ</div><input class="inp" value="Бат"/></div>
+        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">НЭР</div><input class="inp" value="Эрдэнэ"/></div>
+      </div>
+      <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ХЭРЭГЛЭГЧИЙН НЭР</div><input class="inp" value="bat_erdene"/></div>
+      <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">УТАС</div><input class="inp" value="99119911"/></div>
+      <button class="btn-main" style="margin-top:6px;">Хадгалах</button>
+      <button class="btn-line" style="color:#d44;border-color:#e7b3b3;">Гарах</button>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <div class="fab" onclick="navigate('create')">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   </div>
 
   <!-- ================= BOTTOM NAV ================= -->
   <div class="bnav">
     <button id="nav-home" class="on" onclick="navigate('home')">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       <span>Нүүр</span>
     </button>
     <button id="nav-games" onclick="navigate('game')">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       <span>Тоглолт</span>
     </button>
-    <button class="fab" onclick="navigate('create')">
-      <div><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1303" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
-    </button>
     <button id="nav-notif" onclick="showSheet('notif-sheet')">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span>Мэдэгдэл</span>
     </button>
     <button id="nav-profile" onclick="navigate('profile')">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span>Профайл</span>
     </button>
   </div>
@@ -577,30 +483,30 @@
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="handle"></div>
       <div style="padding:8px 20px 0;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:16px;font-weight:900;">Цаг сонгох</div>
-        <button onclick="hideSheet('tee-sheet')" style="width:28px;height:28px;border-radius:9px;background:var(--line);border:none;color:#fff;font-size:14px;cursor:pointer;">✕</button>
+        <div style="font-size:17px;font-weight:800;">Цаг сонгох</div>
+        <button onclick="hideSheet('tee-sheet')" style="width:28px;height:28px;border-radius:50%;background:var(--soft);border:none;color:#111;font-size:13px;cursor:pointer;">✕</button>
       </div>
       <div style="padding:16px 20px 28px;">
         <div style="margin-bottom:18px;">
-          <div class="label">🌅 Үдээс өмнө</div>
+          <div class="label">Үдээс өмнө</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <div class="chip" onclick="pick(this)">07:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 45K</div></div>
-            <div class="chip on" onclick="pick(this)">07:20<div style="font-size:10px;font-weight:600;margin-top:2px;opacity:.8;">T1 · 45K</div></div>
-            <div class="chip" onclick="pick(this)">08:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 42K</div></div>
-            <div class="chip" onclick="pick(this)">09:30<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 48K</div></div>
+            <div class="chip" onclick="pick(this)">07:00<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T1 · 45K</div></div>
+            <div class="chip on" onclick="pick(this)">07:20<div style="font-size:10px;font-weight:600;margin-top:2px;opacity:.75;">T1 · 45K</div></div>
+            <div class="chip" onclick="pick(this)">08:00<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T2 · 42K</div></div>
+            <div class="chip" onclick="pick(this)">09:30<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T1 · 48K</div></div>
             <div class="chip" style="opacity:.35;cursor:not-allowed;">10:00<div style="font-size:10px;font-weight:600;margin-top:2px;">Дүүрсэн</div></div>
-            <div class="chip" onclick="pick(this)">11:10<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 45K</div></div>
+            <div class="chip" onclick="pick(this)">11:10<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T2 · 45K</div></div>
           </div>
         </div>
         <div>
-          <div class="label">🌇 Үдээс хойш</div>
+          <div class="label">Үдээс хойш</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <div class="chip" onclick="pick(this)">13:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 38K</div></div>
-            <div class="chip" onclick="pick(this)">14:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 38K</div></div>
-            <div class="chip" onclick="pick(this)">15:30<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 35K</div></div>
+            <div class="chip" onclick="pick(this)">13:00<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T1 · 38K</div></div>
+            <div class="chip" onclick="pick(this)">14:00<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T2 · 38K</div></div>
+            <div class="chip" onclick="pick(this)">15:30<div style="font-size:10px;color:#999;font-weight:600;margin-top:2px;">T1 · 35K</div></div>
           </div>
         </div>
-        <button class="btn-gold" style="margin-top:20px;" onclick="hideSheet('tee-sheet')">✅ СОНГОХ · 07:20 T1</button>
+        <button class="btn-main" style="margin-top:20px;" onclick="hideSheet('tee-sheet')">Сонгох · 07:20 T1</button>
       </div>
     </div>
   </div>
@@ -610,26 +516,26 @@
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="handle"></div>
       <div style="padding:8px 20px 14px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:16px;font-weight:900;">Мэдэгдэл</div>
-        <button onclick="hideSheet('notif-sheet')" style="width:28px;height:28px;border-radius:9px;background:var(--line);border:none;color:#fff;font-size:14px;cursor:pointer;">✕</button>
+        <div style="font-size:17px;font-weight:800;">Мэдэгдэл</div>
+        <button onclick="hideSheet('notif-sheet')" style="width:28px;height:28px;border-radius:50%;background:var(--soft);border:none;color:#111;font-size:13px;cursor:pointer;">✕</button>
       </div>
-      <div style="padding:0 20px 28px;display:flex;flex-direction:column;gap:9px;">
-        <div style="display:flex;gap:12px;padding:13px 14px;background:var(--card);border:1px solid #2f7de144;border-radius:14px;">
-          <div class="av" style="position:static;margin:0;width:40px;height:40px;font-size:15px;background:linear-gradient(135deg,#3d1d56,#9b59b6);border:none;flex-shrink:0;">Д</div>
+      <div style="padding:0 0 28px;">
+        <div style="display:flex;gap:13px;padding:14px 20px;border-top:1px solid var(--line);">
+          <div class="av g3" style="position:static;margin:0;width:42px;height:42px;font-size:15px;flex-shrink:0;">Д</div>
           <div style="flex:1;">
-            <div style="font-size:13px;font-weight:800;">Дорж таныг тоглолтод урьлаа!</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px;">6.12 · 10:00 · MT Bogd</div>
-            <div style="display:flex;gap:6px;margin-top:9px;">
-              <button style="padding:6px 16px;background:var(--gold);border:none;border-radius:8px;color:#1a1303;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">Нэгдэх</button>
-              <button style="padding:6px 16px;background:var(--line);border:none;border-radius:8px;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Татгалзах</button>
+            <div style="font-size:13.5px;font-weight:800;">Дорж таныг тоглолтод урьлаа!</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">6.12 · 10:00 · MT Bogd</div>
+            <div style="display:flex;gap:6px;margin-top:10px;">
+              <button style="padding:7px 18px;background:#111;border:none;border-radius:18px;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">Нэгдэх</button>
+              <button style="padding:7px 18px;background:var(--soft);border:none;border-radius:18px;color:#888;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Татгалзах</button>
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:12px;padding:13px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;opacity:.7;">
-          <div class="av" style="position:static;margin:0;width:40px;height:40px;font-size:15px;background:linear-gradient(135deg,#1d5a40,#2ecc71);border:none;flex-shrink:0;">Э</div>
+        <div style="display:flex;gap:13px;padding:14px 20px;border-top:1px solid var(--line);opacity:.65;">
+          <div class="av g2" style="position:static;margin:0;width:42px;height:42px;font-size:15px;flex-shrink:0;">Э</div>
           <div>
-            <div style="font-size:13px;font-weight:800;">Энхбаяр тоглолтод нэгдлээ!</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Өнөөдөр 10:00 · MT Bogd</div>
+            <div style="font-size:13.5px;font-weight:800;">Энхбаяр тоглолтод нэгдлээ!</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Өнөөдөр 10:00 · MT Bogd</div>
           </div>
         </div>
       </div>
@@ -641,27 +547,27 @@
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="handle"></div>
       <div style="padding:8px 20px 28px;">
-        <div style="font-size:16px;font-weight:900;margin-bottom:12px;">Тоглогч урих</div>
-        <input class="inp" placeholder="Нэрээр хайх..." style="margin-bottom:14px;"/>
+        <div style="font-size:17px;font-weight:800;margin-bottom:12px;">Тоглогч урих</div>
+        <input class="inp" placeholder="Нэрээр хайх..." style="margin-bottom:16px;"/>
         <div class="label">Дагаж буй</div>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">
-          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
-            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#3d1d56,#9b59b6);border:none;">Д</div>
-            <div><div style="font-size:14px;font-weight:700;">Дорж</div><div style="font-size:11px;color:var(--blue-soft);">Дагаж байна</div></div>
+        <div style="margin:0 -20px 14px;">
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 20px;cursor:pointer;">
+            <div class="av g3" style="position:static;margin:0;width:38px;height:38px;font-size:14px;">Д</div>
+            <div><div style="font-size:14px;font-weight:700;">Дорж</div><div style="font-size:11px;color:var(--muted);">Дагаж байна</div></div>
           </div>
-          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
-            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#1d4456,#3498db);border:none;">М</div>
-            <div><div style="font-size:14px;font-weight:700;">Мөнхбаяр</div><div style="font-size:11px;color:var(--blue-soft);">Дагаж байна</div></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 20px;border-top:1px solid var(--line);cursor:pointer;">
+            <div class="av g4" style="position:static;margin:0;width:38px;height:38px;font-size:14px;">М</div>
+            <div><div style="font-size:14px;font-weight:700;">Мөнхбаяр</div><div style="font-size:11px;color:var(--muted);">Дагаж байна</div></div>
           </div>
         </div>
         <div class="label">Бусад</div>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
-            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#5a3016,#e67e22);border:none;">Г</div>
+        <div style="margin:0 -20px 18px;">
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 20px;cursor:pointer;">
+            <div class="av g2" style="position:static;margin:0;width:38px;height:38px;font-size:14px;">Г</div>
             <div><div style="font-size:14px;font-weight:700;">Ганбаатар</div><div style="font-size:11px;color:var(--muted);">Бусад</div></div>
           </div>
         </div>
-        <button class="btn-gold">УРИЛГА ИЛГЭЭХ</button>
+        <button class="btn-main">Урилга илгээх</button>
       </div>
     </div>
   </div>
@@ -671,21 +577,21 @@
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="handle"></div>
       <div style="padding:12px 20px 32px;">
-        <div style="font-size:16px;font-weight:900;margin-bottom:18px;">Хуваалцах</div>
+        <div style="font-size:17px;font-weight:800;margin-bottom:18px;">Хуваалцах</div>
         <div style="display:flex;gap:18px;justify-content:center;">
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
-            <div style="width:56px;height:56px;border-radius:16px;background:#25D366;display:flex;align-items:center;justify-content:center;font-size:26px;">💬</div>
-            <span style="font-size:11px;color:var(--muted);font-weight:600;">WhatsApp</span>
+            <div style="width:56px;height:56px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;font-size:25px;">💬</div>
+            <span style="font-size:11px;color:#888;font-weight:600;">WhatsApp</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
-            <div style="width:56px;height:56px;border-radius:16px;background:#7360f2;display:flex;align-items:center;justify-content:center;font-size:26px;">📞</div>
-            <span style="font-size:11px;color:var(--muted);font-weight:600;">Viber</span>
+            <div style="width:56px;height:56px;border-radius:50%;background:#7360f2;display:flex;align-items:center;justify-content:center;font-size:25px;">📞</div>
+            <span style="font-size:11px;color:#888;font-weight:600;">Viber</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
-            <div style="width:56px;height:56px;border-radius:16px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <div style="width:56px;height:56px;border-radius:50%;background:var(--soft);border:1px solid #ddd;display:flex;align-items:center;justify-content:center;">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </div>
-            <span style="font-size:11px;color:var(--muted);font-weight:600;">Хуулах</span>
+            <span style="font-size:11px;color:#888;font-weight:600;">Хуулах</span>
           </div>
         </div>
       </div>
@@ -705,6 +611,9 @@
 
 <script>
 let cur = 'home';
+// Home & Game have full-bleed banners → white status bar; others dark
+const lightStatus = { home:true, game:true };
+
 function navigate(s) {
   document.getElementById('screen-' + cur)?.classList.remove('active');
   const next = document.getElementById('screen-' + s);
@@ -714,9 +623,15 @@ function navigate(s) {
   void next.offsetWidth;
   next.classList.add('page-enter');
   cur = s;
+
+  const sb = document.getElementById('statusbar');
+  sb.classList.toggle('light', !!lightStatus[s]);
+  sb.classList.toggle('dark', !lightStatus[s]);
+
   document.querySelectorAll('.bnav button').forEach(b => b.classList.remove('on'));
-  ({home:'nav-home', game:'nav-games', profile:'nav-profile'})[s] &&
-    document.getElementById({home:'nav-home', game:'nav-games', profile:'nav-profile'}[s])?.classList.add('on');
+  const navMap = {home:'nav-home', game:'nav-games', profile:'nav-profile'};
+  if (navMap[s]) document.getElementById(navMap[s])?.classList.add('on');
+
   document.querySelectorAll('.demo-bar button').forEach(b => b.classList.remove('on'));
   document.getElementById('demo-' + s)?.classList.add('on');
 }
@@ -725,8 +640,8 @@ function hideSheet(id, e) {
   if (e && e.target !== document.getElementById(id)) return;
   document.getElementById(id)?.classList.remove('show');
 }
-function setTab(el) {
-  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+function setUTab(el) {
+  el.parentElement.querySelectorAll('.utab').forEach(t => t.classList.remove('on'));
   el.classList.add('on');
 }
 function pick(el) {
