@@ -1011,6 +1011,7 @@ async function renderCreateGame() {
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+        console.log('[MTBogd] confirmBooking response:', JSON.stringify(confirmed));
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
