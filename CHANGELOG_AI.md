@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-06-11
+
+### Mobile redesign step 1: B/W base theme + bottom nav + FAB — `src/style.css`, `index.html`, `src/app.js`, `src/i18n.js`
+
+First implementation step of the approved `prototype.html` design (minimal
+black/white, Inter, PGA Tour app inspired):
+
+- `src/style.css` rewritten to the light theme. Legacy token names
+  (`--gold`, `--emerald`, `--bg-card`, …) are kept but remapped to B/W values
+  so not-yet-redesigned screens stay usable. Added the prototype design-system
+  classes (`.utabs`, `.crow`, `.av`, `.badge`, `.chip`, `.btn-main`,
+  `.pill-btn`, `.sheet-overlay`/`.sheet`, `.sec-h`) for the upcoming screens.
+  Home filter tabs restyled as underline tabs.
+- `index.html`: fixed bottom navigation (Нүүр / Тоглолт / Мэдэгдэл / Профайл)
+  + blue circular create FAB, both hidden until login; theme-color → #ffffff;
+  Inter weight 900 added.
+- `src/app.js`: `updateBottomChrome()` syncs nav visibility/active tab and
+  shows the FAB only on list screens. Нүүр→home ("mine" tab), Тоглолт→home
+  ("all" tab via new `pendingHomeFilter`), Мэдэгдэл→scrolls to notifications
+  (blue dot on the icon when unread exist), Профайл→profile modal. Auth screen
+  logo switched to `UBGolf_app_icon.png` (main logo has white text, invisible
+  on white).
+- `src/i18n.js`: `navHome`/`navGames`/`navNotifications`/`navProfile` keys
+  (mn/en/ko).
+
 ## 2026-06-09
 
 ### Sync MTBogd booking player list on join/leave/kick — `src/booking.js`, `src/app.js`

@@ -12,6 +12,7 @@ let followsLoadedForUser = null;
 let isRouting = false;
 let activeUnsubs = [];
 let homeFilter = 'all';
+let pendingHomeFilter = null;
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
@@ -217,6 +218,40 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
+  updateBottomChrome();
+}
+
+// ---- Bottom nav + FAB (mobile redesign) ----
+function updateBottomChrome() {
+  const nav = document.getElementById('bottom-nav');
+  const fab = document.getElementById('fab-create');
+  if (!nav || !fab) return;
+
+  if (!currentUser) {
+    nav.classList.add('hidden');
+    fab.classList.add('hidden');
+    document.body.classList.remove('has-bnav');
+    return;
+  }
+
+  nav.classList.remove('hidden');
+  document.body.classList.add('has-bnav');
+
+  // Labels follow the active language
+  nav.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+
+  // FAB only on list-style screens; form/detail screens have their own actions
+  const hash = location.hash || '#/';
+  const fabRoutes = hash === '#/' || hash === '#/home' || hash === '#/users';
+  fab.classList.toggle('hidden', !fabRoutes);
+
+  // Active tab
+  let active = 'home';
+  if (hash === '#/' || hash === '#/home') active = homeFilter === 'all' ? 'games' : 'home';
+  else if (hash.startsWith('#/game/') || hash.startsWith('#/create') || hash.startsWith('#/edit/')) active = 'games';
+  nav.querySelectorAll('button[data-nav]').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.nav === active);
+  });
 }
 
 // ---- Auth View ----
@@ -224,7 +259,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
+        <img src="/UBGolf_app_icon.png" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
         <form id="auth-form" class="auth-form">
           <div class="input-group">
             <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
@@ -337,7 +372,9 @@ function renderAuth() {
 
 // ---- Home View ----
 async function renderHome() {
-  homeFilter = 'mine';
+  homeFilter = pendingHomeFilter || 'mine';
+  pendingHomeFilter = null;
+  updateBottomChrome();
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="hero-section">
@@ -352,12 +389,12 @@ async function renderHome() {
       <div id="notifications-section"></div>
       <div class="section">
         <div class="game-filter-tabs">
-          <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab active" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab" data-tab="community">◎ ${t('tabCommunity')}</button>
-          <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
-          <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
-          <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
+          <button class="filter-tab ${homeFilter === 'all' ? 'active' : ''}" data-tab="all">🌍 ${t('tabAll')}</button>
+          <button class="filter-tab ${homeFilter === 'mine' ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab ${homeFilter === 'community' ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
+          <button class="filter-tab ${homeFilter === 'recommended' ? 'active' : ''}" data-tab="recommended">✨ ${t('tabRecommended')}</button>
+          <button class="filter-tab ${homeFilter === 'joined' ? 'active' : ''}" data-tab="joined">🤝 ${t('tabJoined')}</button>
+          <button class="filter-tab ${homeFilter === 'following' ? 'active' : ''}" data-tab="following">⭐ ${t('tabFollowing')}</button>
         </div>
         <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
       </div>
@@ -401,6 +438,7 @@ async function renderHome() {
       btn.classList.add('active');
       homeFilter = btn.dataset.tab;
       renderGamesHome(homeGamesCache);
+      updateBottomChrome();
     });
   });
 
@@ -423,10 +461,14 @@ async function renderHome() {
   });
 }
 
+function setNotifDot(count) {
+  document.getElementById('bnav-notif-dot')?.classList.toggle('show', count > 0);
+}
+
 function renderNotifications(notifs) {
   const container = document.getElementById('notifications-section');
   if (!container) return;
-  if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
+  if (!notifs || notifs.length === 0) { container.innerHTML = ''; setNotifDot(0); return; }
 
   // Auto-remove expired notifications (game date+time has passed)
   const now = Date.now();
@@ -436,6 +478,7 @@ function renderNotifications(notifs) {
   });
   expired.forEach(n => store.deleteNotification(currentUser.id, n.id));
   const active = notifs.filter(n => !expired.includes(n));
+  setNotifDot(active.length);
   if (active.length === 0) { container.innerHTML = ''; return; }
 
   const isOpen = container.dataset.open !== 'false';
@@ -2993,6 +3036,28 @@ export function initApp() {
   document.getElementById('profile-trigger')?.addEventListener('click', () => {
     if (!currentUser) return;
     showProfileModal(currentUser);
+  });
+
+  document.getElementById('fab-create')?.addEventListener('click', () => {
+    location.hash = '#/create';
+  });
+
+  document.querySelectorAll('#bottom-nav button[data-nav]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!currentUser) return;
+      const target = btn.dataset.nav;
+      const onHome = location.hash === '' || location.hash === '#/' || location.hash === '#/home';
+      if (target === 'home' || target === 'games') {
+        pendingHomeFilter = target === 'games' ? 'all' : 'mine';
+        if (onHome) router(); else location.hash = '#/';
+      } else if (target === 'notifications') {
+        const scrollToNotifs = () => document.getElementById('notifications-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (onHome) scrollToNotifs();
+        else { location.hash = '#/'; setTimeout(scrollToNotifs, 400); }
+      } else if (target === 'profile') {
+        showProfileModal(currentUser);
+      }
+    });
   });
 
   // Close any modal/popup when its backdrop is clicked
