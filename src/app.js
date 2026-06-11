@@ -30,11 +30,12 @@ function displayUsername(user) {
 
 function displayFullName(user) {
   if (!user) return '-';
+  if (user.lastName || user.firstName) return [user.lastName, user.firstName].filter(Boolean).join(' ');
   return user.fullName || user.name || '-';
 }
 
 function needsProfileCompletion(user) {
-  return !!user && (!user.username || !user.fullName);
+  return !!user && (!user.username || (!user.firstName && !user.fullName));
 }
 
 const MN_BANKS = [
@@ -1925,9 +1926,15 @@ function showAdminEditUserModal(user, onSaved) {
         <label>Username</label>
         <input type="text" id="ae-username" value="${user.username || user.name || ''}" minlength="2" />
       </div>
-      <div class="input-group" style="margin-top:10px;">
-        <label>Овог нэр</label>
-        <input type="text" id="ae-fullname" value="${user.fullName || user.name || ''}" minlength="2" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div class="input-group">
+          <label>Овог</label>
+          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
+        </div>
+        <div class="input-group">
+          <label>Нэр</label>
+          <input type="text" id="ae-firstname" value="${user.firstName || ''}" placeholder="Нэр" />
+        </div>
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>${t('communities')}</label>
@@ -1994,12 +2001,15 @@ function showAdminEditUserModal(user, onSaved) {
   modal.querySelector('#ae-cancel').onclick = () => modal.remove();
   modal.querySelector('#ae-save').onclick = async () => {
     const username = document.getElementById('ae-username').value.trim();
-    const fullName = document.getElementById('ae-fullname').value.trim();
-    if (username.length < 2 || fullName.length < 2) { showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error'); return; }
+    const lastName = document.getElementById('ae-lastname').value.trim();
+    const firstName = document.getElementById('ae-firstname').value.trim();
+    if (username.length < 2) { showToast('Username оруулна уу', 'error'); return; }
     const pass = document.getElementById('ae-pass').value;
 
     user.username = username;
-    user.fullName = fullName;
+    user.lastName = lastName;
+    user.firstName = firstName;
+    user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
@@ -3103,9 +3113,15 @@ function showProfileModal(user, options = {}) {
         <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
       </div>
 
-      <div class="input-group" style="margin-top: 15px;">
-        <label>Овог нэр *</label>
-        <input type="text" id="profile-fullname-input" value="${user.fullName || user.name || ''}" required minlength="2" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
+        <div class="input-group">
+          <label>Овог *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
+        </div>
+        <div class="input-group">
+          <label>Нэр *</label>
+          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
+        </div>
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
@@ -3168,11 +3184,12 @@ function showProfileModal(user, options = {}) {
   modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
   modal.querySelector('#profile-modal-save').onclick = async () => {
     const newUsername = document.getElementById('profile-username-input').value.trim();
-    const newFullName = document.getElementById('profile-fullname-input').value.trim();
+    const newLastName = document.getElementById('profile-lastname-input').value.trim();
+    const newFirstName = document.getElementById('profile-firstname-input').value.trim();
     const newPass = document.getElementById('profile-pass-input').value;
 
-    if (newUsername.length < 2 || newFullName.length < 2) {
-      showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error');
+    if (newUsername.length < 2 || !newLastName || !newFirstName) {
+      showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
       return;
     }
     const allUsers = await store.loadAllUsers();
@@ -3185,7 +3202,9 @@ function showProfileModal(user, options = {}) {
     }
 
     user.username = newUsername;
-    user.fullName = newFullName;
+    user.lastName = newLastName;
+    user.firstName = newFirstName;
+    user.fullName = newLastName + ' ' + newFirstName;
     user.name = newUsername;
     user.avatar = selectedAvatar;
     if (newPass && newPass.length >= 1) {
