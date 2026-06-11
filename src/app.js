@@ -554,9 +554,9 @@ function renderGamesHome(games) {
       if (!grouped[g.date]) grouped[g.date] = [];
       grouped[g.date].push(g);
     });
-    // Within each day, sort by time descending (latest first)
+    // Within each day, sort by time ascending (earliest first)
     Object.values(grouped).forEach(dayGames => {
-      dayGames.sort((a, b) => b.time.localeCompare(a.time));
+      dayGames.sort((a, b) => a.time.localeCompare(b.time));
     });
     activeContainer.innerHTML = Object.entries(grouped).map(([date, dayGames]) => `
       <div class="day-group">
