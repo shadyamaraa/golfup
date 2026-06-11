@@ -2440,7 +2440,7 @@ async function handleAddPlayer(game, onSaved = null) {
       showToast(`${selectedUser.name} ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор нэмэх боломжгүй.`, 'warning');
       return;
     }
-    const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
+    const player = { id: selectedUser.id, name: displayFullName(selectedUser), joinedAt: Date.now() };
     const groups = game.groups || [[]];
     const waitingList = game.waitingList || [];
     let added = false;
@@ -2452,9 +2452,17 @@ async function handleAddPlayer(game, onSaved = null) {
     game.waitingList = waitingList;
     await store.saveGame(game);
     if (added) removeFromConflictingWaitlists(selectedUser.id, game);
+    if (game.bookingId && added) {
+      try {
+        const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
+        await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+      } catch (err) {
+        showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+      }
+    }
     if (onSaved) onSaved();
     else renderGameView(game);
-    showToast('✅ Added ' + selectedUser.name, 'success');
+    showToast('✅ Added ' + displayFullName(selectedUser), 'success');
   });
 }
 
