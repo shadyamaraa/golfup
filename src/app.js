@@ -1003,6 +1003,8 @@ async function renderCreateGame() {
     let bookingSlotId = null;
 
     if (selectedTeeSlot) {
+      const submitBtn = document.getElementById('create-submit-btn');
+      submitBtn.textContent = t('bookingInProgress');
       try {
         const playerName = currentUser.fullName || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
@@ -1015,7 +1017,8 @@ async function renderCreateGame() {
         showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
-        document.getElementById('create-submit-btn').disabled = false;
+        submitBtn.textContent = t('create');
+        submitBtn.disabled = false;
         return;
       }
     }
