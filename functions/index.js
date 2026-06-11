@@ -33,7 +33,7 @@ exports.mtbogdProxy = functions
   .runWith({ secrets: ['MTBOGD_API_KEY'] })
   .https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
@@ -49,7 +49,7 @@ exports.mtbogdProxy = functions
     method: req.method,
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
   };
-  if (req.method === 'POST') opts.body = JSON.stringify(req.body);
+  if (['POST', 'PATCH', 'PUT'].includes(req.method)) opts.body = JSON.stringify(req.body);
 
   try {
     const upRes = await fetch(upstream, opts);
