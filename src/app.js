@@ -15,7 +15,6 @@ let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
-let activeDayIndex = 0;
 let openCircles = new Set();
 let pendingAuthRedirect = null;
 
@@ -337,8 +336,7 @@ function renderAuth() {
 
 // ---- Home View ----
 async function renderHome() {
-  homeFilter = 'all';
-  activeDayIndex = 0;
+  homeFilter = 'mine';
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="hero-section">
@@ -353,8 +351,8 @@ async function renderHome() {
       <div id="notifications-section"></div>
       <div class="section">
         <div class="game-filter-tabs">
-          <button class="filter-tab active" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
+          <button class="filter-tab active" data-tab="mine">🏌️ ${t('tabMine')}</button>
           <button class="filter-tab" data-tab="community">◎ ${t('tabCommunity')}</button>
           <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
@@ -401,7 +399,6 @@ async function renderHome() {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       homeFilter = btn.dataset.tab;
-      activeDayIndex = 0;
       renderGamesHome(homeGamesCache);
     });
   });
@@ -560,36 +557,13 @@ function renderGamesHome(games) {
     const days = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
     days.forEach(([, dayGames]) => dayGames.sort((a, b) => a.time.localeCompare(b.time)));
 
-    activeDayIndex = Math.max(0, Math.min(activeDayIndex, days.length - 1));
-    const [date, dayGames] = days[activeDayIndex];
-    const total = days.length;
-
-    activeContainer.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <button id="day-prev" class="btn btn-icon" style="font-size:1.3rem;padding:4px 10px;${activeDayIndex === 0 ? 'opacity:0.25;pointer-events:none;' : ''}">‹</button>
-        <span style="font-size:0.9rem;color:var(--text-secondary);white-space:nowrap;">${activeDayIndex + 1} / ${total}</span>
-        <button id="day-next" class="btn btn-icon" style="font-size:1.3rem;padding:4px 10px;${activeDayIndex === total - 1 ? 'opacity:0.25;pointer-events:none;' : ''}">›</button>
-      </div>
-      <div id="day-slide" style="touch-action:pan-y;">
-        <div class="day-group">
-          <div class="day-group-header">${formatDate(date)}</div>
-          ${renderGamesCards(dayGames)}
+    activeContainer.innerHTML = days.map(([date, dayGames]) => `
+      <div class="day-group">
+        <div class="day-group-header">${formatDate(date)} ${dayGames.length > 1 ? `<span style="font-weight:400;font-size:0.8rem;color:var(--text-secondary);">(${dayGames.length})</span>` : ''}</div>
+        <div class="day-carousel" style="display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px;">
+          ${dayGames.map(g => `<div style="flex:0 0 ${dayGames.length > 1 ? '88%' : '100%'};scroll-snap-align:start;">${renderGamesCards([g])}</div>`).join('')}
         </div>
-      </div>`;
-
-    document.getElementById('day-prev')?.addEventListener('click', () => { activeDayIndex--; renderGamesHome(); });
-    document.getElementById('day-next')?.addEventListener('click', () => { activeDayIndex++; renderGamesHome(); });
-
-    // Touch swipe
-    const slide = document.getElementById('day-slide');
-    let tx = 0;
-    slide.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
-    slide.addEventListener('touchend', e => {
-      const dx = e.changedTouches[0].clientX - tx;
-      if (Math.abs(dx) < 40) return;
-      if (dx < 0 && activeDayIndex < total - 1) { activeDayIndex++; renderGamesHome(); }
-      else if (dx > 0 && activeDayIndex > 0) { activeDayIndex--; renderGamesHome(); }
-    }, { passive: true });
+      </div>`).join('');
   } else {
     activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
   }
