@@ -1383,11 +1383,15 @@ async function handleJoin(game) {
 
   await store.saveGame(game);
 
+  console.log('[MTBogd] join sync check — bookingId:', game.bookingId, 'inGroup:', isPlayerInGroup(game, currentUser.id));
   if (game.bookingId && isPlayerInGroup(game, currentUser.id)) {
     try {
       const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
+      console.log('[MTBogd] sending PATCH players:', JSON.stringify(allPlayers));
       await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+      console.log('[MTBogd] PATCH success');
     } catch (err) {
+      console.error('[MTBogd] PATCH failed:', err.message);
       showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
     }
   }
