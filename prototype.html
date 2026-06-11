@@ -1,608 +1,691 @@
 <!DOCTYPE html>
-<html lang="mn" data-theme="dark">
+<html lang="mn">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>UB Golf — Design Prototype</title>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5/dist/full.min.css" rel="stylesheet"/>
-<script src="https://cdn.tailwindcss.com"></script>
+<title>UB Golf — PGA Tour Style Prototype</title>
 <style>
   :root {
-    --golf-green: #2d6a4f;
-    --golf-light: #52b788;
-    --golf-gold: #d4ac0d;
-    --bg-base: #0f1a13;
-    --bg-card: #1a2e1f;
-    --bg-card2: #1f3828;
+    --navy-900: #060d1a;
+    --navy-800: #0a1628;
+    --navy-700: #102240;
+    --navy-600: #16305a;
+    --card: #0f1e36;
+    --card-2: #14274a;
+    --line: #1d3354;
+    --gold: #d4af37;
+    --gold-soft: #e8c75a;
+    --blue: #2f7de1;
+    --blue-soft: #5ea3f5;
+    --text: #eef3fa;
+    --muted: #7e93b4;
+    --green: #2ecc71;
+    --red: #e74c3c;
   }
-  [data-theme="dark"] {
-    --b1: var(--bg-base);
-    --b2: var(--bg-card);
-    --b3: var(--bg-card2);
-    --p: #52b788;
-    --pf: #2d6a4f;
-    --pc: #fff;
-    --s: #d4ac0d;
-    --a: #74c69d;
-    --n: #1a2e1f;
-    --bc: #d8f3dc;
-  }
-  body { background: var(--bg-base); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  .screen { display: none; }
-  .screen.active { display: flex; flex-direction: column; }
-  .bottom-nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 16px; flex: 1; cursor: pointer; transition: all .15s; border: none; background: none; }
-  .bottom-nav-item span { font-size: 10px; color: #6b8f71; transition: color .15s; }
-  .bottom-nav-item svg { transition: all .15s; }
-  .bottom-nav-item.active svg { stroke: #52b788; filter: drop-shadow(0 0 6px #52b78866); }
-  .bottom-nav-item.active span { color: #52b788; font-weight: 600; }
-  .page-enter { animation: slideInRight .22s cubic-bezier(.4,0,.2,1); }
-  .page-back { animation: slideInLeft .22s cubic-bezier(.4,0,.2,1); }
-  @keyframes slideInRight { from { transform: translateX(30px); opacity:0 } to { transform: translateX(0); opacity:1 } }
-  @keyframes slideInLeft  { from { transform: translateX(-30px); opacity:0 } to { transform: translateX(0); opacity:1 } }
-  .card-game { border-radius: 16px; background: var(--bg-card); border: 1px solid #2d4a32; transition: transform .1s, box-shadow .1s; cursor: pointer; }
-  .card-game:active { transform: scale(.97); box-shadow: 0 0 0 2px #52b788; }
-  .game-date-chip { background: #2d6a4f22; border: 1px solid #52b78844; border-radius: 20px; padding: 4px 12px; font-size: 11px; font-weight: 600; color: #74c69d; letter-spacing: .5px; }
-  .avatar-ring { ring: 2px; ring-color: #52b788; }
-  .dot-online { width: 8px; height: 8px; background: #52b788; border-radius: 50%; border: 2px solid var(--bg-base); position: absolute; bottom: 0; right: 0; }
-  .input-mobile { background: var(--bg-card); border: 1.5px solid #2d4a32; border-radius: 14px; color: #d8f3dc; padding: 14px 16px; font-size: 15px; width: 100%; transition: border-color .15s; outline: none; }
-  .input-mobile:focus { border-color: #52b788; }
-  .select-mobile { background: var(--bg-card); border: 1.5px solid #2d4a32; border-radius: 14px; color: #d8f3dc; padding: 14px 16px; font-size: 15px; width: 100%; appearance: none; }
-  .btn-primary-mobile { background: linear-gradient(135deg, #2d6a4f, #52b788); color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 16px; font-weight: 700; width: 100%; letter-spacing: .3px; cursor: pointer; transition: transform .1s, box-shadow .1s; }
-  .btn-primary-mobile:active { transform: scale(.97); }
-  .section-label { font-size: 11px; font-weight: 700; color: #6b8f71; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
-  .tee-chip { border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; background: var(--bg-card); border: 1.5px solid #2d4a32; color: #d8f3dc; cursor: pointer; transition: all .1s; text-align: center; }
-  .tee-chip.selected { background: #2d6a4f; border-color: #52b788; color: #fff; }
-  .tee-chip:active { transform: scale(.95); }
-  .sheet-overlay { position: fixed; inset: 0; background: #00000088; z-index: 40; display: flex; align-items: flex-end; }
-  .sheet { background: var(--bg-card); border-radius: 24px 24px 0 0; padding: 0 0 32px; width: 100%; max-height: 85vh; overflow-y: auto; animation: sheetUp .25s cubic-bezier(.4,0,.2,1); }
-  @keyframes sheetUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
-  .sheet-handle { width: 40px; height: 4px; background: #2d4a32; border-radius: 4px; margin: 12px auto 4px; }
-  .player-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2d6a4f, #52b788); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; border: 2px solid var(--bg-card); margin-left: -8px; }
-  .player-avatar:first-child { margin-left: 0; }
-  .badge-booking { background: #1a3a2a; border: 1px solid #52b78844; color: #52b788; border-radius: 8px; font-size: 10px; font-weight: 600; padding: 2px 8px; }
-  .tab-pill { padding: 7px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; color: #6b8f71; }
-  .tab-pill.active { background: #2d6a4f; color: #fff; }
-  .notif-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; position: absolute; top: -2px; right: -2px; border: 2px solid var(--bg-base); }
-  .stat-card { background: var(--bg-card); border: 1px solid #2d4a32; border-radius: 16px; padding: 16px; flex: 1; }
-  .floating-action { position: fixed; bottom: 80px; right: 20px; width: 52px; height: 52px; background: linear-gradient(135deg, #2d6a4f, #52b788); border-radius: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px #52b78844; cursor: pointer; z-index: 20; transition: transform .1s; }
-  .floating-action:active { transform: scale(.93); }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { background:#02060d; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:var(--text); display:flex; justify-content:center; }
+
+  /* ---- Phone frame ---- */
+  .phone { width:390px; height:844px; position:relative; overflow:hidden; border-radius:42px; border:8px solid #0d1626; box-shadow:0 30px 90px #000e; background:var(--navy-900); margin:24px 0 90px; }
+  .statusbar { height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 22px; position:relative; z-index:60; }
+  .statusbar span { font-size:13px; font-weight:700; }
+
+  .screen { display:none; height:calc(844px - 44px - 66px); overflow-y:auto; scrollbar-width:none; }
+  .screen::-webkit-scrollbar { display:none; }
+  .screen.active { display:block; }
+  .page-enter { animation: slideIn .24s cubic-bezier(.4,0,.2,1); }
+  @keyframes slideIn { from { transform:translateX(26px); opacity:0 } to { transform:translateX(0); opacity:1 } }
+
+  /* ---- HERO BANNER (PGA Tour style) ---- */
+  .hero { position:relative; margin:6px 14px 0; border-radius:20px; overflow:hidden; height:210px; box-shadow:0 12px 32px #0008; }
+  .hero-bg { position:absolute; inset:0; }
+  .hero-overlay { position:absolute; inset:0; background:linear-gradient(180deg, transparent 20%, #060d1aee 92%); }
+  .hero-content { position:absolute; bottom:0; left:0; right:0; padding:16px 18px; }
+  .hero-tag { display:inline-flex; align-items:center; gap:5px; background:var(--gold); color:#1a1303; font-size:10px; font-weight:800; letter-spacing:1.2px; padding:4px 10px; border-radius:6px; text-transform:uppercase; margin-bottom:8px; }
+  .hero-title { font-size:21px; font-weight:900; letter-spacing:-.4px; line-height:1.15; text-shadow:0 2px 12px #000a; }
+  .hero-sub { font-size:12.5px; color:#c6d4e8; margin-top:4px; font-weight:500; }
+  .hero-cta { display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#ffffff14; backdrop-filter:blur(8px); border:1px solid #ffffff2e; border-radius:10px; padding:8px 14px; font-size:12.5px; font-weight:700; color:#fff; cursor:pointer; transition:transform .1s; }
+  .hero-cta:active { transform:scale(.96); }
+  .hero-dots { position:absolute; top:14px; right:14px; display:flex; gap:5px; }
+  .hero-dots i { width:6px; height:6px; border-radius:50%; background:#ffffff55; }
+  .hero-dots i.on { background:var(--gold); width:16px; border-radius:4px; }
+
+  /* ---- Section headers ---- */
+  .sec { display:flex; align-items:baseline; justify-content:space-between; padding:0 18px; margin:22px 0 12px; }
+  .sec h2 { font-size:15px; font-weight:900; letter-spacing:.2px; text-transform:uppercase; }
+  .sec h2 em { font-style:normal; color:var(--gold); }
+  .sec a { font-size:12px; color:var(--blue-soft); font-weight:700; text-decoration:none; cursor:pointer; }
+
+  /* ---- Game cards (banner-topped, PGA event card style) ---- */
+  .carousel { display:flex; gap:12px; overflow-x:auto; padding:2px 18px 6px; scroll-snap-type:x mandatory; scrollbar-width:none; }
+  .carousel::-webkit-scrollbar { display:none; }
+  .ecard { min-width:80%; scroll-snap-align:start; background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; cursor:pointer; transition:transform .12s, box-shadow .12s; }
+  .ecard:active { transform:scale(.975); }
+  .ecard-banner { height:92px; position:relative; }
+  .ecard-banner .ribbon { position:absolute; top:10px; left:10px; background:#060d1ac9; backdrop-filter:blur(6px); border:1px solid #ffffff22; padding:4px 10px; border-radius:8px; font-size:10.5px; font-weight:800; letter-spacing:.6px; color:var(--gold-soft); }
+  .ecard-banner .status { position:absolute; top:10px; right:10px; padding:4px 10px; border-radius:8px; font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; }
+  .st-confirmed { background:#0c3d24cc; color:#4ade80; border:1px solid #4ade8044; }
+  .st-open { background:#3d300ccc; color:var(--gold-soft); border:1px solid #d4af3744; }
+  .ecard-body { padding:13px 15px 14px; }
+  .ecard-row1 { display:flex; justify-content:space-between; align-items:flex-start; }
+  .ecard-time { font-size:22px; font-weight:900; letter-spacing:-.5px; }
+  .ecard-loc { font-size:12.5px; color:var(--muted); font-weight:600; margin-top:2px; display:flex; align-items:center; gap:5px; }
+  .ecard-holes { text-align:right; font-size:11px; color:var(--muted); font-weight:700; }
+  .ecard-holes b { display:block; color:var(--text); font-size:15px; }
+  .ecard-divider { height:1px; background:var(--line); margin:11px 0; }
+  .ecard-row2 { display:flex; justify-content:space-between; align-items:center; }
+  .avs { display:flex; }
+  .av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; border:2px solid var(--card); margin-left:-9px; }
+  .av:first-child { margin-left:0; }
+  .av.empty { background:var(--navy-700); border:2px dashed var(--line); }
+  .slots { font-size:12px; font-weight:800; padding:5px 11px; border-radius:9px; }
+  .slots.full { background:#0c3d24; color:#4ade80; }
+  .slots.need { background:#3d300c; color:var(--gold-soft); }
+
+  /* List card (vertical) */
+  .lcard { display:flex; gap:0; margin:0 18px 10px; background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; cursor:pointer; transition:transform .12s; }
+  .lcard:active { transform:scale(.98); }
+  .lcard-stripe { width:64px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
+  .lcard-stripe b { font-size:17px; font-weight:900; color:#fff; }
+  .lcard-stripe span { font-size:9.5px; font-weight:800; color:#ffffffb0; letter-spacing:1px; text-transform:uppercase; }
+  .lcard-body { padding:12px 14px; flex:1; }
+
+  /* ---- Banner gradients (course art) ---- */
+  .bg-course-1 { background:linear-gradient(118deg,#0c2f56 0%,#155a8a 45%,#1d7a4f 100%); }
+  .bg-course-2 { background:linear-gradient(118deg,#3d1d56 0%,#16305a 55%,#1d6a7a 100%); }
+  .bg-course-3 { background:linear-gradient(118deg,#56301d 0%,#5a3a16 40%,#1d7a4f 100%); }
+  .bg-sunrise  { background:linear-gradient(118deg,#1a1340 0%,#54307a 45%,#d4742a 100%); }
+  .course-art { position:absolute; inset:0; overflow:hidden; }
+
+  /* ---- Header bar ---- */
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 18px 12px; position:sticky; top:0; background:linear-gradient(180deg, var(--navy-900) 75%, transparent); z-index:40; }
+  .brand { display:flex; align-items:center; gap:9px; }
+  .brand-mark { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,var(--navy-600),var(--blue)); display:flex; align-items:center; justify-content:center; font-size:17px; box-shadow:0 4px 14px #2f7de144; }
+  .brand-name { font-size:16px; font-weight:900; letter-spacing:.6px; }
+  .brand-name small { display:block; font-size:8.5px; font-weight:800; letter-spacing:2.4px; color:var(--gold); }
+  .icon-btn { width:38px; height:38px; border-radius:11px; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; }
+  .ndot { position:absolute; top:-3px; right:-3px; width:9px; height:9px; background:var(--red); border-radius:50%; border:2px solid var(--navy-900); }
+
+  /* ---- Tabs ---- */
+  .tabs { display:flex; gap:6px; padding:2px 18px 4px; }
+  .tab { padding:7px 16px; border-radius:18px; font-size:12.5px; font-weight:700; color:var(--muted); cursor:pointer; border:1px solid transparent; transition:all .15s; }
+  .tab.on { background:var(--navy-600); color:#fff; border-color:#2f7de166; }
+
+  /* ---- Bottom nav ---- */
+  .bnav { position:absolute; bottom:0; left:0; right:0; height:66px; background:#0a1424f2; backdrop-filter:blur(14px); border-top:1px solid var(--line); display:flex; z-index:50; }
+  .bnav button { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:none; border:none; cursor:pointer; }
+  .bnav span { font-size:9.5px; font-weight:700; color:var(--muted); letter-spacing:.3px; }
+  .bnav svg { stroke:var(--muted); transition:all .15s; }
+  .bnav button.on svg { stroke:var(--gold); filter:drop-shadow(0 0 8px #d4af3766); }
+  .bnav button.on span { color:var(--gold); }
+  .bnav .fab { flex:0 0 76px; position:relative; }
+  .bnav .fab > div { position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:54px; height:54px; border-radius:18px; background:linear-gradient(135deg,var(--gold),#a8841f); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 24px #d4af3755; transition:transform .1s; }
+  .bnav .fab:active > div { transform:translateX(-50%) scale(.92); }
+
+  /* ---- Forms ---- */
+  .label { font-size:10.5px; font-weight:800; color:var(--muted); letter-spacing:1.4px; text-transform:uppercase; margin-bottom:9px; }
+  .inp { width:100%; background:var(--card); border:1.5px solid var(--line); border-radius:13px; color:var(--text); padding:13px 15px; font-size:15px; outline:none; transition:border-color .15s; font-family:inherit; }
+  .inp:focus { border-color:var(--blue); }
+  .chip { border-radius:11px; padding:11px 8px; font-size:13px; font-weight:700; background:var(--card); border:1.5px solid var(--line); color:var(--text); cursor:pointer; text-align:center; transition:all .12s; }
+  .chip:active { transform:scale(.95); }
+  .chip.on { background:var(--navy-600); border-color:var(--blue); color:#fff; box-shadow:0 0 0 1px var(--blue) inset; }
+  .btn-gold { width:100%; background:linear-gradient(135deg,var(--gold),#b9952a); color:#190; color:#1a1303; border:none; border-radius:14px; padding:16px; font-size:15.5px; font-weight:900; letter-spacing:.4px; cursor:pointer; transition:transform .1s; font-family:inherit; }
+  .btn-gold:active { transform:scale(.97); }
+  .btn-line { width:100%; background:transparent; border:1.5px solid var(--line); border-radius:14px; padding:14px; font-size:14px; font-weight:700; color:var(--muted); cursor:pointer; font-family:inherit; }
+
+  /* ---- Sheets ---- */
+  .sheet-overlay { position:absolute; inset:0; background:#000a; z-index:80; display:none; align-items:flex-end; }
+  .sheet-overlay.show { display:flex; }
+  .sheet { background:var(--navy-800); border-radius:24px 24px 0 0; width:100%; max-height:82%; overflow-y:auto; animation:up .26s cubic-bezier(.34,1.2,.4,1); border-top:1px solid var(--line); }
+  @keyframes up { from { transform:translateY(100%) } to { transform:translateY(0) } }
+  .handle { width:42px; height:4px; background:var(--line); border-radius:4px; margin:12px auto 6px; }
+
+  /* ---- Demo switcher ---- */
+  .demo-bar { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); display:flex; gap:6px; background:#0f1e36; border:1px solid var(--line); border-radius:20px; padding:6px 10px; z-index:200; }
+  .demo-bar button { padding:7px 13px; border-radius:13px; background:transparent; border:none; color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .demo-bar button.on { background:var(--navy-600); color:#fff; }
 </style>
 </head>
-<body class="min-h-screen flex justify-center items-start">
+<body>
 
-<!-- Phone frame wrapper -->
-<div style="width:390px; height:844px; position:relative; overflow:hidden; border-radius:40px; box-shadow:0 30px 80px #000c; background:var(--bg-base); margin:24px auto; border:8px solid #1a2e1f;">
+<div class="phone">
 
   <!-- Status bar -->
-  <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 20px; background:var(--bg-base); position:relative; z-index:50;">
-    <span style="font-size:13px; font-weight:700; color:#d8f3dc;">9:41</span>
-    <div style="display:flex; gap:6px; align-items:center;">
-      <svg width="16" height="12" viewBox="0 0 16 12" fill="#d8f3dc"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1"/><rect x="9" y="1" width="3" height="11" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
-      <svg width="15" height="12" viewBox="0 0 15 12" fill="none" stroke="#d8f3dc" stroke-width="1.5"><path d="M7.5 3C9.5 3 11.3 3.8 12.6 5.1M2.4 5.1C3.7 3.8 5.5 3 7.5 3"/><path d="M7.5 6C8.8 6 9.9 6.5 10.7 7.3M4.3 7.3C5.1 6.5 6.2 6 7.5 6"/><circle cx="7.5" cy="10" r="1.2" fill="#d8f3dc" stroke="none"/></svg>
-      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0" y="1" width="22" height="10" rx="3" stroke="#d8f3dc" stroke-width="1.3"/><rect x="22.5" y="3.5" width="2" height="5" rx="1" fill="#d8f3dc" opacity=".5"/><rect x="1.5" y="2.5" width="16" height="7" rx="2" fill="#52b788"/></svg>
+  <div class="statusbar">
+    <span>9:41</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="#eef3fa"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1"/><rect x="9" y="1" width="3" height="11" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0" y="1" width="22" height="10" rx="3" stroke="#eef3fa" stroke-width="1.3"/><rect x="1.5" y="2.5" width="16" height="7" rx="2" fill="#d4af37"/></svg>
     </div>
   </div>
 
-  <!-- ===== SCREEN: HOME ===== -->
-  <div id="screen-home" class="screen active" style="height:calc(844px - 44px - 64px); overflow-y:auto; padding-bottom:8px;">
+  <!-- ================= HOME ================= -->
+  <div id="screen-home" class="screen active">
 
-    <!-- Header -->
-    <div style="padding:12px 20px 8px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--bg-base); z-index:30;">
-      <div>
-        <div style="font-size:11px; color:#6b8f71; font-weight:600; letter-spacing:.5px;">САЙН БАЙНА УУ</div>
-        <div style="font-size:20px; font-weight:800; color:#d8f3dc; letter-spacing:-.3px;">⛳ UB Golf</div>
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark">⛳</div>
+        <div class="brand-name">UB GOLF<small>CLUB TOUR</small></div>
       </div>
-      <div style="display:flex; gap:10px; align-items:center;">
-        <!-- Notification bell -->
-        <button onclick="showSheet('notif-sheet')" style="width:40px;height:40px;border-radius:12px;background:var(--bg-card);border:1px solid #2d4a32;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="notif-dot"></span>
-        </button>
-        <!-- Avatar -->
-        <button onclick="navigate('profile')" style="width:40px;height:40px;border-radius:12px;overflow:hidden;border:2px solid #52b788;cursor:pointer;">
-          <div style="width:100%;height:100%;background:linear-gradient(135deg,#2d6a4f,#52b788);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;">Б</div>
-        </button>
+      <div style="display:flex;gap:8px;">
+        <div class="icon-btn" onclick="showSheet('notif-sheet')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="ndot"></span>
+        </div>
+        <div class="icon-btn" onclick="navigate('profile')" style="background:linear-gradient(135deg,var(--navy-600),var(--blue));border:none;font-weight:800;font-size:14px;">Б</div>
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div style="padding:0 20px 12px; display:flex; gap:6px;">
-      <div class="tab-pill active" onclick="setTab(this)">Миний</div>
-      <div class="tab-pill" onclick="setTab(this)">Бүх</div>
-      <div class="tab-pill" onclick="setTab(this)">Клуб</div>
+    <!-- HERO BANNER — PGA Tour featured style -->
+    <div class="hero" onclick="navigate('game')">
+      <div class="hero-bg bg-course-1">
+        <svg class="course-art" viewBox="0 0 390 210" preserveAspectRatio="xMidYMax slice">
+          <ellipse cx="320" cy="215" rx="230" ry="80" fill="#1d8a55" opacity=".55"/>
+          <ellipse cx="80" cy="225" rx="200" ry="70" fill="#176f44" opacity=".7"/>
+          <ellipse cx="265" cy="178" rx="60" ry="14" fill="#27a566" opacity=".8"/>
+          <circle cx="265" cy="176" r="3.2" fill="#0d1626"/>
+          <line x1="265" y1="176" x2="265" y2="128" stroke="#e8e8e8" stroke-width="2.2"/>
+          <path d="M265 128 L292 136 L265 144 Z" fill="#e74c3c"/>
+          <circle cx="330" cy="48" r="22" fill="#fff8e1" opacity=".92"/>
+          <circle cx="60" cy="80" r="2" fill="#fff" opacity=".5"/>
+          <circle cx="110" cy="40" r="1.5" fill="#fff" opacity=".4"/>
+          <circle cx="180" cy="65" r="1.8" fill="#fff" opacity=".35"/>
+          <path d="M0 150 Q60 120 130 142 T290 150 L390 140 L390 210 L0 210 Z" fill="#0e3d28" opacity=".5"/>
+        </svg>
+      </div>
+      <div class="hero-overlay"></div>
+      <div class="hero-dots"><i class="on"></i><i></i><i></i></div>
+      <div class="hero-content">
+        <span class="hero-tag">★ Өнөөдөр · Шууд</span>
+        <div class="hero-title">MT Bogd Морьтон Цомын Өдөрлөг</div>
+        <div class="hero-sub">10:00 · MT Bogd Golf Club · 18 нүх · 12 тоглогч</div>
+        <div class="hero-cta">Дэлгэрэнгүй
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>
     </div>
 
-    <!-- Today section -->
-    <div style="padding:0 20px 8px;">
-      <div class="game-date-chip" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        2026 оны 6-р сарын 11 · Өнөөдөр
-      </div>
+    <!-- Filter tabs -->
+    <div class="tabs" style="margin-top:16px;">
+      <div class="tab on" onclick="setTab(this)">Миний</div>
+      <div class="tab" onclick="setTab(this)">Бүгд</div>
+      <div class="tab" onclick="setTab(this)">Клуб</div>
+      <div class="tab" onclick="setTab(this)">Түүх</div>
+    </div>
 
-      <!-- Horizontal carousel -->
-      <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;" id="today-carousel">
+    <!-- Today carousel -->
+    <div class="sec"><h2>Өнөөдөр · <em>6.11</em></h2><a>Бүгдийг харах</a></div>
+    <div class="carousel">
 
-        <!-- Game card 1 -->
-        <div class="card-game" style="min-width:82%;scroll-snap-align:start;padding:16px;" onclick="navigate('game')">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+      <div class="ecard" onclick="navigate('game')">
+        <div class="ecard-banner bg-course-1">
+          <svg class="course-art" viewBox="0 0 320 92" preserveAspectRatio="xMidYMax slice">
+            <ellipse cx="250" cy="100" rx="180" ry="42" fill="#1d8a55" opacity=".6"/>
+            <ellipse cx="60" cy="105" rx="150" ry="38" fill="#176f44" opacity=".7"/>
+            <ellipse cx="225" cy="74" rx="42" ry="9" fill="#27a566" opacity=".85"/>
+            <line x1="225" y1="73" x2="225" y2="38" stroke="#e8e8e8" stroke-width="1.8"/>
+            <path d="M225 38 L245 44 L225 50 Z" fill="#e74c3c"/>
+          </svg>
+          <span class="ribbon">⛳ MT BOGD</span>
+          <span class="status st-confirmed">Захиалсан</span>
+        </div>
+        <div class="ecard-body">
+          <div class="ecard-row1">
             <div>
-              <div style="font-size:17px;font-weight:800;color:#d8f3dc;">10:00</div>
-              <div style="font-size:13px;color:#74c69d;margin-top:2px;display:flex;align-items:center;gap:4px;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                MT Bogd Golf Club
-              </div>
+              <div class="ecard-time">10:00</div>
+              <div class="ecard-loc">📋 MBG-2847 · T1</div>
             </div>
-            <div style="text-align:right;">
-              <span class="badge-booking">📋 MBG-2847</span>
-              <div style="font-size:11px;color:#6b8f71;margin-top:4px;">18 нүх</div>
-            </div>
+            <div class="ecard-holes"><b>18</b>нүх</div>
           </div>
-          <div style="height:1px;background:#2d4a32;margin-bottom:12px;"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div style="display:flex;align-items:center;">
-              <div class="player-avatar">Б</div>
-              <div class="player-avatar">Э</div>
-              <div class="player-avatar">Т</div>
-              <div class="player-avatar" style="background:#1a3a2a;color:#6b8f71;font-size:10px;">+1</div>
+          <div class="ecard-divider"></div>
+          <div class="ecard-row2">
+            <div class="avs">
+              <div class="av" style="background:linear-gradient(135deg,#16305a,#2f7de1)">Б</div>
+              <div class="av" style="background:linear-gradient(135deg,#1d5a40,#2ecc71)">Э</div>
+              <div class="av" style="background:linear-gradient(135deg,#5a3016,#e67e22)">Т</div>
+              <div class="av" style="background:linear-gradient(135deg,#3d1d56,#9b59b6)">Д</div>
             </div>
-            <div style="font-size:12px;color:#52b788;font-weight:700;background:#1a3a2a;padding:4px 10px;border-radius:8px;">4/4 ⛳</div>
+            <span class="slots full">4/4 БҮРДСЭН</span>
           </div>
         </div>
+      </div>
 
-        <!-- Game card 2 -->
-        <div class="card-game" style="min-width:82%;scroll-snap-align:start;padding:16px;" onclick="navigate('game')">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+      <div class="ecard" onclick="navigate('game')">
+        <div class="ecard-banner bg-sunrise">
+          <svg class="course-art" viewBox="0 0 320 92" preserveAspectRatio="xMidYMax slice">
+            <circle cx="260" cy="40" r="18" fill="#ffd98a" opacity=".9"/>
+            <ellipse cx="160" cy="105" rx="200" ry="40" fill="#42275a" opacity=".7"/>
+            <ellipse cx="90" cy="78" rx="38" ry="8" fill="#6a4585" opacity=".9"/>
+            <line x1="90" y1="77" x2="90" y2="42" stroke="#f0e6d0" stroke-width="1.8"/>
+            <path d="M90 42 L110 48 L90 54 Z" fill="#d4af37"/>
+          </svg>
+          <span class="ribbon">🌄 САМРААЖИД</span>
+          <span class="status st-open">2 СУЛ</span>
+        </div>
+        <div class="ecard-body">
+          <div class="ecard-row1">
             <div>
-              <div style="font-size:17px;font-weight:800;color:#d8f3dc;">14:30</div>
-              <div style="font-size:13px;color:#74c69d;margin-top:2px;display:flex;align-items:center;gap:4px;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                Самраажид
-              </div>
+              <div class="ecard-time">14:30</div>
+              <div class="ecard-loc">Нээлттэй тоглолт</div>
             </div>
-            <div style="text-align:right;">
-              <div style="font-size:11px;color:#6b8f71;">9 нүх</div>
-            </div>
+            <div class="ecard-holes"><b>9</b>нүх</div>
           </div>
-          <div style="height:1px;background:#2d4a32;margin-bottom:12px;"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div style="display:flex;align-items:center;">
-              <div class="player-avatar">Д</div>
-              <div class="player-avatar">М</div>
-              <div style="width:28px;height:28px;border-radius:50%;background:#1a3a2a;border:2px dashed #2d4a32;margin-left:-8px;"></div>
-              <div style="width:28px;height:28px;border-radius:50%;background:#1a3a2a;border:2px dashed #2d4a32;margin-left:-8px;"></div>
+          <div class="ecard-divider"></div>
+          <div class="ecard-row2">
+            <div class="avs">
+              <div class="av" style="background:linear-gradient(135deg,#3d1d56,#9b59b6)">Д</div>
+              <div class="av" style="background:linear-gradient(135deg,#1d4456,#3498db)">М</div>
+              <div class="av empty"></div>
+              <div class="av empty"></div>
             </div>
-            <div style="font-size:12px;color:#d4ac0d;font-weight:700;background:#1a3a2a;padding:4px 10px;border-radius:8px;">2/4 нэгд</div>
+            <span class="slots need">2/4 НЭГДЭХ</span>
           </div>
         </div>
-
       </div>
     </div>
 
-    <!-- Tomorrow section -->
-    <div style="padding:0 20px 8px; margin-top:8px;">
-      <div class="game-date-chip" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        6-р сарын 12 · Маргааш
-      </div>
-      <div class="card-game" style="padding:16px;" onclick="navigate('game')">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
-          <div>
-            <div style="font-size:17px;font-weight:800;color:#d8f3dc;">08:00</div>
-            <div style="font-size:13px;color:#74c69d;margin-top:2px;display:flex;align-items:center;gap:4px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              MT Bogd Golf Club
-            </div>
-          </div>
-          <div><span class="badge-booking">📋 MBG-2901</span></div>
-        </div>
-        <div style="height:1px;background:#2d4a32;margin-bottom:12px;"></div>
+    <!-- Tomorrow list -->
+    <div class="sec"><h2>Маргааш · <em>6.12</em></h2></div>
+
+    <div class="lcard" onclick="navigate('game')">
+      <div class="lcard-stripe bg-course-1"><b>08:00</b><span>MT Bogd</span></div>
+      <div class="lcard-body">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="display:flex;align-items:center;">
-            <div class="player-avatar">Б</div>
-            <div style="width:28px;height:28px;border-radius:50%;background:#1a3a2a;border:2px dashed #2d4a32;margin-left:-8px;"></div>
-            <div style="width:28px;height:28px;border-radius:50%;background:#1a3a2a;border:2px dashed #2d4a32;margin-left:-8px;"></div>
-            <div style="width:28px;height:28px;border-radius:50%;background:#1a3a2a;border:2px dashed #2d4a32;margin-left:-8px;"></div>
+          <div>
+            <div style="font-size:13.5px;font-weight:800;">Өглөөний 18 нүх</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">📋 MBG-2901 · Бат-Эрдэнэ</div>
           </div>
-          <div style="font-size:12px;color:#6b8f71;font-weight:600;">1/4</div>
+          <span class="slots need" style="font-size:11px;">1/4</span>
         </div>
       </div>
     </div>
+
+    <div class="lcard" onclick="navigate('game')">
+      <div class="lcard-stripe bg-course-3"><b>16:00</b><span>Terelj</span></div>
+      <div class="lcard-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:13.5px;font-weight:800;">Zaan Terelj нөхөрсөг</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Эмэгтэйчүүдийн тойрог</div>
+          </div>
+          <span class="slots full" style="font-size:11px;">3/3</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:30px;"></div>
   </div>
 
-  <!-- ===== SCREEN: CREATE ===== -->
-  <div id="screen-create" class="screen" style="height:calc(844px - 44px - 64px); overflow-y:auto;">
-
-    <div style="padding:16px 20px 8px; position:sticky; top:0; background:var(--bg-base); z-index:30; display:flex; align-items:center; gap:12px;">
-      <button onclick="navigate('home')" style="width:36px;height:36px;border-radius:10px;background:var(--bg-card);border:1px solid #2d4a32;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <div style="font-size:18px;font-weight:800;color:#d8f3dc;">Тоглолт үүсгэх</div>
+  <!-- ================= CREATE ================= -->
+  <div id="screen-create" class="screen">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="icon-btn" onclick="navigate('home')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </div>
+        <div style="font-size:17px;font-weight:900;">Тоглолт үүсгэх</div>
+      </div>
     </div>
 
-    <div style="padding:8px 20px 24px; display:flex; flex-direction:column; gap:16px;">
+    <!-- Mini banner -->
+    <div style="margin:0 18px 18px;border-radius:16px;overflow:hidden;position:relative;height:84px;" class="bg-course-1">
+      <svg class="course-art" viewBox="0 0 354 84" preserveAspectRatio="xMidYMax slice">
+        <ellipse cx="280" cy="92" rx="170" ry="36" fill="#1d8a55" opacity=".6"/>
+        <ellipse cx="250" cy="66" rx="40" ry="8" fill="#27a566" opacity=".85"/>
+        <line x1="250" y1="65" x2="250" y2="32" stroke="#e8e8e8" stroke-width="1.8"/>
+        <path d="M250 32 L270 38 L250 44 Z" fill="#e74c3c"/>
+      </svg>
+      <div style="position:absolute;inset:0;background:linear-gradient(90deg,#060d1adb 30%,transparent);"></div>
+      <div style="position:absolute;left:16px;top:50%;transform:translateY(-50%);">
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--gold);">ШИНЭ ТОГЛОЛТ</div>
+        <div style="font-size:16px;font-weight:900;margin-top:2px;">Найзуудаа цуглуул ⛳</div>
+      </div>
+    </div>
 
-      <!-- Location -->
+    <div style="padding:0 18px 28px;display:flex;flex-direction:column;gap:18px;">
       <div>
-        <div class="section-label">Талбай</div>
+        <div class="label">Талбай</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <div class="tee-chip selected">⛳ MT Bogd</div>
-          <div class="tee-chip">Самраажид</div>
-          <div class="tee-chip">Zaan Terelj</div>
-          <div class="tee-chip">Бусад...</div>
+          <div class="chip on" onclick="pick(this)">⛳ MT Bogd</div>
+          <div class="chip" onclick="pick(this)">Самраажид</div>
+          <div class="chip" onclick="pick(this)">Zaan Terelj</div>
+          <div class="chip" onclick="pick(this)">Бусад...</div>
         </div>
       </div>
 
-      <!-- Date & Time -->
       <div>
-        <div class="section-label">Огноо & Цаг</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <input type="date" class="input-mobile" value="2026-06-12" style="font-size:14px;"/>
+        <div class="label">Огноо · Цаг</div>
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:8px;">
+          <input type="date" class="inp" value="2026-06-12" style="font-size:14px;"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <select class="select-mobile" style="font-size:14px;">
-              <option>08</option><option>09</option><option selected>10</option><option>11</option>
-            </select>
-            <select class="select-mobile" style="font-size:14px;">
-              <option selected>00</option><option>30</option>
-            </select>
+            <select class="inp" style="font-size:14px;padding:13px 10px;"><option>09</option><option selected>10</option><option>11</option></select>
+            <select class="inp" style="font-size:14px;padding:13px 10px;"><option selected>00</option><option>30</option></select>
           </div>
         </div>
       </div>
 
-      <!-- Holes & Group -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div>
-          <div class="section-label">Нүхний тоо</div>
+          <div class="label">Нүх</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <div class="tee-chip selected" style="font-size:14px;">9 н</div>
-            <div class="tee-chip" style="font-size:14px;">18 н</div>
+            <div class="chip" onclick="pick(this)">9</div>
+            <div class="chip on" onclick="pick(this)">18</div>
           </div>
         </div>
         <div>
-          <div class="section-label">Тоглогч</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <div class="tee-chip" style="font-size:14px;">2</div>
-            <div class="tee-chip selected" style="font-size:14px;">4</div>
+          <div class="label">Тоглогч</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <div class="chip" onclick="pick(this)">2</div>
+            <div class="chip" onclick="pick(this)">3</div>
+            <div class="chip on" onclick="pick(this)">4</div>
           </div>
         </div>
       </div>
 
-      <!-- Tee time picker trigger -->
       <div>
-        <div class="section-label">MT Bogd цаг захиалга</div>
-        <button onclick="showSheet('tee-sheet')" style="width:100%;padding:14px 16px;background:var(--bg-card);border:1.5px dashed #52b78866;border-radius:14px;color:#52b788;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          Цаг сонгох...
+        <div class="label">MT Bogd цаг захиалга</div>
+        <button onclick="showSheet('tee-sheet')" style="width:100%;padding:15px;background:var(--card);border:1.5px dashed #d4af3766;border-radius:14px;color:var(--gold-soft);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;">
+          🕐 Цаг сонгох...
         </button>
       </div>
 
-      <!-- Visibility -->
       <div>
-        <div class="section-label">Харагдах байдал</div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-card);border:1.5px solid #52b788;border-radius:12px;cursor:pointer;">
-            <div style="width:18px;height:18px;border-radius:50%;background:#52b788;display:flex;align-items:center;justify-content:center;">
-              <div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div>
-            </div>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:#d8f3dc;">Миний тойрог</div>
-              <div style="font-size:11px;color:#6b8f71;">Дагагчид & клуб гишүүд</div>
-            </div>
+        <div class="label">Харагдах байдал</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--card);border:1.5px solid var(--blue);border-radius:13px;cursor:pointer;">
+            <div style="width:18px;height:18px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><div style="width:7px;height:7px;border-radius:50%;background:#fff;"></div></div>
+            <div><div style="font-size:14px;font-weight:700;">Миний тойрог</div><div style="font-size:11px;color:var(--muted);">Дагагчид · клуб гишүүд</div></div>
           </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-card);border:1.5px solid #2d4a32;border-radius:12px;cursor:pointer;">
-            <div style="width:18px;height:18px;border-radius:50%;border:2px solid #2d4a32;"></div>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:#d8f3dc;">Бүх хэрэглэгч</div>
-              <div style="font-size:11px;color:#6b8f71;">Нийтэд харагдана</div>
-            </div>
+          <label style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--card);border:1.5px solid var(--line);border-radius:13px;cursor:pointer;">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex-shrink:0;"></div>
+            <div><div style="font-size:14px;font-weight:700;">Бүх хэрэглэгч</div><div style="font-size:11px;color:var(--muted);">Нийтэд харагдана</div></div>
           </label>
         </div>
       </div>
 
-      <!-- Submit -->
-      <button class="btn-primary-mobile" style="margin-top:8px;">
-        ⛳ Тоглолт үүсгэх
-      </button>
-
+      <button class="btn-gold">⛳ ТОГЛОЛТ ҮҮСГЭХ</button>
     </div>
   </div>
 
-  <!-- ===== SCREEN: GAME DETAIL ===== -->
-  <div id="screen-game" class="screen" style="height:calc(844px - 44px - 64px); overflow-y:auto;">
+  <!-- ================= GAME DETAIL ================= -->
+  <div id="screen-game" class="screen">
 
-    <!-- Hero section -->
-    <div style="background:linear-gradient(180deg, #1a3a28 0%, var(--bg-base) 100%); padding:12px 20px 20px; position:sticky; top:0; z-index:30;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button onclick="navigate('home')" style="width:36px;height:36px;border-radius:10px;background:#ffffff18;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <div style="font-size:18px;font-weight:800;color:#d8f3dc;">Тоглолт</div>
-        <div style="margin-left:auto;display:flex;gap:8px;">
-          <div style="padding:4px 10px;background:#52b78822;border:1px solid #52b78844;border-radius:8px;font-size:11px;font-weight:700;color:#52b788;">Нээлттэй</div>
+    <!-- Full-bleed banner header -->
+    <div style="position:relative;height:240px;" class="bg-course-1">
+      <svg class="course-art" viewBox="0 0 390 240" preserveAspectRatio="xMidYMax slice">
+        <circle cx="320" cy="55" r="26" fill="#fff8e1" opacity=".9"/>
+        <ellipse cx="300" cy="250" rx="240" ry="90" fill="#1d8a55" opacity=".55"/>
+        <ellipse cx="70" cy="260" rx="210" ry="80" fill="#176f44" opacity=".7"/>
+        <ellipse cx="250" cy="200" rx="68" ry="15" fill="#27a566" opacity=".85"/>
+        <circle cx="250" cy="198" r="3.4" fill="#0d1626"/>
+        <line x1="250" y1="198" x2="250" y2="140" stroke="#e8e8e8" stroke-width="2.4"/>
+        <path d="M250 140 L282 149 L250 158 Z" fill="#e74c3c"/>
+        <path d="M0 175 Q70 142 150 165 T330 172 L390 162 L390 240 L0 240 Z" fill="#0e3d28" opacity=".45"/>
+      </svg>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,#060d1a66 0%,transparent 30%,#060d1af5 96%);"></div>
+      <div style="position:absolute;top:12px;left:16px;right:16px;display:flex;justify-content:space-between;">
+        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="navigate('home')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </div>
+        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="showSheet('share-sheet')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div class="stat-card" style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:10px;background:#52b78822;display:flex;align-items:center;justify-content:center;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#52b788" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          </div>
-          <div>
-            <div style="font-size:18px;font-weight:800;color:#d8f3dc;">10:00</div>
-            <div style="font-size:10px;color:#6b8f71;">6-р сарын 12</div>
-          </div>
-        </div>
-        <div class="stat-card" style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:10px;background:#52b78822;display:flex;align-items:center;justify-content:center;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#52b788" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          </div>
-          <div>
-            <div style="font-size:13px;font-weight:700;color:#d8f3dc;line-height:1.2;">MT Bogd</div>
-            <div style="font-size:10px;color:#6b8f71;">18 нүх</div>
-          </div>
-        </div>
+      <div style="position:absolute;bottom:14px;left:18px;right:18px;">
+        <span class="hero-tag">⛳ MT Bogd Golf Club</span>
+        <div style="font-size:24px;font-weight:900;letter-spacing:-.5px;text-shadow:0 2px 12px #000b;">Маргааш · 10:00</div>
+        <div style="font-size:12.5px;color:#c6d4e8;margin-top:3px;font-weight:600;">6-р сарын 12 · 18 нүх · Зохион байгуулагч: Бат-Эрдэнэ</div>
       </div>
     </div>
 
-    <div style="padding:0 20px 24px; display:flex; flex-direction:column; gap:16px;">
+    <div style="padding:16px 18px 30px;display:flex;flex-direction:column;gap:16px;">
 
-      <!-- Booking badge -->
-      <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;background:#1a3a2a;border:1px solid #52b78844;border-radius:14px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#52b788" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <!-- Booking confirmation strip -->
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 15px;background:#0c3d2455;border:1px solid #4ade8033;border-radius:14px;">
+        <div style="width:38px;height:38px;border-radius:11px;background:#0c3d24;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
         <div>
-          <div style="font-size:12px;font-weight:700;color:#52b788;">MT Bogd захиалга баталгаажсан</div>
-          <div style="font-size:11px;color:#6b8f71;">Код: MBG-2901</div>
+          <div style="font-size:13px;font-weight:800;color:#4ade80;">MT Bogd захиалга баталгаажсан</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">Код: <b style="color:var(--gold-soft);">MBG-2901</b> · Tee 1 · 07:20</div>
         </div>
       </div>
 
-      <!-- Players -->
+      <!-- Players leaderboard-style -->
       <div>
-        <div class="section-label" style="margin-bottom:12px;">Тоглогчид (2/4)</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1px solid #2d4a32;">
-            <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#2d6a4f,#52b788);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;">Б</div>
-            <div>
-              <div style="font-size:14px;font-weight:700;color:#d8f3dc;">Бат-Эрдэнэ</div>
-              <div style="font-size:11px;color:#52b788;">Зохион байгуулагч</div>
+        <div class="label" style="margin-bottom:11px;">Тоглогчид · 2/4</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);">
+            <span style="font-size:12px;font-weight:900;color:var(--gold);width:16px;">1</span>
+            <div class="av" style="position:static;margin:0;width:38px;height:38px;font-size:14px;background:linear-gradient(135deg,#16305a,#2f7de1);border:none;">Б</div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:800;">Бат-Эрдэнэ</div>
+              <div style="font-size:11px;color:var(--gold-soft);font-weight:700;">★ Зохион байгуулагч</div>
             </div>
-            <svg style="margin-left:auto;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#52b788" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1px solid #2d4a32;">
-            <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#1a5c40,#74c69d);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;">Э</div>
-            <div>
-              <div style="font-size:14px;font-weight:700;color:#d8f3dc;">Энхбаяр</div>
-              <div style="font-size:11px;color:#6b8f71;">Гишүүн</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);">
+            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">2</span>
+            <div class="av" style="position:static;margin:0;width:38px;height:38px;font-size:14px;background:linear-gradient(135deg,#1d5a40,#2ecc71);border:none;">Э</div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:800;">Энхбаяр</div>
+              <div style="font-size:11px;color:var(--muted);">Гишүүн</div>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1.5px dashed #2d4a32;">
-            <div style="width:40px;height:40px;border-radius:12px;background:#1a2e1f;border:2px dashed #2d4a32;display:flex;align-items:center;justify-content:center;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b8f71" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </div>
-            <div style="font-size:13px;color:#6b8f71;">Нэгдэх боломжтой</div>
-            <button onclick="showSheet('invite-sheet')" style="margin-left:auto;padding:6px 14px;background:#2d6a4f;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Урих</button>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);opacity:.75;">
+            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">3</span>
+            <div class="av empty" style="position:static;margin:0;width:38px;height:38px;"></div>
+            <div style="flex:1;font-size:13px;color:var(--muted);">Нэгдэх боломжтой</div>
+            <button onclick="showSheet('invite-sheet')" style="padding:7px 16px;background:var(--navy-600);border:1px solid #2f7de166;border-radius:9px;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">+ Урих</button>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1.5px dashed #2d4a32;">
-            <div style="width:40px;height:40px;border-radius:12px;background:#1a2e1f;border:2px dashed #2d4a32;display:flex;align-items:center;justify-content:center;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b8f71" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </div>
-            <div style="font-size:13px;color:#6b8f71;">Нэгдэх боломжтой</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;opacity:.75;">
+            <span style="font-size:12px;font-weight:900;color:var(--muted);width:16px;">4</span>
+            <div class="av empty" style="position:static;margin:0;width:38px;height:38px;"></div>
+            <div style="flex:1;font-size:13px;color:var(--muted);">Нэгдэх боломжтой</div>
           </div>
         </div>
       </div>
 
-      <!-- Actions -->
-      <div style="display:flex;gap:10px;">
-        <button style="flex:1;padding:14px;background:var(--bg-card);border:1.5px solid #52b788;border-radius:14px;color:#52b788;font-size:14px;font-weight:700;cursor:pointer;transition:all .1s;" ontouchstart="this.style.transform='scale(.97)'" ontouchend="this.style.transform=''">
-          ✅ Нэгдэх
-        </button>
-        <button style="width:48px;height:48px;background:var(--bg-card);border:1.5px solid #2d4a32;border-radius:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="showSheet('share-sheet')">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        </button>
-      </div>
+      <button class="btn-gold">✅ ТОГЛОЛТОД НЭГДЭХ</button>
+      <button class="btn-line">Хуваалцах</button>
     </div>
   </div>
 
-  <!-- ===== SCREEN: PROFILE ===== -->
-  <div id="screen-profile" class="screen" style="height:calc(844px - 44px - 64px); overflow-y:auto;">
+  <!-- ================= PROFILE ================= -->
+  <div id="screen-profile" class="screen">
 
-    <div style="padding:16px 20px 8px; display:flex; align-items:center; gap:12px;">
-      <button onclick="navigate('home')" style="width:36px;height:36px;border-radius:10px;background:var(--bg-card);border:1px solid #2d4a32;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <div style="font-size:18px;font-weight:800;color:#d8f3dc;">Профайл</div>
+    <!-- Banner header with overlapping avatar -->
+    <div style="position:relative;height:150px;" class="bg-course-2">
+      <svg class="course-art" viewBox="0 0 390 150" preserveAspectRatio="xMidYMax slice">
+        <ellipse cx="300" cy="160" rx="240" ry="60" fill="#1d6a7a" opacity=".4"/>
+        <ellipse cx="90" cy="170" rx="200" ry="55" fill="#16305a" opacity=".6"/>
+        <circle cx="330" cy="40" r="18" fill="#fff8e1" opacity=".6"/>
+      </svg>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,#060d1af0 95%);"></div>
+      <div style="position:absolute;top:12px;left:16px;">
+        <div class="icon-btn" style="background:#060d1aa8;backdrop-filter:blur(8px);border-color:#ffffff22;" onclick="navigate('home')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </div>
+      </div>
     </div>
 
-    <div style="padding:8px 20px 24px; display:flex; flex-direction:column; gap:20px;">
-
-      <!-- Avatar section -->
-      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:24px 0 8px;">
-        <div style="position:relative;">
-          <div style="width:88px;height:88px;border-radius:24px;background:linear-gradient(135deg,#2d6a4f,#52b788);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:#fff;border:3px solid #52b788;">Б</div>
-          <div style="position:absolute;bottom:-4px;right:-4px;width:28px;height:28px;background:#2d6a4f;border-radius:8px;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base);cursor:pointer;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:20px;font-weight:800;color:#d8f3dc;">Бат-Эрдэнэ</div>
-          <div style="font-size:13px;color:#6b8f71;">@bat_erdene · Клуб гишүүн</div>
-        </div>
-        <div style="display:flex;gap:24px;">
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:#52b788;">47</div>
-            <div style="font-size:11px;color:#6b8f71;">Тоглолт</div>
-          </div>
-          <div style="width:1px;background:#2d4a32;"></div>
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:#52b788;">12</div>
-            <div style="font-size:11px;color:#6b8f71;">Дагагч</div>
-          </div>
-          <div style="width:1px;background:#2d4a32;"></div>
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:#52b788;">8</div>
-            <div style="font-size:11px;color:#6b8f71;">Дагасан</div>
-          </div>
+    <div style="padding:0 18px 30px;margin-top:-44px;position:relative;z-index:10;">
+      <div style="display:flex;align-items:flex-end;gap:14px;margin-bottom:18px;">
+        <div style="width:88px;height:88px;border-radius:24px;background:linear-gradient(135deg,var(--navy-600),var(--blue));display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;color:#fff;border:3px solid var(--gold);box-shadow:0 8px 28px #0009;">Б</div>
+        <div style="padding-bottom:6px;">
+          <div style="font-size:20px;font-weight:900;">Бат-Эрдэнэ</div>
+          <div style="font-size:12.5px;color:var(--muted);font-weight:600;">@bat_erdene · <span style="color:var(--gold-soft);">★ Клуб гишүүн</span></div>
         </div>
       </div>
 
-      <!-- Info fields -->
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div class="section-label">Мэдээлэл засах</div>
+      <!-- Stats row (tour stats style) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:22px;">
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
+          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">47</div>
+          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ТОГЛОЛТ</div>
+        </div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
+          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">12</div>
+          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ДАГАГЧ</div>
+        </div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;">
+          <div style="font-size:21px;font-weight:900;color:var(--gold-soft);">8</div>
+          <div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:1px;margin-top:2px;">ДАГАСАН</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px;">
+        <div class="label">Мэдээлэл</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <div>
-            <div style="font-size:11px;color:#6b8f71;margin-bottom:4px;font-weight:600;">ОВОГ</div>
-            <input class="input-mobile" value="Бат" style="font-size:15px;"/>
-          </div>
-          <div>
-            <div style="font-size:11px;color:#6b8f71;margin-bottom:4px;font-weight:600;">НЭР</div>
-            <input class="input-mobile" value="Эрдэнэ" style="font-size:15px;"/>
-          </div>
+          <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ОВОГ</div><input class="inp" value="Бат"/></div>
+          <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">НЭР</div><input class="inp" value="Эрдэнэ"/></div>
         </div>
-        <div>
-          <div style="font-size:11px;color:#6b8f71;margin-bottom:4px;font-weight:600;">ХЭРЭГЛЭГЧИЙН НЭР</div>
-          <input class="input-mobile" value="bat_erdene" style="font-size:15px;"/>
-        </div>
-        <div>
-          <div style="font-size:11px;color:#6b8f71;margin-bottom:4px;font-weight:600;">УТАС</div>
-          <input class="input-mobile" value="99119911" style="font-size:15px;"/>
-        </div>
+        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">ХЭРЭГЛЭГЧИЙН НЭР</div><input class="inp" value="bat_erdene"/></div>
+        <div><div style="font-size:10px;color:var(--muted);font-weight:800;letter-spacing:1px;margin-bottom:5px;">УТАС</div><input class="inp" value="99119911"/></div>
+        <button class="btn-gold" style="margin-top:6px;">ХАДГАЛАХ</button>
+        <button class="btn-line" style="color:var(--red);border-color:#e74c3c33;">Гарах</button>
       </div>
-
-      <button class="btn-primary-mobile">Хадгалах</button>
-
-      <button style="width:100%;padding:14px;background:transparent;border:1.5px solid #3a1a1a;border-radius:14px;color:#ef4444;font-size:14px;font-weight:600;cursor:pointer;">Гарах</button>
     </div>
   </div>
 
-  <!-- ===== BOTTOM NAVIGATION ===== -->
-  <div style="position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--bg-card);border-top:1px solid #2d4a32;display:flex;align-items:center;z-index:50;padding:0 4px;">
-    <button class="bottom-nav-item active" id="nav-home" onclick="navigate('home')">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#52b788" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+  <!-- ================= BOTTOM NAV ================= -->
+  <div class="bnav">
+    <button id="nav-home" class="on" onclick="navigate('home')">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       <span>Нүүр</span>
     </button>
-    <button class="bottom-nav-item" id="nav-create" onclick="navigate('create')">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6b8f71" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      <span>Үүсгэх</span>
+    <button id="nav-games" onclick="navigate('game')">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <span>Тоглолт</span>
     </button>
-    <button class="bottom-nav-item" id="nav-profile" onclick="navigate('profile')">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6b8f71" stroke-width="2.2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <button class="fab" onclick="navigate('create')">
+      <div><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1303" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+    </button>
+    <button id="nav-notif" onclick="showSheet('notif-sheet')">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span>Мэдэгдэл</span>
+    </button>
+    <button id="nav-profile" onclick="navigate('profile')">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span>Профайл</span>
     </button>
   </div>
 
-  <!-- ===== SHEET: TEE TIME ===== -->
-  <div class="sheet-overlay" id="tee-sheet" style="display:none;" onclick="hideSheet('tee-sheet', event)">
+  <!-- ================= SHEET: TEE TIME ================= -->
+  <div class="sheet-overlay" id="tee-sheet" onclick="hideSheet('tee-sheet', event)">
     <div class="sheet" onclick="event.stopPropagation()">
-      <div class="sheet-handle"></div>
-      <div style="padding:8px 20px 0; display:flex; align-items:center; justify-content:space-between;">
-        <div style="font-size:16px;font-weight:800;color:#d8f3dc;">Цаг сонгох</div>
-        <button onclick="hideSheet('tee-sheet')" style="width:28px;height:28px;border-radius:8px;background:#2d4a32;border:none;color:#d8f3dc;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+      <div class="handle"></div>
+      <div style="padding:8px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:16px;font-weight:900;">Цаг сонгох</div>
+        <button onclick="hideSheet('tee-sheet')" style="width:28px;height:28px;border-radius:9px;background:var(--line);border:none;color:#fff;font-size:14px;cursor:pointer;">✕</button>
       </div>
-      <div style="padding:16px 20px;">
-        <!-- AM group -->
-        <div style="margin-bottom:16px;">
-          <div class="section-label">🌅 Үдээс өмнө</div>
+      <div style="padding:16px 20px 28px;">
+        <div style="margin-bottom:18px;">
+          <div class="label">🌅 Үдээс өмнө</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <div class="tee-chip" onclick="selectTee(this)">07:00<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T1 · 45K₮</div></div>
-            <div class="tee-chip" onclick="selectTee(this)">07:10<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T1 · 45K₮</div></div>
-            <div class="tee-chip selected" onclick="selectTee(this)">07:20<div style="font-size:10px;color:#52b78899;font-weight:400;margin-top:2px;">T1 · 45K₮</div></div>
-            <div class="tee-chip" onclick="selectTee(this)">08:00<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T2 · 42K₮</div></div>
-            <div class="tee-chip" onclick="selectTee(this)">09:30<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T1 · 48K₮</div></div>
-            <div class="tee-chip" style="opacity:.4;cursor:not-allowed;">10:00<div style="font-size:10px;font-weight:400;margin-top:2px;">Дүүрсэн</div></div>
+            <div class="chip" onclick="pick(this)">07:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 45K</div></div>
+            <div class="chip on" onclick="pick(this)">07:20<div style="font-size:10px;font-weight:600;margin-top:2px;opacity:.8;">T1 · 45K</div></div>
+            <div class="chip" onclick="pick(this)">08:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 42K</div></div>
+            <div class="chip" onclick="pick(this)">09:30<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 48K</div></div>
+            <div class="chip" style="opacity:.35;cursor:not-allowed;">10:00<div style="font-size:10px;font-weight:600;margin-top:2px;">Дүүрсэн</div></div>
+            <div class="chip" onclick="pick(this)">11:10<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 45K</div></div>
           </div>
         </div>
-        <!-- PM group -->
         <div>
-          <div class="section-label">🌇 Үдээс хойш</div>
+          <div class="label">🌇 Үдээс хойш</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <div class="tee-chip" onclick="selectTee(this)">13:00<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T1 · 38K₮</div></div>
-            <div class="tee-chip" onclick="selectTee(this)">14:00<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T2 · 38K₮</div></div>
-            <div class="tee-chip" onclick="selectTee(this)">15:30<div style="font-size:10px;color:#6b8f71;font-weight:400;margin-top:2px;">T1 · 35K₮</div></div>
+            <div class="chip" onclick="pick(this)">13:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 38K</div></div>
+            <div class="chip" onclick="pick(this)">14:00<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T2 · 38K</div></div>
+            <div class="chip" onclick="pick(this)">15:30<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">T1 · 35K</div></div>
           </div>
         </div>
-        <button class="btn-primary-mobile" style="margin-top:20px;" onclick="hideSheet('tee-sheet')">✅ Сонгох · 07:20 T1</button>
+        <button class="btn-gold" style="margin-top:20px;" onclick="hideSheet('tee-sheet')">✅ СОНГОХ · 07:20 T1</button>
       </div>
     </div>
   </div>
 
-  <!-- ===== SHEET: NOTIFICATIONS ===== -->
-  <div class="sheet-overlay" id="notif-sheet" style="display:none;" onclick="hideSheet('notif-sheet', event)">
+  <!-- ================= SHEET: NOTIFICATIONS ================= -->
+  <div class="sheet-overlay" id="notif-sheet" onclick="hideSheet('notif-sheet', event)">
     <div class="sheet" onclick="event.stopPropagation()">
-      <div class="sheet-handle"></div>
-      <div style="padding:8px 20px 16px; display:flex; align-items:center; justify-content:space-between;">
-        <div style="font-size:16px;font-weight:800;color:#d8f3dc;">Мэдэгдэл</div>
-        <button onclick="hideSheet('notif-sheet')" style="width:28px;height:28px;border-radius:8px;background:#2d4a32;border:none;color:#d8f3dc;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+      <div class="handle"></div>
+      <div style="padding:8px 20px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:16px;font-weight:900;">Мэдэгдэл</div>
+        <button onclick="hideSheet('notif-sheet')" style="width:28px;height:28px;border-radius:9px;background:var(--line);border:none;color:#fff;font-size:14px;cursor:pointer;">✕</button>
       </div>
-      <div style="padding:0 20px 24px; display:flex; flex-direction:column; gap:8px;">
-        <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1px solid #52b78833;">
-          <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#1a5c40,#74c69d);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">Д</div>
+      <div style="padding:0 20px 28px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:12px;padding:13px 14px;background:var(--card);border:1px solid #2f7de144;border-radius:14px;">
+          <div class="av" style="position:static;margin:0;width:40px;height:40px;font-size:15px;background:linear-gradient(135deg,#3d1d56,#9b59b6);border:none;flex-shrink:0;">Д</div>
           <div style="flex:1;">
-            <div style="font-size:13px;font-weight:700;color:#d8f3dc;">Дорж таныг тоглолтод урьлаа!</div>
-            <div style="font-size:11px;color:#6b8f71;margin-top:2px;">6-р сарын 12 · 10:00 · MT Bogd</div>
-            <div style="display:flex;gap:6px;margin-top:8px;">
-              <button style="padding:5px 14px;background:#2d6a4f;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Нэгдэх</button>
-              <button style="padding:5px 14px;background:#2d4a32;border:none;border-radius:8px;color:#6b8f71;font-size:12px;cursor:pointer;">Татгалзах</button>
+            <div style="font-size:13px;font-weight:800;">Дорж таныг тоглолтод урьлаа!</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">6.12 · 10:00 · MT Bogd</div>
+            <div style="display:flex;gap:6px;margin-top:9px;">
+              <button style="padding:6px 16px;background:var(--gold);border:none;border-radius:8px;color:#1a1303;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">Нэгдэх</button>
+              <button style="padding:6px 16px;background:var(--line);border:none;border-radius:8px;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Татгалзах</button>
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--bg-card);border-radius:14px;border:1px solid #2d4a32;opacity:.7;">
-          <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#3a5a25,#8bc34a);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">Э</div>
+        <div style="display:flex;gap:12px;padding:13px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;opacity:.7;">
+          <div class="av" style="position:static;margin:0;width:40px;height:40px;font-size:15px;background:linear-gradient(135deg,#1d5a40,#2ecc71);border:none;flex-shrink:0;">Э</div>
           <div>
-            <div style="font-size:13px;font-weight:700;color:#d8f3dc;">Энхбаяр тоглолтод нэгдлээ!</div>
-            <div style="font-size:11px;color:#6b8f71;margin-top:2px;">Өнөөдөр 10:00 · MT Bogd</div>
+            <div style="font-size:13px;font-weight:800;">Энхбаяр тоглолтод нэгдлээ!</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Өнөөдөр 10:00 · MT Bogd</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ===== SHEET: INVITE ===== -->
-  <div class="sheet-overlay" id="invite-sheet" style="display:none;" onclick="hideSheet('invite-sheet', event)">
+  <!-- ================= SHEET: INVITE ================= -->
+  <div class="sheet-overlay" id="invite-sheet" onclick="hideSheet('invite-sheet', event)">
     <div class="sheet" onclick="event.stopPropagation()">
-      <div class="sheet-handle"></div>
-      <div style="padding:8px 20px 12px;">
-        <div style="font-size:16px;font-weight:800;color:#d8f3dc;margin-bottom:12px;">Тоглогч урих</div>
-        <input class="input-mobile" placeholder="Нэрээр хайх..." style="margin-bottom:12px;"/>
-        <div class="section-label">Дагаж буй хүмүүс</div>
-        <div style="display:flex;flex-direction:column;gap:6px;padding-bottom:8px;">
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-card2);border-radius:12px;cursor:pointer;" onclick="this.style.background='#2d6a4f'">
-            <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2d6a4f,#52b788);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;">Д</div>
-            <div><div style="font-size:14px;font-weight:600;color:#d8f3dc;">Дорж</div><div style="font-size:11px;color:#52b788;">Дагаж байна</div></div>
+      <div class="handle"></div>
+      <div style="padding:8px 20px 28px;">
+        <div style="font-size:16px;font-weight:900;margin-bottom:12px;">Тоглогч урих</div>
+        <input class="inp" placeholder="Нэрээр хайх..." style="margin-bottom:14px;"/>
+        <div class="label">Дагаж буй</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
+            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#3d1d56,#9b59b6);border:none;">Д</div>
+            <div><div style="font-size:14px;font-weight:700;">Дорж</div><div style="font-size:11px;color:var(--blue-soft);">Дагаж байна</div></div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-card2);border-radius:12px;cursor:pointer;">
-            <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1a5c40,#74c69d);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;">М</div>
-            <div><div style="font-size:14px;font-weight:600;color:#d8f3dc;">Мөнхбаяр</div><div style="font-size:11px;color:#52b788;">Дагаж байна</div></div>
-          </div>
-        </div>
-        <div class="section-label">Бусад</div>
-        <div style="display:flex;flex-direction:column;gap:6px;padding-bottom:16px;">
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-card2);border-radius:12px;cursor:pointer;">
-            <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3a3a1a,#8b8b2a);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;">Г</div>
-            <div><div style="font-size:14px;font-weight:600;color:#d8f3dc;">Ганбаатар</div><div style="font-size:11px;color:#6b8f71;">Бусад</div></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
+            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#1d4456,#3498db);border:none;">М</div>
+            <div><div style="font-size:14px;font-weight:700;">Мөнхбаяр</div><div style="font-size:11px;color:var(--blue-soft);">Дагаж байна</div></div>
           </div>
         </div>
-        <button class="btn-primary-mobile">Урилга илгээх</button>
+        <div class="label">Бусад</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--card-2);border-radius:12px;cursor:pointer;">
+            <div class="av" style="position:static;margin:0;width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#5a3016,#e67e22);border:none;">Г</div>
+            <div><div style="font-size:14px;font-weight:700;">Ганбаатар</div><div style="font-size:11px;color:var(--muted);">Бусад</div></div>
+          </div>
+        </div>
+        <button class="btn-gold">УРИЛГА ИЛГЭЭХ</button>
       </div>
     </div>
   </div>
 
-  <!-- ===== SHEET: SHARE ===== -->
-  <div class="sheet-overlay" id="share-sheet" style="display:none;" onclick="hideSheet('share-sheet', event)">
+  <!-- ================= SHEET: SHARE ================= -->
+  <div class="sheet-overlay" id="share-sheet" onclick="hideSheet('share-sheet', event)">
     <div class="sheet" onclick="event.stopPropagation()">
-      <div class="sheet-handle"></div>
-      <div style="padding:12px 20px 28px;">
-        <div style="font-size:16px;font-weight:800;color:#d8f3dc;margin-bottom:16px;">Хуваалцах</div>
-        <div style="display:flex;gap:16px;justify-content:center;">
+      <div class="handle"></div>
+      <div style="padding:12px 20px 32px;">
+        <div style="font-size:16px;font-weight:900;margin-bottom:18px;">Хуваалцах</div>
+        <div style="display:flex;gap:18px;justify-content:center;">
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
             <div style="width:56px;height:56px;border-radius:16px;background:#25D366;display:flex;align-items:center;justify-content:center;font-size:26px;">💬</div>
-            <span style="font-size:11px;color:#6b8f71;">WhatsApp</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">WhatsApp</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
-            <div style="width:56px;height:56px;border-radius:16px;background:#0088cc;display:flex;align-items:center;justify-content:center;font-size:26px;">✈️</div>
-            <span style="font-size:11px;color:#6b8f71;">Telegram</span>
+            <div style="width:56px;height:56px;border-radius:16px;background:#7360f2;display:flex;align-items:center;justify-content:center;font-size:26px;">📞</div>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">Viber</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
-            <div style="width:56px;height:56px;border-radius:16px;background:var(--bg-card);border:1px solid #2d4a32;display:flex;align-items:center;justify-content:center;">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d8f3dc" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <div style="width:56px;height:56px;border-radius:16px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#eef3fa" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </div>
-            <span style="font-size:11px;color:#6b8f71;">Хуулах</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">Хуулах</span>
           </div>
         </div>
       </div>
@@ -611,71 +694,45 @@
 
 </div>
 
-<!-- Screen selector (outside frame) -->
-<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:8px;background:#1a2e1f;border:1px solid #2d4a32;border-radius:20px;padding:6px 10px;z-index:100;">
-  <button onclick="navigate('home')" style="padding:6px 14px;border-radius:12px;background:transparent;border:none;color:#6b8f71;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" id="demo-home">🏠 Нүүр</button>
-  <button onclick="navigate('create')" style="padding:6px 14px;border-radius:12px;background:transparent;border:none;color:#6b8f71;font-size:12px;font-weight:600;cursor:pointer;" id="demo-create">➕ Үүсгэх</button>
-  <button onclick="navigate('game')" style="padding:6px 14px;border-radius:12px;background:transparent;border:none;color:#6b8f71;font-size:12px;font-weight:600;cursor:pointer;" id="demo-game">⛳ Тоглолт</button>
-  <button onclick="navigate('profile')" style="padding:6px 14px;border-radius:12px;background:transparent;border:none;color:#6b8f71;font-size:12px;font-weight:600;cursor:pointer;" id="demo-profile">👤 Профайл</button>
-  <button onclick="showSheet('tee-sheet')" style="padding:6px 14px;border-radius:12px;background:transparent;border:none;color:#6b8f71;font-size:12px;font-weight:600;cursor:pointer;">🕐 Цаг</button>
+<!-- Demo screen switcher -->
+<div class="demo-bar">
+  <button id="demo-home" class="on" onclick="navigate('home')">🏠 Нүүр</button>
+  <button id="demo-create" onclick="navigate('create')">➕ Үүсгэх</button>
+  <button id="demo-game" onclick="navigate('game')">⛳ Тоглолт</button>
+  <button id="demo-profile" onclick="navigate('profile')">👤 Профайл</button>
+  <button onclick="showSheet('tee-sheet')">🕐 Цаг</button>
 </div>
 
 <script>
-let currentScreen = 'home';
-
-function navigate(screen) {
-  const prev = document.getElementById('screen-' + currentScreen);
-  const next = document.getElementById('screen-' + screen);
+let cur = 'home';
+function navigate(s) {
+  document.getElementById('screen-' + cur)?.classList.remove('active');
+  const next = document.getElementById('screen-' + s);
   if (!next) return;
-  prev?.classList.remove('active');
   next.classList.add('active');
-  const forward = ['home','create','game','profile'].indexOf(screen) >= ['home','create','game','profile'].indexOf(currentScreen);
-  next.classList.remove('page-enter','page-back');
+  next.classList.remove('page-enter');
   void next.offsetWidth;
-  next.classList.add(forward ? 'page-enter' : 'page-back');
-  currentScreen = screen;
-
-  // Update bottom nav
-  document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
-  const navMap = {home:'nav-home', create:'nav-create', profile:'nav-profile'};
-  if (navMap[screen]) document.getElementById(navMap[screen])?.classList.add('active');
-
-  // Update demo buttons
-  document.querySelectorAll('[id^=demo-]').forEach(b => b.style.background = 'transparent');
-  const demoMap = {home:'demo-home', create:'demo-create', game:'demo-game', profile:'demo-profile'};
-  if (demoMap[screen]) {
-    const btn = document.getElementById(demoMap[screen]);
-    if (btn) btn.style.background = '#2d6a4f';
-  }
+  next.classList.add('page-enter');
+  cur = s;
+  document.querySelectorAll('.bnav button').forEach(b => b.classList.remove('on'));
+  ({home:'nav-home', game:'nav-games', profile:'nav-profile'})[s] &&
+    document.getElementById({home:'nav-home', game:'nav-games', profile:'nav-profile'}[s])?.classList.add('on');
+  document.querySelectorAll('.demo-bar button').forEach(b => b.classList.remove('on'));
+  document.getElementById('demo-' + s)?.classList.add('on');
 }
-
-function showSheet(id) {
-  const s = document.getElementById(id);
-  if (s) { s.style.display = 'flex'; void s.offsetWidth; }
+function showSheet(id) { document.getElementById(id)?.classList.add('show'); }
+function hideSheet(id, e) {
+  if (e && e.target !== document.getElementById(id)) return;
+  document.getElementById(id)?.classList.remove('show');
 }
-
-function hideSheet(id, event) {
-  if (event && event.target !== document.getElementById(id)) return;
-  const s = document.getElementById(id);
-  if (s) s.style.display = 'none';
-}
-
 function setTab(el) {
-  document.querySelectorAll('.tab-pill').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
+  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
 }
-
-function selectTee(el) {
-  el.closest('.sheet, #screen-create').querySelectorAll('.tee-chip').forEach(c => {
-    if (c.closest('.sheet') === el.closest('.sheet') || c.closest('#screen-create') === el.closest('#screen-create')) {
-      if (c.parentElement === el.parentElement) c.classList.remove('selected');
-    }
-  });
-  el.classList.add('selected');
+function pick(el) {
+  el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
 }
-
-// Init demo button highlight
-document.getElementById('demo-home').style.background = '#2d6a4f';
 </script>
 </body>
 </html>
