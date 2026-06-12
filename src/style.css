@@ -229,6 +229,30 @@ body.has-bnav #main-content { padding-bottom: calc(var(--bnav-height) + 24px); }
 .chip:active { transform: scale(0.95); }
 .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 
+/* Visibility / radio cards (prototype "Харагдах байдал") */
+.vis-card {
+  display: flex; align-items: center; gap: 11px; padding: 13px 15px;
+  background: #fff; border: 1.5px solid #dedede; border-radius: 12px;
+  cursor: pointer; transition: border-color 0.15s; position: relative;
+}
+.vis-card input { position: absolute; opacity: 0; pointer-events: none; }
+.vis-card.disabled { opacity: 0.45; cursor: not-allowed; }
+.vis-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cfcfcf; flex-shrink: 0; position: relative; transition: all 0.15s; }
+.vis-card.on { border-color: var(--ink); }
+.vis-card.on .vis-dot { background: var(--ink); border-color: var(--ink); }
+.vis-card.on .vis-dot::after { content: ''; position: absolute; inset: 4.5px; border-radius: 50%; background: #fff; }
+.vis-title { font-size: 0.88rem; font-weight: 700; color: var(--ink); text-transform: none; letter-spacing: normal; }
+.vis-sub { font-size: 0.7rem; color: var(--muted); margin-top: 1px; text-transform: none; letter-spacing: normal; }
+
+/* Dashed action button (prototype "Цаг сонгох...") */
+.btn-dashed {
+  width: 100%; padding: 14px; background: #fff; border: 1.5px dashed #bbb;
+  border-radius: 13px; color: var(--ink); font-size: 0.9rem; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  gap: 8px; font-family: inherit; transition: border-color 0.15s;
+}
+.btn-dashed:hover { border-color: var(--ink); }
+
 /* ====== Stepper ====== */
 .stepper { display: flex; align-items: center; gap: 0; }
 .stepper input {

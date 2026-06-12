@@ -21,7 +21,7 @@
   - Design reference: `prototype.html` in repo root — open in browser to see the approved design.
   - Style: minimal black/white theme (PGA Tour app inspired), Inter font, full-bleed hero banner on Home, underline tabs, bottom navigation bar + blue circular FAB for create, bottom sheets instead of modals, page transition animations.
   - Approach: rewrite UI layer only (HTML templates in `src/app.js` render functions + `src/styles.css`). Do NOT touch `src/store.js`, Firebase logic, routing, or `src/booking.js`.
-  - Screen order: 1) base styles + bottom nav/FAB ✅ (done 2026-06-11), 2) Home (hero banner, underline tabs, game list rows with circular course thumbs) ✅ (done 2026-06-12), 3) Create game (chip selectors, tee-time bottom sheet), 4) Game detail (banner header, numbered player list), 5) Profile (centered avatar, stats row, form).
+  - Screen order: 1) base styles + bottom nav/FAB ✅ (done 2026-06-11), 2) Home (hero banner, underline tabs, game list rows with circular course thumbs) ✅ (done 2026-06-12), 3) Create game (chip selectors, tee-time bottom sheet) ✅ (done 2026-06-12), 4) Game detail (banner header, numbered player list), 5) Profile (centered avatar, stats row, form).
   - After each screen: `npm run build`, show user before continuing.
 
 ## Done

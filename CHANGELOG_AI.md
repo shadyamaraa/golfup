@@ -2,6 +2,21 @@
 
 ## 2026-06-12
 
+### Mobile redesign step 3: create-game screen per prototype — `src/app.js`, `src/style.css`
+
+`renderCreateGame` markup restyled to the prototype; submit/validation/booking
+logic and all element IDs untouched. Location `<select>` is now hidden behind
+two chips that set its value and dispatch `change` (so the MTBogd section
+toggle keeps working). Page gets a back-circle + title header; date/hour/min
+in a prototype grid; Нүх 9/18 as chips; tee-time picker opens as a bottom
+sheet (`.sheet-overlay`/`.sheet` with handle) instead of a centered popup,
+with slot times/tees as chips; visibility radios became `.vis-card` rows
+(custom dot, ink border on select, `syncVisCards` replaces inline
+border-color juggling); payment radios, invite chips, and selected-slot box
+restyled light; submit is a full-width `.btn-main` "⛳ Тоглолт үүсгэх" with a
+`.btn-line` cancel under it. New CSS: `.vis-card`/`.vis-dot`/`.vis-title`,
+`.btn-dashed`.
+
 ### Mobile redesign step 2: Home screen per prototype — `src/app.js`, `src/style.css`, `src/i18n.js`
 
 Home now matches `prototype.html`: full-bleed sunrise hero banner (SVG art,

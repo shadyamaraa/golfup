@@ -729,48 +729,51 @@ async function renderCreateGame() {
 
   main().innerHTML = `
     <div class="create-container fade-in">
-      <a href="#/" class="back-link" id="back-link">← ${t('back')}</a>
-      <div class="create-card glass-card">
-        <h2 class="card-title">${t('createGame')}</h2>
-        <form id="create-form" class="create-form">
+      <div style="display:flex;align-items:center;gap:12px;padding:4px 0 16px;">
+        <a href="#/" id="back-link" style="width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <div style="font-size:1.2rem;font-weight:800;letter-spacing:-0.3px;">${t('createGame')}</div>
+      </div>
+      <form id="create-form" class="create-form">
           <div class="input-group">
-            <label for="game-date">${t('date')}</label>
-            <input type="date" id="game-date" required min="${today}" value="${today}" />
-          </div>
-          <div class="input-group">
-            <label for="game-time">${t('time')}</label>
-            <div style="display: flex; gap: 10px;">
-              <select id="game-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-              <select id="game-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="input-group">
-            <label for="game-location">${t('location')}</label>
-            <select id="game-location" required style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
+            <div class="label" style="margin-bottom:0;">${t('location')}</div>
+            <select id="game-location" required class="hidden">
               <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
               <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
             </select>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="location-chips">
+              <div class="chip on" data-loc="Sky Resort Golf Club">⛳ Sky Resort</div>
+              <div class="chip" data-loc="Chinggis Khaan Golf Course">Chinggis Khaan</div>
+            </div>
+          </div>
+          <div class="input-group">
+            <div class="label" style="margin-bottom:0;">${t('date')} · ${t('time')}</div>
+            <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:8px;">
+              <input type="date" id="game-date" class="inp" required min="${today}" value="${today}" style="font-size:0.88rem;" />
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <select id="game-hour" required class="inp" style="font-size:0.88rem;padding:13px 10px;">
+                  ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                </select>
+                <select id="game-minute" required class="inp" style="font-size:0.88rem;padding:13px 10px;">
+                  ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
+                </select>
+              </div>
+            </div>
           </div>
           <div class="input-group" id="mtbogd-section" style="display:none;">
-            <label>⛳ ${t('bookTeetime')}</label>
-            <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" id="holes-9-btn" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
-                  <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
-                </div>
+            <div class="label" style="margin-bottom:0;">⛳ ${t('bookTeetime')}</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:stretch;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <button type="button" id="holes-9-btn" class="chip" style="min-width:48px;">9</button>
+                <button type="button" id="holes-18-btn" class="chip on" style="min-width:48px;">18</button>
               </div>
-              <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
+              <button type="button" id="fetch-teetimes-btn" class="btn-dashed">🕐 ${t('bookViewSlots')}</button>
             </div>
             <div id="selected-slot-display"></div>
           </div>
           <div class="input-group">
-            <label for="game-group-size">${t('groupSize')}</label>
+            <div class="label" style="margin-bottom:0;">${t('groupSize')}</div>
             <div class="stepper">
               <button type="button" class="stepper-btn" id="size-minus">−</button>
               <input type="number" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}" min="${APP_CONFIG.minGroupSize}" max="${APP_CONFIG.maxGroupSize}" readonly />
@@ -778,43 +781,50 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
-            <label for="game-desc">${t('description')}</label>
-            <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
+            <div class="label" style="margin-bottom:0;">${t('description')}</div>
+            <textarea id="game-desc" class="inp" placeholder="${t('descriptionPlaceholder')}" rows="2" style="resize:vertical;"></textarea>
           </div>
           <div class="input-group">
-            <label>${t('gameVisibility')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+            <div class="label" style="margin-bottom:0;">${t('gameVisibility')}</div>
+            <div style="display:flex;flex-direction:column;gap:7px;">
+              <label class="vis-card on" id="vis-public-label">
+                <input type="radio" name="visibility" value="public" checked>
+                <span class="vis-dot"></span>
+                <span><span class="vis-title">🌐 ${t('gamePublic')}</span></span>
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
-                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+              <label class="vis-card ${myCommunities.length === 0 ? 'disabled' : ''}" id="vis-my-circles-label">
+                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''}>
+                <span class="vis-dot"></span>
+                <span><span class="vis-title">◎ ${t('gameMyCircles')}</span></span>
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
-                <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
+              <label class="vis-card ${myCommunities.length === 0 ? 'disabled' : ''}" id="vis-selected-circles-label">
+                <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''}>
+                <span class="vis-dot"></span>
+                <span><span class="vis-title">◉ ${t('gameSelectedCircles')}</span></span>
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
-                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
+              <label class="vis-card" id="vis-private-label">
+                <input type="radio" name="visibility" value="private">
+                <span class="vis-dot"></span>
+                <span><span class="vis-title">🔒 ${t('gamePrivate')}</span></span>
               </label>
             </div>
           </div>
           <div class="input-group" id="game-communities-wrap" style="display:none;">
-            <label>${t('gameCommunity')}</label>
-            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+            <div class="label" style="margin-bottom:0;">${t('gameCommunity')}</div>
+            <div style="background:#fff;border:1.5px solid #dedede;border-radius:12px;padding:12px 14px;">
               ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
           <div class="input-group">
-            <label>${t('invitePlayers')}</label>
-            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%;">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
+            <div class="label" style="margin-bottom:0;">${t('invitePlayers')}</div>
+            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn-line">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
           </div>
-          <div class="form-actions">
-            <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
-            <button type="submit" class="btn btn-primary" id="create-submit-btn">${t('create')}</button>
+          <div style="display:flex;flex-direction:column;gap:9px;margin-top:8px;">
+            <button type="submit" class="btn-main" id="create-submit-btn">⛳ ${t('createGame')}</button>
+            <a href="#/" class="btn-line" style="text-align:center;display:block;text-decoration:none;">${t('cancel')}</a>
           </div>
-        </form>
-      </div>
+      </form>
     </div>`;
 
   let selectedTeeSlot = null;
@@ -825,19 +835,23 @@ async function renderCreateGame() {
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
-    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
+    el.innerHTML = `<div style="margin-top:10px; padding:12px 15px; border-radius:12px; background:var(--soft); border:1.5px solid var(--ink); font-size:0.88rem; font-weight:600;">
       ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)} ${price ? `· ${price}` : ''}
-      <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
+      <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
     </div>
-    <div style="margin-top:8px;">
-      <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
-      <div style="display:flex; gap:10px;">
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+    <div style="margin-top:10px;">
+      <div class="label">Төлбөрийн арга</div>
+      <div style="display:flex; gap:8px;">
+        <label class="vis-card on" style="flex:1; padding:11px 13px;">
+          <input type="radio" name="create-payment" value="clubhouse" checked>
+          <span class="vis-dot"></span>
+          <span class="vis-title">🏌️ ${t('payClubhouse')}</span>
         </label>
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
-          <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
+        <label class="vis-card disabled" style="flex:1; padding:11px 13px; pointer-events:none;">
+          <input type="radio" name="create-payment" value="qpay" disabled>
+          <span class="vis-dot"></span>
+          <span class="vis-title">📱 ${t('payQpay')}</span>
+          <span style="margin-left:auto; font-size:0.62rem; font-weight:800; background:var(--soft); color:var(--muted); padding:3px 7px; border-radius:5px; text-transform:uppercase;">${t('payComingSoon')}</span>
         </label>
       </div>
     </div>`;
@@ -868,17 +882,16 @@ async function renderCreateGame() {
 
   async function openTeeTimePopup() {
     const overlay = document.createElement('div');
-    overlay.className = 'popup-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.className = 'sheet-overlay popup-overlay';
     const modal = document.createElement('div');
-    modal.className = 'glass-card fade-in';
-    modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
+    modal.className = 'sheet';
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;">⛳ ${t('bookViewSlots')}</h3>
-        <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+      <div class="handle"></div>
+      <div style="padding:8px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:1.05rem;font-weight:800;">🕐 ${t('bookViewSlots')}</div>
+        <button type="button" id="ttp-close" style="width:28px;height:28px;border-radius:50%;background:var(--soft);border:none;color:#111;font-size:0.8rem;cursor:pointer;">✕</button>
       </div>
-      <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
+      <div id="ttp-slots" style="padding:16px 20px 28px;"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     modal.querySelector('#ttp-close').onclick = () => overlay.remove();
@@ -913,28 +926,28 @@ async function renderCreateGame() {
       function sectionHtml(key, label, arr) {
         if (arr.length === 0) return '';
         const times = timesOf(arr);
-        const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
+        const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;">${
           times.map(time => {
             const tees = arr.filter(s => s.time === time);
             const isOpen = openTime === key + '|' + time;
             const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
               tees.map(s => {
-                const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
+                const price = s.price ? ` · ₮${(s.price / 1000).toFixed(0)}K` : '';
                 const sel = selectedTeeSlot?.slotId === s.slotId;
-                return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
+                return `<button type="button" class="ttp-tee chip ${sel ? 'on' : ''}" data-slot='${JSON.stringify(s)}' style="font-size:0.78rem;padding:8px 14px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
               }).join('')
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
-              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+              <button type="button" class="ttp-time chip ${isOpen ? 'on' : ''}" data-key="${key}" data-time="${time}" style="width:100%;">
                 ${time}
               </button>${teeRow}
             </div>`;
           }).join('')
         }</div>` : '';
-        return `<div style="margin-bottom:10px;">
-          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
-            <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${times.length})</span></span>
-            <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
+        return `<div style="margin-bottom:16px;">
+          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:0 0 4px;border:none;background:none;cursor:pointer;">
+            <span class="label" style="margin-bottom:0;">${label} <span style="font-weight:600;letter-spacing:0;">(${times.length})</span></span>
+            <span style="color:var(--muted);font-size:0.75rem;">${secOpen[key] ? '▲' : '▼'}</span>
           </button>${body}
         </div>`;
       }
@@ -975,6 +988,15 @@ async function renderCreateGame() {
   document.getElementById('game-location').addEventListener('change', () => {
     updateMtbogdSectionVisibility();
   });
+  document.querySelectorAll('#location-chips .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#location-chips .chip').forEach(c => c.classList.remove('on'));
+      chip.classList.add('on');
+      const sel = document.getElementById('game-location');
+      sel.value = chip.dataset.loc;
+      sel.dispatchEvent(new Event('change'));
+    });
+  });
   updateMtbogdSectionVisibility();
 
   document.getElementById('game-date').addEventListener('change', () => {
@@ -985,14 +1007,14 @@ async function renderCreateGame() {
 
   document.getElementById('holes-9-btn')?.addEventListener('click', () => {
     teeHoles = 9;
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
+    document.getElementById('holes-9-btn').classList.add('on');
+    document.getElementById('holes-18-btn').classList.remove('on');
     prefetchTeeTimes();
   });
   document.getElementById('holes-18-btn')?.addEventListener('click', () => {
     teeHoles = 18;
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
+    document.getElementById('holes-18-btn').classList.add('on');
+    document.getElementById('holes-9-btn').classList.remove('on');
     prefetchTeeTimes();
   });
 
@@ -1007,17 +1029,18 @@ async function renderCreateGame() {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
     prefetchTeeTimes();
   });
-  document.querySelectorAll('input[name="visibility"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const visibility = document.querySelector('input[name="visibility"]:checked').value;
-      document.getElementById('vis-public-label').style.borderColor = visibility === 'public' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-my-circles-label').style.borderColor = visibility === 'my-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-selected-circles-label').style.borderColor = visibility === 'selected-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-private-label').style.borderColor = visibility === 'private' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
+  const visLabelIds = { 'public': 'vis-public-label', 'my-circles': 'vis-my-circles-label', 'selected-circles': 'vis-selected-circles-label', 'private': 'vis-private-label' };
+  function syncVisCards() {
+    const visibility = document.querySelector('input[name="visibility"]:checked').value;
+    Object.entries(visLabelIds).forEach(([val, id]) => {
+      document.getElementById(id)?.classList.toggle('on', visibility === val);
     });
+    document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
+  }
+  document.querySelectorAll('input[name="visibility"]').forEach(radio => {
+    radio.addEventListener('change', syncVisCards);
   });
-  document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+  syncVisCards();
 
   function refreshInviteChips() {
     const container = document.getElementById('invite-chips-container');
@@ -1025,7 +1048,7 @@ async function renderCreateGame() {
     container.innerHTML = selectedInviteIds.map(id => {
       const u = availableById[id];
       const name = u ? displayUsername(u) : id;
-      return `<span style="background:rgba(255,255,255,0.1);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+      return `<span style="background:var(--ink);color:#fff;border-radius:16px;padding:6px 12px;font-size:0.8rem;font-weight:700;display:inline-flex;align-items:center;gap:5px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:#fff;opacity:0.7;font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
     }).join('');
     container.querySelectorAll('.rm-invite-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1099,7 +1122,7 @@ async function renderCreateGame() {
         showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
-        submitBtn.textContent = t('create');
+        submitBtn.textContent = '⛳ ' + t('createGame');
         submitBtn.disabled = false;
         return;
       }
