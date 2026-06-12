@@ -2073,23 +2073,32 @@ async function renderUsersList() {
 
   const openCircleIds = new Set();
 
-  function memberRow(u) {
+  function circleTags(u) {
+    const ids = userCommunityIds(u);
+    if (!ids.length) return '';
+    return `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;">${ids.map(id =>
+      `<span style="font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--accent-bg,#1e3a2a);color:var(--accent-color,#7ecba1);border:1px solid var(--accent-border,#2d5a3d);">${communityLabel(id)}</span>`
+    ).join('')}</div>`;
+  }
+
+  function memberRow(u, showCircles = false) {
     const isFollowing = !!currentUserFollows[u.id];
     const isFollower = currentUserFollowers.has(u.id);
     const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
     const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
     const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
     return `
-      <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;">
-        <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;">
+      <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;align-items:flex-start;">
+        <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;margin-top:2px;">
           <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
           ${followBtn(u.id)}
         </div>
         <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
           <span class="player-name">${displayUsername(u)}${tag}</span>
           <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (u.bankName || t('unknownBank'))}</span>
+          ${showCircles ? circleTags(u) : ''}
         </button>
-        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
+        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;margin-top:2px;">💳</button>` : ''}
       </div>`;
   }
 
@@ -2138,6 +2147,17 @@ async function renderUsersList() {
           if (unassigned.length === 0) return '';
           return circleSection({ id: '__none__', label: 'Тойрогт хамаарагдаагүй' }, unassigned, false);
         })()}
+
+        <!-- All players -->
+        <div class="glass-card" style="padding:0;overflow:hidden;margin-bottom:10px;">
+          <button class="circle-toggle-btn" data-circle="__all__" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;text-align:left;">
+            <span style="font-weight:700;">Бүх тоглогч <span style="font-weight:400;font-size:0.82rem;color:var(--text-secondary);">${sortedUsers.length} гишүүн</span></span>
+            <span class="circle-arrow" data-circle="__all__" style="transition:transform .2s;transform:rotate(0deg);">▾</span>
+          </button>
+          <div class="circle-members-wrap" data-circle="__all__" style="display:none;border-top:1px solid var(--border-color);padding:4px 0;">
+            ${sortedUsers.map(u => memberRow(u, true)).join('')}
+          </div>
+        </div>
       </div>
 
       <div style="margin-top:20px;text-align:center;">
@@ -2174,7 +2194,7 @@ async function renderUsersList() {
       searchResults.style.display = 'block';
       const matches = sortedUsers.filter(u => `${displayUsername(u)} ${displayFullName(u)}`.toLowerCase().includes(query));
       searchList.innerHTML = matches.length
-        ? matches.map(memberRow).join('')
+        ? matches.map(u => memberRow(u, true)).join('')
         : `<p style="padding:12px 18px;color:var(--text-secondary);">Олдсонгүй</p>`;
       attachRowListeners(searchList);
     });
