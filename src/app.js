@@ -1463,6 +1463,14 @@ async function handleDelete(game) {
       .filter(id => id && id !== currentUser.id)
   )];
 
+  if (game.bookingId) {
+    try {
+      await mtbogd.cancelBooking(game.bookingId);
+    } catch (err) {
+      showToast('MTBogd цуцлалт амжилтгүй: ' + err.message, 'warning');
+    }
+  }
+
   await store.deleteGame(game.id);
 
   if (joinedIds.length > 0) {

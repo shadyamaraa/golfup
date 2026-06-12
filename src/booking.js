@@ -38,9 +38,17 @@ export async function confirmBooking(holdId, customer, players, notes = '') {
 }
 
 export async function updateBookingPlayers(bookingId, players) {
-  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/players`, {
+  return checkOk(await fetch(`${BASE}/bookings/${bookingId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ players }),
+  }));
+}
+
+export async function cancelBooking(bookingId) {
+  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/cancel`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   }));
 }
