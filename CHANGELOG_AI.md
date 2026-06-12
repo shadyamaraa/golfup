@@ -2,6 +2,23 @@
 
 ## 2026-06-12
 
+### Mobile redesign step 4: game detail per prototype — `src/app.js`, `src/style.css`
+
+`renderGameView`/`renderGroupCard` markup restyled to the prototype; join/
+leave/delete/invite/booking/follow logic and live `onGameChanged` re-render
+untouched. Full-bleed banner header (260px hero art) with back circle and
+top-right circles for edit ✏️ / delete 🗑 (creator/admin) and share; banner
+title is "Өнөөдөр · 10:00"-style with location pill. Top header hidden on
+`#/game/` like home. Booking confirmation shows as a check-icon strip with
+the code (creator only). Groups render as `.sec-h` headings ("Групп N" +
+x/y бүртгэгдсэн + "+ Урих" creator button or count badge) over numbered crow
+rows: 42px avatar, name, role line (★ Зохион байгуулагч / Гишүүн · timeAgo),
+follow/bank/remove actions on the right; waiting list and invite statuses in
+the same style. Share button opens a bottom sheet with Viber and copy-link
+options (new `openShareSheet`, replacing the two inline buttons). Footer
+actions are full-width: `.btn-main` join, `.btn-line` leave/book/invite.
+New i18n: `shareTitle`, `roleOrganizer`, `roleMember`, `registered`.
+
 ### Mobile redesign step 3: create-game screen per prototype — `src/app.js`, `src/style.css`
 
 `renderCreateGame` markup restyled to the prototype; submit/validation/booking

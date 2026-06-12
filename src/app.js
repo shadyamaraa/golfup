@@ -227,10 +227,10 @@ function updateBottomChrome() {
   const fab = document.getElementById('fab-create');
   if (!nav || !fab) return;
 
-  // Home has a full-bleed hero (prototype style) — hide the top header there
+  // Home and game detail have full-bleed banners (prototype style) — hide the top header there
   const curHash = location.hash || '#/';
-  const isHome = curHash === '#/' || curHash === '#/home';
-  document.getElementById('app-header')?.classList.toggle('hidden', !!currentUser && isHome);
+  const hasBanner = curHash === '#/' || curHash === '#/home' || curHash.startsWith('#/game/');
+  document.getElementById('app-header')?.classList.toggle('hidden', !!currentUser && hasBanner);
 
   if (!currentUser) {
     nav.classList.add('hidden');
@@ -1248,75 +1248,90 @@ function renderGameView(game) {
     return { label: t('statusInvited'), color: '#2196f3' };
   }
 
+  const totalPlayers = countAllPlayers(game);
+  const totalSlots = game.groupSize * groups.length;
+  const canManage = isCreator || (currentUser && currentUser.role === 'admin');
+
   main().innerHTML = `
-    <div class="detail-container fade-in">
-      <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
-      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
-      
-      <div class="detail-header glass-card">
-        <div class="detail-header-top">
-          <span class="game-date-badge large">${dateStr}</span>
-          <div style="display:flex; gap: 8px;">
-            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">✏️ Edit</a>` : ''}
-            ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
+    <div class="fade-in">
+      <div class="hero-wrap">
+        <div class="hero-full" style="height:260px;">
+          ${heroArtSVG()}
+          <div class="hero-shade"></div>
+          <a class="hero-back" href="#/" id="back-link-detail">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </a>
+          <div class="hero-acts">
+            ${!isReadOnly && canManage ? `<a class="hero-act" href="#/edit/${game.id}" title="Edit">✏️</a>` : ''}
+            ${!isPast && canManage ? `<button class="hero-act" id="delete-game-btn" title="${t('delete')}">🗑</button>` : ''}
+            <button class="hero-act" id="share-btn" title="${t('shareTitle')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            </button>
+          </div>
+          <div class="hero-center" style="padding-top:40px;">
+            <div class="hero-h1" style="font-size:1.45rem;">${formatDayHeading(game.date).main} · ${game.time}</div>
+            <div class="hero-pill">${game.location}${game.isPrivate ? ' · 🔒' : ''}${gameCommunities.length > 0 ? ' · ◎ ' + communityAudienceLabel(gameCommunities) : ''}</div>
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
-        <div class="detail-meta">
-          <span>🕐 ${game.time}</span>
-          <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
-        </div>
-        <div class="detail-actions">
-          ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
-          ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
-          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
-          <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
-          <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
-        </div>
-        ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
-        ${isCreator && game.bookingCode ? `
-          <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">🏌️ ${t('bookCode')}</span>
-            <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
-          </div>` : ''}
-        ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
-          <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">✉️ ${t('manageInvites')} (${game.invitedIds.length})</span>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
-              ${game.invitedIds.map(uid => {
-                const u = allUsersMap[uid];
-                const name = u ? displayUsername(u) : uid;
-                const st = inviteStatusBadge(uid);
-                return `<span style="font-size:0.82rem;padding:3px 9px;border-radius:12px;background:${st.color}18;border:1px solid ${st.color}44;color:var(--text-primary);">${name} <span style="color:${st.color};font-weight:600;">${st.label}</span></span>`;
-              }).join('')}
-            </div>
-          </div>` : ''}
       </div>
-
-      ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
-
-      ${waitingList.length > 0 ? `
-        <div class="group-card glass-card waiting-card">
-          <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
-          <div class="player-list">
-            ${waitingList.map((p, idx) => {
-    const isFollowing = !!currentUserFollows[p.id];
-    const isFollower = currentUserFollowers.has(p.id);
-    const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
-    const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
-    const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
-    return `
-              <div class="player-row waiting${rowClass}">
-                <span class="player-order">${idx + 1}</span>
-                <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</span>
-                <span class="player-name">${displayUsername(allUsersMap[p.id] || p)}${tag}</span>
-                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
-              </div>`;
-  }).join('')}
+      <div class="detail-container" style="padding:0 20px 30px;">
+        ${isCreator && game.bookingCode ? `
+        <div class="booking-strip" style="margin:0 -20px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div>
+            <div style="font-size:0.85rem;font-weight:800;">${t('bookConfirmed')}</div>
+            <div style="font-size:0.73rem;color:var(--muted);margin-top:1px;">${t('bookCode')}: <b style="color:#111;font-family:monospace;letter-spacing:1px;">${game.bookingCode}</b></div>
           </div>
         </div>` : ''}
+        <div style="display:flex;gap:18px;padding:13px 0;border-bottom:1px solid var(--line);">
+          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">${dateStr}</div>
+          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">${t('createdBy')}<b style="color:var(--ink);font-weight:800;margin-left:4px;">${game.creatorName || '-'}</b></div>
+        </div>
+        ${isReadOnly ? `<p class="auto-group-hint" style="padding-top:10px;">ℹ️ ${t('pastGameNotice')}</p>` : ''}
+        ${game.description ? `<div class="game-description" style="margin-top:14px;"><span class="desc-label">📋 ${t('description')}</span><p class="desc-text">${game.description}</p></div>` : ''}
+
+        ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
+
+        ${waitingList.length > 0 ? `
+        <div class="sec-h" style="padding-bottom:6px;">⏳ ${t('waitingList')}<small>${waitingList.length}</small></div>
+        <div class="crow-list">
+          ${waitingList.map((p, idx) => {
+            const isFollower = currentUserFollowers.has(p.id);
+            const avatarClass = currentUserFollows[p.id] ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
+            const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
+            return `
+          <div class="crow" style="cursor:default;">
+            <span class="pnum dim">${idx + 1}</span>
+            <div class="av av-lg g3${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</div>
+            <div>
+              <div style="font-size:0.93rem;font-weight:800;">${displayUsername(allUsersMap[p.id] || p)}${tag}</div>
+              <div style="font-size:0.72rem;color:var(--muted);font-weight:600;">${t('statusWaiting')}</div>
+            </div>
+            <div class="crow-right">
+              <button class="remove-player-btn" data-id="${p.id}" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.9rem;">❌</button>
+            </div>
+          </div>`;
+          }).join('')}
+        </div>` : ''}
+
+        ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
+        <div class="sec-h" style="padding-bottom:6px;">✉️ ${t('manageInvites')}<small>${game.invitedIds.length}</small></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${game.invitedIds.map(uid => {
+            const u = allUsersMap[uid];
+            const name = u ? displayUsername(u) : uid;
+            const st = inviteStatusBadge(uid);
+            return `<span style="font-size:0.8rem;font-weight:600;padding:5px 11px;border-radius:14px;background:${st.color}14;border:1.5px solid ${st.color}44;color:var(--ink);">${name} <span style="color:${st.color};font-weight:800;">${st.label}</span></span>`;
+          }).join('')}
+        </div>` : ''}
+
+        <div style="padding-top:22px;display:flex;flex-direction:column;gap:9px;">
+          ${!isReadOnly && !isJoined && currentUser ? `<button class="btn-main" id="join-btn">✅ ${t('join')}</button>` : ''}
+          ${!isReadOnly && isJoined ? `<button class="btn-line" id="leave-btn" style="color:#d44;border-color:#e7b3b3;">${t('leave')}</button>` : ''}
+          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn-line" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
+          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn-line" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
+        </div>
+      </div>
     </div>`;
 
   // Event listeners
@@ -1329,8 +1344,7 @@ function renderGameView(game) {
   });
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
-  document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
-  document.getElementById('copy-link-btn')?.addEventListener('click', () => copyGameLink(game));
+  document.getElementById('share-btn')?.addEventListener('click', () => openShareSheet(game));
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
   document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
   document.getElementById('book-teetime-btn')?.addEventListener('click', () => handleBookTeeTime(game));
@@ -1370,33 +1384,37 @@ function setupFollowListeners() { } // handled by delegated listener in initApp
 
 function renderGroupCard(players, groupIndex, game, isPast) {
   const groupSize = game.groupSize;
+  const shades = ['', 'g2', 'g3', 'g4'];
   const slots = [];
   for (let i = 0; i < groupSize; i++) {
     if (players[i]) {
       const pid = players[i].id;
+      const isCreatorRow = pid === game.createdBy;
       const isFollowing = !!currentUserFollows[pid];
       const isFollower = currentUserFollowers.has(pid);
-      const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
       const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
       const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
+      const role = isCreatorRow ? `★ ${t('roleOrganizer')}` : t('roleMember');
       slots.push(`
-        <div class="player-row filled${rowClass}">
-          <span class="player-order">${i + 1}</span>
-          <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</span>
-          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${tag}</span>
-          <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-            <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
-            ${followBtn(players[i].id)}
-            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
-            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+        <div class="crow" style="cursor:default;">
+          <span class="pnum">${i + 1}</span>
+          <div class="av av-lg ${shades[i % 4]}${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</div>
+          <div>
+            <div style="font-size:0.93rem;font-weight:800;">${displayUsername(allUsersMap[pid] || players[i])}${tag}</div>
+            <div style="font-size:0.72rem;color:var(--muted);font-weight:600;">${role} · ${timeAgo(players[i].joinedAt)}</div>
+          </div>
+          <div class="crow-right" style="display:flex;align-items:center;gap:8px;">
+            ${followBtn(pid)}
+            ${(allUsersMap[pid]?.bankAccount || allUsersMap[pid]?.bankName) ? `<button class="copy-bank-btn" data-id="${pid}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1rem;">💳</button>` : ''}
+            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || pid === currentUser?.id) ? `<button class="remove-player-btn" data-id="${pid}" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:0.9rem;">❌</button>` : ''}
           </div>
         </div>`);
     } else {
       slots.push(`
-        <div class="player-row empty-row">
-          <span class="player-order">${i + 1}</span>
-          <span class="player-avatar-sm empty-avatar">?</span>
-          <span class="player-name empty-name">${t('emptySlot')}</span>
+        <div class="crow" style="cursor:default;opacity:0.65;">
+          <span class="pnum dim">${i + 1}</span>
+          <div class="av av-lg empty"></div>
+          <div style="font-size:0.85rem;color:var(--muted);">${t('emptySlot')}</div>
         </div>`);
     }
   }
@@ -1404,16 +1422,41 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   const isFull = filledCount >= groupSize;
   const canDirectAdd = !isPast && !isFull && (game.createdBy === currentUser?.id || currentUser?.role === 'admin');
   return `
-    <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
-      <div class="group-header">
-        <h3 class="group-title">🏌️ ${t('group')} ${groupIndex + 1}</h3>
-        <div style="display:flex;align-items:center;gap:8px;">
-          ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ Нэмэх</button>` : ''}
-          <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
+    <div>
+      <div class="sec-h" style="padding-bottom:6px;display:flex;align-items:flex-end;justify-content:space-between;">
+        <div>🏌️ ${t('group')} ${groupIndex + 1}<small>${filledCount} / ${groupSize} ${t('registered')}</small></div>
+        ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="padding:7px 16px;background:#fff;border:1.5px solid var(--ink);border-radius:18px;color:var(--ink);font-size:0.75rem;font-weight:800;cursor:pointer;font-family:inherit;">+ ${t('inviteBtn')}</button>` : `<span class="badge ${isFull ? 'solid' : 'line'}">${filledCount}/${groupSize}</span>`}
+      </div>
+      <div class="crow-list">${slots.join('')}</div>
+    </div>`;
+}
+
+function openShareSheet(game) {
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay popup-overlay';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  sheet.innerHTML = `
+    <div class="handle"></div>
+    <div style="padding:12px 20px 32px;">
+      <div style="font-size:1.05rem;font-weight:800;margin-bottom:18px;">${t('shareTitle')}</div>
+      <div style="display:flex;gap:24px;justify-content:center;">
+        <div class="share-opt" id="share-sheet-viber">
+          <div class="share-ic" style="background:#7360f2;">📞</div>
+          <span>Viber</span>
+        </div>
+        <div class="share-opt" id="share-sheet-copy">
+          <div class="share-ic" style="background:var(--soft);border:1px solid #ddd;">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </div>
+          <span>${t('copyLink')}</span>
         </div>
       </div>
-      <div class="player-list">${slots.join('')}</div>
     </div>`;
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+  sheet.querySelector('#share-sheet-viber').addEventListener('click', () => { shareViber(game); overlay.remove(); });
+  sheet.querySelector('#share-sheet-copy').addEventListener('click', () => { copyGameLink(game); overlay.remove(); });
 }
 
 // ---- Join Game from Link ----
