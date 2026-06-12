@@ -2128,7 +2128,7 @@ async function renderUsersList() {
       <!-- Circles -->
       <div id="circles-container">
         ${(() => {
-          const myCircleIds = userCommunityIds(currentUser);
+          const myCircleIds = userCommunityIds(allUsersMap[currentUser?.id] || currentUser);
           const visibleCircles = myCircleIds.length
             ? COMMUNITY_OPTIONS.filter(c => myCircleIds.includes(c.id))
             : COMMUNITY_OPTIONS;
