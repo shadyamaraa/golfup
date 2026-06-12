@@ -1384,13 +1384,8 @@ async function handleJoin(game) {
 
   await store.saveGame(game);
 
-  if (game.bookingId && isPlayerInGroup(game, currentUser.id)) {
-    try {
-      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
-      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
-    } catch (err) {
-      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
-    }
+  if (isPlayerInGroup(game, currentUser.id)) {
+    await syncBookingPlayers(game);
   }
 
   const joinNotif = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
@@ -1439,16 +1434,9 @@ async function handleLeave(game) {
 
   await store.saveGame(game);
 
-  if (game.bookingId) {
-    try {
-      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
-      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
-    } catch (err) {
-      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
-    }
-  }
+  await syncBookingPlayers(game);
 
-  const leaveNotif = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+  const leaveNotif ={ type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
   const remainingAfter = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
       .concat(ensureArray(game.waitingList))
@@ -2524,13 +2512,8 @@ async function handleAddPlayer(game, onSaved = null) {
     game.waitingList = waitingList;
     await store.saveGame(game);
     if (added) removeFromConflictingWaitlists(selectedUser.id, game);
-    if (game.bookingId && added) {
-      try {
-        const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
-        await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
-      } catch (err) {
-        showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
-      }
+    if (added) {
+      await syncBookingPlayers(game);
     }
     if (onSaved) onSaved();
     else renderGameView(game);
@@ -2889,13 +2872,14 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   overlay.remove();
 
   openPlayerSearchModal(`Групп ${groupIndex + 1}-д нэмэх`, availableUsers, async (selectedUser) => {
-    const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
+    const player = { id: selectedUser.id, name: displayFullName(selectedUser), joinedAt: Date.now() };
     game.groups[groupIndex].push(player);
     await store.saveGame(game);
     removeFromConflictingWaitlists(selectedUser.id, game);
+    await syncBookingPlayers(game);
     if (onSaved) onSaved();
     else renderGameView(game);
-    showToast(`✅ ${selectedUser.name} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
+    showToast(`✅ ${displayFullName(selectedUser)} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
   });
 }
 
@@ -2926,14 +2910,7 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
 
   await store.saveGame(game);
 
-  if (game.bookingId) {
-    try {
-      const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
-      await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
-    } catch (err) {
-      showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
-    }
-  }
+  await syncBookingPlayers(game);
 
   if (onSaved) onSaved();
   else renderGameView(game);
@@ -2941,7 +2918,16 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
 }
 
 // ---- Utilities ----
-// ---- Utilities ----
+async function syncBookingPlayers(game) {
+  if (!game.bookingId) return;
+  try {
+    const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
+    await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
+  } catch (err) {
+    showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+  }
+}
+
 function ensureArray(val) {
   if (!val) return [];
   return Array.isArray(val) ? val : Object.values(val);
