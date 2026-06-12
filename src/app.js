@@ -1176,6 +1176,7 @@ function renderGameView(game) {
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">🏌️ ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
+            <span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">${game.bookingId ? 'ID:' + game.bookingId : '⚠️ bookingId хадгалагдаагүй'}</span>
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
