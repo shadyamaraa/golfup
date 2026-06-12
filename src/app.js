@@ -189,6 +189,7 @@ export async function router() {
 
     if (hash === '#/' || hash === '#/home') await renderHome();
     else if (hash === '#/create') await renderCreateGame();
+    else if (hash === '#/profile') await renderProfile();
     else if (hash === '#/users') await renderUsersList();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
@@ -227,9 +228,9 @@ function updateBottomChrome() {
   const fab = document.getElementById('fab-create');
   if (!nav || !fab) return;
 
-  // Home and game detail have full-bleed banners (prototype style) — hide the top header there
+  // Home, game detail, and profile carry their own headers (prototype style) — hide the top header there
   const curHash = location.hash || '#/';
-  const hasBanner = curHash === '#/' || curHash === '#/home' || curHash.startsWith('#/game/');
+  const hasBanner = curHash === '#/' || curHash === '#/home' || curHash.startsWith('#/game/') || curHash === '#/profile';
   document.getElementById('app-header')?.classList.toggle('hidden', !!currentUser && hasBanner);
 
   if (!currentUser) {
@@ -254,6 +255,7 @@ function updateBottomChrome() {
   let active = 'home';
   if (hash === '#/' || hash === '#/home') active = homeFilter === 'all' ? 'games' : 'home';
   else if (hash.startsWith('#/game/') || hash.startsWith('#/create') || hash.startsWith('#/edit/')) active = 'games';
+  else if (hash === '#/profile') active = 'profile';
   nav.querySelectorAll('button[data-nav]').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.nav === active);
   });
@@ -3204,7 +3206,7 @@ export function initApp() {
 
   document.getElementById('profile-trigger')?.addEventListener('click', () => {
     if (!currentUser) return;
-    showProfileModal(currentUser);
+    location.hash = '#/profile';
   });
 
   document.getElementById('fab-create')?.addEventListener('click', () => {
@@ -3224,7 +3226,7 @@ export function initApp() {
         if (onHome) scrollToNotifs();
         else { location.hash = '#/'; setTimeout(scrollToNotifs, 400); }
       } else if (target === 'profile') {
-        showProfileModal(currentUser);
+        location.hash = '#/profile';
       }
     });
   });
@@ -3344,6 +3346,147 @@ function showEditBankModal(user) {
   };
 }
 
+// ---- Profile Screen (prototype) ----
+async function renderProfile() {
+  const user = currentUser;
+  if (!user) { location.hash = '#/'; return; }
+  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
+  const initial = user.avatar || displayUsername(user).charAt(0).toUpperCase();
+  const communities = userCommunityIds(user).map(communityLabel).join(', ');
+
+  main().innerHTML = `
+    <div class="fade-in" style="max-width:600px;margin:0 auto;padding:0 20px 30px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:16px 0 4px;">
+        <a href="#/" style="width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <div style="font-size:1.2rem;font-weight:800;letter-spacing:-0.3px;">${t('navProfile')}</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 0 6px;">
+        <div id="profile-big-avatar" style="width:92px;height:92px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;font-size:2.3rem;font-weight:900;color:#fff;">${initial}</div>
+        <div style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:800;letter-spacing:-0.3px;">${user.fullName || displayUsername(user)}</div>
+          <div style="font-size:0.82rem;color:var(--muted);font-weight:600;margin-top:2px;">@${displayUsername(user)}${communities ? ' · ' + communities : ''}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:center;padding:14px 20px 22px;">
+        <div style="flex:1;text-align:center;">
+          <div id="stat-games" style="font-size:1.4rem;font-weight:900;">–</div>
+          <div style="font-size:0.62rem;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;text-transform:uppercase;">${t('statGames')}</div>
+        </div>
+        <div style="width:1px;background:var(--line);"></div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:900;">${currentUserFollowers.size}</div>
+          <div style="font-size:0.62rem;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;text-transform:uppercase;">${t('statFollowers')}</div>
+        </div>
+        <div style="width:1px;background:var(--line);"></div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:900;">${Object.keys(currentUserFollows).length}</div>
+          <div style="font-size:0.62rem;font-weight:800;color:var(--muted);letter-spacing:1.2px;margin-top:2px;text-transform:uppercase;">${t('statFollowing')}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <div class="label">${t('avatar')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${avatars.map(a => `<div class="avatar-option" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1.5px solid ${user.avatar === a ? 'var(--ink)' : '#dedede'};background:${user.avatar === a ? 'var(--soft)' : '#fff'};">${a}</div>`).join('')}
+          </div>
+        </div>
+        <div class="label" style="margin-bottom:-6px;padding-top:8px;">${t('infoSection')}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="input-group">
+            <label>Овог *</label>
+            <input type="text" id="profile-lastname-input" class="inp" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
+          </div>
+          <div class="input-group">
+            <label>Нэр *</label>
+            <input type="text" id="profile-firstname-input" class="inp" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Username *</label>
+          <input type="text" id="profile-username-input" class="inp" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
+        </div>
+        <div class="input-group">
+          <label>${t('phone')}</label>
+          <input type="text" class="inp" value="${user.phone || ''}" disabled style="opacity:0.6;background:var(--soft);" />
+        </div>
+        <div class="input-group">
+          <label>${t('newPass')}</label>
+          <input type="password" id="profile-pass-input" class="inp" placeholder="4+" minlength="1" />
+        </div>
+        <div class="label" style="margin-bottom:-6px;padding-top:8px;">${t('editBank')}</div>
+        <div class="input-group">
+          <label>${t('bankName')}</label>
+          ${bankSelectHTML('profile-bank-name', user.bankName || '')}
+        </div>
+        <div class="input-group">
+          <label>${t('bankAccount')}</label>
+          <input type="text" id="profile-bank-acc" class="inp" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+        <div class="input-group">
+          <label>IBAN</label>
+          <input type="text" id="profile-bank-iban" class="inp" value="${user.bankIban || ''}" placeholder="MN..." />
+        </div>
+        <div class="input-group">
+          <label>${t('notificationSettings')}</label>
+          <label class="toggle-label">
+            <input type="checkbox" id="notify-web-toggle" ${user.notifyWeb !== false ? 'checked' : ''}>
+            <span>${t('notifyWeb')}</span>
+          </label>
+          <label class="toggle-label">
+            <input type="checkbox" id="notify-sms-toggle" ${user.notifySms ? 'checked' : ''}>
+            <span>${t('notifySms')}</span>
+          </label>
+        </div>
+        <button class="btn-main" id="profile-save-btn" style="margin-top:6px;">${t('save')}</button>
+        <button class="btn-line" id="profile-logout-btn" style="color:#d44;border-color:#e7b3b3;">${t('logoutBtn')}</button>
+      </div>
+    </div>`;
+
+  let selectedAvatar = user.avatar || '';
+  document.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.avatar-option').forEach(o => { o.style.borderColor = '#dedede'; o.style.background = '#fff'; });
+      opt.style.borderColor = 'var(--ink)';
+      opt.style.background = 'var(--soft)';
+      selectedAvatar = opt.dataset.val;
+      const big = document.getElementById('profile-big-avatar');
+      if (big) big.textContent = selectedAvatar;
+    });
+  });
+
+  document.getElementById('profile-save-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('profile-save-btn');
+    btn.disabled = true;
+    if (await applyProfileForm(user, selectedAvatar)) {
+      showToast('✅ ' + t('saved'), 'success');
+      updateHeader();
+      renderProfile();
+    } else {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('profile-logout-btn').addEventListener('click', () => {
+    if (confirm(t('confirmLogout'))) {
+      store.logoutUser();
+      currentUser = null;
+      location.hash = '#/';
+      router();
+    }
+  });
+
+  // Games-played stat (loaded after first paint)
+  store.loadAllGames().then(games => {
+    const el = document.getElementById('stat-games');
+    if (el) el.textContent = games.filter(g => isPlayerInGame(g, user.id)).length;
+  }).catch(() => {});
+}
+
 function showProfileModal(user, options = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
@@ -3443,51 +3586,57 @@ function showProfileModal(user, options = {}) {
 
   modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
   modal.querySelector('#profile-modal-save').onclick = async () => {
-    const newUsername = document.getElementById('profile-username-input').value.trim();
-    const newLastName = document.getElementById('profile-lastname-input').value.trim();
-    const newFirstName = document.getElementById('profile-firstname-input').value.trim();
-    const newPass = document.getElementById('profile-pass-input').value;
-
-    if (newUsername.length < 2 || !newLastName || !newFirstName) {
-      showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
-      return;
-    }
-    const allUsers = await store.loadAllUsers();
-    const duplicateUsername = allUsers.some(u =>
-      u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
-    );
-    if (duplicateUsername) {
-      showToast('Энэ username ашиглагдаж байна', 'error');
-      return;
-    }
-
-    user.username = newUsername;
-    user.lastName = newLastName;
-    user.firstName = newFirstName;
-    user.fullName = newLastName + ' ' + newFirstName;
-    user.name = newUsername;
-    user.avatar = selectedAvatar;
-    if (newPass && newPass.length >= 1) {
-      user.password = newPass;
-    }
-
-    user.bankName = document.getElementById('profile-bank-name').value.trim();
-    user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
-    user.bankIban = document.getElementById('profile-bank-iban').value.trim();
-    user.notifyWeb = document.getElementById('notify-web-toggle').checked;
-    user.notifySms = document.getElementById('notify-sms-toggle').checked;
-
-    if (user.notifyWeb) initFCM(user);
-
-    await store.adminUpdateUser(user);
-    store.saveUser(user);
-    currentUser = user;
-
+    if (!(await applyProfileForm(user, selectedAvatar))) return;
     showToast('✅ ' + t('saved'), 'success');
     modal.remove();
     updateHeader();
     router();
   };
+}
+
+// Reads the shared profile form inputs (profile-*-input ids), validates, saves.
+// Used by both the profile screen and the forced-completion modal.
+async function applyProfileForm(user, selectedAvatar) {
+  const newUsername = document.getElementById('profile-username-input').value.trim();
+  const newLastName = document.getElementById('profile-lastname-input').value.trim();
+  const newFirstName = document.getElementById('profile-firstname-input').value.trim();
+  const newPass = document.getElementById('profile-pass-input').value;
+
+  if (newUsername.length < 2 || !newLastName || !newFirstName) {
+    showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
+    return false;
+  }
+  const allUsers = await store.loadAllUsers();
+  const duplicateUsername = allUsers.some(u =>
+    u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
+  );
+  if (duplicateUsername) {
+    showToast('Энэ username ашиглагдаж байна', 'error');
+    return false;
+  }
+
+  user.username = newUsername;
+  user.lastName = newLastName;
+  user.firstName = newFirstName;
+  user.fullName = newLastName + ' ' + newFirstName;
+  user.name = newUsername;
+  user.avatar = selectedAvatar;
+  if (newPass && newPass.length >= 1) {
+    user.password = newPass;
+  }
+
+  user.bankName = document.getElementById('profile-bank-name').value.trim();
+  user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
+  user.bankIban = document.getElementById('profile-bank-iban').value.trim();
+  user.notifyWeb = document.getElementById('notify-web-toggle').checked;
+  user.notifySms = document.getElementById('notify-sms-toggle').checked;
+
+  if (user.notifyWeb) initFCM(user);
+
+  await store.adminUpdateUser(user);
+  store.saveUser(user);
+  currentUser = user;
+  return true;
 }
 
 

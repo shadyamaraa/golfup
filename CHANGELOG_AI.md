@@ -2,6 +2,21 @@
 
 ## 2026-06-12
 
+### Mobile redesign step 5 (final): profile screen — `src/app.js`, `src/style.css`, `src/i18n.js`
+
+New `#/profile` route (`renderProfile`) replacing the profile modal for normal
+use: back-circle header, 92px centered avatar (live-updates when picking an
+emoji), name + @username · circles line, stats row (тоглолт/дагагч/дагасан —
+games counted from `loadAllGames`, follows from already-loaded state), then
+the full former-modal form (овог/нэр/username/утас/нууц үг/банк/IBAN/
+мэдэгдэл) with `.btn-main` save and a red-tinted `.btn-line` logout. Save
+logic extracted to shared `applyProfileForm` so the forced profile-completion
+modal (`showProfileModal({required:true})`) keeps working unchanged. Bottom
+nav Профайл and the header avatar now route to `#/profile`; top header hidden
+there like home/detail. i18n: `statGames`, `statFollowers`, `statFollowing`,
+`logoutBtn`, `infoSection` (mn/en/ko). Also: toggle-label text no longer
+inherits the uppercase field-label style.
+
 ### Mobile redesign step 4: game detail per prototype — `src/app.js`, `src/style.css`
 
 `renderGameView`/`renderGroupCard` markup restyled to the prototype; join/
