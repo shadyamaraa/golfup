@@ -2127,16 +2127,15 @@ async function renderUsersList() {
 
       <!-- Circles -->
       <div id="circles-container">
-        ${COMMUNITY_OPTIONS.map(circle => {
-          const members = sortedUsers.filter(u => userCommunityIds(u).includes(circle.id));
-          return circleSection(circle, members, false);
-        }).join('')}
-
-        <!-- Unassigned -->
         ${(() => {
-          const unassigned = sortedUsers.filter(u => userCommunityIds(u).length === 0);
-          if (unassigned.length === 0) return '';
-          return circleSection({ id: '__none__', label: 'Тойрогт хамаарагдаагүй' }, unassigned, false);
+          const myCircleIds = userCommunityIds(currentUser);
+          const visibleCircles = myCircleIds.length
+            ? COMMUNITY_OPTIONS.filter(c => myCircleIds.includes(c.id))
+            : COMMUNITY_OPTIONS;
+          return visibleCircles.map(circle => {
+            const members = sortedUsers.filter(u => userCommunityIds(u).includes(circle.id));
+            return circleSection(circle, members, false);
+          }).join('');
         })()}
 
         <!-- All players -->
