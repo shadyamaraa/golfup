@@ -2071,6 +2071,43 @@ async function renderUsersList() {
 
   const sortedUsers = users.filter(u => u.id !== 'admin_uid').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
 
+  const openCircleIds = new Set();
+
+  function memberRow(u) {
+    const isFollowing = !!currentUserFollows[u.id];
+    const isFollower = currentUserFollowers.has(u.id);
+    const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
+    const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
+    const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
+    return `
+      <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;">
+        <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;">
+          <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+          ${followBtn(u.id)}
+        </div>
+        <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
+          <span class="player-name">${displayUsername(u)}${tag}</span>
+          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (u.bankName || t('unknownBank'))}</span>
+        </button>
+        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
+      </div>`;
+  }
+
+  function circleSection(circle, members, isOpen) {
+    return `
+      <div class="glass-card" style="padding:0;overflow:hidden;margin-bottom:10px;">
+        <button class="circle-toggle-btn" data-circle="${circle.id}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;text-align:left;">
+          <span style="font-weight:700;">${circle.label} <span style="font-weight:400;font-size:0.82rem;color:var(--text-secondary);">${members.length} гишүүн</span></span>
+          <span class="circle-arrow" data-circle="${circle.id}" style="transition:transform .2s;transform:rotate(${isOpen ? 180 : 0}deg);">▾</span>
+        </button>
+        <div class="circle-members-wrap" data-circle="${circle.id}" style="display:${isOpen ? 'block' : 'none'};border-top:1px solid var(--border-color);padding:4px 0;">
+          ${members.length === 0
+            ? `<p style="padding:12px 18px;color:var(--text-secondary);font-size:0.85rem;">Гишүүн байхгүй</p>`
+            : members.map(memberRow).join('')}
+        </div>
+      </div>`;
+  }
+
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div class="hero-section" style="padding: 20px 0 30px;">
@@ -2078,62 +2115,87 @@ async function renderUsersList() {
         <p class="hero-subtitle">${t('usersListSub')}</p>
       </div>
 
-      <div class="glass-card" style="padding: 10px;">
-        <div class="input-group" style="margin: 4px 4px 14px;">
-          <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-        </div>
-        <div class="player-list">
-          ${sortedUsers.map(u => {
-    const isFollowing = !!currentUserFollows[u.id];
-    const isFollower = currentUserFollowers.has(u.id);
-    const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
-    const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
-    const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
-    return `
-            <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom: 8px; padding: 14px 20px;">
-              <div class="avatar-follow-wrap" style="position:relative; display:inline-flex; flex-shrink:0;">
-                <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
-                ${followBtn(u.id)}
-              </div>
-              <button class="user-detail-btn" data-id="${u.id}" style="display:flex; flex-direction:column; flex:1; text-align:left; background:none; border:none; color:inherit; padding:0; cursor:pointer;">
-                <span class="player-name">${displayUsername(u)}${tag}</span>
-                <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
-              </button>
-              ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
-            </div>`;
-  }).join('')}
-        </div>
+      <!-- Search -->
+      <div class="glass-card" style="padding:10px;margin-bottom:16px;">
+        <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
       </div>
-      
-      <div style="margin-top: 20px; text-align:center;">
+
+      <!-- Search results (hidden unless searching) -->
+      <div id="user-search-results" style="display:none;margin-bottom:16px;">
+        <div class="glass-card" style="padding:4px 0;" id="user-search-list"></div>
+      </div>
+
+      <!-- Circles -->
+      <div id="circles-container">
+        ${COMMUNITY_OPTIONS.map(circle => {
+          const members = sortedUsers.filter(u => userCommunityIds(u).includes(circle.id));
+          return circleSection(circle, members, false);
+        }).join('')}
+
+        <!-- Unassigned -->
+        ${(() => {
+          const unassigned = sortedUsers.filter(u => userCommunityIds(u).length === 0);
+          if (unassigned.length === 0) return '';
+          return circleSection({ id: '__none__', label: 'Тойрогт хамаарагдаагүй' }, unassigned, false);
+        })()}
+      </div>
+
+      <div style="margin-top:20px;text-align:center;">
         <a href="#/" class="btn btn-ghost">← ${t('back')}</a>
       </div>
     </div>`;
 
-  // Attach copy listeners
+  // Circle toggle
+  document.querySelectorAll('.circle-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.circle;
+      const wrap = document.querySelector(`.circle-members-wrap[data-circle="${id}"]`);
+      const arrow = document.querySelector(`.circle-arrow[data-circle="${id}"]`);
+      const isOpen = wrap.style.display !== 'none';
+      wrap.style.display = isOpen ? 'none' : 'block';
+      arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+  });
+
+  // Search — show flat results, hide circles
   const searchInput = document.getElementById('user-search-input');
+  const searchResults = document.getElementById('user-search-results');
+  const searchList = document.getElementById('user-search-list');
+  const circlesContainer = document.getElementById('circles-container');
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.trim().toLowerCase();
-      document.querySelectorAll('.user-list-row').forEach(row => {
-        row.style.display = row.dataset.name.includes(query) ? 'flex' : 'none';
+      if (!query) {
+        searchResults.style.display = 'none';
+        circlesContainer.style.display = 'block';
+        return;
+      }
+      circlesContainer.style.display = 'none';
+      searchResults.style.display = 'block';
+      const matches = sortedUsers.filter(u => `${displayUsername(u)} ${displayFullName(u)}`.toLowerCase().includes(query));
+      searchList.innerHTML = matches.length
+        ? matches.map(memberRow).join('')
+        : `<p style="padding:12px 18px;color:var(--text-secondary);">Олдсонгүй</p>`;
+      attachRowListeners(searchList);
+    });
+  }
+
+  function attachRowListeners(container) {
+    container.querySelectorAll('.copy-bank-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const user = allUsersMap[e.currentTarget.dataset.id];
+        if (user) showBankDetailsModal(user);
+      });
+    });
+    container.querySelectorAll('.user-detail-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const user = allUsersMap[e.currentTarget.dataset.id];
+        if (user) showUserDetailsModal(user);
       });
     });
   }
 
-  document.querySelectorAll('.copy-bank-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const uid = e.currentTarget.dataset.id;
-      const user = allUsersMap[uid];
-      if (user) showBankDetailsModal(user);
-    });
-  });
-  document.querySelectorAll('.user-detail-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const user = allUsersMap[e.currentTarget.dataset.id];
-      if (user) showUserDetailsModal(user);
-    });
-  });
+  attachRowListeners(document.getElementById('circles-container'));
   setupFollowListeners();
 }
 
