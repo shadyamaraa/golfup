@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-06-12
+
+### MTBogd player sync fixes — `src/app.js`, `src/booking.js`
+
+- Fixed proxy body forwarding: PATCH/PUT requests were arriving with empty body at MTBogd. Now `functions/index.js` forwards body for all non-GET methods.
+- Fixed player names: `handleJoin` and `handleAddPlayer` were storing `displayUsername` (username) instead of `displayFullName` (full name) in player objects and sync calls.
+- Fixed `handleAddPlayer`: MTBogd sync was missing entirely from the creator's direct "add player" flow. Now syncs on all join/leave/kick/add paths.
+- All sync calls now resolve player names via `allUsersMap[p.id]` lookup so existing records with stale usernames still send correct full names.
+
+### MTBogd booking edit warning — `src/app.js`, `src/i18n.js`
+
+When editing a game that has an MTBogd booking, changing date/time/location now shows a confirmation dialog warning that the MTBogd booking will NOT be automatically updated. User must confirm before saving.
+
 ## 2026-06-09
 
 ### Sync MTBogd booking player list on join/leave/kick — `src/booking.js`, `src/app.js`

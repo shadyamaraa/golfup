@@ -1011,7 +1011,6 @@ async function renderCreateGame() {
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
-        console.log('[MTBogd] confirmBooking response:', JSON.stringify(confirmed));
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
@@ -1383,15 +1382,11 @@ async function handleJoin(game) {
 
   await store.saveGame(game);
 
-  console.log('[MTBogd] join sync check — bookingId:', game.bookingId, 'inGroup:', isPlayerInGroup(game, currentUser.id));
   if (game.bookingId && isPlayerInGroup(game, currentUser.id)) {
     try {
       const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
-      console.log('[MTBogd] sending PATCH players:', JSON.stringify(allPlayers));
       await mtbogd.updateBookingPlayers(game.bookingId, allPlayers);
-      console.log('[MTBogd] PATCH success');
     } catch (err) {
-      console.error('[MTBogd] PATCH failed:', err.message);
       showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
     }
   }
@@ -2369,6 +2364,9 @@ async function renderEditGame(gameId) {
     if (oldGroupSize !== game.groupSize) changes.push(`Тоглогч: ${oldGroupSize} → ${game.groupSize}`);
     if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
     if (oldIsPrivate !== game.isPrivate) changes.push(`Харагдах хүрээ өөрчлөгдлөө`);
+
+    const bookingAffected = game.bookingCode && (oldDate !== game.date || oldTime !== game.time || oldLocation !== game.location);
+    if (bookingAffected && !confirm(t('editBookingWarning'))) return;
 
     await store.saveGame(game);
 
