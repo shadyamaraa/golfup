@@ -227,6 +227,11 @@ function updateBottomChrome() {
   const fab = document.getElementById('fab-create');
   if (!nav || !fab) return;
 
+  // Home has a full-bleed hero (prototype style) — hide the top header there
+  const curHash = location.hash || '#/';
+  const isHome = curHash === '#/' || curHash === '#/home';
+  document.getElementById('app-header')?.classList.toggle('hidden', !!currentUser && isHome);
+
   if (!currentUser) {
     nav.classList.add('hidden');
     fab.classList.add('hidden');
@@ -375,28 +380,42 @@ async function renderHome() {
   homeFilter = pendingHomeFilter || 'mine';
   pendingHomeFilter = null;
   updateBottomChrome();
+  const _now = new Date();
   main().innerHTML = `
-    <div class="home-container fade-in">
-      <div class="hero-section">
-        <h1 class="hero-title">${t('appName')}</h1>
-        <p class="hero-subtitle">${t('tagline')}</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-          <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
-            <span class="btn-icon-left">+</span> ${t('createGame')}
-          </a>
+    <div class="fade-in">
+      <div class="hero-wrap">
+        <div class="hero-full">
+          ${heroArtSVG()}
+          <div class="hero-shade"></div>
+          <div class="hero-acts">
+            <button class="hero-act" id="hero-lang">${getLang().toUpperCase()}</button>
+            <a class="hero-act" href="#/users" title="${t('users')}">👥</a>
+            ${currentUser && currentUser.role === 'admin' ? `<a class="hero-act" href="#/admin" title="Admin">🛡️</a>` : ''}
+          </div>
+          <div class="hero-center">
+            <div class="hero-logo"><b>⛳</b><i>UB GOLF</i></div>
+            <div class="hero-h1">${t('tagline')}</div>
+            <div class="hero-pill">${t('heroLocation')} · ${_now.getMonth() + 1}.${_now.getDate()}</div>
+          </div>
+        </div>
+        <div class="game-filter-tabs">
+          <button class="filter-tab ${homeFilter === 'all' ? 'active' : ''}" data-tab="all">${t('tabAll')}</button>
+          <button class="filter-tab ${homeFilter === 'mine' ? 'active' : ''}" data-tab="mine">${t('tabMine')}</button>
+          <button class="filter-tab ${homeFilter === 'community' ? 'active' : ''}" data-tab="community">${t('tabCommunity')}</button>
+          <button class="filter-tab ${homeFilter === 'recommended' ? 'active' : ''}" data-tab="recommended">${t('tabRecommended')}</button>
+          <button class="filter-tab ${homeFilter === 'joined' ? 'active' : ''}" data-tab="joined">${t('tabJoined')}</button>
+          <button class="filter-tab ${homeFilter === 'following' ? 'active' : ''}" data-tab="following">${t('tabFollowing')}</button>
         </div>
       </div>
+      <div class="home-container">
       <div id="notifications-section"></div>
       <div class="section">
-        <div class="game-filter-tabs">
-          <button class="filter-tab ${homeFilter === 'all' ? 'active' : ''}" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab ${homeFilter === 'mine' ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab ${homeFilter === 'community' ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
-          <button class="filter-tab ${homeFilter === 'recommended' ? 'active' : ''}" data-tab="recommended">✨ ${t('tabRecommended')}</button>
-          <button class="filter-tab ${homeFilter === 'joined' ? 'active' : ''}" data-tab="joined">🤝 ${t('tabJoined')}</button>
-          <button class="filter-tab ${homeFilter === 'following' ? 'active' : ''}" data-tab="following">⭐ ${t('tabFollowing')}</button>
-        </div>
         <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
+        <div id="view-all-wrap" style="display:${homeFilter === 'all' ? 'none' : 'flex'};justify-content:flex-start;padding:14px 0 4px;">
+          <button class="pill-btn" id="view-all-btn">${t('viewAllGames')}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
       </div>
       <div class="section past-section" style="margin-top: 40px;">
         <div class="history-toggle-header" id="history-toggle">
@@ -411,6 +430,7 @@ async function renderHome() {
           <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
         </div>
         <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
+      </div>
       </div>
     </div>`;
 
@@ -432,6 +452,11 @@ async function renderHome() {
     if (unsub) activeUnsubs.push(unsub);
   }
 
+  const syncViewAllBtn = () => {
+    const wrap = document.getElementById('view-all-wrap');
+    if (wrap) wrap.style.display = homeFilter === 'all' ? 'none' : 'flex';
+  };
+
   document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
@@ -439,7 +464,21 @@ async function renderHome() {
       homeFilter = btn.dataset.tab;
       renderGamesHome(homeGamesCache);
       updateBottomChrome();
+      syncViewAllBtn();
     });
+  });
+
+  document.getElementById('view-all-btn')?.addEventListener('click', () => {
+    homeFilter = 'all';
+    document.querySelectorAll('.filter-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'all'));
+    renderGamesHome(homeGamesCache);
+    updateBottomChrome();
+    syncViewAllBtn();
+  });
+
+  document.getElementById('hero-lang')?.addEventListener('click', () => {
+    toggleLang();
+    router();
   });
 
   document.getElementById('history-toggle')?.addEventListener('click', () => {
@@ -601,13 +640,14 @@ function renderGamesHome(games) {
     const days = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
     days.forEach(([, dayGames]) => dayGames.sort((a, b) => a.time.localeCompare(b.time)));
 
-    activeContainer.innerHTML = days.map(([date, dayGames]) => `
+    activeContainer.innerHTML = days.map(([date, dayGames]) => {
+      const heading = formatDayHeading(date);
+      return `
       <div class="day-group">
-        <div class="day-group-header">${formatDate(date)} ${dayGames.length > 1 ? `<span style="font-weight:400;font-size:0.8rem;color:var(--text-secondary);">(${dayGames.length})</span>` : ''}</div>
-        <div class="day-carousel" style="display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px;">
-          ${dayGames.map(g => `<div style="flex:0 0 ${dayGames.length > 1 ? '88%' : '100%'};scroll-snap-align:start;">${renderGamesCards([g])}</div>`).join('')}
-        </div>
-      </div>`).join('');
+        <div class="sec-h">${heading.main}<small>${heading.sub}</small></div>
+        ${renderGamesCards(dayGames)}
+      </div>`;
+    }).join('');
   } else {
     activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
   }
@@ -622,56 +662,55 @@ function renderGamesHome(games) {
 }
 
 function renderGamesCards(games, isPast = false) {
-  return games.map(g => {
+  return `<div class="crow-list">` + games.map(g => {
     const totalPlayers = countAllPlayers(g);
     const groups = ensureGroups(g.groups);
     const totalSlots = g.groupSize * groups.length;
-    const firstGroup = groups[0] || [];
-    const spotsLeft = Math.max(0, g.groupSize - (Array.isArray(firstGroup) ? firstGroup.length : Object.values(firstGroup).length));
+    const firstGroup = ensureArray(groups[0]);
+    const spotsLeft = Math.max(0, g.groupSize - firstGroup.length);
     const isFull = spotsLeft === 0;
-    const dateStr = formatDate(g.date);
     const gameCommunities = gameCommunityIds(g);
+    const badge = isPast
+      ? `<span class="badge gray">${totalPlayers}/${totalSlots}</span>`
+      : isFull
+        ? `<span class="badge solid">${totalPlayers}/${totalSlots}</span>`
+        : `<span class="badge line">${spotsLeft} ${t('spotsShort')}</span>`;
     return `
-      <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
-        <div class="game-card-header">
-          <span class="game-date-badge">${dateStr}</span>
-          <div style="display:flex; gap:6px; align-items:center;">
-            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
-            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityAudienceLabel(gameCommunities)}</span>` : ''}
-            <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
+      <a href="#/game/${g.id}" class="crow ${isPast ? 'crow-past' : ''}" id="game-card-${g.id}">
+        <div class="cthumb">${courseThumbSVG(g.location)}</div>
+        <div>
+          <div class="crow-name">${g.location || '-'}</div>
+          <div class="crow-meta">
+            <div>${t('time')}<b>${g.time}</b></div>
+            <div>${t('createdBy')}<b>${g.creatorName || '-'}</b></div>
+            ${g.bookingCode ? `<div>${t('codeLabel')}<b>${g.bookingCode}</b></div>` : ''}
           </div>
+          <div style="display:flex;margin-top:9px;align-items:center;">${renderAvStack(g)}</div>
         </div>
-        <div class="game-card-body">
-          <div class="game-location">📍 ${g.location || '-'}</div>
-          <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
-            <span>🕐 ${g.time}</span>
-            <span>👤 ${g.creatorName || '-'}</span>
-          </div>
-        </div>
-        <div class="game-card-footer">
-          <div class="game-players-info">
-            <div class="player-dots">${renderPlayerDots(g)}</div>
-            <span>${totalPlayers} / ${totalSlots} ${t('players')}</span>
-          </div>
+        <div class="crow-right">
+          ${g.isPrivate ? `<div style="font-size:0.78rem;opacity:0.55;margin-bottom:5px;" title="${t('gamePrivate')}">🔒</div>` : ''}
+          ${gameCommunities.length > 0 ? `<div style="font-size:0.62rem;color:var(--muted);font-weight:700;margin-bottom:5px;">${communityAudienceLabel(gameCommunities)}</div>` : ''}
+          ${badge}
         </div>
       </a>`;
-  }).join('');
+  }).join('') + `</div>`;
 }
 
-function renderPlayerDots(game) {
+function renderAvStack(game) {
   const groups = ensureGroups(game.groups);
   const players = ensureArray(groups[0]);
-  let dots = '';
+  const shades = ['', 'g2', 'g3', 'g4'];
+  let html = '';
   for (let i = 0; i < game.groupSize; i++) {
     if (players[i]) {
       const user = allUsersMap[players[i].id];
       const displayChar = (user && user.avatar) ? user.avatar : players[i].name.charAt(0).toUpperCase();
-      dots += `<span class="player-dot filled" title="${players[i].name}">${displayChar}</span>`;
+      html += `<div class="av ${shades[i % 4]}" title="${players[i].name}">${displayChar}</div>`;
     } else {
-      dots += `<span class="player-dot empty"></span>`;
+      html += `<div class="av empty"></div>`;
     }
   }
-  return dots;
+  return html;
 }
 
 // ---- Create Game View ----
@@ -2963,6 +3002,70 @@ function formatDate(dateStr) {
     ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
     : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[d.getMonth()]} ${d.getDate()} · ${days[d.getDay()]}`;
+}
+
+// Day heading for home list sections (prototype .sec-h: big label + small full date)
+function formatDayHeading(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const mn = getLang() === 'mn';
+  const days = mn
+    ? ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthDay = mn ? `${d.getMonth() + 1}-р сарын ${d.getDate()}` : `${months[d.getMonth()]} ${d.getDate()}`;
+  const sub = mn
+    ? `${d.getFullYear()} оны ${monthDay}, ${days[d.getDay()]}`
+    : `${days[d.getDay()]}, ${monthDay}, ${d.getFullYear()}`;
+  if (d.getTime() === today.getTime()) return { main: t('today'), sub };
+  if (d.getTime() === tomorrow.getTime()) return { main: t('tomorrow'), sub };
+  return { main: monthDay, sub };
+}
+
+// Sunrise course art for the home hero (from prototype.html)
+function heroArtSVG() {
+  return `
+  <svg class="hero-art" viewBox="0 0 390 380" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="hero-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2c3e2e"/>
+        <stop offset="42%" stop-color="#7a6a3a"/>
+        <stop offset="62%" stop-color="#e8a13c"/>
+        <stop offset="78%" stop-color="#f5c873"/>
+        <stop offset="100%" stop-color="#3a5a3c"/>
+      </linearGradient>
+      <radialGradient id="hero-sun" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#fff6d8"/>
+        <stop offset="55%" stop-color="#ffd97a" stop-opacity=".85"/>
+        <stop offset="100%" stop-color="#ffd97a" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="390" height="380" fill="url(#hero-sky)"/>
+    <circle cx="195" cy="252" r="95" fill="url(#hero-sun)"/>
+    <circle cx="195" cy="252" r="26" fill="#fff3c8"/>
+    <path d="M0 270 Q30 215 60 262 Q80 230 105 266 L105 380 L0 380 Z" fill="#1d2b1e"/>
+    <path d="M285 268 Q310 218 340 260 Q360 236 390 264 L390 380 L285 380 Z" fill="#1d2b1e"/>
+    <path d="M0 300 Q100 270 195 290 T390 296 L390 380 L0 380 Z" fill="#2a4a2c"/>
+    <path d="M60 380 Q140 308 195 302 Q255 308 330 380 Z" fill="#3a6440"/>
+    <ellipse cx="195" cy="330" rx="58" ry="13" fill="#4a7a50"/>
+    <circle cx="195" cy="328" r="3" fill="#16281a"/>
+    <line x1="195" y1="328" x2="195" y2="280" stroke="#f2efe6" stroke-width="2.2"/>
+    <path d="M195 280 L222 287 L195 294 Z" fill="#e8b53c"/>
+  </svg>`;
+}
+
+// Circular course thumbnail for game rows; palette picked by location hash
+function courseThumbSVG(seed = '') {
+  let h = 0;
+  for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const variants = [
+    `<svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#3a6440"/><circle cx="27" cy="16" r="9" fill="#ffd97a"/><path d="M0 34 Q16 26 27 31 T54 33 L54 54 L0 54 Z" fill="#2a4a2c"/><line x1="27" y1="40" x2="27" y2="26" stroke="#fff" stroke-width="1.6"/><path d="M27 26 L37 29 L27 32 Z" fill="#e8b53c"/></svg>`,
+    `<svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#5a4a6a"/><circle cx="38" cy="14" r="7" fill="#f5c873"/><path d="M0 36 Q20 28 32 33 T54 34 L54 54 L0 54 Z" fill="#3d3450"/><line x1="20" y1="40" x2="20" y2="26" stroke="#fff" stroke-width="1.6"/><path d="M20 26 L30 29 L20 32 Z" fill="#e8b53c"/></svg>`,
+    `<svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#3a6440"/><circle cx="16" cy="14" r="8" fill="#fff3c8"/><path d="M0 32 Q18 25 30 30 T54 31 L54 54 L0 54 Z" fill="#2a4a2c"/><line x1="34" y1="38" x2="34" y2="24" stroke="#fff" stroke-width="1.6"/><path d="M34 24 L44 27 L34 30 Z" fill="#e74c3c"/></svg>`,
+    `<svg viewBox="0 0 54 54" width="54" height="54"><rect width="54" height="54" fill="#2e4a5a"/><circle cx="27" cy="13" r="8" fill="#f5c873"/><path d="M0 33 Q16 26 27 30 T54 32 L54 54 L0 54 Z" fill="#22394a"/><line x1="27" y1="40" x2="27" y2="25" stroke="#fff" stroke-width="1.6"/><path d="M27 25 L37 28 L27 31 Z" fill="#e8b53c"/></svg>`
+  ];
+  return variants[h % variants.length];
 }
 
 function timeAgo(ts) {

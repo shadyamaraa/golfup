@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-06-12
+
+### Mobile redesign step 2: Home screen per prototype — `src/app.js`, `src/style.css`, `src/i18n.js`
+
+Home now matches `prototype.html`: full-bleed sunrise hero banner (SVG art,
+round UB GOLF logo, tagline, location/date pill) with the top app header
+hidden on home only — lang toggle, users and admin links move to translucent
+circle buttons overlaid on the hero. Filter tabs sit sticky under the banner.
+Game lists render as `.crow` rows (circular course-art thumbnail with palette
+picked by location hash, name, ЦАГ/ҮҮСГЭСЭН/КОД meta, overlapping avatar
+stack, СУЛ/full badge on the right) grouped under `.sec-h` day headings
+(Өнөөдөр/Маргааш + full date) instead of the old card carousel; history and
+archive reuse the same rows dimmed. Added a "Бүх тоглолт харах" pill that
+switches to the All tab. The hero "Тоглолт үүсгэх" button was removed — the
+FAB covers creation. No store/Firebase logic touched; `renderGamesHome`
+filtering, sorting, day grouping, and live listeners unchanged. New helpers:
+`formatDayHeading`, `heroArtSVG`, `courseThumbSVG`, `renderAvStack` (replaces
+`renderPlayerDots`). i18n: `heroLocation`, `spotsShort`, `codeLabel`,
+`viewAllGames` (mn/en/ko).
+
 ## 2026-06-11
 
 ### Mobile redesign step 1: B/W base theme + bottom nav + FAB — `src/style.css`, `index.html`, `src/app.js`, `src/i18n.js`
