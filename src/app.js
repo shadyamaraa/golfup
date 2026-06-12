@@ -586,6 +586,40 @@ function renderNotifications(notifs) {
   });
 }
 
+// Sponsor/ad banners shown between game list day groups (PGA Tour style).
+// Add more entries to rotate; href opens in a new tab. Trial: Rolex.
+const HOME_AD_BANNERS = [
+  {
+    id: 'rolex',
+    href: 'https://www.rolex.com',
+    html: `
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg,#00472b 0%,#006039 55%,#00472b 100%);"></div>
+      <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;">
+        <svg width="38" height="22" viewBox="0 0 36 22">
+          <g fill="#c9b037">
+            <circle cx="6" cy="4" r="2"/><circle cx="12" cy="2.6" r="2"/><circle cx="18" cy="2" r="2"/><circle cx="24" cy="2.6" r="2"/><circle cx="30" cy="4" r="2"/>
+          </g>
+          <g stroke="#c9b037" stroke-width="2.4" fill="none" stroke-linecap="round">
+            <path d="M6 6 L10 17"/><path d="M12 5 L14 17"/><path d="M18 4.5 L18 17"/><path d="M24 5 L22 17"/><path d="M30 6 L26 17"/>
+          </g>
+          <rect x="8.5" y="17" width="19" height="3.4" rx="1.7" fill="#c9b037"/>
+        </svg>
+        <div style="font-family:Georgia,'Times New Roman',serif;font-size:1.15rem;font-weight:700;letter-spacing:6px;color:#c9b037;margin-left:6px;">ROLEX</div>
+        <div style="font-size:0.5rem;font-weight:700;letter-spacing:2.2px;color:#ffffffb8;text-transform:uppercase;">Official Timekeeper</div>
+      </div>`
+  }
+];
+
+function adBannerHTML(index = 0) {
+  if (HOME_AD_BANNERS.length === 0) return '';
+  const ad = HOME_AD_BANNERS[index % HOME_AD_BANNERS.length];
+  return `
+    <div class="ad-slot">
+      <div class="ad-label">Advertisement</div>
+      <a class="ad-banner" href="${ad.href}" target="_blank" rel="noopener">${ad.html}</a>
+    </div>`;
+}
+
 function renderGamesHome(games) {
   const activeContainer = document.getElementById('active-games-list');
   const pastContainer = document.getElementById('past-games-list');
@@ -642,16 +676,17 @@ function renderGamesHome(games) {
     const days = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
     days.forEach(([, dayGames]) => dayGames.sort((a, b) => a.time.localeCompare(b.time)));
 
-    activeContainer.innerHTML = days.map(([date, dayGames]) => {
+    // Sponsor banner after the 1st day group, then after every 3rd (PGA Tour style)
+    activeContainer.innerHTML = days.map(([date, dayGames], di) => {
       const heading = formatDayHeading(date);
       return `
       <div class="day-group">
         <div class="sec-h">${heading.main}<small>${heading.sub}</small></div>
         ${renderGamesCards(dayGames)}
-      </div>`;
+      </div>${di % 3 === 0 ? adBannerHTML(di / 3) : ''}`;
     }).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>${adBannerHTML(0)}`;
   }
 
   if (pastContainer && historyOpen) {

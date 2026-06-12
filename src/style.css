@@ -539,6 +539,11 @@ body.has-bnav #main-content { padding-bottom: calc(var(--bnav-height) + 24px); }
 }
 .handle { width: 40px; height: 4px; background: #dedede; border-radius: 4px; margin: 12px auto 6px; }
 
+/* ====== Sponsor/ad banner slots in game lists (PGA Tour style) ====== */
+.ad-slot { margin: 18px -20px; }
+.ad-label { font-size: 0.52rem; font-weight: 800; letter-spacing: 1.6px; color: #c9c9c9; text-transform: uppercase; text-align: center; margin-bottom: 4px; }
+.ad-banner { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 96px; position: relative; overflow: hidden; text-decoration: none; }
+
 /* ====== Toast ====== */
 #toast-container {
   position: fixed; bottom: calc(var(--bnav-height) + 16px); left: 50%; transform: translateX(-50%);

@@ -2,6 +2,17 @@
 
 ## 2026-06-12
 
+### Sponsor/ad banner slots in home game list — `src/app.js`, `src/style.css`
+
+PGA Tour app-style advertisement slots between game-list day groups on home:
+after the 1st day group and every 3rd after that, plus below the empty state
+so the slot is visible without games. Banners are defined in the
+`HOME_AD_BANNERS` array (id/href/html) and rotate by slot index via
+`adBannerHTML()` — add more entries there to run several. Each slot shows a
+tiny centered ADVERTISEMENT label over a full-bleed 96px tappable banner.
+Trial creative: Rolex — green gradient, gold crown SVG, serif ROLEX wordmark,
+"Official Timekeeper" line, links to rolex.com in a new tab.
+
 ### Mobile redesign step 5 (final): profile screen — `src/app.js`, `src/style.css`, `src/i18n.js`
 
 New `#/profile` route (`renderProfile`) replacing the profile modal for normal
