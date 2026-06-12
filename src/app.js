@@ -2834,10 +2834,10 @@ function openPlayerSearchModal(title, availableUsers, onConfirm) {
   inp.addEventListener('input', () => {
     const q = inp.value.trim().toLowerCase();
     if (!q) { results.style.display = 'none'; return; }
-    const matches = availableUsers.filter(u => u.name.toLowerCase().includes(q));
+    const matches = availableUsers.filter(u => `${displayUsername(u)} ${displayFullName(u)}`.toLowerCase().includes(q));
     if (!matches.length) { results.style.display = 'none'; return; }
     results.innerHTML = matches.map(u =>
-      `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${u.name}</div>`
+      `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}<span style="font-size:0.8rem;color:var(--text-secondary);margin-left:6px;">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : ''}</span></div>`
     ).join('');
     results.style.display = 'block';
     results.querySelectorAll('.ps-item').forEach(item => {
@@ -2845,7 +2845,7 @@ function openPlayerSearchModal(title, availableUsers, onConfirm) {
       item.addEventListener('mouseleave', () => item.style.background = '');
       item.addEventListener('click', () => {
         selectedUser = availableUsers.find(u => u.id === item.dataset.id);
-        inp.value = selectedUser.name;
+        inp.value = displayUsername(selectedUser);
         results.style.display = 'none';
       });
     });
