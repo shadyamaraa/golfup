@@ -704,10 +704,10 @@ async function renderCreateGame() {
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+                <input type="radio" name="visibility" value="public" ${myCommunities.length === 0 ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
-                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : 'checked'} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
                 <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
@@ -936,7 +936,11 @@ async function renderCreateGame() {
       document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
     });
   });
-  document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+  if (myCommunities.length > 0) {
+    document.getElementById('vis-my-circles-label').style.borderColor = 'var(--emerald)';
+  } else {
+    document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+  }
 
   function refreshInviteChips() {
     const container = document.getElementById('invite-chips-container');
