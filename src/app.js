@@ -338,7 +338,8 @@ function renderAuth() {
 
 // ---- Home View ----
 async function renderHome() {
-  homeFilter = 'mine';
+  const hasCircles = userCommunityIds(currentUser).length > 0;
+  homeFilter = hasCircles ? 'community' : 'mine';
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="hero-section">
@@ -354,8 +355,8 @@ async function renderHome() {
       <div class="section">
         <div class="game-filter-tabs">
           <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab active" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab" data-tab="community">◎ ${t('tabCommunity')}</button>
+          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
           <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
           <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
