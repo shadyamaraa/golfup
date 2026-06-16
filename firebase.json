@@ -37,6 +37,14 @@
         "function": "adminLogin"
       },
       {
+        "source": "/api/cancel-booking",
+        "function": "cancelGameBooking"
+      },
+      {
+        "source": "/api/sync-players",
+        "function": "syncBookingPlayers"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

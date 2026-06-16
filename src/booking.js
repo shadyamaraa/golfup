@@ -37,18 +37,19 @@ export async function confirmBooking(holdId, customer, players, notes = '') {
   }));
 }
 
-export async function updateBookingPlayers(bookingId, players) {
-  return checkOk(await fetch(`${BASE}/bookings/${bookingId}`, {
-    method: 'PATCH',
+// gameId (Firebase) is sent; server looks up bookingId from RTDB.
+export async function updateBookingPlayers(gameId, players) {
+  return checkOk(await fetch('/api/sync-players', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ players }),
+    body: JSON.stringify({ gameId, players }),
   }));
 }
 
-export async function cancelBooking(bookingId) {
-  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/cancel`, {
-    method: 'PATCH',
+export async function cancelBooking(gameId) {
+  return checkOk(await fetch('/api/cancel-booking', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ gameId }),
   }));
 }

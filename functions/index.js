@@ -29,13 +29,16 @@ exports.adminLogin = functions
 // Proxy MTBogd external API — keeps the API key server-side.
 // Reachable at /api/mtbogd/<path> via Firebase Hosting rewrite.
 // The key is stored in Cloud Secret Manager as MTBOGD_API_KEY.
+// Restricted to GET and POST only; destructive PATCH operations go
+// through dedicated functions (cancelGameBooking, syncBookingPlayers).
 exports.mtbogdProxy = functions
   .runWith({ secrets: ['MTBOGD_API_KEY'] })
   .https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, OPTIONS');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (!['GET', 'POST'].includes(req.method)) { res.status(405).json({ error: 'Method not allowed' }); return; }
 
   const apiKey = process.env.MTBOGD_API_KEY;
   if (!apiKey) { res.status(500).json({ error: 'Proxy not configured' }); return; }
@@ -49,10 +52,76 @@ exports.mtbogdProxy = functions
     method: req.method,
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
   };
-  if (['POST', 'PATCH', 'PUT'].includes(req.method)) opts.body = JSON.stringify(req.body);
+  if (req.method === 'POST') opts.body = JSON.stringify(req.body);
 
   try {
     const upRes = await fetch(upstream, opts);
+    const data = await upRes.json();
+    res.status(upRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Cancel an MTBogd booking by Firebase gameId.
+// bookingId is read from RTDB server-side — client never supplies it directly.
+exports.cancelGameBooking = functions
+  .runWith({ secrets: ['MTBOGD_API_KEY'] })
+  .https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  const { gameId } = req.body || {};
+  if (!gameId) { res.status(400).json({ error: 'gameId required' }); return; }
+
+  const snap = await admin.database().ref(`games/${gameId}`).once('value');
+  const game = snap.val();
+  if (!game) { res.status(404).json({ error: 'Game not found' }); return; }
+  if (!game.bookingId) { res.status(400).json({ error: 'No booking on this game' }); return; }
+
+  const apiKey = process.env.MTBOGD_API_KEY;
+  try {
+    const upRes = await fetch(`${MTBOGD_BASE}/bookings/${game.bookingId}/cancel`, {
+      method: 'PATCH',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await upRes.json();
+    res.status(upRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Sync player list to MTBogd booking by Firebase gameId.
+// bookingId is read from RTDB server-side — client never supplies it directly.
+exports.syncBookingPlayers = functions
+  .runWith({ secrets: ['MTBOGD_API_KEY'] })
+  .https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  const { gameId, players } = req.body || {};
+  if (!gameId || !Array.isArray(players)) { res.status(400).json({ error: 'gameId and players required' }); return; }
+
+  const snap = await admin.database().ref(`games/${gameId}`).once('value');
+  const game = snap.val();
+  if (!game) { res.status(404).json({ error: 'Game not found' }); return; }
+  if (!game.bookingId) { res.status(400).json({ error: 'No booking on this game' }); return; }
+
+  const apiKey = process.env.MTBOGD_API_KEY;
+  try {
+    const upRes = await fetch(`${MTBOGD_BASE}/bookings/${game.bookingId}`, {
+      method: 'PATCH',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ players }),
+    });
     const data = await upRes.json();
     res.status(upRes.status).json(data);
   } catch (err) {
