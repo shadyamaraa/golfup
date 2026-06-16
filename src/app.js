@@ -23,15 +23,20 @@ const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 const main = () => document.getElementById('main-content');
 
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function displayUsername(user) {
   if (!user) return '-';
-  return user.username || user.name || '-';
+  return esc(user.username || user.name || '-');
 }
 
 function displayFullName(user) {
   if (!user) return '-';
-  if (user.lastName || user.firstName) return [user.lastName, user.firstName].filter(Boolean).join(' ');
-  return user.fullName || user.name || '-';
+  if (user.lastName || user.firstName) return esc([user.lastName, user.firstName].filter(Boolean).join(' '));
+  return esc(user.fullName || user.name || '-');
 }
 
 function needsProfileCompletion(user) {
@@ -1176,7 +1181,7 @@ function renderGameView(game) {
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">🏌️ ${t('bookCode')}</span>
@@ -1336,7 +1341,7 @@ function showJoinConfirmModal(game) {
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:420px;">
       <h3 class="modal-title">📋 Тайлбар</h3>
-      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${esc(game.description)}</p>
       <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
         <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
         Та нөхцөлийг зөвшөөрч байна уу?
@@ -1597,7 +1602,7 @@ async function renderAdminPanel() {
         : `<div style="display:flex; flex-direction:column; gap:5px;">
             ${members.map(u => `
               <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
-                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
                 <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
               </div>`).join('')}
@@ -1645,7 +1650,7 @@ async function renderAdminPanel() {
             <div style="display:flex; flex-direction: column; gap: 8px;">
               ${users.map(u => `
                 <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
                     <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
@@ -1675,7 +1680,7 @@ async function renderAdminPanel() {
               <div style="display:flex; flex-direction:column; gap:8px;">
                 ${noCircle.map(u => `
                   <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
-                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                     <div style="flex:1;">
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
                       <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
@@ -1802,7 +1807,7 @@ async function renderAdminPanel() {
     if (!matches.length) { lookupDropdown.style.display = 'none'; return; }
     lookupDropdown.innerHTML = matches.map(u => `
       <div class="lookup-item" data-id="${u.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); font-size:0.95rem; display:flex; gap:8px; align-items:center;">
-        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
         <span style="flex:1;">${displayUsername(u)}</span>
         <span style="font-size:0.8rem; color:var(--text-secondary);">${u.phone || ''}</span>
       </div>`).join('');
@@ -2084,12 +2089,12 @@ async function renderUsersList() {
     return `
       <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;">
         <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;">
-          <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+          <span class="player-avatar-sm ${avatarClass}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
           ${followBtn(u.id)}
         </div>
         <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
           <span class="player-name">${displayUsername(u)}${tag}</span>
-          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (u.bankName || t('unknownBank'))}</span>
+          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(u.bankName) || t('unknownBank'))}</span>
         </button>
         ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
       </div>`;
@@ -2231,19 +2236,19 @@ function showUserDetailsModal(user) {
       </div>
       <div class="bank-info-row">
         <span class="label">Утас:</span>
-        <span class="value">${user.phone || '-'}</span>
+        <span class="value">${esc(user.phone) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${user.bankName || '-'}</span>
+        <span class="value">${esc(user.bankName) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
-        <span class="value">${user.bankAccount || '-'}</span>
+        <span class="value">${esc(user.bankAccount) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
-        <span class="value">${user.bankIban || '-'}</span>
+        <span class="value">${esc(user.bankIban) || '-'}</span>
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
         <button class="btn btn-ghost" id="user-detail-close">Хаах</button>
@@ -3347,19 +3352,19 @@ function showBankDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">💳 ${user.name}-н данс</h3>
+      <h3 class="modal-title">💳 ${displayUsername(user)}-н данс</h3>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${user.bankName || '-'}</span>
+        <span class="value">${esc(user.bankName) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
-        <span class="value" id="val-acc">${user.bankAccount || '-'}</span>
+        <span class="value" id="val-acc">${esc(user.bankAccount) || '-'}</span>
         ${user.bankAccount ? `<button class="btn btn-sm btn-outline copy-btn" data-target="acc">Хуулах</button>` : ''}
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
-        <span class="value" id="val-iban">${user.bankIban || '-'}</span>
+        <span class="value" id="val-iban">${esc(user.bankIban) || '-'}</span>
         ${user.bankIban ? `<button class="btn btn-sm btn-outline copy-btn" data-target="iban">Хуулах</button>` : ''}
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
