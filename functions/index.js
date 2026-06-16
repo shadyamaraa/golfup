@@ -4,6 +4,7 @@ const functions = require('firebase-functions/v1');
 admin.initializeApp();
 
 const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/external/v1';
+const ACUITY_BASE = 'https://acuityscheduling.com/api/v1';
 
 // Verify the system-admin password server-side so it is never shipped in the
 // client bundle. Password is stored in Secret Manager as ADMIN_PASSWORD.
@@ -50,6 +51,43 @@ exports.mtbogdProxy = functions
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
   };
   if (req.method === 'POST') opts.body = JSON.stringify(req.body);
+
+  try {
+    const upRes = await fetch(upstream, opts);
+    const data = await upRes.json();
+    res.status(upRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Proxy Acuity Scheduling API — keeps the credentials server-side.
+// Reachable at /api/acuity/<path> via Firebase Hosting rewrite.
+// Auth is HTTP Basic: numeric User ID as username, API Key as password.
+// Both are stored in Cloud Secret Manager as ACUITY_USER_ID / ACUITY_API_KEY.
+exports.acuityProxy = functions
+  .runWith({ secrets: ['ACUITY_USER_ID', 'ACUITY_API_KEY'] })
+  .https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  const userId = process.env.ACUITY_USER_ID;
+  const apiKey = process.env.ACUITY_API_KEY;
+  if (!userId || !apiKey) { res.status(500).json({ error: 'Proxy not configured' }); return; }
+
+  // Strip /api/acuity prefix; forward remaining path + query string
+  const subPath = req.path.replace(/^\/api\/acuity/, '');
+  const qs = Object.keys(req.query).length ? '?' + new URLSearchParams(req.query).toString() : '';
+  const upstream = `${ACUITY_BASE}${subPath}${qs}`;
+
+  const auth = Buffer.from(`${userId}:${apiKey}`).toString('base64');
+  const opts = {
+    method: req.method,
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+  };
+  if (req.method === 'POST' || req.method === 'PUT') opts.body = JSON.stringify(req.body);
 
   try {
     const upRes = await fetch(upstream, opts);

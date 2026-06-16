@@ -70,7 +70,9 @@ const T = {
     bookClearSlot: 'Цаг арилгах', bookMyBookings: 'Миний захиалгууд', bookNoBookings: 'Захиалга байхгүй',
     bookCustomerName: 'Захиалагчийн нэр', bookCustomerPhone: 'Утас',
     payClubhouse: 'Clubhouse-д төлөх', payQpay: 'QPay', payComingSoon: 'Удахгүй',
-    bookTeeTimeBtn: 'Tee Time захиалах'
+    bookTeeTimeBtn: 'Tee Time захиалах',
+    acuityTest: 'Acuity холболт шалгах', acuityCheck: 'Холболтыг шалгах', acuityConnected: 'Acuity-тэй амжилттай холбогдлоо',
+    acuityError: 'Холболтын алдаа', acuityTypes: 'Үйлчилгээний төрлүүд'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -143,7 +145,9 @@ const T = {
     bookClearSlot: 'Clear slot', bookMyBookings: 'My Bookings', bookNoBookings: 'No bookings yet',
     bookCustomerName: 'Customer name', bookCustomerPhone: 'Phone',
     payClubhouse: 'Pay at Clubhouse', payQpay: 'QPay', payComingSoon: 'Coming soon',
-    bookTeeTimeBtn: 'Book Tee Time'
+    bookTeeTimeBtn: 'Book Tee Time',
+    acuityTest: 'Acuity connection test', acuityCheck: 'Test connection', acuityConnected: 'Connected to Acuity',
+    acuityError: 'Connection error', acuityTypes: 'Appointment types'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -216,7 +220,9 @@ const T = {
     bookClearSlot: '슬롯 취소', bookMyBookings: '내 예약', bookNoBookings: '예약 없음',
     bookCustomerName: '예약자 이름', bookCustomerPhone: '전화번호',
     payClubhouse: '클럽하우스 결제', payQpay: 'QPay', payComingSoon: '곧 출시',
-    bookTeeTimeBtn: '티타임 예약'
+    bookTeeTimeBtn: '티타임 예약',
+    acuityTest: 'Acuity 연결 테스트', acuityCheck: '연결 테스트', acuityConnected: 'Acuity에 연결됨',
+    acuityError: '연결 오류', acuityTypes: '예약 유형'
   }
 };
 

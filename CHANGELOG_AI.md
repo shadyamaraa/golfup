@@ -1,5 +1,42 @@
 # CHANGELOG_AI.md
 
+## 2026-06-16
+
+### Acuity Scheduling integration — PoC (server-side proxy + connection test)
+
+### Tool
+Claude Code
+
+### Branch
+claude/epic-ritchie-esnljg
+
+### Changed Files
+- `functions/index.js` (new `acuityProxy`)
+- `firebase.json` (rewrite)
+- `src/acuity.js` (new)
+- `src/app.js` (router + `renderAcuityTest` + admin link)
+- `src/i18n.js`
+- `src/config.js` (`ACUITY_CONFIG` placeholder)
+
+### Summary
+Proof-of-concept groundwork for booking Acuity Scheduling appointments in-app,
+mirroring the existing MTBogd proxy pattern.
+1. **`acuityProxy`** Firebase Function — reachable at `/api/acuity/*` via hosting
+   rewrite. Injects HTTP Basic Auth (numeric User ID + API Key, stored in Cloud
+   Secret Manager as `ACUITY_USER_ID` / `ACUITY_API_KEY`) and forwards to
+   `https://acuityscheduling.com/api/v1/*`. Credentials never reach the client.
+2. **`src/acuity.js`** — same-origin client wrappers: `getMe`, `getAppointmentTypes`,
+   `getAvailabilityDates`, `getAvailabilityTimes`, `listAppointments`, plus
+   `createAppointment` (defined for the upcoming booking flow; not called by the PoC).
+3. **Admin-only connection test** (`#/acuity`, linked from the admin panel) — reads
+   account info + appointment types and shows success/error, proving the integration
+   end-to-end. Read-only; creates no appointments.
+
+### Risk
+Low. Additive only — new function + same-origin client + admin-gated test view.
+No change to Firebase data model, function runtime, or existing flows. Requires
+the `ACUITY_USER_ID` / `ACUITY_API_KEY` secrets to be set before deploy.
+
 ## 2026-06-07
 
 ### Secured MTBogd API behind a server-side proxy — `functions/index.js`, `firebase.json`, `src/booking.js`

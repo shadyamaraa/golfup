@@ -15,6 +15,10 @@
         "function": "mtbogdProxy"
       },
       {
+        "source": "/api/acuity/**",
+        "function": "acuityProxy"
+      },
+      {
         "source": "/api/admin-login",
         "function": "adminLogin"
       },

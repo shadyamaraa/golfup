@@ -27,3 +27,11 @@ export const MTBOGD_CONFIG = {
   apiUrl: 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api',
   locationName: 'Sky Resort Golf Club',
 };
+
+// Acuity Scheduling. Calls go through the server-side proxy (/api/acuity/*);
+// no secrets here. appointmentTypeID / calendarID are filled in once the
+// connection test reveals what the Acuity account exposes.
+export const ACUITY_CONFIG = {
+  appointmentTypeID: null,
+  calendarID: null,
+};

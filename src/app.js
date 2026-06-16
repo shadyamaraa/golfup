@@ -2,6 +2,7 @@ import { t, getLang, toggleLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
+import * as acuity from './acuity.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 let currentUser = null;
@@ -192,6 +193,7 @@ export async function router() {
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
     else if (hash === '#/admin') await renderAdminPanel();
+    else if (hash === '#/acuity') await renderAcuityTest();
     else await renderHome();
   } catch (err) {
     console.error('Router error:', err);
@@ -1520,9 +1522,12 @@ async function renderAdminPanel() {
     <div class="detail-container fade-in">
       <a href="#/" class="back-link">← ${t('back')}</a>
       <div class="glass-card" style="margin-bottom: 20px;">
-        <h2 class="card-title">🛡️ Admin Panel</h2>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <h2 class="card-title" style="margin:0;">🛡️ Admin Panel</h2>
+          <a href="#/acuity" class="btn btn-sm btn-outline">🗓️ ${t('acuityTest')}</a>
+        </div>
 
-        <div style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <div style="display:flex; gap:8px; margin:20px 0; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
           <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
           <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
           <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
@@ -1964,6 +1969,67 @@ function showAdminEditUserModal(user, onSaved) {
 }
 
 // ---- Standalone Booking View ----
+// Admin-only connectivity test for the Acuity Scheduling integration (PoC).
+// Reads account info + appointment types through the server-side proxy to
+// prove the integration works end-to-end. No appointments are created here.
+async function renderAcuityTest() {
+  if (!currentUser || currentUser.role !== 'admin') {
+    location.hash = '#/';
+    return;
+  }
+  main().innerHTML = `
+    <div class="create-container fade-in">
+      <a href="#/admin" class="back-link">← ${t('back')}</a>
+      <div class="create-card glass-card">
+        <h2 class="card-title">🗓️ ${t('acuityTest')}</h2>
+        <p style="color:var(--text-secondary); font-size:0.85rem; margin-top:-6px;">Acuity Scheduling</p>
+        <div class="create-form">
+          <button type="button" id="acuity-check-btn" class="btn btn-primary" style="width:100%;">${t('acuityCheck')}</button>
+          <div id="acuity-result" style="margin-top:14px;"></div>
+        </div>
+      </div>
+    </div>`;
+
+  const resultEl = document.getElementById('acuity-result');
+  const btn = document.getElementById('acuity-check-btn');
+
+  function row(label, value) {
+    return `<div style="display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--border-color);">
+      <span style="color:var(--text-secondary); font-size:0.85rem;">${label}</span>
+      <span style="font-size:0.9rem; text-align:right;">${value}</span>
+    </div>`;
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    resultEl.innerHTML = `<div class="loading-spinner"></div>`;
+    try {
+      const [me, types] = await Promise.all([
+        acuity.getMe(),
+        acuity.getAppointmentTypes(),
+      ]);
+      const typeRows = Array.isArray(types) && types.length
+        ? types.map(ty => row(
+            `${ty.name} <span style="color:var(--text-secondary);">#${ty.id}</span>`,
+            `${ty.duration ? ty.duration + ' мин' : ''}${ty.price && ty.price !== '0.00' ? ' · ' + ty.price : ''}`
+          )).join('')
+        : `<p style="color:var(--text-secondary); font-size:0.85rem;">—</p>`;
+      resultEl.innerHTML = `
+        <div style="padding:10px 12px; border-radius:8px; background:rgba(76,175,80,0.12); color:var(--emerald); margin-bottom:14px;">✅ ${t('acuityConnected')}</div>
+        <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:12px; margin-bottom:14px;">
+          ${row('Account', me?.email || me?.name || '—')}
+          ${me?.timezone ? row('Timezone', me.timezone) : ''}
+        </div>
+        <h3 style="margin:0 0 6px;">${t('acuityTypes')} (${Array.isArray(types) ? types.length : 0})</h3>
+        <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:12px;">${typeRows}</div>`;
+    } catch (err) {
+      resultEl.innerHTML = `<div style="padding:10px 12px; border-radius:8px; background:rgba(244,67,54,0.12); color:var(--danger-color);">❌ ${t('acuityError')}: ${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 async function renderBookingView() {
   const today = new Date().toISOString().split('T')[0];
   main().innerHTML = `
