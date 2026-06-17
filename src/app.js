@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
-const isKiosk = new URLSearchParams(location.search).has('kiosk');
+const isKiosk = !!window.__TAURI__;
 
 let currentUser = null;
 let allUsersMap = {};
