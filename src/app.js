@@ -3732,7 +3732,7 @@ async function renderOrderDetail(orderId) {
 }
 
 // Kitchen display — password protected, real-time orders
-let kitchenUnlock = false;
+let kitchenUnlock = localStorage.getItem('kitchenUnlock') === '1';
 
 async function renderKitchenDisplay() {
   if (!kitchenUnlock) {
@@ -3758,6 +3758,7 @@ async function renderKitchenDisplay() {
         const data = await res.json();
         if (data.ok) {
           kitchenUnlock = true;
+          localStorage.setItem('kitchenUnlock', '1');
           renderKitchenDisplay();
         } else {
           showToast('Нэвтрэх код буруу', 'error');
@@ -3780,6 +3781,7 @@ async function renderKitchenDisplay() {
 
   document.getElementById('kitchen-logout-btn').onclick = () => {
     kitchenUnlock = false;
+    localStorage.removeItem('kitchenUnlock');
     location.hash = '#/kitchen';
   };
 
@@ -3801,7 +3803,15 @@ async function renderKitchenDisplay() {
 
   const unsub = store.onOrdersChanged((orders) => {
     const active = orders.filter(o => o.status === 'paid');
-    if (active.length > prevCount) playBeep();
+    if (active.length > prevCount) {
+      playBeep();
+      const newest = active[0];
+      const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
+      window.__TAURI__?.core?.invoke?.('notify_new_order', {
+        title: '🔔 Шинэ захиалга!',
+        body: `${newest?.customerName || ''} — ${body}`,
+      }).catch(() => {});
+    }
     prevCount = active.length;
 
     const el = document.getElementById('kitchen-orders');

@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
+  "remote": {
+    "urls": ["https://ubgolf.club/*"]
+  },
   "permissions": [
     "core:default",
     "opener:default",
