@@ -4,6 +4,8 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
+const isKiosk = new URLSearchParams(location.search).has('kiosk');
+
 let currentUser = null;
 let allUsersMap = {};
 let currentUserFollows = {};
@@ -174,6 +176,13 @@ export async function router() {
 
   try {
     const hash = location.hash || '#/';
+
+    // Kiosk mode: lock to kitchen route and hide header.
+    if (isKiosk) {
+      document.getElementById('app-header')?.style.setProperty('display', 'none', 'important');
+      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; isRouting = false; return; }
+    }
+
     currentUser = store.getUser();
     if (currentUser && followsLoadedForUser !== currentUser.id) {
       const [follows, followerIds] = await Promise.all([

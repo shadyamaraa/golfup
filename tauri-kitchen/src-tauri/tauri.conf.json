@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "url": "https://ubgolf.club/#/kitchen",
+        "url": "https://ubgolf.club/?kiosk=1#/kitchen",
         "title": "UB Golf — Гал тогоо",
         "width": 460,
         "height": 760,
