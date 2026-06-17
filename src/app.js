@@ -3827,11 +3827,38 @@ async function renderKitchenDisplay() {
   };
   document.addEventListener('click', unlockAudio);
 
+  const showOrderBanner = (order) => {
+    const existing = document.getElementById('kitchen-order-banner');
+    if (existing) existing.remove();
+    const items = (order.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(' · ');
+    const banner = document.createElement('div');
+    banner.id = 'kitchen-order-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#16a34a;color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
+    banner.innerHTML = `
+      <div>
+        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">🔔 Шинэ захиалга!</div>
+        <div style="font-weight:700;">${esc(order.customerName || '')} ${order.customerPhone ? '· ' + esc(order.customerPhone) : ''}</div>
+        <div style="opacity:0.9;font-size:0.9rem;">${items}</div>
+      </div>
+      <button id="kitchen-banner-close" style="background:rgba(255,255,255,0.25);border:none;color:#fff;font-size:1.4rem;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;">✕</button>
+    `;
+    if (!document.getElementById('kitchen-banner-style')) {
+      const s = document.createElement('style');
+      s.id = 'kitchen-banner-style';
+      s.textContent = '@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}';
+      document.head.appendChild(s);
+    }
+    document.body.appendChild(banner);
+    banner.querySelector('#kitchen-banner-close').onclick = () => banner.remove();
+    setTimeout(() => banner?.remove(), 8000);
+  };
+
   const unsub = store.onOrdersChanged((orders) => {
     const active = orders.filter(o => o.status === 'paid');
     if (active.length > prevCount) {
       playBeep();
       const newest = active[0];
+      if (newest) showOrderBanner(newest);
       const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
       window.__TAURI__?.core?.invoke?.('notify_new_order', {
         title: '🔔 Шинэ захиалга!',
