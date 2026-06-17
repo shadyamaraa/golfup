@@ -3834,7 +3834,7 @@ async function renderKitchenDisplay() {
       const pickup = order.pickupTime === 'asap' ? `<span style="font-size:0.82rem;color:var(--text-secondary);">Яаралтай</span>`
         : `<span style="font-size:0.82rem;color:var(--gold);">⏰ ${esc(order.pickupTime?.slice(11,16) || order.pickupTime)}</span>`;
 
-      const ts = order.createdAt?.toDate?.()?.toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) || '';
+      const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
 
       return `
         <div class="glass-card" style="margin-bottom:12px;">

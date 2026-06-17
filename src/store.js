@@ -1,11 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue, off } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
 let db = null;
-let fs = null;
 let auth = null;
 export let firebaseApp = null;
 let useFirebase = false;
@@ -17,23 +15,14 @@ export async function initStore() {
       db = getDatabase(firebaseApp);
       auth = getAuth(firebaseApp);
       useFirebase = true;
-      console.log('Firebase RTDB connected');
+      console.log('Firebase connected');
     } catch (e) {
       console.warn('Firebase init failed, using localStorage', e);
-    }
-    if (useFirebase) {
-      try {
-        fs = getFirestore(firebaseApp);
-        console.log('Firestore connected');
-      } catch (e) {
-        console.warn('Firestore init failed (orders unavailable):', e);
-      }
     }
   }
 }
 
 export function isUsingFirebase() { return useFirebase; }
-export function isFirestoreReady() { return useFirebase && !!fs; }
 
 // ---- User Management ----
 export function getUser() {
@@ -347,38 +336,34 @@ export async function deleteTable(id) {
   await remove(ref(db, 'tables/' + id));
 }
 
-// ---- Orders (Firestore) ----
+// ---- Orders (RTDB) ----
 export async function createOrder(order) {
-  if (!useFirebase || !fs) throw new Error('Firebase not configured');
-  const docRef = await addDoc(collection(fs, 'orders'), {
-    ...order,
-    notified: false,
-    createdAt: serverTimestamp(),
-  });
-  return docRef.id;
+  if (!useFirebase || !db) throw new Error('Firebase not configured');
+  const id = 'o_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const record = { ...order, id, notified: false, createdAt: Date.now() };
+  await set(ref(db, 'orders/' + id), record);
+  return id;
 }
 
 export async function updateOrderStatus(id, status) {
-  if (!useFirebase || !fs) return;
-  await updateDoc(doc(fs, 'orders', id), { status });
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'orders/' + id), { status });
 }
 
 export async function loadOrder(id) {
-  if (!useFirebase || !fs) return null;
-  const snap = await getDoc(doc(fs, 'orders', id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'orders/' + id));
+  return snap.exists() ? { id, ...snap.val() } : null;
 }
 
 export function onOrdersChanged(cb) {
-  if (!useFirebase || !fs) return () => {};
-  const unsub = onSnapshot(collection(fs, 'orders'), (snap) => {
-    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    orders.sort((a, b) => {
-      const at = a.createdAt?.toMillis?.() || 0;
-      const bt = b.createdAt?.toMillis?.() || 0;
-      return bt - at;
-    });
+  if (!useFirebase || !db) return () => {};
+  const ordersRef = ref(db, 'orders');
+  onValue(ordersRef, (snap) => {
+    if (!snap.exists()) { cb([]); return; }
+    const orders = Object.entries(snap.val()).map(([id, val]) => ({ id, ...val }));
+    orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     cb(orders);
   });
-  return unsub;
+  return () => off(ordersRef);
 }
