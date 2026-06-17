@@ -1,5 +1,20 @@
 # CHANGELOG_AI.md
 
+## 2026-06-17
+
+### Food ordering Phase 1 — menu, ordering, kitchen display
+
+**New features:**
+- `src/store.js`: Added Firestore (`getFirestore`) for `orders` collection. New functions: `loadMenu`, `saveMenuItem`, `deleteMenuItem`, `loadTables`, `saveTable`, `deleteTable`, `createOrder`, `updateOrderStatus`, `loadOrder`, `onOrdersChanged`. Menu and tables stored in RTDB; orders in Firestore.
+- `src/app.js`: New routes `#/menu`, `#/order/:gameId`, `#/orders/:id`, `#/kitchen`. Food order button added to game detail view. `renderFoodOrder()` — popular items shown first, others collapsible; cart with stepper. `showCheckoutModal()` — delivery location (restaurant table with floor plan, outdoor, course/marshal), pickup time (ASAP or scheduled datetime), customer name/phone auto-filled from current user. `renderOrderDetail()` — deeplink target for Tauri. `renderKitchenDisplay()` — password-protected real-time orders list; beep on new order; mark done button. `renderAdminMenuTab()` — add/delete menu items (popular flag, available toggle, category, EN name), add/delete tables.
+- `src/app.js`: Admin panel gets new "🍽️ Цэс" tab.
+- `src/i18n.js`: Added food ordering keys in mn/en/kr.
+- `functions/index.js`: Added `kitchenLogin` function (KITCHEN_PASSWORD secret).
+- `firebase.json`: Added `/api/kitchen-login` → `kitchenLogin` rewrite.
+
+**Fixes:**
+- Removed bookingId diagnostic text from game detail view.
+
 ## 2026-06-12
 
 ### MTBogd player sync fixes — `src/app.js`, `src/booking.js`

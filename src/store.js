@@ -1,9 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue, off } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
+import { getFirestore, collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
 let db = null;
+let fs = null;
 let auth = null;
 export let firebaseApp = null;
 let useFirebase = false;
@@ -13,6 +15,7 @@ export async function initStore() {
     try {
       firebaseApp = initializeApp(firebaseConfig);
       db = getDatabase(firebaseApp);
+      fs = getFirestore(firebaseApp);
       auth = getAuth(firebaseApp);
       useFirebase = true;
       console.log('Firebase connected');
@@ -288,4 +291,86 @@ export async function saveFCMToken(userId, token) {
   if (useFirebase && db && userId && token) {
     await set(ref(db, `users/${userId}/fcmToken`), token);
   }
+}
+
+// ---- Menu (RTDB) ----
+export async function loadMenu() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'menu'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val())
+    .filter(item => item && item.id)
+    .sort((a, b) => {
+      if (a.popular && !b.popular) return -1;
+      if (!a.popular && b.popular) return 1;
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
+}
+
+export async function saveMenuItem(item) {
+  if (!useFirebase || !db) return;
+  if (!item.id) item.id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  await set(ref(db, 'menu/' + item.id), item);
+  return item.id;
+}
+
+export async function deleteMenuItem(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'menu/' + id));
+}
+
+// ---- Tables (RTDB) ----
+export async function loadTables() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'tables'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()).filter(t => t && t.id).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+}
+
+export async function saveTable(table) {
+  if (!useFirebase || !db) return;
+  if (!table.id) table.id = 'tbl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  await set(ref(db, 'tables/' + table.id), table);
+  return table.id;
+}
+
+export async function deleteTable(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'tables/' + id));
+}
+
+// ---- Orders (Firestore) ----
+export async function createOrder(order) {
+  if (!useFirebase || !fs) throw new Error('Firebase not configured');
+  const docRef = await addDoc(collection(fs, 'orders'), {
+    ...order,
+    notified: false,
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateOrderStatus(id, status) {
+  if (!useFirebase || !fs) return;
+  await updateDoc(doc(fs, 'orders', id), { status });
+}
+
+export async function loadOrder(id) {
+  if (!useFirebase || !fs) return null;
+  const snap = await getDoc(doc(fs, 'orders', id));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export function onOrdersChanged(cb) {
+  if (!useFirebase || !fs) return () => {};
+  const unsub = onSnapshot(collection(fs, 'orders'), (snap) => {
+    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    orders.sort((a, b) => {
+      const at = a.createdAt?.toMillis?.() || 0;
+      const bt = b.createdAt?.toMillis?.() || 0;
+      return bt - at;
+    });
+    cb(orders);
+  });
+  return unsub;
 }

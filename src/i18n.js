@@ -74,7 +74,22 @@ const T = {
     bookClearSlot: 'Цаг арилгах', bookMyBookings: 'Миний захиалгууд', bookNoBookings: 'Захиалга байхгүй',
     bookCustomerName: 'Захиалагчийн нэр', bookCustomerPhone: 'Утас',
     payClubhouse: 'Clubhouse-д төлөх', payQpay: 'QPay', payComingSoon: 'Удахгүй',
-    bookTeeTimeBtn: 'Tee Time захиалах'
+    bookTeeTimeBtn: 'Tee Time захиалах',
+    foodMenu: 'Хоолны цэс', orderFood: 'Хоол захиалах', addToOrder: 'Нэмэх', removeFromOrder: 'Хасах',
+    orderTotal: 'Нийт дүн', placeOrder: 'Захиалах', orderPlaced: 'Захиалга амжилттай!',
+    orderSummary: 'Захиалгын мэдээлэл', orderItems: 'Захиалсан зүйлс',
+    popularItems: 'Алдартай', otherItems: 'Бусад хоол', showMore: 'Бусад харах', showLess: 'Нуух',
+    deliveryLocation: 'Хаана авах вэ?', deliveryTable: 'Ресторанд ширээ', deliveryOutdoor: 'Гадаа ширээ', deliveryCourse: 'Талбай дээр (Маршал)',
+    selectTable: 'Ширээ сонгох', floorPlan: 'Ширээний байршил',
+    pickupTime: 'Хэзээ авах вэ?', pickupAsap: 'Бэлэн болсон даруй', pickupScheduled: 'Цаг зааж авах',
+    customerName: 'Нэр', customerPhone: 'Утасны дугаар',
+    orderStatusPending: 'Хүлээгдэж байна', orderStatusPaid: 'Төлөгдсөн', orderStatusCompleted: 'Гүйцэтгэсэн',
+    kitchenTitle: 'Гал тогооны дэлгэц', kitchenLogin: 'Нэвтрэх', kitchenCode: 'Гал тогооны нэвтрэх код',
+    kitchenNoOrders: 'Одоогоор захиалга байхгүй', kitchenMarkDone: 'Дууссан',
+    menuManage: 'Цэс удирдах', addMenuItem: '+ Зүйл нэмэх', editMenuItem: 'Засах', itemName: 'Нэр (MN)', itemNameEn: 'Нэр (EN)',
+    itemPrice: 'Үнэ (₮)', itemCategory: 'Ангилал', itemAvailable: 'Идэвхтэй', itemPopular: 'Алдартай',
+    tableManage: 'Ширээний тохиргоо', addTable: '+ Ширээ нэмэх', tableName: 'Ширээний нэр', tablePos: 'Байрлал (%)',
+    ordersCourse: '📍 Талбайд хүргэх', ordersOutdoor: '🌿 Гадаа ширээ'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -151,7 +166,22 @@ const T = {
     bookClearSlot: 'Clear slot', bookMyBookings: 'My Bookings', bookNoBookings: 'No bookings yet',
     bookCustomerName: 'Customer name', bookCustomerPhone: 'Phone',
     payClubhouse: 'Pay at Clubhouse', payQpay: 'QPay', payComingSoon: 'Coming soon',
-    bookTeeTimeBtn: 'Book Tee Time'
+    bookTeeTimeBtn: 'Book Tee Time',
+    foodMenu: 'Food Menu', orderFood: 'Order Food', addToOrder: 'Add', removeFromOrder: 'Remove',
+    orderTotal: 'Total', placeOrder: 'Place Order', orderPlaced: 'Order placed!',
+    orderSummary: 'Order Summary', orderItems: 'Items',
+    popularItems: 'Popular', otherItems: 'More Items', showMore: 'Show more', showLess: 'Show less',
+    deliveryLocation: 'Where to deliver?', deliveryTable: 'Restaurant table', deliveryOutdoor: 'Outdoor table', deliveryCourse: 'On course (Marshal)',
+    selectTable: 'Select table', floorPlan: 'Floor Plan',
+    pickupTime: 'When to pick up?', pickupAsap: 'As soon as ready', pickupScheduled: 'Schedule a time',
+    customerName: 'Name', customerPhone: 'Phone number',
+    orderStatusPending: 'Pending', orderStatusPaid: 'Paid', orderStatusCompleted: 'Completed',
+    kitchenTitle: 'Kitchen Display', kitchenLogin: 'Login', kitchenCode: 'Kitchen access code',
+    kitchenNoOrders: 'No orders yet', kitchenMarkDone: 'Done',
+    menuManage: 'Menu Management', addMenuItem: '+ Add Item', editMenuItem: 'Edit', itemName: 'Name (MN)', itemNameEn: 'Name (EN)',
+    itemPrice: 'Price (₮)', itemCategory: 'Category', itemAvailable: 'Active', itemPopular: 'Popular',
+    tableManage: 'Table Setup', addTable: '+ Add Table', tableName: 'Table name', tablePos: 'Position (%)',
+    ordersCourse: '📍 Deliver to course', ordersOutdoor: '🌿 Outdoor table'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -228,7 +258,22 @@ const T = {
     bookClearSlot: '슬롯 취소', bookMyBookings: '내 예약', bookNoBookings: '예약 없음',
     bookCustomerName: '예약자 이름', bookCustomerPhone: '전화번호',
     payClubhouse: '클럽하우스 결제', payQpay: 'QPay', payComingSoon: '곧 출시',
-    bookTeeTimeBtn: '티타임 예약'
+    bookTeeTimeBtn: '티타임 예약',
+    foodMenu: '음식 메뉴', orderFood: '음식 주문', addToOrder: '추가', removeFromOrder: '제거',
+    orderTotal: '합계', placeOrder: '주문하기', orderPlaced: '주문 완료!',
+    orderSummary: '주문 요약', orderItems: '주문 항목',
+    popularItems: '인기 메뉴', otherItems: '기타', showMore: '더 보기', showLess: '접기',
+    deliveryLocation: '어디로 배달?', deliveryTable: '레스토랑 테이블', deliveryOutdoor: '야외 테이블', deliveryCourse: '코스 (마샬)',
+    selectTable: '테이블 선택', floorPlan: '플로어 플랜',
+    pickupTime: '언제 받을까요?', pickupAsap: '준비되는 즉시', pickupScheduled: '시간 지정',
+    customerName: '이름', customerPhone: '전화번호',
+    orderStatusPending: '대기 중', orderStatusPaid: '결제됨', orderStatusCompleted: '완료',
+    kitchenTitle: '주방 디스플레이', kitchenLogin: '로그인', kitchenCode: '주방 코드',
+    kitchenNoOrders: '주문 없음', kitchenMarkDone: '완료',
+    menuManage: '메뉴 관리', addMenuItem: '+ 항목 추가', editMenuItem: '수정', itemName: '이름 (MN)', itemNameEn: '이름 (EN)',
+    itemPrice: '가격 (₮)', itemCategory: '카테고리', itemAvailable: '활성', itemPopular: '인기',
+    tableManage: '테이블 설정', addTable: '+ 테이블 추가', tableName: '테이블 이름', tablePos: '위치 (%)',
+    ordersCourse: '📍 코스 배달', ordersOutdoor: '🌿 야외 테이블'
   }
 };
 

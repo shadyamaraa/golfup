@@ -37,6 +37,10 @@
         "function": "adminLogin"
       },
       {
+        "source": "/api/kitchen-login",
+        "function": "kitchenLogin"
+      },
+      {
         "source": "/api/cancel-booking",
         "function": "cancelGameBooking"
       },

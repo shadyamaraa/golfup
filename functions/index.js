@@ -5,6 +5,26 @@ admin.initializeApp();
 
 const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/external/v1';
 
+// Kitchen display password — stored in Secret Manager as KITCHEN_PASSWORD.
+// Reachable at /api/kitchen-login via a hosting rewrite.
+exports.kitchenLogin = functions
+  .runWith({ secrets: ['KITCHEN_PASSWORD'] })
+  .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
+
+    const expected = process.env.KITCHEN_PASSWORD;
+    const provided = (req.body && req.body.password) || '';
+    if (expected && provided === expected) {
+      res.status(200).json({ ok: true });
+    } else {
+      res.status(401).json({ ok: false });
+    }
+  });
+
 // Verify the system-admin password server-side so it is never shipped in the
 // client bundle. Password is stored in Secret Manager as ADMIN_PASSWORD.
 // Reachable at /api/admin-login via a hosting rewrite.
