@@ -4,7 +4,7 @@
   "description": "Capability for the main window",
   "windows": ["main"],
   "remote": {
-    "urls": ["https://ubgolf.club/*"]
+    "urls": ["https://ubgolf.club/*", "https://golfup-app--food-test-04iqtjg2.web.app/*"]
   },
   "permissions": [
     "core:default",
