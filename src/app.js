@@ -187,7 +187,7 @@ export async function router() {
     updateHeader();
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/')) {
+    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen') {
       renderAuth();
       return;
     }
@@ -206,6 +206,7 @@ export async function router() {
     else await renderHome();
   } catch (err) {
     console.error('Router error:', err);
+    main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
   } finally {
     isRouting = false;
   }
@@ -3419,7 +3420,13 @@ let foodCart = {}; // { itemId: qty }
 
 async function renderFoodOrder(gameId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
-  const [menuItems, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  let menuItems, tables;
+  try {
+    [menuItems, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  } catch (err) {
+    main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Цэс ачааллахад алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
+    return;
+  }
   const available = menuItems.filter(i => i.available !== false);
   const popular = available.filter(i => i.popular);
   const others = available.filter(i => !i.popular);
@@ -3762,11 +3769,32 @@ async function renderKitchenDisplay() {
     return;
   }
 
+  // Check if Firestore is available
+  if (!store.isFirestoreReady()) {
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <div class="glass-card" style="max-width:400px;margin:60px auto;">
+          <h2 class="card-title">👨‍🍳 ${t('kitchenTitle')}</h2>
+          <p style="color:var(--danger-color);">⚠️ Firestore тохируулагдаагүй байна. Firebase Console-д Firestore Database идэвхжүүлнэ үү.</p>
+          <a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a>
+        </div>
+      </div>`;
+    return;
+  }
+
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <h2 style="margin-bottom:12px;">👨‍🍳 ${t('kitchenTitle')}</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;">👨‍🍳 ${t('kitchenTitle')}</h2>
+        <button id="kitchen-logout-btn" class="btn btn-ghost btn-sm">Гарах</button>
+      </div>
       <div id="kitchen-orders"><div class="loading-spinner"></div></div>
     </div>`;
+
+  document.getElementById('kitchen-logout-btn').onclick = () => {
+    kitchenUnlock = false;
+    location.hash = '#/kitchen';
+  };
 
   let prevCount = 0;
   let audioCtx = null;
@@ -3845,7 +3873,13 @@ async function renderAdminMenuTab() {
   if (!el) return;
   el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
 
-  const [items, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  let items, tables;
+  try {
+    [items, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  } catch (err) {
+    el.innerHTML = `<p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p>`;
+    return;
+  }
 
   el.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:20px;">

@@ -15,17 +15,25 @@ export async function initStore() {
     try {
       firebaseApp = initializeApp(firebaseConfig);
       db = getDatabase(firebaseApp);
-      fs = getFirestore(firebaseApp);
       auth = getAuth(firebaseApp);
       useFirebase = true;
-      console.log('Firebase connected');
+      console.log('Firebase RTDB connected');
     } catch (e) {
       console.warn('Firebase init failed, using localStorage', e);
+    }
+    if (useFirebase) {
+      try {
+        fs = getFirestore(firebaseApp);
+        console.log('Firestore connected');
+      } catch (e) {
+        console.warn('Firestore init failed (orders unavailable):', e);
+      }
     }
   }
 }
 
 export function isUsingFirebase() { return useFirebase; }
+export function isFirestoreReady() { return useFirebase && !!fs; }
 
 // ---- User Management ----
 export function getUser() {
