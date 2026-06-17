@@ -44,7 +44,7 @@ export function saveUser(user) {
 export async function adminCreateUser(name, password, phone, role = 'user', communities = []) {
   const id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   const user = { 
-    id, name, username: '', fullName: '', communities, password, phone, role, status: 'active',
+    id, name, username: '', firstName: '', lastName: '', fullName: '', communities, password, phone, role, status: 'active',
     bankName: '', bankAccount: '', bankIban: '', avatar: '',
     createdAt: Date.now() 
   };

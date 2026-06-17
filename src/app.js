@@ -23,18 +23,24 @@ const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 const main = () => document.getElementById('main-content');
 
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function displayUsername(user) {
   if (!user) return '-';
-  return user.username || user.name || '-';
+  return esc(user.username || user.name || '-');
 }
 
 function displayFullName(user) {
   if (!user) return '-';
-  return user.fullName || user.name || '-';
+  if (user.lastName || user.firstName) return esc([user.lastName, user.firstName].filter(Boolean).join(' '));
+  return esc(user.fullName || user.name || '-');
 }
 
 function needsProfileCompletion(user) {
-  return !!user && (!user.username || !user.fullName);
+  return !!user && (!user.username || (!user.firstName && !user.fullName));
 }
 
 const MN_BANKS = [
@@ -52,7 +58,9 @@ const COMMUNITY_OPTIONS = [
   { id: 'star', label: 'Star', type: 'club' },
   { id: 'vista', label: 'Vista', type: 'club' },
   { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
+  { id: 'samraajid', label: 'Самраажид', type: 'club' },
   { id: 'bulaa', label: 'Булаа', type: 'interest' },
+  { id: 'petit_bulaa', label: 'Petit Bulaa', type: 'interest' },
   { id: 'senior', label: 'Сениор', type: 'interest' },
   { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' }
 ];
@@ -187,7 +195,6 @@ export async function router() {
     if (hash === '#/' || hash === '#/home') await renderHome();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
-    else if (hash === '#/booking') await renderBookingView();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -336,7 +343,8 @@ function renderAuth() {
 
 // ---- Home View ----
 async function renderHome() {
-  homeFilter = 'all';
+  const hasCircles = userCommunityIds(currentUser).length > 0;
+  homeFilter = hasCircles ? 'community' : 'mine';
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="hero-section">
@@ -346,15 +354,14 @@ async function renderHome() {
           <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
             <span class="btn-icon-left">+</span> ${t('createGame')}
           </a>
-          <a href="#/booking" class="btn btn-outline btn-lg">⛳ ${t('bookingTab')}</a>
         </div>
       </div>
       <div id="notifications-section"></div>
       <div class="section">
         <div class="game-filter-tabs">
-          <button class="filter-tab active" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab" data-tab="community">◎ ${t('tabCommunity')}</button>
+          <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
+          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
+          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
           <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
           <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
@@ -555,10 +562,15 @@ function renderGamesHome(games) {
       if (!grouped[g.date]) grouped[g.date] = [];
       grouped[g.date].push(g);
     });
-    activeContainer.innerHTML = Object.entries(grouped).map(([date, dayGames]) => `
+    const days = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+    days.forEach(([, dayGames]) => dayGames.sort((a, b) => a.time.localeCompare(b.time)));
+
+    activeContainer.innerHTML = days.map(([date, dayGames]) => `
       <div class="day-group">
-        <div class="day-group-header">${formatDate(date)}</div>
-        ${renderGamesCards(dayGames)}
+        <div class="day-group-header">${formatDate(date)} ${dayGames.length > 1 ? `<span style="font-weight:400;font-size:0.8rem;color:var(--text-secondary);">(${dayGames.length})</span>` : ''}</div>
+        <div class="day-carousel" style="display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px;">
+          ${dayGames.map(g => `<div style="flex:0 0 ${dayGames.length > 1 ? '88%' : '100%'};scroll-snap-align:start;">${renderGamesCards([g])}</div>`).join('')}
+        </div>
       </div>`).join('');
   } else {
     activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
@@ -629,7 +641,8 @@ function renderPlayerDots(game) {
 // ---- Create Game View ----
 async function renderCreateGame() {
   main().innerHTML = `<div class="create-container fade-in"><div class="loading-spinner"></div></div>`;
-  const today = new Date().toISOString().split('T')[0];
+  const _td = new Date();
+  const today = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
   const users = await store.loadAllUsers();
   // Filter out hold status, the current user, AND the System Admin
   const availableUsers = users.filter(u => u.status !== 'hold' && u.id !== currentUser.id && u.id !== 'admin_uid');
@@ -677,17 +690,8 @@ async function renderCreateGame() {
                   <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
                 </div>
               </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="cart-minus">−</button>
-                  <span id="cart-count-display" style="min-width:20px; text-align:center;">0</span>
-                  <button type="button" class="stepper-btn" id="cart-plus">+</button>
-                </div>
-              </div>
               <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
             </div>
-            <div id="teetime-slots-container"></div>
             <div id="selected-slot-display"></div>
           </div>
           <div class="input-group">
@@ -706,10 +710,10 @@ async function renderCreateGame() {
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" checked style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
+                <input type="radio" name="visibility" value="public" ${myCommunities.length === 0 ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
-                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
+                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : 'checked'} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
                 <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
@@ -740,7 +744,6 @@ async function renderCreateGame() {
 
   let selectedTeeSlot = null;
   let teeHoles = 18;
-  let cartCount = 0;
 
   function updateSelectedSlotDisplay() {
     const el = document.getElementById('selected-slot-display');
@@ -766,42 +769,119 @@ async function renderCreateGame() {
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
-      document.getElementById('teetime-slots-container').innerHTML = '';
     });
   }
 
-  async function fetchAndRenderSlots() {
-    const container = document.getElementById('teetime-slots-container');
-    if (!container) return;
+  // Prefetch + 60s cache so the popup opens instantly
+  const slotsCache = {};
+  const SLOTS_TTL = 60 * 1000;
+  function fetchTeeTimes() {
     const date = document.getElementById('game-date').value;
     const groupSize = +document.getElementById('game-group-size').value;
-    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
+    const key = `${date}|${groupSize}|${teeHoles}`;
+    const hit = slotsCache[key];
+    if (hit && Date.now() - hit.ts < SLOTS_TTL) return hit.promise;
+    const promise = mtbogd.getTeeTimes(date, groupSize, teeHoles)
+      .catch(err => { delete slotsCache[key]; throw err; });
+    slotsCache[key] = { ts: Date.now(), promise };
+    return promise;
+  }
+  function prefetchTeeTimes() {
+    if (document.getElementById('game-location').value !== MTBOGD_CONFIG.locationName) return;
+    fetchTeeTimes().catch(() => {});
+  }
+
+  async function openTeeTimePopup() {
+    const overlay = document.createElement('div');
+    overlay.className = 'popup-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    const modal = document.createElement('div');
+    modal.className = 'glass-card fade-in';
+    modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;">⛳ ${t('bookViewSlots')}</h3>
+        <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+      </div>
+      <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector('#ttp-close').onclick = () => overlay.remove();
+
+    const slotsEl = modal.querySelector('#ttp-slots');
     try {
-      const data = await mtbogd.getTeeTimes(date, groupSize, teeHoles);
+      const data = await fetchTeeTimes();
       const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
-        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
+        slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
         return;
       }
-      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
-        slots.map(s => {
-          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
-          const isSelected = selectedTeeSlot?.slotId === s.slotId;
-          return `<button type="button" class="slot-btn btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
-        }).join('')
-      }</div>`;
-      container.querySelectorAll('.slot-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          selectedTeeSlot = JSON.parse(btn.dataset.slot);
-          const [h, m] = (selectedTeeSlot.time || '08:00').split(':');
-          document.getElementById('game-hour').value = h;
-          document.getElementById('game-minute').value = m;
-          updateSelectedSlotDisplay();
-          fetchAndRenderSlots();
+
+      const hourOf = s => parseInt((s.time || '0').split(':')[0], 10);
+      const groups = {
+        am: slots.filter(s => hourOf(s) < 12),
+        pm: slots.filter(s => hourOf(s) >= 12),
+      };
+      const timesOf = arr => [...new Set(arr.map(s => s.time))].sort();
+      const secOpen = { am: groups.am.length > 0, pm: groups.am.length === 0 };
+      let openTime = null;
+
+      function selectSlot(slot) {
+        selectedTeeSlot = slot;
+        const [h, m] = (slot.time || '08:00').split(':');
+        document.getElementById('game-hour').value = h;
+        document.getElementById('game-minute').value = m;
+        updateSelectedSlotDisplay();
+        overlay.remove();
+      }
+
+      function sectionHtml(key, label, arr) {
+        if (arr.length === 0) return '';
+        const times = timesOf(arr);
+        const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
+          times.map(time => {
+            const tees = arr.filter(s => s.time === time);
+            const isOpen = openTime === key + '|' + time;
+            const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
+              tees.map(s => {
+                const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
+                const sel = selectedTeeSlot?.slotId === s.slotId;
+                return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
+              }).join('')
+            }</div>` : '';
+            return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
+              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+                ${time}
+              </button>${teeRow}
+            </div>`;
+          }).join('')
+        }</div>` : '';
+        return `<div style="margin-bottom:10px;">
+          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+            <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${times.length})</span></span>
+            <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
+          </button>${body}
+        </div>`;
+      }
+
+      function renderGroups() {
+        slotsEl.innerHTML = sectionHtml('am', t('bookAM'), groups.am) + sectionHtml('pm', t('bookPM'), groups.pm);
+        slotsEl.querySelectorAll('.ttp-sec').forEach(b => b.onclick = () => {
+          const k = b.dataset.sec;
+          secOpen[k] = !secOpen[k];
+          openTime = null;
+          renderGroups();
         });
-      });
+        slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
+          const id = b.dataset.key + '|' + b.dataset.time;
+          openTime = (openTime === id) ? null : id;
+          renderGroups();
+        });
+        slotsEl.querySelectorAll('.ttp-tee').forEach(b => b.onclick = () => selectSlot(JSON.parse(b.dataset.slot)));
+      }
+      renderGroups();
     } catch (err) {
-      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
+      slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
     }
   }
 
@@ -812,6 +892,8 @@ async function renderCreateGame() {
     if (loc !== MTBOGD_CONFIG.locationName) {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
+    } else {
+      prefetchTeeTimes();
     }
   }
 
@@ -823,42 +905,32 @@ async function renderCreateGame() {
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
     updateSelectedSlotDisplay();
-    if (document.getElementById('mtbogd-section')?.style.display !== 'none') {
-      document.getElementById('teetime-slots-container').innerHTML = '';
-    }
+    prefetchTeeTimes();
   });
 
   document.getElementById('holes-9-btn')?.addEventListener('click', () => {
     teeHoles = 9;
     document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
     document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
+    prefetchTeeTimes();
   });
   document.getElementById('holes-18-btn')?.addEventListener('click', () => {
     teeHoles = 18;
     document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
     document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
+    prefetchTeeTimes();
   });
 
-  let _cartCount = 0;
-  document.getElementById('cart-minus')?.addEventListener('click', () => {
-    _cartCount = Math.max(0, _cartCount - 1);
-    document.getElementById('cart-count-display').textContent = _cartCount;
-    cartCount = _cartCount;
-  });
-  document.getElementById('cart-plus')?.addEventListener('click', () => {
-    _cartCount = Math.min(10, _cartCount + 1);
-    document.getElementById('cart-count-display').textContent = _cartCount;
-    cartCount = _cartCount;
-  });
-
-  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', fetchAndRenderSlots);
+  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', openTeeTimePopup);
 
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
     sizeInput.value = Math.max(APP_CONFIG.minGroupSize, +sizeInput.value - 1);
+    prefetchTeeTimes();
   });
   document.getElementById('size-plus').addEventListener('click', () => {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
+    prefetchTeeTimes();
   });
   document.querySelectorAll('input[name="visibility"]').forEach(radio => {
     radio.addEventListener('change', () => {
@@ -870,7 +942,11 @@ async function renderCreateGame() {
       document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
     });
   });
-  document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+  if (myCommunities.length > 0) {
+    document.getElementById('vis-my-circles-label').style.borderColor = 'var(--emerald)';
+  } else {
+    document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
+  }
 
   function refreshInviteChips() {
     const container = document.getElementById('invite-chips-container');
@@ -938,10 +1014,12 @@ async function renderCreateGame() {
     let bookingSlotId = null;
 
     if (selectedTeeSlot) {
+      const submitBtn = document.getElementById('create-submit-btn');
+      submitBtn.textContent = t('bookingInProgress');
       try {
         const playerName = currentUser.fullName || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
-        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles, cartCount);
+        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
         bookingCode = confirmed.bookingCode || null;
@@ -950,7 +1028,8 @@ async function renderCreateGame() {
         showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
-        document.getElementById('create-submit-btn').disabled = false;
+        submitBtn.textContent = t('create');
+        submitBtn.disabled = false;
         return;
       }
     }
@@ -1096,18 +1175,18 @@ function renderGameView(game) {
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && (game.createdBy === currentUser?.id || currentUser?.role === 'admin') ? `<button class="btn btn-outline" id="add-player-btn">➕ Add Player</button>` : ''}
           ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
         </div>
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${game.description}</p></div>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">🏌️ ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
+            <span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">${game.bookingId ? 'ID:' + game.bookingId : '⚠️ bookingId хадгалагдаагүй'}</span>
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
@@ -1262,7 +1341,7 @@ function showJoinConfirmModal(game) {
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:420px;">
       <h3 class="modal-title">📋 Тайлбар</h3>
-      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${game.description}</p>
+      <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${esc(game.description)}</p>
       <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
         <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
         Та нөхцөлийг зөвшөөрч байна уу?
@@ -1293,7 +1372,7 @@ async function handleJoin(game) {
     return;
   }
 
-  const player = { id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() };
+  const player = { id: currentUser.id, name: displayFullName(currentUser), joinedAt: Date.now() };
   const groups = game.groups || [[]];
   const waitingList = game.waitingList || [];
 
@@ -1314,6 +1393,11 @@ async function handleJoin(game) {
   game.waitingList = waitingList;
 
   await store.saveGame(game);
+
+  if (isPlayerInGroup(game, currentUser.id)) {
+    await syncBookingPlayers(game);
+  }
+
   const joinNotif = { type: 'player_joined', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
   const joinedAfter = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
@@ -1359,7 +1443,10 @@ async function handleLeave(game) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
-  const leaveNotif = { type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+
+  await syncBookingPlayers(game);
+
+  const leaveNotif ={ type: 'player_left', from: displayUsername(currentUser), gameId: game.id, gameDate: game.date, gameTime: game.time, gameLocation: game.location };
   const remainingAfter = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
       .concat(ensureArray(game.waitingList))
@@ -1377,7 +1464,7 @@ async function handleDelete(game) {
     showToast(t('cannotDeletePast'), 'error');
     return;
   }
-  if (!confirm(t('confirmDelete'))) return;
+  if (!confirm(game.bookingCode ? t('confirmDeleteBooking') : t('confirmDelete'))) return;
 
   const joinedIds = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
@@ -1385,6 +1472,14 @@ async function handleDelete(game) {
       .map(p => p?.id)
       .filter(id => id && id !== currentUser.id)
   )];
+
+  if (game.bookingId) {
+    try {
+      await mtbogd.cancelBooking(game.id);
+    } catch (err) {
+      showToast('MTBogd цуцлалт амжилтгүй: ' + err.message, 'warning');
+    }
+  }
 
   await store.deleteGame(game.id);
 
@@ -1507,7 +1602,7 @@ async function renderAdminPanel() {
         : `<div style="display:flex; flex-direction:column; gap:5px;">
             ${members.map(u => `
               <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
-                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
                 <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
               </div>`).join('')}
@@ -1555,7 +1650,7 @@ async function renderAdminPanel() {
             <div style="display:flex; flex-direction: column; gap: 8px;">
               ${users.map(u => `
                 <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
                     <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
@@ -1585,7 +1680,7 @@ async function renderAdminPanel() {
               <div style="display:flex; flex-direction:column; gap:8px;">
                 ${noCircle.map(u => `
                   <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
-                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                     <div style="flex:1;">
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
                       <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
@@ -1712,7 +1807,7 @@ async function renderAdminPanel() {
     if (!matches.length) { lookupDropdown.style.display = 'none'; return; }
     lookupDropdown.innerHTML = matches.map(u => `
       <div class="lookup-item" data-id="${u.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); font-size:0.95rem; display:flex; gap:8px; align-items:center;">
-        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
+        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
         <span style="flex:1;">${displayUsername(u)}</span>
         <span style="font-size:0.8rem; color:var(--text-secondary);">${u.phone || ''}</span>
       </div>`).join('');
@@ -1865,9 +1960,15 @@ function showAdminEditUserModal(user, onSaved) {
         <label>Username</label>
         <input type="text" id="ae-username" value="${user.username || user.name || ''}" minlength="2" />
       </div>
-      <div class="input-group" style="margin-top:10px;">
-        <label>Овог нэр</label>
-        <input type="text" id="ae-fullname" value="${user.fullName || user.name || ''}" minlength="2" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div class="input-group">
+          <label>Овог</label>
+          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
+        </div>
+        <div class="input-group">
+          <label>Нэр</label>
+          <input type="text" id="ae-firstname" value="${user.firstName || ''}" placeholder="Нэр" />
+        </div>
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>${t('communities')}</label>
@@ -1934,12 +2035,15 @@ function showAdminEditUserModal(user, onSaved) {
   modal.querySelector('#ae-cancel').onclick = () => modal.remove();
   modal.querySelector('#ae-save').onclick = async () => {
     const username = document.getElementById('ae-username').value.trim();
-    const fullName = document.getElementById('ae-fullname').value.trim();
-    if (username.length < 2 || fullName.length < 2) { showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error'); return; }
+    const lastName = document.getElementById('ae-lastname').value.trim();
+    const firstName = document.getElementById('ae-firstname').value.trim();
+    if (username.length < 2) { showToast('Username оруулна уу', 'error'); return; }
     const pass = document.getElementById('ae-pass').value;
 
     user.username = username;
-    user.fullName = fullName;
+    user.lastName = lastName;
+    user.firstName = firstName;
+    user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
@@ -1963,182 +2067,6 @@ function showAdminEditUserModal(user, onSaved) {
   };
 }
 
-// ---- Standalone Booking View ----
-async function renderBookingView() {
-  const today = new Date().toISOString().split('T')[0];
-  main().innerHTML = `
-    <div class="create-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
-      <div class="create-card glass-card">
-        <h2 class="card-title">⛳ ${t('bookTeetime')}</h2>
-        <div class="create-form">
-          <div class="input-group">
-            <label>${t('date')}</label>
-            <input type="date" id="bv-date" value="${today}" min="${today}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-          </div>
-          <div class="input-group">
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" id="bv-holes-9" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
-                  <button type="button" id="bv-holes-18" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
-                </div>
-              </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookPlayers')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="bv-players-minus">−</button>
-                  <span id="bv-players-display" style="min-width:20px; text-align:center;">4</span>
-                  <button type="button" class="stepper-btn" id="bv-players-plus">+</button>
-                </div>
-              </div>
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookCartCount')}</div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <button type="button" class="stepper-btn" id="bv-cart-minus">−</button>
-                  <span id="bv-cart-display" style="min-width:20px; text-align:center;">0</span>
-                  <button type="button" class="stepper-btn" id="bv-cart-plus">+</button>
-                </div>
-              </div>
-              <button type="button" id="bv-fetch-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
-            </div>
-          </div>
-          <div id="bv-slots-container"></div>
-          <div id="bv-selected-display"></div>
-          <div id="bv-confirm-form" style="display:none;">
-            <div class="input-group" style="margin-top:12px;">
-              <label>${t('bookCustomerName')}</label>
-              <input type="text" id="bv-cust-name" value="${currentUser?.fullName || displayUsername(currentUser) || ''}" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-            </div>
-            <div class="input-group">
-              <label>${t('bookCustomerPhone')}</label>
-              <input type="text" id="bv-cust-phone" value="${currentUser?.phone || ''}" placeholder="+97699112233" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-            </div>
-            <div class="input-group">
-              <label>${t('bookNotes')}</label>
-              <textarea id="bv-notes" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
-            </div>
-            <div class="input-group" style="margin-top:12px;">
-              <label style="font-size:0.85rem; color:var(--text-secondary);">Төлбөрийн арга</label>
-              <div style="display:flex; gap:10px; margin-top:6px;">
-                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08);">
-                  <input type="radio" name="bv-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
-                </label>
-                <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none;">
-                  <input type="radio" name="bv-payment" value="qpay" disabled> 📱 ${t('payQpay')}
-                  <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-                </label>
-              </div>
-            </div>
-            <button type="button" id="bv-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px;">${t('bookSubmit')}</button>
-          </div>
-          <div id="bv-result"></div>
-        </div>
-      </div>
-    </div>`;
-
-  let bvHoles = 18;
-  let bvPlayers = 4;
-  let bvCart = 0;
-  let bvSlot = null;
-
-  function updateBvStepper(id, val) { document.getElementById(id).textContent = val; }
-
-  document.getElementById('bv-holes-9').addEventListener('click', () => {
-    bvHoles = 9;
-    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-primary';
-    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-outline';
-  });
-  document.getElementById('bv-holes-18').addEventListener('click', () => {
-    bvHoles = 18;
-    document.getElementById('bv-holes-18').className = 'btn btn-sm btn-primary';
-    document.getElementById('bv-holes-9').className = 'btn btn-sm btn-outline';
-  });
-  document.getElementById('bv-players-minus').addEventListener('click', () => { bvPlayers = Math.max(1, bvPlayers - 1); updateBvStepper('bv-players-display', bvPlayers); });
-  document.getElementById('bv-players-plus').addEventListener('click', () => { bvPlayers = Math.min(8, bvPlayers + 1); updateBvStepper('bv-players-display', bvPlayers); });
-  document.getElementById('bv-cart-minus').addEventListener('click', () => { bvCart = Math.max(0, bvCart - 1); updateBvStepper('bv-cart-display', bvCart); });
-  document.getElementById('bv-cart-plus').addEventListener('click', () => { bvCart = Math.min(10, bvCart + 1); updateBvStepper('bv-cart-display', bvCart); });
-
-  function renderBvSlotDisplay() {
-    const el = document.getElementById('bv-selected-display');
-    const form = document.getElementById('bv-confirm-form');
-    if (!bvSlot) { el.innerHTML = ''; form.style.display = 'none'; return; }
-    const price = bvSlot.price ? `${(bvSlot.price / 1000).toFixed(0)}K₮` : '';
-    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
-      ✅ ${t('bookSlotSelected')}: <strong>${bvSlot.time}</strong> · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} ${price ? `· ${price}` : ''}
-      <button type="button" id="bv-clear-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
-    </div>`;
-    form.style.display = 'block';
-    document.getElementById('bv-clear-btn')?.addEventListener('click', () => {
-      bvSlot = null;
-      renderBvSlotDisplay();
-      document.getElementById('bv-slots-container').innerHTML = '';
-    });
-  }
-
-  async function fetchBvSlots() {
-    const container = document.getElementById('bv-slots-container');
-    const date = document.getElementById('bv-date').value;
-    container.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
-    try {
-      const data = await mtbogd.getTeeTimes(date, bvPlayers, bvHoles);
-      const slots = (data.times || []).filter(s => s.status === 'available');
-      if (slots.length === 0) {
-        container.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
-        return;
-      }
-      container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">${
-        slots.map(s => {
-          const price = s.price ? `${(s.price / 1000).toFixed(0)}K` : '';
-          const isSel = bvSlot?.slotId === s.slotId;
-          return `<button type="button" class="bv-slot-btn btn btn-sm ${isSel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem; padding:5px 10px;">${s.time} ${s.teeLabel || ('T'+s.startTee)}${price ? ` ₮${price}` : ''}</button>`;
-        }).join('')
-      }</div>`;
-      container.querySelectorAll('.bv-slot-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          bvSlot = JSON.parse(btn.dataset.slot);
-          renderBvSlotDisplay();
-          fetchBvSlots();
-        });
-      });
-    } catch (err) {
-      container.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
-    }
-  }
-
-  document.getElementById('bv-fetch-btn').addEventListener('click', fetchBvSlots);
-
-  document.getElementById('bv-submit-btn')?.addEventListener('click', async () => {
-    if (!bvSlot) return;
-    const submitBtn = document.getElementById('bv-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = t('bookLoading');
-    const result = document.getElementById('bv-result');
-    try {
-      const custName = document.getElementById('bv-cust-name').value.trim() || displayUsername(currentUser) || 'Guest';
-      const custPhone = document.getElementById('bv-cust-phone').value.trim();
-      const notes = document.getElementById('bv-notes').value.trim();
-      const hold = await mtbogd.createHold(bvSlot.slotId, bvPlayers, bvHoles, bvCart);
-      const playerList = Array.from({ length: bvPlayers }, () => ({ name: custName }));
-      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: custName, phone: custPhone }, playerList, notes);
-      result.innerHTML = `<div style="margin-top:16px; padding:16px; border-radius:10px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; text-align:center;">
-        <div style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">${t('bookConfirmed')}</div>
-        <div style="font-family:monospace; font-size:1.8rem; font-weight:700; letter-spacing:4px; color:var(--emerald);">${confirmed.bookingCode}</div>
-        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:6px;">${bvSlot.time} · ${bvSlot.teeLabel || ('T'+bvSlot.startTee)} · ${bvPlayers} ${t('bookPlayers')} · ${bvHoles} ${t('bookHoles')}</div>
-      </div>`;
-      document.getElementById('bv-confirm-form').style.display = 'none';
-      document.getElementById('bv-selected-display').innerHTML = '';
-      document.getElementById('bv-slots-container').innerHTML = '';
-      bvSlot = null;
-    } catch (err) {
-      result.innerHTML = `<p style="color:var(--danger-color); margin-top:12px;">${t('bookFailed')}: ${err.message}</p>`;
-      submitBtn.disabled = false;
-      submitBtn.textContent = t('bookSubmit');
-    }
-  });
-}
-
 // ---- Users List View ----
 async function renderUsersList() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
@@ -2150,6 +2078,43 @@ async function renderUsersList() {
 
   const sortedUsers = users.filter(u => u.id !== 'admin_uid').sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
 
+  const openCircleIds = new Set();
+
+  function memberRow(u) {
+    const isFollowing = !!currentUserFollows[u.id];
+    const isFollower = currentUserFollowers.has(u.id);
+    const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
+    const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
+    const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
+    return `
+      <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;">
+        <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;">
+          <span class="player-avatar-sm ${avatarClass}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+          ${followBtn(u.id)}
+        </div>
+        <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
+          <span class="player-name">${displayUsername(u)}${tag}</span>
+          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(u.bankName) || t('unknownBank'))}</span>
+        </button>
+        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
+      </div>`;
+  }
+
+  function circleSection(circle, members, isOpen) {
+    return `
+      <div class="glass-card" style="padding:0;overflow:hidden;margin-bottom:10px;">
+        <button class="circle-toggle-btn" data-circle="${circle.id}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;text-align:left;">
+          <span style="font-weight:700;">${circle.label} <span style="font-weight:400;font-size:0.82rem;color:var(--text-secondary);">${members.length} гишүүн</span></span>
+          <span class="circle-arrow" data-circle="${circle.id}" style="transition:transform .2s;transform:rotate(${isOpen ? 180 : 0}deg);">▾</span>
+        </button>
+        <div class="circle-members-wrap" data-circle="${circle.id}" style="display:${isOpen ? 'block' : 'none'};border-top:1px solid var(--border-color);padding:4px 0;">
+          ${members.length === 0
+            ? `<p style="padding:12px 18px;color:var(--text-secondary);font-size:0.85rem;">Гишүүн байхгүй</p>`
+            : members.map(memberRow).join('')}
+        </div>
+      </div>`;
+  }
+
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div class="hero-section" style="padding: 20px 0 30px;">
@@ -2157,62 +2122,97 @@ async function renderUsersList() {
         <p class="hero-subtitle">${t('usersListSub')}</p>
       </div>
 
-      <div class="glass-card" style="padding: 10px;">
-        <div class="input-group" style="margin: 4px 4px 14px;">
-          <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
-        </div>
-        <div class="player-list">
-          ${sortedUsers.map(u => {
-    const isFollowing = !!currentUserFollows[u.id];
-    const isFollower = currentUserFollowers.has(u.id);
-    const rowClass = isFollowing ? 'followed-player' : isFollower ? 'follower-player' : '';
-    const avatarClass = isFollowing ? 'followed-avatar' : isFollower ? 'follower-avatar' : '';
-    const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
-    return `
-            <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom: 8px; padding: 14px 20px;">
-              <div class="avatar-follow-wrap" style="position:relative; display:inline-flex; flex-shrink:0;">
-                <span class="player-avatar-sm ${avatarClass}">${u.avatar || displayUsername(u).charAt(0).toUpperCase()}</span>
-                ${followBtn(u.id)}
-              </div>
-              <button class="user-detail-btn" data-id="${u.id}" style="display:flex; flex-direction:column; flex:1; text-align:left; background:none; border:none; color:inherit; padding:0; cursor:pointer;">
-                <span class="player-name">${displayUsername(u)}${tag}</span>
-                <span style="font-size: 0.75rem; color: var(--text-secondary);">${u.bankName || t('unknownBank')}</span>
-              </button>
-              ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size: 1.2rem; cursor:pointer;">💳</button>` : ''}
-            </div>`;
-  }).join('')}
+      <!-- Search -->
+      <div class="glass-card" style="padding:10px;margin-bottom:16px;">
+        <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
+      </div>
+
+      <!-- Search results (hidden unless searching) -->
+      <div id="user-search-results" style="display:none;margin-bottom:16px;">
+        <div class="glass-card" style="padding:4px 0;" id="user-search-list"></div>
+      </div>
+
+      <!-- Circles -->
+      <div id="circles-container">
+        ${(() => {
+          const myCircleIds = userCommunityIds(allUsersMap[currentUser?.id] || currentUser);
+          const visibleCircles = myCircleIds.length
+            ? COMMUNITY_OPTIONS.filter(c => myCircleIds.includes(c.id))
+            : COMMUNITY_OPTIONS;
+          return visibleCircles.map(circle => {
+            const members = sortedUsers.filter(u => userCommunityIds(u).includes(circle.id));
+            return circleSection(circle, members, false);
+          }).join('');
+        })()}
+
+        <!-- All players -->
+        <div class="glass-card" style="padding:0;overflow:hidden;margin-bottom:10px;">
+          <button class="circle-toggle-btn" data-circle="__all__" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:none;border:none;color:inherit;cursor:pointer;font-size:1rem;text-align:left;">
+            <span style="font-weight:700;">Бүх тоглогч <span style="font-weight:400;font-size:0.82rem;color:var(--text-secondary);">${sortedUsers.length} гишүүн</span></span>
+            <span class="circle-arrow" data-circle="__all__" style="transition:transform .2s;transform:rotate(0deg);">▾</span>
+          </button>
+          <div class="circle-members-wrap" data-circle="__all__" style="display:none;border-top:1px solid var(--border-color);padding:4px 0;">
+            ${sortedUsers.map(u => memberRow(u)).join('')}
+          </div>
         </div>
       </div>
-      
-      <div style="margin-top: 20px; text-align:center;">
+
+      <div style="margin-top:20px;text-align:center;">
         <a href="#/" class="btn btn-ghost">← ${t('back')}</a>
       </div>
     </div>`;
 
-  // Attach copy listeners
+  // Circle toggle
+  document.querySelectorAll('.circle-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.circle;
+      const wrap = document.querySelector(`.circle-members-wrap[data-circle="${id}"]`);
+      const arrow = document.querySelector(`.circle-arrow[data-circle="${id}"]`);
+      const isOpen = wrap.style.display !== 'none';
+      wrap.style.display = isOpen ? 'none' : 'block';
+      arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+  });
+
+  // Search — show flat results, hide circles
   const searchInput = document.getElementById('user-search-input');
+  const searchResults = document.getElementById('user-search-results');
+  const searchList = document.getElementById('user-search-list');
+  const circlesContainer = document.getElementById('circles-container');
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.trim().toLowerCase();
-      document.querySelectorAll('.user-list-row').forEach(row => {
-        row.style.display = row.dataset.name.includes(query) ? 'flex' : 'none';
+      if (!query) {
+        searchResults.style.display = 'none';
+        circlesContainer.style.display = 'block';
+        return;
+      }
+      circlesContainer.style.display = 'none';
+      searchResults.style.display = 'block';
+      const matches = sortedUsers.filter(u => `${displayUsername(u)} ${displayFullName(u)}`.toLowerCase().includes(query));
+      searchList.innerHTML = matches.length
+        ? matches.map(u => memberRow(u)).join('')
+        : `<p style="padding:12px 18px;color:var(--text-secondary);">Олдсонгүй</p>`;
+      attachRowListeners(searchList);
+    });
+  }
+
+  function attachRowListeners(container) {
+    container.querySelectorAll('.copy-bank-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const user = allUsersMap[e.currentTarget.dataset.id];
+        if (user) showBankDetailsModal(user);
+      });
+    });
+    container.querySelectorAll('.user-detail-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const user = allUsersMap[e.currentTarget.dataset.id];
+        if (user) showUserDetailsModal(user);
       });
     });
   }
 
-  document.querySelectorAll('.copy-bank-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const uid = e.currentTarget.dataset.id;
-      const user = allUsersMap[uid];
-      if (user) showBankDetailsModal(user);
-    });
-  });
-  document.querySelectorAll('.user-detail-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const user = allUsersMap[e.currentTarget.dataset.id];
-      if (user) showUserDetailsModal(user);
-    });
-  });
+  attachRowListeners(document.getElementById('circles-container'));
   setupFollowListeners();
 }
 
@@ -2236,19 +2236,19 @@ function showUserDetailsModal(user) {
       </div>
       <div class="bank-info-row">
         <span class="label">Утас:</span>
-        <span class="value">${user.phone || '-'}</span>
+        <span class="value">${esc(user.phone) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${user.bankName || '-'}</span>
+        <span class="value">${esc(user.bankName) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
-        <span class="value">${user.bankAccount || '-'}</span>
+        <span class="value">${esc(user.bankAccount) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
-        <span class="value">${user.bankIban || '-'}</span>
+        <span class="value">${esc(user.bankIban) || '-'}</span>
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
         <button class="btn btn-ghost" id="user-detail-close">Хаах</button>
@@ -2349,10 +2349,6 @@ async function renderEditGame(gameId) {
               ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
-          <div class="input-group">
-            <label>Players</label>
-            <button type="button" class="btn btn-outline" id="edit-add-player-btn">➕ Add Player</button>
-          </div>
           <div class="form-actions">
             <a href="#/game/${game.id}" class="btn btn-ghost">${t('cancel')}</a>
             <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -2449,6 +2445,9 @@ async function renderEditGame(gameId) {
     if (oldDescription !== game.description) changes.push('Тайлбар өөрчлөгдлөө');
     if (oldIsPrivate !== game.isPrivate) changes.push(`Харагдах хүрээ өөрчлөгдлөө`);
 
+    const bookingAffected = game.bookingCode && (oldDate !== game.date || oldTime !== game.time || oldLocation !== game.location);
+    if (bookingAffected && !confirm(t('editBookingWarning'))) return;
+
     await store.saveGame(game);
 
     if (changes.length > 0) {
@@ -2519,7 +2518,7 @@ async function handleAddPlayer(game, onSaved = null) {
       showToast(`${selectedUser.name} ${conflict.time}-д өөр тоглолттой байгаа тул 2 цагийн дотор нэмэх боломжгүй.`, 'warning');
       return;
     }
-    const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
+    const player = { id: selectedUser.id, name: displayFullName(selectedUser), joinedAt: Date.now() };
     const groups = game.groups || [[]];
     const waitingList = game.waitingList || [];
     let added = false;
@@ -2531,9 +2530,12 @@ async function handleAddPlayer(game, onSaved = null) {
     game.waitingList = waitingList;
     await store.saveGame(game);
     if (added) removeFromConflictingWaitlists(selectedUser.id, game);
+    if (added) {
+      await syncBookingPlayers(game);
+    }
     if (onSaved) onSaved();
     else renderGameView(game);
-    showToast('✅ Added ' + selectedUser.name, 'success');
+    showToast('✅ Added ' + displayFullName(selectedUser), 'success');
   });
 }
 
@@ -2546,7 +2548,6 @@ async function handleBookTeeTime(game) {
   modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
 
   let btHoles = 18;
-  let btCart = 0;
   let btSlot = null;
   const groupSize = game.groupSize || 4;
 
@@ -2569,14 +2570,6 @@ async function handleBookTeeTime(game) {
             <button type="button" id="bt-18" class="btn btn-sm ${btHoles === 18 ? 'btn-primary' : 'btn-outline'}" style="min-width:40px;">18</button>
           </div>
         </div>
-        <div>
-          <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px;">${t('bookCartCount')}</div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button type="button" class="stepper-btn" id="bt-cart-minus">−</button>
-            <span id="bt-cart-val" style="min-width:18px;text-align:center;">${btCart}</span>
-            <button type="button" class="stepper-btn" id="bt-cart-plus">+</button>
-          </div>
-        </div>
         <button type="button" id="bt-fetch" class="btn btn-outline" style="flex:1;min-width:130px;">${t('bookViewSlots')}</button>
       </div>
       <div id="bt-slots"></div>
@@ -2591,8 +2584,6 @@ async function handleBookTeeTime(game) {
     document.getElementById('bt-close').onclick = () => overlay.remove();
     document.getElementById('bt-9').onclick = () => { btHoles = 9; renderModal(); };
     document.getElementById('bt-18').onclick = () => { btHoles = 18; renderModal(); };
-    document.getElementById('bt-cart-minus').onclick = () => { btCart = Math.max(0, btCart - 1); document.getElementById('bt-cart-val').textContent = btCart; };
-    document.getElementById('bt-cart-plus').onclick = () => { btCart = Math.min(10, btCart + 1); document.getElementById('bt-cart-val').textContent = btCart; };
     document.getElementById('bt-fetch').onclick = fetchSlots;
     document.getElementById('bt-confirm')?.addEventListener('click', confirmBook);
   }
@@ -2623,7 +2614,7 @@ async function handleBookTeeTime(game) {
     const errEl = document.getElementById('bt-error');
     try {
       const playerName = currentUser.fullName || displayUsername(currentUser);
-      const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles, btCart);
+      const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles);
       const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
       const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '' }, playerList);
       game.bookingCode = confirmed.bookingCode;
@@ -2695,11 +2686,9 @@ async function handleInvite(game) {
       ${availableToInvite.length > 0 ? `
         <div style="border-top:1px solid var(--border-color);padding-top:14px;">
           <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">${t('inviteMore')}</div>
-          <div style="position:relative;">
-            <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
-              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
-            <div id="inv-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);z-index:10;max-height:160px;overflow-y:auto;"></div>
-          </div>
+          <input type="text" id="inv-input" placeholder="Нэр бичих..." autocomplete="off"
+            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.95rem;box-sizing:border-box;">
+          <div id="inv-results" style="display:none;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);margin-top:4px;max-height:180px;overflow-y:auto;"></div>
         </div>
       ` : ''}
       <button class="btn btn-ghost" id="inv-close" style="width:100%;margin-top:14px;">${t('cancel')}</button>
@@ -2712,14 +2701,22 @@ async function handleInvite(game) {
     if (!inp) return;
     inp.focus();
 
-    inp.addEventListener('input', () => {
+    function renderResults() {
       const q = inp.value.trim().toLowerCase();
-      if (!q) { resultsEl.style.display = 'none'; return; }
-      const matches = availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q));
+      const matches = q
+        ? availableToInvite.filter(u => displayUsername(u).toLowerCase().includes(q))
+        : availableToInvite;
       if (!matches.length) { resultsEl.style.display = 'none'; return; }
-      resultsEl.innerHTML = matches.map(u =>
-        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`
-      ).join('');
+      const byName = (a, b) => displayUsername(a).localeCompare(displayUsername(b));
+      const followed = matches.filter(u => !!currentUserFollows[u.id]).sort(byName);
+      const others = matches.filter(u => !currentUserFollows[u.id]).sort(byName);
+      const itemHtml = u =>
+        `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`;
+      const headerHtml = label =>
+        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:rgba(255,255,255,0.04);">${label}</div>`;
+      resultsEl.innerHTML =
+        (followed.length ? headerHtml(t('followedGroup')) + followed.map(itemHtml).join('') : '') +
+        (others.length ? headerHtml(t('othersGroup')) + others.map(itemHtml).join('') : '');
       resultsEl.style.display = 'block';
       resultsEl.querySelectorAll('.ps-item').forEach(item => {
         item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
@@ -2745,7 +2742,11 @@ async function handleInvite(game) {
           renderInviteModal();
         });
       });
-    });
+    }
+
+    inp.addEventListener('focus', renderResults);
+    inp.addEventListener('input', renderResults);
+    renderResults();
   }
 
   renderInviteModal();
@@ -2834,10 +2835,10 @@ function openPlayerSearchModal(title, availableUsers, onConfirm) {
   inp.addEventListener('input', () => {
     const q = inp.value.trim().toLowerCase();
     if (!q) { results.style.display = 'none'; return; }
-    const matches = availableUsers.filter(u => u.name.toLowerCase().includes(q));
+    const matches = availableUsers.filter(u => `${displayUsername(u)} ${displayFullName(u)}`.toLowerCase().includes(q));
     if (!matches.length) { results.style.display = 'none'; return; }
     results.innerHTML = matches.map(u =>
-      `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${u.name}</div>`
+      `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}<span style="font-size:0.8rem;color:var(--text-secondary);margin-left:6px;">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : ''}</span></div>`
     ).join('');
     results.style.display = 'block';
     results.querySelectorAll('.ps-item').forEach(item => {
@@ -2845,7 +2846,7 @@ function openPlayerSearchModal(title, availableUsers, onConfirm) {
       item.addEventListener('mouseleave', () => item.style.background = '');
       item.addEventListener('click', () => {
         selectedUser = availableUsers.find(u => u.id === item.dataset.id);
-        inp.value = selectedUser.name;
+        inp.value = displayUsername(selectedUser);
         results.style.display = 'none';
       });
     });
@@ -2889,13 +2890,14 @@ async function handleAddToGroup(game, groupIndex, onSaved = null) {
   overlay.remove();
 
   openPlayerSearchModal(`Групп ${groupIndex + 1}-д нэмэх`, availableUsers, async (selectedUser) => {
-    const player = { id: selectedUser.id, name: selectedUser.name, joinedAt: Date.now() };
+    const player = { id: selectedUser.id, name: displayFullName(selectedUser), joinedAt: Date.now() };
     game.groups[groupIndex].push(player);
     await store.saveGame(game);
     removeFromConflictingWaitlists(selectedUser.id, game);
+    await syncBookingPlayers(game);
     if (onSaved) onSaved();
     else renderGameView(game);
-    showToast(`✅ ${selectedUser.name} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
+    showToast(`✅ ${displayFullName(selectedUser)} Групп ${groupIndex + 1}-д нэмэгдлээ`, 'success');
   });
 }
 
@@ -2925,13 +2927,25 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
   cleanEmptyGroups(game);
 
   await store.saveGame(game);
+
+  await syncBookingPlayers(game);
+
   if (onSaved) onSaved();
   else renderGameView(game);
   showToast('❌ Removed', 'info');
 }
 
 // ---- Utilities ----
-// ---- Utilities ----
+async function syncBookingPlayers(game) {
+  if (!game.bookingId) return;
+  try {
+    const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
+    await mtbogd.updateBookingPlayers(game.id, allPlayers);
+  } catch (err) {
+    showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
+  }
+}
+
 function ensureArray(val) {
   if (!val) return [];
   return Array.isArray(val) ? val : Object.values(val);
@@ -3214,9 +3228,15 @@ function showProfileModal(user, options = {}) {
         <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
       </div>
 
-      <div class="input-group" style="margin-top: 15px;">
-        <label>Овог нэр *</label>
-        <input type="text" id="profile-fullname-input" value="${user.fullName || user.name || ''}" required minlength="2" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
+        <div class="input-group">
+          <label>Овог *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
+        </div>
+        <div class="input-group">
+          <label>Нэр *</label>
+          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
+        </div>
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
@@ -3279,11 +3299,12 @@ function showProfileModal(user, options = {}) {
   modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
   modal.querySelector('#profile-modal-save').onclick = async () => {
     const newUsername = document.getElementById('profile-username-input').value.trim();
-    const newFullName = document.getElementById('profile-fullname-input').value.trim();
+    const newLastName = document.getElementById('profile-lastname-input').value.trim();
+    const newFirstName = document.getElementById('profile-firstname-input').value.trim();
     const newPass = document.getElementById('profile-pass-input').value;
 
-    if (newUsername.length < 2 || newFullName.length < 2) {
-      showToast('Username болон овог нэрээ бүрэн оруулна уу', 'error');
+    if (newUsername.length < 2 || !newLastName || !newFirstName) {
+      showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
       return;
     }
     const allUsers = await store.loadAllUsers();
@@ -3296,7 +3317,9 @@ function showProfileModal(user, options = {}) {
     }
 
     user.username = newUsername;
-    user.fullName = newFullName;
+    user.lastName = newLastName;
+    user.firstName = newFirstName;
+    user.fullName = newLastName + ' ' + newFirstName;
     user.name = newUsername;
     user.avatar = selectedAvatar;
     if (newPass && newPass.length >= 1) {
@@ -3329,19 +3352,19 @@ function showBankDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">💳 ${user.name}-н данс</h3>
+      <h3 class="modal-title">💳 ${displayUsername(user)}-н данс</h3>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${user.bankName || '-'}</span>
+        <span class="value">${esc(user.bankName) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
-        <span class="value" id="val-acc">${user.bankAccount || '-'}</span>
+        <span class="value" id="val-acc">${esc(user.bankAccount) || '-'}</span>
         ${user.bankAccount ? `<button class="btn btn-sm btn-outline copy-btn" data-target="acc">Хуулах</button>` : ''}
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
-        <span class="value" id="val-iban">${user.bankIban || '-'}</span>
+        <span class="value" id="val-iban">${esc(user.bankIban) || '-'}</span>
         ${user.bankIban ? `<button class="btn btn-sm btn-outline copy-btn" data-target="iban">Хуулах</button>` : ''}
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
