@@ -2,6 +2,21 @@
 
 ## 2026-06-17
 
+### Food ordering Phase 2 — Kitchen tray app (Tauri v2)
+
+New `tauri-kitchen/` desktop app (Tauri v2 + vanilla JS, buildless frontend).
+- Listens to RTDB `orders` via the Firebase JS SDK (same `golfup-app` project).
+- New paid order (`status === "paid" && notified === false`) → two-tone WebAudio
+  beep + native OS notification (sent from Rust via `tauri-plugin-notification`),
+  then marks `notified: true` so it alerts once. Startup catch-up orders show in
+  the list but do not beep.
+- System tray icon with Show/Quit menu; closing the window hides to tray and
+  keeps listening; `tauri-plugin-single-instance` focuses the existing window.
+- "Дууссан ✓" sets order `status: "completed"` (mirrors the web kitchen display).
+- Rust deps resolved: tauri 2.11, notification 2.3, single-instance 2.4.
+- Build instructions in `tauri-kitchen/README.md` (final binary built on the
+  target OS — Linux CI lacks webkit so it is not compiled here).
+
 ### Food ordering Phase 1 — switch orders to RTDB, permission + login fixes
 
 **Fixes (post-testing):**
