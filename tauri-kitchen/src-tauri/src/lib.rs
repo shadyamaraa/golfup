@@ -5,20 +5,20 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
-// Called from the webview when a new paid order arrives. Shows a native
-// OS notification and flashes the taskbar icon so kitchen staff are alerted
-// even when the window is hidden or in the background.
+// Called from the webview when a new paid order arrives.
+// Pops the window to the front (most reliable alert for an unregistered app)
+// and attempts a native OS notification as a bonus.
 #[tauri::command]
 fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
-    let _ = app
-        .notification()
-        .builder()
-        .title(&title)
-        .body(&body)
-        .show();
+    // Show and focus the window — works whether it was hidden to tray or just minimized.
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
         let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
     }
+    // Native toast — works when installed via MSI/NSIS; silently fails otherwise.
+    let _ = app.notification().builder().title(&title).body(&body).show();
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
