@@ -3769,19 +3769,6 @@ async function renderKitchenDisplay() {
     return;
   }
 
-  // Check if Firestore is available
-  if (!store.isFirestoreReady()) {
-    main().innerHTML = `
-      <div class="detail-container fade-in">
-        <div class="glass-card" style="max-width:400px;margin:60px auto;">
-          <h2 class="card-title">👨‍🍳 ${t('kitchenTitle')}</h2>
-          <p style="color:var(--danger-color);">⚠️ Firestore тохируулагдаагүй байна. Firebase Console-д Firestore Database идэвхжүүлнэ үү.</p>
-          <a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a>
-        </div>
-      </div>`;
-    return;
-  }
-
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
