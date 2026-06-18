@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-06-18 (2)
+
+### Add food photos from QR menu PDF
+
+- Extracted 59 JPEG food images from `QR_May_23_2025.pdf` using `pdfimages -j`.
+- Placed them in `public/food/<slug>.jpg` with kebab-case slug names matching menu items.
+- Added `imageUrl` field to every item in `scripts/seed-asem-menu.js`:
+  - 59 items get `/food/<slug>.jpg` (visually matched to QR PDF photos).
+  - Remaining items get `imageUrl: ''` (no QR photo available — 🍽️ placeholder shown).
+- Seed record object updated to persist `imageUrl: item.imageUrl || ''`.
+- **Action required**: run `node scripts/seed-asem-menu.js` to push imageUrl values to Firebase.
+
 ## 2026-06-18
 
 ### Food menu — image-rich item cards + admin image/description fields
