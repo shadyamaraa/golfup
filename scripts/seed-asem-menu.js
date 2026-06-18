@@ -604,7 +604,7 @@ const ITEMS = [
     description: 'Орео жигнэмэгтэй хуруухайн бяслагны бялуу',
     descriptionEn: 'Creamy cheesecake with Oreo cookie crust',
     descriptionKr: '오레오 쿠키 크러스트를 얹은 크리미 치즈케이크',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -612,7 +612,7 @@ const ITEMS = [
     description: 'Шоколад болон кофены давхаргатай клаасик Опера бялуу',
     descriptionEn: 'Classic layered opera cake with chocolate and coffee',
     descriptionKr: '초콜릿과 커피 레이어가 있는 클래식 오페라 케이크',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -620,7 +620,7 @@ const ITEMS = [
     description: 'Карамелийн сүмстэй хуруухайн бяслагны бялуу',
     descriptionEn: 'Rich cheesecake drizzled with salted caramel sauce',
     descriptionKr: '솔티드 카라멜 소스를 곁들인 진한 치즈케이크',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -628,7 +628,7 @@ const ITEMS = [
     description: 'Ваниль, шоколад эсвэл гүзээлзгэнэ',
     descriptionEn: 'Vanilla, chocolate or strawberry ice cream',
     descriptionKr: '바닐라, 초콜릿 또는 딸기 아이스크림',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -636,7 +636,7 @@ const ITEMS = [
     description: 'Карамелийн давхаргатай сүүн крем',
     descriptionEn: 'Classic French custard with caramelized sugar crust',
     descriptionKr: '카라멜화된 설탕 크러스트를 올린 클래식 프렌치 커스터드',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -644,7 +644,7 @@ const ITEMS = [
     description: 'Нимбэгний кремтэй, мерингетэй тарт',
     descriptionEn: 'Zesty lemon tart with meringue',
     descriptionKr: '상큼한 레몬 커드와 머랭을 올린 레몬 타르트',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -652,7 +652,7 @@ const ITEMS = [
     description: 'Ваниль зайрмагтай дулаан шоколадны брауни',
     descriptionEn: 'Warm chocolate brownie served with vanilla ice cream',
     descriptionKr: '바닐라 아이스크림을 곁들인 따뜻한 초콜릿 브라우니',
-    category: 'Dessert', price: p(18.9)
+    category: 'Dessert', price: p(18.9),
     imageUrl: '',
   },
   {
@@ -660,7 +660,7 @@ const ITEMS = [
     description: 'Маскарпонэ, кофены давхаргатай италийн тирамису',
     descriptionEn: 'Classic Italian tiramisu with mascarpone and espresso',
     descriptionKr: '마스카르포네와 에스프레소로 만든 클래식 이탈리안 티라미수',
-    category: 'Dessert', price: p(20.9), popular: true
+    category: 'Dessert', price: p(20.9), popular: true,
     imageUrl: '',
   },
   {
@@ -668,7 +668,7 @@ const ITEMS = [
     description: 'Шоколадны сүмстэй шинэхэн зүссэн жимс',
     descriptionEn: 'Fresh seasonal sliced fruit with warm chocolate dipping sauce',
     descriptionKr: '따뜻한 초콜릿 디핑 소스를 곁들인 신선한 계절 과일',
-    category: 'Dessert', price: p(20.9)
+    category: 'Dessert', price: p(20.9),
     imageUrl: '',
   },
 
@@ -678,7 +678,7 @@ const ITEMS = [
     description: 'Сармис, бяслагтай шарсан питта талх',
     descriptionEn: 'Toasted pita bread with garlic butter and cheese',
     descriptionKr: '마늘 버터와 치즈를 바른 구운 피타 브레드',
-    category: 'Sides', price: p(9.9)
+    category: 'Sides', price: p(9.9),
     imageUrl: '',
   },
   {
@@ -686,7 +686,7 @@ const ITEMS = [
     description: 'Давстай бялуу болон чидун жимсний талх',
     descriptionEn: 'Assorted salted bread and olive focaccia',
     descriptionKr: '다양한 소금 빵과 올리브 포카치아',
-    category: 'Sides', price: p(14.9)
+    category: 'Sides', price: p(14.9),
     imageUrl: '',
   },
   {
@@ -694,7 +694,7 @@ const ITEMS = [
     description: 'Улирлын шарсан ногоо',
     descriptionEn: 'Seasonal roasted vegetables with herbs',
     descriptionKr: '허브를 곁들인 계절 구운 채소',
-    category: 'Sides', price: p(14.9)
+    category: 'Sides', price: p(14.9),
     imageUrl: '',
   },
   {
@@ -702,7 +702,7 @@ const ITEMS = [
     description: 'Жигнэсэн, зарим нь хатаасан халуун чинжүү',
     descriptionEn: 'Steamed or dried spicy wild peppers',
     descriptionKr: '찐 또는 건조 매운 고추',
-    category: 'Sides', price: p(15.9)
+    category: 'Sides', price: p(15.9),
     imageUrl: '',
   },
   {
@@ -710,7 +710,7 @@ const ITEMS = [
     description: 'Алтан шарсан хагархай төмс',
     descriptionEn: 'Crispy golden French fries',
     descriptionKr: '바삭한 황금빛 프렌치프라이',
-    category: 'Sides', price: p(18.9), popular: true
+    category: 'Sides', price: p(18.9), popular: true,
     imageUrl: '',
   },
   {
@@ -718,19 +718,19 @@ const ITEMS = [
     description: 'Шарсан сосис, чипстэй',
     descriptionEn: 'Grilled sausage with crispy chips',
     descriptionKr: '구운 소시지와 바삭한 칩스',
-    category: 'Sides', price: p(25.9)
+    category: 'Sides', price: p(25.9),
     imageUrl: '',
   },
 
   // ── BEVERAGES — SOFT DRINKS ───────────────────────────────────────────────
   {
     name: 'Кока-кола 300мл', nameEn: 'Coca-Cola (300ml)', nameKr: '코카콜라 (300ml)',
-    category: 'Beverages', price: p(6.5)
+    category: 'Beverages', price: p(6.5),
     imageUrl: '',
   },
   {
     name: 'Кока-кола лаазтай 330мл', nameEn: 'Coca-Cola Can (330ml)', nameKr: '코카콜라 캔 (330ml)',
-    category: 'Beverages', price: p(7.5)
+    category: 'Beverages', price: p(7.5),
     imageUrl: '',
   },
   {
@@ -738,7 +738,7 @@ const ITEMS = [
     description: 'Жүрж, алим, манго жүсний нэг төрөл',
     descriptionEn: 'Choice of orange, apple or mango juice',
     descriptionKr: '오렌지, 사과, 망고 주스 중 선택',
-    category: 'Beverages', price: p(6.5)
+    category: 'Beverages', price: p(6.5),
     imageUrl: '',
   },
   {
@@ -746,17 +746,17 @@ const ITEMS = [
     description: 'Жүрж эсвэл алим',
     descriptionEn: 'Freshly squeezed orange or apple juice',
     descriptionKr: '갓 짜낸 오렌지 또는 사과 주스',
-    category: 'Beverages', price: p(19.0)
+    category: 'Beverages', price: p(19.0),
     imageUrl: '',
   },
   {
     name: 'Ред Булл', nameEn: 'Red Bull', nameKr: '레드불',
-    category: 'Beverages', price: p(12.0)
+    category: 'Beverages', price: p(12.0),
     imageUrl: '',
   },
   {
     name: 'Ус (500мл)', nameEn: 'Still Water (500ml)', nameKr: '생수 (500ml)',
-    category: 'Beverages', price: p(3.0)
+    category: 'Beverages', price: p(3.0),
     imageUrl: '',
   },
   {
@@ -764,7 +764,7 @@ const ITEMS = [
     description: 'Таг татсан шарын архи',
     descriptionEn: 'Freshly poured draft beer from the tap',
     descriptionKr: '탭에서 갓 뽑은 생맥주',
-    category: 'Beverages', price: p(8.0)
+    category: 'Beverages', price: p(8.0),
     imageUrl: '',
   },
   {
@@ -772,7 +772,7 @@ const ITEMS = [
     description: 'Лонхтой шарын архи',
     descriptionEn: 'Chilled bottled beer',
     descriptionKr: '차가운 병맥주',
-    category: 'Beverages', price: p(7.0)
+    category: 'Beverages', price: p(7.0),
     imageUrl: '',
   },
 
@@ -782,21 +782,21 @@ const ITEMS = [
     description: 'Mighty Leaf — нэг хүний',
     descriptionEn: 'Mighty Leaf premium tea — choice of green, black or nectar',
     descriptionKr: '마이티 리프 프리미엄 티 — 녹차, 홍차, 넥타 중 선택',
-    category: 'Beverages', price: p(8.5)
+    category: 'Beverages', price: p(8.5),
     imageUrl: '',
   },
   {
     name: 'Халуун сүү (Зөгийн бал/Шоколад)', nameEn: 'Hot Milk (Honey/Chocolate)', nameKr: '따뜻한 우유 (꿀/초콜릿)',
     descriptionEn: 'Warm steamed milk with honey or chocolate',
     descriptionKr: '꿀 또는 초콜릿을 더한 따뜻한 스팀 우유',
-    category: 'Beverages', price: p(9.9)
+    category: 'Beverages', price: p(9.9),
     imageUrl: '',
   },
   {
     name: 'Имбирь нимбэгний цай', nameEn: 'Ginger Lemon Tea', nameKr: '생강 레몬 차',
     descriptionEn: 'Warming fresh ginger tea with lemon',
     descriptionKr: '레몬을 넣은 따뜻한 생강차',
-    category: 'Beverages', price: p(12.5)
+    category: 'Beverages', price: p(12.5),
     imageUrl: '',
   },
   {
@@ -804,7 +804,7 @@ const ITEMS = [
     description: 'Жимсгэнэ эсвэл чацаргана',
     descriptionEn: 'Hot lingonberry or sea buckthorn fruit drink',
     descriptionKr: '월귤 또는 씨버컨 따뜻한 과일 음료',
-    category: 'Beverages', price: p(12.5)
+    category: 'Beverages', price: p(12.5),
     imageUrl: '',
   },
   {
@@ -812,7 +812,7 @@ const ITEMS = [
     description: 'Mighty Leaf ногоон, хар, нектар — 2-4 хүний',
     descriptionEn: 'Mighty Leaf pot tea (green, black or nectar) — serves 2-4',
     descriptionKr: '마이티 리프 포트 티 (녹차, 홍차, 넥타) — 2-4인분',
-    category: 'Beverages', price: p(15.5)
+    category: 'Beverages', price: p(15.5),
     imageUrl: '',
   },
 
@@ -821,14 +821,14 @@ const ITEMS = [
     name: 'Эспрессо', nameEn: 'Espresso', nameKr: '에스프레소',
     descriptionEn: 'Single shot of rich espresso',
     descriptionKr: '진한 에스프레소 싱글샷',
-    category: 'Coffee', price: p(9.5)
+    category: 'Coffee', price: p(9.5),
     imageUrl: '',
   },
   {
     name: 'Американо', nameEn: 'Americano', nameKr: '아메리카노',
     descriptionEn: 'Espresso diluted with hot water',
     descriptionKr: '에스프레소에 뜨거운 물을 희석한 아메리카노',
-    category: 'Coffee', price: p(9.5)
+    category: 'Coffee', price: p(9.5),
     imageUrl: '',
   },
   {
@@ -836,56 +836,56 @@ const ITEMS = [
     description: 'Хоёр шот эспрессо, халуун ус',
     descriptionEn: 'Double espresso shot with hot water',
     descriptionKr: '더블 에스프레소샷에 뜨거운 물을 넣은 아메리카노',
-    category: 'Coffee', price: p(12.5)
+    category: 'Coffee', price: p(12.5),
     imageUrl: '',
   },
   {
     name: 'Капучино', nameEn: 'Cappuccino', nameKr: '카푸치노',
     descriptionEn: 'Espresso with equal parts steamed and foamed milk',
     descriptionKr: '에스프레소와 스팀 우유, 풍부한 거품의 카푸치노',
-    category: 'Coffee', price: p(11.5)
+    category: 'Coffee', price: p(11.5),
     imageUrl: '',
   },
   {
     name: 'Латте', nameEn: 'Café Latte', nameKr: '카페 라떼',
     descriptionEn: 'Smooth espresso with steamed milk',
     descriptionKr: '부드러운 에스프레소와 스팀 우유의 카페 라떼',
-    category: 'Coffee', price: p(10.5), popular: true
+    category: 'Coffee', price: p(10.5), popular: true,
     imageUrl: '',
   },
   {
     name: 'Ванилин латте', nameEn: 'Vanilla Latte', nameKr: '바닐라 라떼',
     descriptionEn: 'Latte with a hint of sweet vanilla syrup',
     descriptionKr: '달콤한 바닐라 시럽을 더한 라떼',
-    category: 'Coffee', price: p(13.5)
+    category: 'Coffee', price: p(13.5),
     imageUrl: '',
   },
   {
     name: 'Моха', nameEn: 'Mocha', nameKr: '모카',
     descriptionEn: 'Espresso with chocolate and steamed milk',
     descriptionKr: '에스프레소, 초콜릿, 스팀 우유로 만든 모카',
-    category: 'Coffee', price: p(13.5)
+    category: 'Coffee', price: p(13.5),
     imageUrl: '',
   },
   {
     name: 'Карамель латте', nameEn: 'Caramel Latte', nameKr: '카라멜 라떼',
     descriptionEn: 'Latte with rich caramel syrup',
     descriptionKr: '진한 카라멜 시럽을 넣은 라떼',
-    category: 'Coffee', price: p(13.5)
+    category: 'Coffee', price: p(13.5),
     imageUrl: '',
   },
   {
     name: 'Матча латте', nameEn: 'Matcha Latte', nameKr: '말차 라떼',
     descriptionEn: 'Japanese matcha green tea with steamed milk',
     descriptionKr: '스팀 우유를 넣은 일본식 말차 라떼',
-    category: 'Coffee', price: p(14.0)
+    category: 'Coffee', price: p(14.0),
     imageUrl: '',
   },
   {
     name: 'Ирланд кофе', nameEn: 'Irish Coffee', nameKr: '아이리시 커피',
     descriptionEn: 'Hot coffee with Irish whiskey and whipped cream',
     descriptionKr: '아이리시 위스키와 휘핑크림을 넣은 아이리시 커피',
-    category: 'Coffee', price: p(18.0)
+    category: 'Coffee', price: p(18.0),
     imageUrl: '',
   },
 
@@ -894,56 +894,56 @@ const ITEMS = [
     name: 'Манго смузи', nameEn: 'Mango Smoothie', nameKr: '망고 스무디',
     descriptionEn: 'Tropical mango smoothie blended fresh',
     descriptionKr: '신선하게 갈아 만든 열대 망고 스무디',
-    category: 'Smoothie & Shake', price: p(17.0)
+    category: 'Smoothie & Shake', price: p(17.0),
     imageUrl: '',
   },
   {
     name: 'Гүзээлзгэнэ смузи', nameEn: 'Strawberry Smoothie', nameKr: '딸기 스무디',
     descriptionEn: 'Fresh strawberry smoothie blended with yogurt',
     descriptionKr: '요거트와 함께 갈아 만든 신선한 딸기 스무디',
-    category: 'Smoothie & Shake', price: p(17.0)
+    category: 'Smoothie & Shake', price: p(17.0),
     imageUrl: '',
   },
   {
     name: 'Жимсний смузи', nameEn: 'Fruit Smoothie', nameKr: '과일 스무디',
     descriptionEn: 'Mixed fresh seasonal fruit smoothie',
     descriptionKr: '신선한 계절 과일을 넣어 만든 믹스 스무디',
-    category: 'Smoothie & Shake', price: p(19.0)
+    category: 'Smoothie & Shake', price: p(19.0),
     imageUrl: '',
   },
   {
     name: 'Ванилин шейк', nameEn: 'Vanilla Shake', nameKr: '바닐라 쉐이크',
     descriptionEn: 'Creamy classic vanilla milkshake',
     descriptionKr: '크리미한 클래식 바닐라 밀크쉐이크',
-    category: 'Smoothie & Shake', price: p(16.9)
+    category: 'Smoothie & Shake', price: p(16.9),
     imageUrl: '',
   },
   {
     name: 'Гүзээлзгэнэний шейк', nameEn: 'Strawberry Shake', nameKr: '딸기 쉐이크',
     descriptionEn: 'Thick and creamy strawberry milkshake',
     descriptionKr: '진하고 크리미한 딸기 밀크쉐이크',
-    category: 'Smoothie & Shake', price: p(16.9)
+    category: 'Smoothie & Shake', price: p(16.9),
     imageUrl: '',
   },
   {
     name: 'Шоколад шейк', nameEn: 'Chocolate Shake', nameKr: '초콜릿 쉐이크',
     descriptionEn: 'Rich chocolate milkshake',
     descriptionKr: '진한 초콜릿 밀크쉐이크',
-    category: 'Smoothie & Shake', price: p(16.9)
+    category: 'Smoothie & Shake', price: p(16.9),
     imageUrl: '',
   },
   {
     name: 'Сникерс шейк', nameEn: 'Snickers Shake', nameKr: '스니커즈 쉐이크',
     descriptionEn: 'Indulgent Snickers bar milkshake with caramel and peanut',
     descriptionKr: '카라멜과 땅콩이 들어간 스니커즈 밀크쉐이크',
-    category: 'Smoothie & Shake', price: p(19.9)
+    category: 'Smoothie & Shake', price: p(19.9),
     imageUrl: '',
   },
   {
     name: 'Орео шейк', nameEn: 'Oreo Shake', nameKr: '오레오 쉐이크',
     descriptionEn: 'Creamy milkshake blended with Oreo cookies',
     descriptionKr: '오레오 쿠키를 갈아 넣은 크리미 밀크쉐이크',
-    category: 'Smoothie & Shake', price: p(19.9)
+    category: 'Smoothie & Shake', price: p(19.9),
     imageUrl: '',
   },
 ];
