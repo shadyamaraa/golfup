@@ -16,6 +16,15 @@ const db = getDatabase(app);
 const p = (n) => Math.round(n * 1000); // price helper
 
 const ITEMS = [
+  // ── GOLFER'S FAVORITE ────────────────────────────────────────────────────
+  { nameEn: 'Mongolian Fried Rice', name: 'Будаатай хуурга', description: 'Хуурсан өндөг, ногоотой Монгол хуурсан будаа', category: "Golfer's Favorite", popular: true, price: p(22.9) },
+  { nameEn: 'Mongolian Rice Soup', name: 'Будаатай шөл', description: 'Мах, ногоотой будаатай дулаан шөл', category: "Golfer's Favorite", popular: true, price: p(22.9) },
+  { nameEn: 'Mongolian Noodle Soup', name: 'Гурилтай шөл', description: 'Үхрийн мах, хонины хавиргатай гурилтай шөл', category: "Golfer's Favorite", popular: true, price: p(29.9) },
+  { nameEn: 'Mongolian Fried Noodle', name: 'Цуйван', description: 'Өвчүүний махтай Монгол цуйван', category: "Golfer's Favorite", popular: true, price: p(37.9) },
+  { nameEn: 'Mongolian Khuushuur', name: 'Хуушуур', description: 'Үхрийн махтай хуушуур — зөвхөн ажлын өдөр', category: "Golfer's Favorite", popular: true, price: p(39.9) },
+  { nameEn: 'Chicken Fajita', name: 'Chicken Fajita', description: 'Тахианы махтай Мексик маягийн фахита', category: "Golfer's Favorite", popular: true, price: p(45.9) },
+  { nameEn: 'Bantan', name: 'Бантан', description: 'Үхрийн мах, хонины хавиргатай гурилтай Монгол бантан', category: "Golfer's Favorite", popular: true, price: p(25.9) },
+
   // ── STARTER ──────────────────────────────────────────────────────────────
   { nameEn: 'Beef Brisket Appetizer', name: 'Үхрийн өвчүүний махан зууш', description: 'Халапеньо, үхрийн өвчүүний махан зууш (659 ккал)', category: 'Starter', price: p(31.9) },
   { nameEn: 'Mini Delicatessen', name: 'Бяслагны цуглуулга', description: 'Бяслагны цуглуулга (559 ккал)', category: 'Starter', price: p(46.9) },
@@ -134,6 +143,9 @@ const ITEMS = [
   { nameEn: 'Juice (Orange/Apple/Mango)', name: 'Жүс (Жүрж/Алим/Манго)', description: 'Жүрж, алим, манго жүсний нэг төрөл', category: 'Beverages', price: p(6.5) },
   { nameEn: 'Fresh Squeezed Juice', name: 'Шинэхэн жүс', description: 'Жүрж эсвэл алим', category: 'Beverages', price: p(19.0) },
   { nameEn: 'Red Bull', name: 'Ред Булл', category: 'Beverages', price: p(12.0) },
+  { nameEn: 'Still Water (500ml)', name: 'Ус (500мл)', category: 'Beverages', price: p(3.0) },
+  { nameEn: 'Draft Beer', name: 'Шарын архи (дамжуулсан)', description: 'Таг татсан шарын архи', category: 'Beverages', price: p(8.0) },
+  { nameEn: 'Bottled Beer', name: 'Шарын архи (лонхтой)', description: 'Лонхтой шарын архи', category: 'Beverages', price: p(7.0) },
 
   // ── BEVERAGES — HOT DRINKS ────────────────────────────────────────────────
   { nameEn: 'Tea Bag (Green/Black/Nectar)', name: 'Цай (Ногоон/Хар/Нектар)', description: 'Mighty Leaf — нэг хүний', category: 'Beverages', price: p(8.5) },
@@ -145,6 +157,7 @@ const ITEMS = [
   // ── BEVERAGES — COFFEE ────────────────────────────────────────────────────
   { nameEn: 'Espresso', name: 'Эспрессо', category: 'Coffee', price: p(9.5) },
   { nameEn: 'Americano', name: 'Американо', category: 'Coffee', price: p(9.5) },
+  { nameEn: 'Double Americano', name: 'Давхар Американо', description: 'Хоёр шот эспрессо, халуун ус', category: 'Coffee', price: p(12.5) },
   { nameEn: 'Cappuccino', name: 'Капучино', category: 'Coffee', price: p(11.5) },
   { nameEn: 'Café Latte', name: 'Латте', category: 'Coffee', price: p(10.5), popular: true },
   { nameEn: 'Vanilla Latte', name: 'Ванилин латте', category: 'Coffee', price: p(13.5) },

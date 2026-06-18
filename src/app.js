@@ -3437,9 +3437,20 @@ async function renderFoodOrder(gameId) {
     return;
   }
   const available = menuItems.filter(i => i.available !== false);
-  const popular = available.filter(i => i.popular);
-  const others = available.filter(i => !i.popular);
   foodCart = {};
+
+  // Build ordered category list (by min sortOrder of items in each category)
+  const catMinOrder = {};
+  available.forEach(item => {
+    const c = item.category || 'Other';
+    if (catMinOrder[c] === undefined || (item.sortOrder ?? 9999) < catMinOrder[c]) catMinOrder[c] = item.sortOrder ?? 9999;
+  });
+  const categories = Object.keys(catMinOrder).sort((a, b) => catMinOrder[a] - catMinOrder[b]);
+
+  const CAT_LABELS = { "Golfer's Favorite": "🏌️ Golfer's Fav" };
+  const catLabel = c => CAT_LABELS[c] || c;
+
+  let selectedCategory = categories[0] || 'all';
 
   function cartTotal() {
     return Object.entries(foodCart).reduce((sum, [id, qty]) => {
@@ -3475,25 +3486,17 @@ async function renderFoodOrder(gameId) {
       </div>`;
   }
 
-  let othersVisible = false;
-
   function renderMenu() {
-    const popularHtml = popular.length ? `
-      <div style="margin-bottom:4px;font-size:0.82rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;">${t('popularItems')}</div>
-      ${popular.map(renderItem).join('')}` : '';
+    const filtered = selectedCategory === 'all'
+      ? available
+      : available.filter(i => (i.category || 'Other') === selectedCategory);
 
-    const othersHtml = others.length ? `
-      <div style="margin-top:12px;">
-        <button id="toggle-others-btn" class="btn btn-ghost btn-sm" style="width:100%;text-align:left;padding:8px 0;">
-          ${othersVisible ? '▲ ' + t('showLess') : '▼ ' + t('otherItems') + ' (' + others.length + ')'}
-        </button>
-        <div id="others-list" style="display:${othersVisible ? 'block' : 'none'};">
-          ${others.map(renderItem).join('')}
-        </div>
-      </div>` : '';
-
-    const total = cartTotal();
     const count = cartCount();
+    const total = cartTotal();
+
+    const itemsHtml = filtered.length
+      ? filtered.map(renderItem).join('')
+      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">Энэ ангилалд хоол байхгүй.</p>`;
 
     const cartHtml = count > 0 ? `
       <div style="margin-top:16px;padding:12px;background:rgba(var(--primary-rgb,34,197,94),0.1);border-radius:8px;border:1px solid var(--primary-color);">
@@ -3504,7 +3507,10 @@ async function renderFoodOrder(gameId) {
         <button id="checkout-btn" class="btn btn-primary" style="width:100%;">${t('placeOrder')} (${count})</button>
       </div>` : '';
 
-    document.getElementById('food-menu-body').innerHTML = popularHtml + othersHtml + cartHtml;
+    document.getElementById('food-menu-col').innerHTML = itemsHtml + cartHtml;
+    document.querySelectorAll('.food-cat-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.cat === selectedCategory);
+    });
     bindFoodButtons();
   }
 
@@ -3524,26 +3530,39 @@ async function renderFoodOrder(gameId) {
         renderMenu();
       };
     });
-    document.getElementById('toggle-others-btn')?.addEventListener('click', () => {
-      othersVisible = !othersVisible;
-      renderMenu();
-    });
     document.getElementById('checkout-btn')?.addEventListener('click', () => {
       showCheckoutModal(available, tables, gameId);
     });
   }
+
+  const catRailHtml = `
+    <nav class="food-cat-rail">
+      <button class="food-cat-btn" data-cat="all">⭐ Бүгд</button>
+      ${categories.map(c => `<button class="food-cat-btn" data-cat="${esc(c)}">${esc(catLabel(c))}</button>`).join('')}
+    </nav>`;
 
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
       <div class="glass-card">
         <h2 class="card-title">🍽️ ${t('foodMenu')}</h2>
-        ${available.length === 0 ? `<p style="color:var(--text-secondary);">Цэс байхгүй байна.</p>` : ''}
-        <div id="food-menu-body"></div>
+        ${available.length === 0 ? `<p style="color:var(--text-secondary);">Цэс байхгүй байна.</p>` : `
+        <div class="food-page-layout">
+          <div id="food-menu-col" class="food-menu-col"></div>
+          ${catRailHtml}
+        </div>`}
       </div>
     </div>`;
 
-  if (available.length > 0) renderMenu();
+  if (available.length > 0) {
+    document.querySelectorAll('.food-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedCategory = btn.dataset.cat;
+        renderMenu();
+      });
+    });
+    renderMenu();
+  }
 }
 
 function showCheckoutModal(menuItems, tables, gameId) {
