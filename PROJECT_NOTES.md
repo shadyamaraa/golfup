@@ -12,6 +12,8 @@ UB Golf helps golfers create, join, organize, and manage golf games. It supports
 - Hosting: Firebase Hosting
 - Functions: Firebase Cloud Functions, Node.js 22, 1st Gen trigger using `firebase-functions/v1`
 - Push notifications: Firebase Cloud Messaging
+- Food ordering: menu/tables/orders in RTDB; web kitchen display at `#/kitchen`
+- Kitchen tray app: `tauri-kitchen/` (Tauri v2 desktop app, listens to RTDB `orders`)
 
 ## Current Production
 

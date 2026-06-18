@@ -2,6 +2,9 @@
   "functions": {
     "source": "functions"
   },
+  "database": {
+    "rules": "database.rules.json"
+  },
   "hosting": {
     "public": "dist",
     "ignore": [
@@ -35,6 +38,10 @@
       {
         "source": "/api/admin-login",
         "function": "adminLogin"
+      },
+      {
+        "source": "/api/kitchen-login",
+        "function": "kitchenLogin"
       },
       {
         "source": "/api/cancel-booking",

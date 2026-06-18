@@ -1,5 +1,76 @@
 # CHANGELOG_AI.md
 
+## 2026-06-18 (2)
+
+### Add food photos from QR menu PDF
+
+- Extracted 59 JPEG food images from `QR_May_23_2025.pdf` using `pdfimages -j`.
+- Placed them in `public/food/<slug>.jpg` with kebab-case slug names matching menu items.
+- Added `imageUrl` field to every item in `scripts/seed-asem-menu.js`:
+  - 59 items get `/food/<slug>.jpg` (visually matched to QR PDF photos).
+  - Remaining items get `imageUrl: ''` (no QR photo available — 🍽️ placeholder shown).
+- Seed record object updated to persist `imageUrl: item.imageUrl || ''`.
+- **Action required**: run `node scripts/seed-asem-menu.js` to push imageUrl values to Firebase.
+
+## 2026-06-18
+
+### Food menu — image-rich item cards + admin image/description fields
+
+- Menu items gained two optional fields: `imageUrl` (photo) and `description`
+  (ingredients/notes). `saveMenuItem` already persists the whole object, so no
+  store change was needed.
+- Customer menu (`renderFoodOrder`) redesigned from a plain list into modern
+  food-delivery-style cards: 84px photo (or 🍽️ gradient placeholder when no
+  image), name + EN name, 2-line clamped description, gold price, and a +/−
+  stepper. New `.food-card*` styles in `src/style.css`.
+- Admin menu tab (`renderAdminMenuTab`): added Image URL input with live
+  preview and a Description textarea; item rows now show a 44px thumbnail and an
+  "(идэвхгүй)" flag. Wired up the previously-dead ✏️ Edit button — it now loads
+  the item into the form and saves in place (preserves `id`/`sortOrder`).
+- Image URLs accept any source (external host or local `/menu/...` path);
+  broken images fall back to the placeholder via `onerror`. No Firebase config
+  or new dependencies.
+- New i18n keys (mn/en/kr): `itemImageUrl`, `itemDescription`,
+  `itemDescPlaceholder`.
+
+## 2026-06-17
+
+### Food ordering Phase 2 — Kitchen tray app (Tauri v2)
+
+New `tauri-kitchen/` desktop app (Tauri v2 + vanilla JS, buildless frontend).
+- Listens to RTDB `orders` via the Firebase JS SDK (same `golfup-app` project).
+- New paid order (`status === "paid" && notified === false`) → two-tone WebAudio
+  beep + native OS notification (sent from Rust via `tauri-plugin-notification`),
+  then marks `notified: true` so it alerts once. Startup catch-up orders show in
+  the list but do not beep.
+- System tray icon with Show/Quit menu; closing the window hides to tray and
+  keeps listening; `tauri-plugin-single-instance` focuses the existing window.
+- "Дууссан ✓" sets order `status: "completed"` (mirrors the web kitchen display).
+- Rust deps resolved: tauri 2.11, notification 2.3, single-instance 2.4.
+- Build instructions in `tauri-kitchen/README.md` (final binary built on the
+  target OS — Linux CI lacks webkit so it is not compiled here).
+
+### Food ordering Phase 1 — switch orders to RTDB, permission + login fixes
+
+**Fixes (post-testing):**
+- `src/store.js`: Moved `orders` from Firestore to RTDB — Firestore API was never enabled on the project. `createOrder`, `updateOrderStatus`, `loadOrder`, `onOrdersChanged` now use RTDB; removed all `firebase/firestore` imports and the `isFirestoreReady` helper.
+- `src/app.js`: Kitchen display reads numeric `createdAt` (was Firestore `Timestamp.toDate()`); removed the dead Firestore-not-ready guard screen.
+- `database.rules.json` (new) + `firebase.json`: `menu`/`tables` rules used `auth != null`, but the app has no Firebase Auth login so reads were always denied — set to `true` and added `orders` node. Wired RTDB rules into deploy config.
+- `KITCHEN_PASSWORD` secret had a trailing newline (login always failed); re-set without newline and redeployed `kitchenLogin`.
+
+### Food ordering Phase 1 — menu, ordering, kitchen display
+
+**New features:**
+- `src/store.js`: Added Firestore (`getFirestore`) for `orders` collection. New functions: `loadMenu`, `saveMenuItem`, `deleteMenuItem`, `loadTables`, `saveTable`, `deleteTable`, `createOrder`, `updateOrderStatus`, `loadOrder`, `onOrdersChanged`. Menu and tables stored in RTDB; orders in Firestore.
+- `src/app.js`: New routes `#/menu`, `#/order/:gameId`, `#/orders/:id`, `#/kitchen`. Food order button added to game detail view. `renderFoodOrder()` — popular items shown first, others collapsible; cart with stepper. `showCheckoutModal()` — delivery location (restaurant table with floor plan, outdoor, course/marshal), pickup time (ASAP or scheduled datetime), customer name/phone auto-filled from current user. `renderOrderDetail()` — deeplink target for Tauri. `renderKitchenDisplay()` — password-protected real-time orders list; beep on new order; mark done button. `renderAdminMenuTab()` — add/delete menu items (popular flag, available toggle, category, EN name), add/delete tables.
+- `src/app.js`: Admin panel gets new "🍽️ Цэс" tab.
+- `src/i18n.js`: Added food ordering keys in mn/en/kr.
+- `functions/index.js`: Added `kitchenLogin` function (KITCHEN_PASSWORD secret).
+- `firebase.json`: Added `/api/kitchen-login` → `kitchenLogin` rewrite.
+
+**Fixes:**
+- Removed bookingId diagnostic text from game detail view.
+
 ## 2026-06-12
 
 ### MTBogd player sync fixes — `src/app.js`, `src/booking.js`

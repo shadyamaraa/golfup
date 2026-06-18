@@ -4,6 +4,8 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
+const isKiosk = !!window.__TAURI__;
+
 let currentUser = null;
 let allUsersMap = {};
 let currentUserFollows = {};
@@ -174,6 +176,13 @@ export async function router() {
 
   try {
     const hash = location.hash || '#/';
+
+    // Kiosk mode: lock to kitchen route and hide header.
+    if (isKiosk) {
+      document.getElementById('app-header')?.style.setProperty('display', 'none', 'important');
+      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; isRouting = false; return; }
+    }
+
     currentUser = store.getUser();
     if (currentUser && followsLoadedForUser !== currentUser.id) {
       const [follows, followerIds] = await Promise.all([
@@ -187,7 +196,7 @@ export async function router() {
     updateHeader();
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/')) {
+    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen') {
       renderAuth();
       return;
     }
@@ -199,9 +208,14 @@ export async function router() {
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
     else if (hash === '#/admin') await renderAdminPanel();
+    else if (hash === '#/menu') await renderFoodOrder(null);
+    else if (hash.startsWith('#/order/')) await renderFoodOrder(hash.split('#/order/')[1]);
+    else if (hash.startsWith('#/orders/')) await renderOrderDetail(hash.split('#/orders/')[1]);
+    else if (hash === '#/kitchen') await renderKitchenDisplay();
     else await renderHome();
   } catch (err) {
     console.error('Router error:', err);
+    main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
   } finally {
     isRouting = false;
   }
@@ -353,6 +367,9 @@ async function renderHome() {
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
           <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
             <span class="btn-icon-left">+</span> ${t('createGame')}
+          </a>
+          <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
+            🍽️ ${t('foodMenu')}
           </a>
         </div>
       </div>
@@ -1179,6 +1196,7 @@ function renderGameView(game) {
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
           <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
+          <a href="#/order/${game.id}" class="btn btn-outline">🍽️ ${t('orderFood')}</a>
         </div>
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
@@ -1186,7 +1204,7 @@ function renderGameView(game) {
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">🏌️ ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
-            <span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">${game.bookingId ? 'ID:' + game.bookingId : '⚠️ bookingId хадгалагдаагүй'}</span>
+            ${game.bookingId ? `<span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">ID:${game.bookingId}</span>` : ''}
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
@@ -1617,11 +1635,12 @@ async function renderAdminPanel() {
       <div class="glass-card" style="margin-bottom: 20px;">
         <h2 class="card-title">🛡️ Admin Panel</h2>
 
-        <div style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
           <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
           <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
           <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
           <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
+          <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm">🍽️ ${t('menuManage')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -1700,6 +1719,10 @@ async function renderAdminPanel() {
           <div id="admin-lookup-results"></div>
           <div id="admin-lookup-results"></div>
         </div>
+
+        <div id="admin-tab-menu" style="display:none;">
+          <div id="admin-menu-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -1709,12 +1732,14 @@ async function renderAdminPanel() {
   const tabCircles = document.getElementById('admin-tab-btn-circles');
   const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
   const tabLookup = document.getElementById('admin-tab-btn-lookup');
+  const tabMenu = document.getElementById('admin-tab-btn-menu');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
   const sectionLookup = document.getElementById('admin-tab-lookup');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup];
+  const sectionMenu = document.getElementById('admin-tab-menu');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -1725,6 +1750,10 @@ async function renderAdminPanel() {
   tabCircles.addEventListener('click', () => switchTab(tabCircles, sectionCircles));
   tabNoCircle.addEventListener('click', () => switchTab(tabNoCircle, sectionNoCircle));
   tabLookup.addEventListener('click', () => switchTab(tabLookup, sectionLookup));
+  tabMenu.addEventListener('click', async () => {
+    switchTab(tabMenu, sectionMenu);
+    await renderAdminMenuTab();
+  });
 
   // No-circle tab: open edit modal
   document.querySelectorAll('.edit-user-btn-nc').forEach(btn => {
@@ -3395,4 +3424,884 @@ function showBankDetailsModal(user) {
       });
     };
   }
+}
+
+// ---- Food Ordering ----
+
+let foodCart = {}; // { itemId: qty }
+
+async function renderFoodOrder(gameId) {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  let menuItems, tables;
+  try {
+    [menuItems, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  } catch (err) {
+    main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Цэс ачааллахад алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
+    return;
+  }
+  const available = menuItems.filter(i => i.available !== false);
+  foodCart = {};
+
+  // Build ordered category list (by min sortOrder of items in each category)
+  const catMinOrder = {};
+  available.forEach(item => {
+    const c = item.category || 'Other';
+    if (catMinOrder[c] === undefined || (item.sortOrder ?? 9999) < catMinOrder[c]) catMinOrder[c] = item.sortOrder ?? 9999;
+  });
+  const categories = Object.keys(catMinOrder).sort((a, b) => catMinOrder[a] - catMinOrder[b]);
+
+  const CAT_LABELS = { "Golfer's Favorite": "🏌️ Golfer's Fav" };
+  const catLabel = c => CAT_LABELS[c] || c;
+
+  let selectedCategory = categories[0] || 'all';
+  let searchQuery = '';
+
+  function cartTotal() {
+    return Object.entries(foodCart).reduce((sum, [id, qty]) => {
+      const item = available.find(i => i.id === id);
+      return sum + (item ? item.price * qty : 0);
+    }, 0);
+  }
+
+  function cartCount() {
+    return Object.values(foodCart).reduce((a, b) => a + b, 0);
+  }
+
+  const dow = new Date().getDay();
+  const isWeekend = dow === 0 || dow === 6;
+
+  function renderItem(item) {
+    const qty = foodCart[item.id] || 0;
+    const blocked = item.weekdayOnly && isWeekend;
+    const lang = getLang();
+    const primaryName = lang === 'kr'
+      ? (item.nameKr || item.nameEn || item.name)
+      : lang === 'en'
+        ? (item.nameEn || item.name)
+        : item.name;
+    const secondaryName = lang === 'mn'
+      ? (item.nameEn ? item.nameEn : '')
+      : (item.name !== primaryName ? item.name : '');
+    const desc = lang === 'kr'
+      ? (item.descriptionKr || item.descriptionEn || item.description || '')
+      : lang === 'en'
+        ? (item.descriptionEn || item.description || '')
+        : (item.description || '');
+    const img = item.imageUrl
+      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
+      : `<div class="food-card-img-ph">🍽️</div>`;
+    const stepper = blocked
+      ? `<span class="food-weekday-note">📅 ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
+      : `<div class="food-stepper">
+              ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
+              <span class="food-qty">${qty}</span>` : ''}
+              <button class="food-inc btn btn-primary food-step-btn" data-id="${item.id}">+</button>
+            </div>`;
+    return `
+      <div class="food-card${blocked ? ' food-card-blocked' : ''}" data-id="${item.id}">
+        ${img}
+        <div class="food-card-body">
+          <div class="food-card-name">${esc(primaryName)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
+          ${desc ? `<div class="food-card-desc">${esc(desc)}</div>` : ''}
+          <div class="food-card-foot">
+            <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
+            ${stepper}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderMenu() {
+    const base = selectedCategory === 'all'
+      ? available
+      : available.filter(i => (i.category || 'Other') === selectedCategory);
+
+    const q = searchQuery.toLowerCase();
+    const filtered = q
+      ? available.filter(i =>
+          i.name.toLowerCase().includes(q) ||
+          (i.nameEn || '').toLowerCase().includes(q) ||
+          (i.nameKr || '').toLowerCase().includes(q) ||
+          (i.description || '').toLowerCase().includes(q) ||
+          (i.descriptionEn || '').toLowerCase().includes(q))
+      : base;
+
+    const count = cartCount();
+    const total = cartTotal();
+
+    const itemsHtml = filtered.length
+      ? filtered.map(renderItem).join('')
+      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? '🔍 Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
+
+    document.getElementById('food-menu-col').innerHTML = itemsHtml;
+
+    // Update cart pill
+    const pill = document.getElementById('food-cart-pill');
+    if (pill) {
+      if (count > 0) {
+        pill.style.display = 'flex';
+        document.getElementById('cart-pill-label').textContent = `🛒 ${count} · ${total.toLocaleString()}₮`;
+      } else {
+        pill.style.display = 'none';
+      }
+    }
+
+    document.querySelectorAll('.food-cat-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.cat === selectedCategory);
+    });
+    bindFoodButtons();
+  }
+
+  function bindFoodButtons() {
+    document.querySelectorAll('.food-inc').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.id;
+        foodCart[id] = (foodCart[id] || 0) + 1;
+        renderMenu();
+      };
+    });
+    document.querySelectorAll('.food-dec').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.id;
+        if (foodCart[id] > 1) foodCart[id]--;
+        else delete foodCart[id];
+        renderMenu();
+      };
+    });
+    document.getElementById('cart-pill-btn')?.addEventListener('click', () => {
+      showCheckoutModal(available, tables, gameId);
+    });
+  }
+
+  const catRailHtml = `
+    <nav class="food-cat-rail">
+      <button class="food-cat-btn" data-cat="all">⭐ Бүгд</button>
+      ${categories.map(c => `<button class="food-cat-btn" data-cat="${esc(c)}">${esc(catLabel(c))}</button>`).join('')}
+    </nav>`;
+
+  main().innerHTML = `
+    <div class="detail-container fade-in">
+      <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
+      <div class="glass-card">
+        <div class="food-sticky-head">
+          <div class="food-top-bar">
+            <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
+            <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
+              <span id="cart-pill-label"></span>
+              <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
+            </div>
+          </div>
+          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />` : ''}
+        </div>
+        ${available.length === 0 ? `<p style="color:var(--text-secondary);padding:0 0 12px;">Цэс байхгүй байна.</p>` : `
+        <div class="food-page-layout">
+          <div id="food-menu-col" class="food-menu-col"></div>
+          ${catRailHtml}
+        </div>`}
+      </div>
+    </div>`;
+
+  if (available.length > 0) {
+    // Set cat-rail sticky offset to sit below the sticky head
+    const head = document.querySelector('.food-sticky-head');
+    const layout = document.querySelector('.food-page-layout');
+    if (head && layout) {
+      layout.style.setProperty('--food-head-top', (56 + head.offsetHeight) + 'px');
+    }
+    document.getElementById('food-search').addEventListener('input', e => {
+      searchQuery = e.target.value;
+      renderMenu();
+    });
+    document.querySelectorAll('.food-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedCategory = btn.dataset.cat;
+        renderMenu();
+      });
+    });
+    renderMenu();
+  }
+}
+
+function showCheckoutModal(menuItems, tables, gameId) {
+  if (document.getElementById('co-submit')) return; // modal already open
+  const cartEntries = Object.entries(foodCart).filter(([, qty]) => qty > 0);
+  if (cartEntries.length === 0) return;
+
+  const user = currentUser;
+  const total = cartEntries.reduce((sum, [id, qty]) => {
+    const item = menuItems.find(i => i.id === id);
+    return sum + (item ? item.price * qty : 0);
+  }, 0);
+
+  const tablesHtml = tables.length > 0 ? `
+    <div id="floor-plan-wrap" style="display:none; margin-top:10px;">
+      <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">${t('selectTable')}</div>
+      <div style="position:relative;background:rgba(255,255,255,0.05);border-radius:8px;padding:12px;min-height:120px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${tables.map(tbl => `<button class="table-select-btn btn btn-outline btn-sm" data-tid="${tbl.id}" style="min-width:60px;">${esc(tbl.label)}</button>`).join('')}
+        </div>
+      </div>
+      <div id="selected-table-label" style="font-size:0.85rem;margin-top:6px;color:var(--text-secondary);"></div>
+    </div>` : '';
+
+  const modal = document.createElement('div');
+  modal.className = 'popup-overlay fade-in';
+  modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); z-index:9999; display:flex; align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto; -webkit-overflow-scrolling:touch;';
+  modal.innerHTML = `
+    <div class="popup-box glass-card" style="max-width:400px;width:100%;margin:auto;max-height:90vh;overflow-y:auto;">
+      <h3 style="margin:0 0 14px;">${t('orderSummary')}</h3>
+
+      <div style="margin-bottom:12px;font-size:0.9rem;">
+        ${cartEntries.map(([id, qty]) => {
+          const item = menuItems.find(i => i.id === id);
+          return item ? `<div style="display:flex;justify-content:space-between;padding:4px 0;">
+            <span>${esc(item.name)} × ${qty}</span>
+            <span>${(item.price * qty).toLocaleString()}₮</span>
+          </div>` : '';
+        }).join('')}
+        <div style="border-top:1px solid var(--border-color);margin-top:8px;padding-top:8px;font-weight:700;display:flex;justify-content:space-between;">
+          <span>${t('orderTotal')}</span><span>${total.toLocaleString()}₮</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerName')}</label>
+          <input id="co-name" type="text" value="${user ? esc(user.firstName || user.name || '') : ''}" placeholder="${t('customerName')}"
+            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
+        </div>
+        <div>
+          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerPhone')}</label>
+          <input id="co-phone" type="tel" value="${user ? esc(user.phone || '') : ''}" placeholder="${t('customerPhone')}"
+            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
+        </div>
+
+        <div>
+          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('deliveryLocation')}</label>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="table" /> ${t('deliveryTable')}</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="outdoor" checked /> ${t('deliveryOutdoor')}</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="course" /> ${t('deliveryCourse')}</label>
+          </div>
+          ${tablesHtml}
+        </div>
+
+        <div>
+          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('pickupTime')}</label>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pickup" value="asap" checked /> ${t('pickupAsap')}</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pickup" value="scheduled" /> ${t('pickupScheduled')}</label>
+          </div>
+          <input id="co-pickup-time" type="datetime-local" style="display:none;width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> 🏌️ ${t('payClubhouse')}</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button id="co-submit" class="btn btn-primary" style="flex:1;">${t('placeOrder')}</button>
+          <button id="co-cancel" class="btn btn-ghost">Болих</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let selectedTableId = null;
+
+  modal.querySelectorAll('input[name="co-delivery"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const floorWrap = modal.querySelector('#floor-plan-wrap');
+      if (floorWrap) floorWrap.style.display = radio.value === 'table' ? 'block' : 'none';
+      if (radio.value !== 'table') selectedTableId = null;
+    });
+  });
+
+  modal.querySelectorAll('.table-select-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modal.querySelectorAll('.table-select-btn').forEach(b => b.classList.remove('btn-primary'));
+      btn.classList.add('btn-primary');
+      selectedTableId = btn.dataset.tid;
+      const lbl = tables.find(t => t.id === selectedTableId);
+      const el = modal.querySelector('#selected-table-label');
+      if (el) el.textContent = lbl ? '✓ ' + lbl.label : '';
+    });
+  });
+
+  modal.querySelectorAll('input[name="co-pickup"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const dtInput = modal.querySelector('#co-pickup-time');
+      dtInput.style.display = radio.value === 'scheduled' ? 'block' : 'none';
+    });
+  });
+
+  modal.querySelector('#co-cancel').onclick = () => modal.remove();
+
+  let submitting = false;
+  modal.querySelector('#co-submit').onclick = async () => {
+    if (submitting) return;
+    const name = modal.querySelector('#co-name').value.trim();
+    const phone = modal.querySelector('#co-phone').value.trim();
+    const delivery = modal.querySelector('input[name="co-delivery"]:checked')?.value || 'outdoor';
+    const pickupRadio = modal.querySelector('input[name="co-pickup"]:checked')?.value || 'asap';
+    const pickupTimeVal = modal.querySelector('#co-pickup-time').value;
+
+    if (!name) { showToast('Нэрээ оруулна уу', 'error'); return; }
+    if (!phone) { showToast('Утасны дугаараа оруулна уу', 'error'); return; }
+    if (delivery === 'table' && !selectedTableId) { showToast('Ширээгээ сонгоно уу', 'error'); return; }
+    if (pickupRadio === 'scheduled' && !pickupTimeVal) { showToast('Цагаа оруулна уу', 'error'); return; }
+
+    const items = cartEntries.map(([id, qty]) => {
+      const item = menuItems.find(i => i.id === id);
+      return { itemId: id, name: item?.name || id, price: item?.price || 0, qty };
+    });
+
+    const order = {
+      customerName: name,
+      customerPhone: phone,
+      createdBy: currentUser?.id || null,
+      gameId: gameId || null,
+      items,
+      total,
+      deliveryLocation: delivery,
+      tableId: delivery === 'table' ? selectedTableId : null,
+      pickupTime: pickupRadio === 'asap' ? 'asap' : pickupTimeVal,
+      status: 'paid',
+      paidAt: new Date().toISOString(),
+    };
+
+    submitting = true;
+    const btn = modal.querySelector('#co-submit');
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      await store.createOrder(order);
+      modal.remove();
+      foodCart = {};
+      showToast('✅ ' + t('orderPlaced'), 'success');
+      location.hash = gameId ? '#/game/' + gameId : '#/';
+    } catch (err) {
+      showToast('Алдаа: ' + err.message, 'error');
+      submitting = false;
+      btn.disabled = false;
+      btn.textContent = t('placeOrder');
+    }
+  };
+}
+
+async function renderOrderDetail(orderId) {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+
+  const renderWith = (order) => {
+    if (!order) {
+      main().innerHTML = `<div class="detail-container fade-in"><a href="#/" class="back-link">← ${t('back')}</a><p>Захиалга олдсонгүй.</p></div>`;
+      return;
+    }
+
+    const deliveryLabel = order.deliveryLocation === 'table' ? t('deliveryTable')
+      : order.deliveryLocation === 'course' ? t('deliveryCourse')
+      : t('deliveryOutdoor');
+    const pickupLabel = order.pickupTime === 'asap' ? t('pickupAsap') : order.pickupTime;
+    const done = order.status === 'completed';
+
+    // Two-step live status tracker
+    const step = done ? 2 : 1;
+    const tracker = `
+      <div class="order-status-track">
+        <div class="order-status-step ${step >= 1 ? 'reached' : ''}">
+          <div class="order-status-dot">${step >= 1 ? '✓' : '1'}</div>
+          <div class="order-status-text">${t('orderStatusPaid')}</div>
+        </div>
+        <div class="order-status-line ${step >= 2 ? 'reached' : ''}"></div>
+        <div class="order-status-step ${step >= 2 ? 'reached' : ''}">
+          <div class="order-status-dot">${step >= 2 ? '✓' : '2'}</div>
+          <div class="order-status-text">${t('orderStatusCompleted')}</div>
+        </div>
+      </div>`;
+
+    const banner = done
+      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
+      : `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`;
+
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="#/" class="back-link">← ${t('back')}</a>
+        <div class="glass-card">
+          <h2 class="card-title">🍽️ ${t('orderSummary')}</h2>
+          ${banner}
+          ${tracker}
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
+            <div><strong>${t('customerName')}:</strong> ${esc(order.customerName)}</div>
+            <div><strong>${t('customerPhone')}:</strong> ${esc(order.customerPhone)}</div>
+            <div><strong>${t('deliveryLocation')}:</strong> ${deliveryLabel}</div>
+            <div><strong>${t('pickupTime')}:</strong> ${pickupLabel}</div>
+            <div style="margin-top:10px;border-top:1px solid var(--border-color);padding-top:10px;">
+              ${(order.items || []).map(i => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${esc(i.name)} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()}₮</span></div>`).join('')}
+              <div style="font-weight:700;margin-top:8px;display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${(order.total || 0).toLocaleString()}₮</span></div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  if (store.isUsingFirebase()) {
+    const unsub = store.onOrderChanged(orderId, renderWith);
+    if (unsub) activeUnsubs.push(unsub);
+  } else {
+    renderWith(await store.loadOrder(orderId));
+  }
+}
+
+// Kitchen display — password protected, real-time orders
+let kitchenUnlock = localStorage.getItem('kitchenUnlock') === '1';
+
+async function renderKitchenDisplay() {
+  if (!kitchenUnlock) {
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <div class="glass-card" style="max-width:340px;margin:60px auto;">
+          <h2 class="card-title">👨‍🍳 ${t('kitchenTitle')}</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <input id="kitchen-pass" type="password" placeholder="${t('kitchenCode')}"
+              style="padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
+            <button id="kitchen-login-btn" class="btn btn-primary">${t('kitchenLogin')}</button>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('kitchen-login-btn').onclick = async () => {
+      const pass = document.getElementById('kitchen-pass').value;
+      try {
+        const res = await fetch('/api/kitchen-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          kitchenUnlock = true;
+          localStorage.setItem('kitchenUnlock', '1');
+          renderKitchenDisplay();
+        } else {
+          showToast('Нэвтрэх код буруу', 'error');
+        }
+      } catch (e) {
+        showToast('Алдаа: ' + e.message, 'error');
+      }
+    };
+    return;
+  }
+
+  main().innerHTML = `
+    <div class="detail-container fade-in">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;">👨‍🍳 ${t('kitchenTitle')}</h2>
+        <button id="kitchen-logout-btn" class="btn btn-ghost btn-sm">Гарах</button>
+      </div>
+      <div class="kitchen-tabs">
+        <button class="kitchen-tab active" data-tab="active">${t('kitchenTabActive')}<span class="kitchen-tab-count" id="kc-active">0</span></button>
+        <button class="kitchen-tab" data-tab="scheduled">${t('kitchenTabScheduled')}<span class="kitchen-tab-count" id="kc-scheduled">0</span></button>
+        <button class="kitchen-tab" data-tab="history">${t('kitchenTabHistory')}</button>
+        <button class="kitchen-tab" data-tab="report">${t('kitchenTabReport')}</button>
+      </div>
+      <div id="kitchen-orders"><div class="loading-spinner"></div></div>
+    </div>`;
+
+  document.getElementById('kitchen-logout-btn').onclick = () => {
+    kitchenUnlock = false;
+    localStorage.removeItem('kitchenUnlock');
+    location.hash = '#/kitchen';
+  };
+
+  let currentTab = 'active';
+  let latestOrders = [];
+  document.querySelectorAll('.kitchen-tab').forEach(tab => {
+    tab.onclick = () => {
+      currentTab = tab.dataset.tab;
+      document.querySelectorAll('.kitchen-tab').forEach(t2 => t2.classList.toggle('active', t2 === tab));
+      paint();
+    };
+  });
+
+  let prevCount = 0;
+  let audioCtx = null;
+
+  const playBeep = () => {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Browsers/WebView2 suspend AudioContext until a gesture; resume defensively.
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const tone = (freq, start, dur) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + start + dur);
+        osc.start(audioCtx.currentTime + start);
+        osc.stop(audioCtx.currentTime + start + dur);
+      };
+      tone(880, 0, 0.3);
+      tone(1175, 0.32, 0.4);
+    } catch (_) {}
+  };
+
+  // Unlock audio on the first user interaction (covers non-Tauri browsers too).
+  const unlockAudio = () => {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (_) {}
+    document.removeEventListener('click', unlockAudio);
+  };
+  document.addEventListener('click', unlockAudio);
+
+  const showOrderBanner = (order) => {
+    const existing = document.getElementById('kitchen-order-banner');
+    if (existing) existing.remove();
+    const items = (order.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(' · ');
+    const banner = document.createElement('div');
+    banner.id = 'kitchen-order-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#16a34a;color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
+    banner.innerHTML = `
+      <div>
+        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">🔔 Шинэ захиалга!</div>
+        <div style="font-weight:700;">${esc(order.customerName || '')} ${order.customerPhone ? '· ' + esc(order.customerPhone) : ''}</div>
+        <div style="opacity:0.9;font-size:0.9rem;">${items}</div>
+      </div>
+      <button id="kitchen-banner-close" style="background:rgba(255,255,255,0.25);border:none;color:#fff;font-size:1.4rem;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;">✕</button>
+    `;
+    if (!document.getElementById('kitchen-banner-style')) {
+      const s = document.createElement('style');
+      s.id = 'kitchen-banner-style';
+      s.textContent = '@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}';
+      document.head.appendChild(s);
+    }
+    document.body.appendChild(banner);
+    banner.querySelector('#kitchen-banner-close').onclick = () => banner.remove();
+    setTimeout(() => banner?.remove(), 8000);
+  };
+
+  const sameDay = (ts, ref) => {
+    const a = new Date(ts), b = new Date(ref);
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  };
+  // Scheduled order whose pickup time has arrived counts as active.
+  const scheduledDue = (o) => {
+    if (o.pickupTime === 'asap' || !o.pickupTime) return true;
+    const due = new Date(o.pickupTime).getTime();
+    return isNaN(due) ? true : due <= Date.now();
+  };
+  const isActive = (o) => o.status === 'paid' && scheduledDue(o);
+  const isScheduled = (o) => o.status === 'paid' && !scheduledDue(o);
+
+  const deliveryBadgeHtml = (order) => order.deliveryLocation === 'course'
+    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;">📍 Талбай</span>`
+    : order.deliveryLocation === 'table'
+    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🪑 Ширээ ${esc(order.tableId || '')}</span>`
+    : `<span style="background:#22c55e;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🌿 Гадаа</span>`;
+
+  const elapsedHtml = (createdAt) => {
+    if (!createdAt) return '';
+    const mins = Math.floor((Date.now() - createdAt) / 60000);
+    const color = mins >= 20 ? '#ef4444' : mins >= 10 ? '#f59e0b' : 'var(--text-secondary)';
+    const label = mins < 1 ? 'дөнгөж' : mins < 60 ? `${mins}м` : `${Math.floor(mins / 60)}ц ${mins % 60}м`;
+    return `<span style="font-size:0.82rem;font-weight:700;color:${color};">⏱ ${label}</span>`;
+  };
+
+  const orderCardHtml = (order, seq, opts = {}) => {
+    const pickup = order.pickupTime === 'asap' || !order.pickupTime
+      ? `<span style="font-size:0.82rem;color:var(--text-secondary);">Яаралтай</span>`
+      : `<span style="font-size:0.82rem;color:var(--gold);">⏰ ${esc((order.pickupTime + '').slice(11, 16) || order.pickupTime)}</span>`;
+    const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
+    const numBadge = seq ? `<span class="kitchen-order-num">#${seq}</span>` : '';
+    return `
+      <div class="glass-card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            ${numBadge}
+            <strong>${esc(order.customerName)}</strong>
+            <span style="color:var(--text-secondary);font-size:0.82rem;">${esc(order.customerPhone)}</span>
+            ${deliveryBadgeHtml(order)}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${opts.showElapsed ? elapsedHtml(order.createdAt) : ''}
+            ${pickup}
+            ${ts ? `<span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>` : ''}
+            ${opts.done ? `<button class="btn btn-sm btn-primary kitchen-done-btn" data-id="${order.id}">${t('kitchenMarkDone')} ✓</button>` : ''}
+          </div>
+        </div>
+        <div style="font-size:0.9rem;">
+          ${(order.items || []).map(i => `<div>• ${esc(i.name)} × ${i.qty}</div>`).join('')}
+        </div>
+        <div style="text-align:right;font-weight:700;margin-top:6px;">${(order.total || 0).toLocaleString()}₮</div>
+      </div>`;
+  };
+
+  // Daily sequence numbers (by createdAt ascending, today only)
+  const seqMap = () => {
+    const map = {};
+    const today = latestOrders.filter(o => sameDay(o.createdAt, Date.now()));
+    today.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((o, i) => { map[o.id] = i + 1; });
+    return map;
+  };
+
+  function paint() {
+    const el = document.getElementById('kitchen-orders');
+    if (!el) return;
+    const seqs = seqMap();
+
+    // Update tab counts
+    const activeOrders = latestOrders.filter(isActive);
+    const scheduledOrders = latestOrders.filter(isScheduled);
+    const acEl = document.getElementById('kc-active');
+    const scEl = document.getElementById('kc-scheduled');
+    if (acEl) acEl.textContent = activeOrders.length;
+    if (scEl) scEl.textContent = scheduledOrders.length;
+
+    if (currentTab === 'active') {
+      el.innerHTML = activeOrders.length
+        ? activeOrders.map(o => orderCardHtml(o, seqs[o.id], { done: true, showElapsed: true })).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoOrders')}</p>`;
+    } else if (currentTab === 'scheduled') {
+      const sorted = scheduledOrders.slice().sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
+      el.innerHTML = sorted.length
+        ? sorted.map(o => orderCardHtml(o, seqs[o.id], { done: true })).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoScheduled')}</p>`;
+    } else if (currentTab === 'history') {
+      const done = latestOrders.filter(o => o.status === 'completed');
+      el.innerHTML = done.length
+        ? done.map(o => orderCardHtml(o, seqs[o.id], {})).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoHistory')}</p>`;
+    } else if (currentTab === 'report') {
+      el.innerHTML = reportHtml();
+    }
+
+    document.querySelectorAll('.kitchen-done-btn').forEach(btn => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        await store.updateOrderStatus(btn.dataset.id, 'completed');
+      };
+    });
+  }
+
+  function reportHtml() {
+    const today = latestOrders.filter(o => sameDay(o.createdAt, Date.now()));
+    const revenue = today.reduce((s, o) => s + (o.total || 0), 0);
+    const itemAgg = {};
+    today.forEach(o => (o.items || []).forEach(i => { itemAgg[i.name] = (itemAgg[i.name] || 0) + i.qty; }));
+    const top = Object.entries(itemAgg).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="glass-card" style="flex:1;min-width:120px;text-align:center;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);">${t('kitchenOrdersCount')}</div>
+          <div style="font-size:2rem;font-weight:800;">${today.length}</div>
+        </div>
+        <div class="glass-card" style="flex:1;min-width:120px;text-align:center;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);">${t('kitchenRevenue')}</div>
+          <div style="font-size:2rem;font-weight:800;color:var(--gold);">${revenue.toLocaleString()}₮</div>
+        </div>
+      </div>
+      <div class="glass-card">
+        <h3 style="margin:0 0 10px;">${t('kitchenTopItems')}</h3>
+        ${top.length ? top.map(([name, qty]) => `
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-card);">
+            <span>${esc(name)}</span><strong>×${qty}</strong>
+          </div>`).join('') : `<p style="color:var(--text-secondary);">${t('kitchenNoHistory')}</p>`}
+      </div>`;
+  }
+
+  const unsub = store.onOrdersChanged((orders) => {
+    latestOrders = orders;
+    const paidCount = orders.filter(o => o.status === 'paid').length;
+    if (paidCount > prevCount) {
+      playBeep();
+      const newest = orders.filter(o => o.status === 'paid')[0];
+      if (newest) showOrderBanner(newest);
+      const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
+      window.__TAURI__?.core?.invoke?.('notify_new_order', {
+        title: '🔔 Шинэ захиалга!',
+        body: `${newest?.customerName || ''} — ${body}`,
+      }).catch(() => {});
+    }
+    prevCount = paidCount;
+    if (!document.getElementById('kitchen-orders')) { unsub(); return; }
+    paint();
+  });
+  activeUnsubs.push(unsub);
+
+  // Refresh elapsed times + scheduled→active transitions every 30s.
+  const refreshTimer = setInterval(() => {
+    if (!document.getElementById('kitchen-orders')) { clearInterval(refreshTimer); return; }
+    paint();
+  }, 30000);
+  activeUnsubs.push(() => clearInterval(refreshTimer));
+}
+
+// Admin: Menu management tab content
+async function renderAdminMenuTab() {
+  const el = document.getElementById('admin-menu-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+
+  let items, tables;
+  try {
+    [items, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  } catch (err) {
+    el.innerHTML = `<p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <div>
+        <h3 style="margin:0 0 10px;">${t('menuManage')}</h3>
+        <div id="admin-menu-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+          ${items.length === 0 ? '<p style="color:var(--text-secondary);">Цэс хоосон байна.</p>' : items.map(item => `
+            <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;flex-wrap:wrap;">
+              ${item.imageUrl
+                ? `<img src="${esc(item.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
+                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);">🍽️</div>`}
+              <div style="flex:1;min-width:140px;">
+                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
+                <div style="font-size:0.82rem;color:var(--text-secondary);">${item.price ? item.price.toLocaleString() + '₮' : ''} · ${esc(item.category || '')}</div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn btn-sm btn-outline edit-menu-item-btn" data-id="${item.id}">✏️</button>
+                <button class="btn btn-sm btn-danger del-menu-item-btn" data-id="${item.id}">🗑️</button>
+              </div>
+            </div>`).join('')}
+        </div>
+        <button id="show-add-menu-form-btn" class="btn btn-outline btn-sm">${t('addMenuItem')}</button>
+        <div id="add-menu-form" style="display:none;margin-top:12px;background:rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input id="mi-name" type="text" placeholder="${t('itemName')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <input id="mi-name-en" type="text" placeholder="${t('itemNameEn')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <input id="mi-price" type="number" placeholder="${t('itemPrice')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <input id="mi-category" type="text" placeholder="${t('itemCategory')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <input id="mi-image" type="text" placeholder="${t('itemImageUrl')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <img id="mi-image-preview" src="" alt="" style="display:none;width:80px;height:80px;border-radius:8px;object-fit:cover;" />
+            <textarea id="mi-desc" rows="2" placeholder="${t('itemDescPlaceholder')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);resize:vertical;font-family:inherit;"></textarea>
+            <label style="display:flex;align-items:center;gap:8px;"><input id="mi-popular" type="checkbox" /> ${t('itemPopular')}</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input id="mi-available" type="checkbox" checked /> ${t('itemAvailable')}</label>
+            <div style="display:flex;gap:8px;">
+              <button id="save-menu-item-btn" class="btn btn-primary btn-sm">${t('save')}</button>
+              <button id="cancel-menu-item-btn" class="btn btn-ghost btn-sm">${t('cancel')}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 10px;">${t('tableManage')}</h3>
+        <div id="admin-table-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+          ${tables.length === 0 ? '<p style="color:var(--text-secondary);">Ширээний жагсаалт хоосон байна.</p>' : tables.map(tbl => `
+            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;">
+              <div style="flex:1;font-weight:600;">🪑 ${esc(tbl.label)}</div>
+              <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">🗑️</button>
+            </div>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input id="new-table-name" type="text" placeholder="${t('tableName')}" style="flex:1;min-width:120px;padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+          <button id="add-table-btn" class="btn btn-outline btn-sm">${t('addTable')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  let editingMenuItem = null; // currently-edited item (null = adding new)
+
+  const form = document.getElementById('add-menu-form');
+  const imgInput = document.getElementById('mi-image');
+  const imgPreview = document.getElementById('mi-image-preview');
+
+  const updatePreview = () => {
+    const url = imgInput.value.trim();
+    if (url) { imgPreview.src = url; imgPreview.style.display = 'block'; }
+    else { imgPreview.style.display = 'none'; }
+  };
+  imgInput.oninput = updatePreview;
+
+  const openForm = (item) => {
+    editingMenuItem = item || null;
+    document.getElementById('mi-name').value = item?.name || '';
+    document.getElementById('mi-name-en').value = item?.nameEn || '';
+    document.getElementById('mi-price').value = item?.price || '';
+    document.getElementById('mi-category').value = item?.category || '';
+    imgInput.value = item?.imageUrl || '';
+    document.getElementById('mi-desc').value = item?.description || '';
+    document.getElementById('mi-popular').checked = !!item?.popular;
+    document.getElementById('mi-available').checked = item ? item.available !== false : true;
+    updatePreview();
+    form.style.display = 'block';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  // show add form
+  document.getElementById('show-add-menu-form-btn').onclick = () => openForm(null);
+  document.getElementById('cancel-menu-item-btn').onclick = () => {
+    editingMenuItem = null;
+    form.style.display = 'none';
+  };
+
+  // edit existing menu item
+  document.querySelectorAll('.edit-menu-item-btn').forEach(btn => {
+    btn.onclick = () => {
+      const item = items.find(i => i.id === btn.dataset.id);
+      if (item) openForm(item);
+    };
+  });
+
+  // save (add or edit) menu item
+  document.getElementById('save-menu-item-btn').onclick = async () => {
+    const name = document.getElementById('mi-name').value.trim();
+    const price = Number(document.getElementById('mi-price').value);
+    if (!name || !price) { showToast('Нэр, үнэ оруулна уу', 'error'); return; }
+    const item = {
+      ...(editingMenuItem || {}),
+      name,
+      nameEn: document.getElementById('mi-name-en').value.trim(),
+      price,
+      category: document.getElementById('mi-category').value.trim(),
+      imageUrl: imgInput.value.trim(),
+      description: document.getElementById('mi-desc').value.trim(),
+      popular: document.getElementById('mi-popular').checked,
+      available: document.getElementById('mi-available').checked,
+      sortOrder: editingMenuItem?.sortOrder || Date.now(),
+    };
+    await store.saveMenuItem(item);
+    showToast(editingMenuItem ? '✅ Шинэчлэгдлээ' : '✅ Нэмэгдлээ', 'success');
+    editingMenuItem = null;
+    await renderAdminMenuTab();
+  };
+
+  // delete menu item
+  document.querySelectorAll('.del-menu-item-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Устгах уу?')) return;
+      await store.deleteMenuItem(btn.dataset.id);
+      showToast('Устгагдлаа', 'info');
+      await renderAdminMenuTab();
+    };
+  });
+
+  // add table
+  document.getElementById('add-table-btn').onclick = async () => {
+    const label = document.getElementById('new-table-name').value.trim();
+    if (!label) { showToast('Ширээний нэр оруулна уу', 'error'); return; }
+    await store.saveTable({ label, sortOrder: Date.now() });
+    showToast('✅ Ширээ нэмэгдлээ', 'success');
+    await renderAdminMenuTab();
+  };
+
+  // delete table
+  document.querySelectorAll('.del-table-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Ширээ устгах уу?')) return;
+      await store.deleteTable(btn.dataset.id);
+      showToast('Устгагдлаа', 'info');
+      await renderAdminMenuTab();
+    };
+  });
 }

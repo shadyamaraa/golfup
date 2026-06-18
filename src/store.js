@@ -289,3 +289,88 @@ export async function saveFCMToken(userId, token) {
     await set(ref(db, `users/${userId}/fcmToken`), token);
   }
 }
+
+// ---- Menu (RTDB) ----
+export async function loadMenu() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'menu'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val())
+    .filter(item => item && item.id)
+    .sort((a, b) => {
+      if (a.popular && !b.popular) return -1;
+      if (!a.popular && b.popular) return 1;
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
+}
+
+export async function saveMenuItem(item) {
+  if (!useFirebase || !db) return;
+  if (!item.id) item.id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  await set(ref(db, 'menu/' + item.id), item);
+  return item.id;
+}
+
+export async function deleteMenuItem(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'menu/' + id));
+}
+
+// ---- Tables (RTDB) ----
+export async function loadTables() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'tables'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()).filter(t => t && t.id).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+}
+
+export async function saveTable(table) {
+  if (!useFirebase || !db) return;
+  if (!table.id) table.id = 'tbl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  await set(ref(db, 'tables/' + table.id), table);
+  return table.id;
+}
+
+export async function deleteTable(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'tables/' + id));
+}
+
+// ---- Orders (RTDB) ----
+export async function createOrder(order) {
+  if (!useFirebase || !db) throw new Error('Firebase not configured');
+  const id = 'o_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const record = { ...order, id, notified: false, createdAt: Date.now() };
+  await set(ref(db, 'orders/' + id), record);
+  return id;
+}
+
+export async function updateOrderStatus(id, status) {
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'orders/' + id), { status });
+}
+
+export async function loadOrder(id) {
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'orders/' + id));
+  return snap.exists() ? { id, ...snap.val() } : null;
+}
+
+export function onOrdersChanged(cb) {
+  if (!useFirebase || !db) return () => {};
+  const ordersRef = ref(db, 'orders');
+  onValue(ordersRef, (snap) => {
+    if (!snap.exists()) { cb([]); return; }
+    const orders = Object.entries(snap.val()).map(([id, val]) => ({ id, ...val }));
+    orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    cb(orders);
+  });
+  return () => off(ordersRef);
+}
+
+export function onOrderChanged(id, cb) {
+  if (!useFirebase || !db) return () => {};
+  const r = ref(db, 'orders/' + id);
+  onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
+  return () => off(r);
+}
