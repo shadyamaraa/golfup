@@ -3473,11 +3473,25 @@ async function renderFoodOrder(gameId) {
   function renderItem(item) {
     const qty = foodCart[item.id] || 0;
     const blocked = item.weekdayOnly && isWeekend;
+    const lang = getLang();
+    const primaryName = lang === 'kr'
+      ? (item.nameKr || item.nameEn || item.name)
+      : lang === 'en'
+        ? (item.nameEn || item.name)
+        : item.name;
+    const secondaryName = lang === 'mn'
+      ? (item.nameEn ? item.nameEn : '')
+      : (item.name !== primaryName ? item.name : '');
+    const desc = lang === 'kr'
+      ? (item.descriptionKr || item.descriptionEn || item.description || '')
+      : lang === 'en'
+        ? (item.descriptionEn || item.description || '')
+        : (item.description || '');
     const img = item.imageUrl
-      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(item.name)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
+      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
       : `<div class="food-card-img-ph">🍽️</div>`;
     const stepper = blocked
-      ? `<span class="food-weekday-note">📅 Зөвхөн ажлын өдөр</span>`
+      ? `<span class="food-weekday-note">📅 ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
       : `<div class="food-stepper">
               ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
               <span class="food-qty">${qty}</span>` : ''}
@@ -3487,8 +3501,8 @@ async function renderFoodOrder(gameId) {
       <div class="food-card${blocked ? ' food-card-blocked' : ''}" data-id="${item.id}">
         ${img}
         <div class="food-card-body">
-          <div class="food-card-name">${esc(item.name)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${item.nameEn ? ` <span class="food-card-name-en">${esc(item.nameEn)}</span>` : ''}</div>
-          ${item.description ? `<div class="food-card-desc">${esc(item.description)}</div>` : ''}
+          <div class="food-card-name">${esc(primaryName)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
+          ${desc ? `<div class="food-card-desc">${esc(desc)}</div>` : ''}
           <div class="food-card-foot">
             <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
             ${stepper}
@@ -3504,10 +3518,12 @@ async function renderFoodOrder(gameId) {
 
     const q = searchQuery.toLowerCase();
     const filtered = q
-      ? base.filter(i =>
+      ? available.filter(i =>
           i.name.toLowerCase().includes(q) ||
           (i.nameEn || '').toLowerCase().includes(q) ||
-          (i.description || '').toLowerCase().includes(q))
+          (i.nameKr || '').toLowerCase().includes(q) ||
+          (i.description || '').toLowerCase().includes(q) ||
+          (i.descriptionEn || '').toLowerCase().includes(q))
       : base;
 
     const count = cartCount();
