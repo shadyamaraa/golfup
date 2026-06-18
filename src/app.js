@@ -3566,6 +3566,7 @@ async function renderFoodOrder(gameId) {
 }
 
 function showCheckoutModal(menuItems, tables, gameId) {
+  if (document.getElementById('co-submit')) return; // modal already open
   const cartEntries = Object.entries(foodCart).filter(([, qty]) => qty > 0);
   if (cartEntries.length === 0) return;
 
@@ -3587,9 +3588,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
     </div>` : '';
 
   const modal = document.createElement('div');
-  modal.className = 'popup-overlay';
+  modal.className = 'popup-overlay fade-in';
+  modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); z-index:9999; display:flex; align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto; -webkit-overflow-scrolling:touch;';
   modal.innerHTML = `
-    <div class="popup-box glass-card" style="max-width:400px;width:94vw;max-height:90vh;overflow-y:auto;">
+    <div class="popup-box glass-card" style="max-width:400px;width:100%;margin:auto;max-height:90vh;overflow-y:auto;">
       <h3 style="margin:0 0 14px;">${t('orderSummary')}</h3>
 
       <div style="margin-bottom:12px;font-size:0.9rem;">
@@ -3680,7 +3682,9 @@ function showCheckoutModal(menuItems, tables, gameId) {
 
   modal.querySelector('#co-cancel').onclick = () => modal.remove();
 
+  let submitting = false;
   modal.querySelector('#co-submit').onclick = async () => {
+    if (submitting) return;
     const name = modal.querySelector('#co-name').value.trim();
     const phone = modal.querySelector('#co-phone').value.trim();
     const delivery = modal.querySelector('input[name="co-delivery"]:checked')?.value || 'outdoor';
@@ -3711,6 +3715,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       paidAt: new Date().toISOString(),
     };
 
+    submitting = true;
     const btn = modal.querySelector('#co-submit');
     btn.disabled = true;
     btn.textContent = '...';
@@ -3722,6 +3727,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       location.hash = gameId ? '#/game/' + gameId : '#/';
     } catch (err) {
       showToast('Алдаа: ' + err.message, 'error');
+      submitting = false;
       btn.disabled = false;
       btn.textContent = t('placeOrder');
     }
