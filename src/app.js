@@ -3557,17 +3557,17 @@ async function renderFoodOrder(gameId) {
     <div class="detail-container fade-in">
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
       <div class="glass-card">
-        <div class="food-top-bar">
-          <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
-          <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
-            <span id="cart-pill-label"></span>
-            <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
+        <div class="food-sticky-head">
+          <div class="food-top-bar">
+            <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
+            <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
+              <span id="cart-pill-label"></span>
+              <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
+            </div>
           </div>
+          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />` : ''}
         </div>
-        ${available.length === 0 ? `<p style="color:var(--text-secondary);margin-top:12px;">Цэс байхгүй байна.</p>` : `
-        <div class="food-search-wrap">
-          <input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />
-        </div>
+        ${available.length === 0 ? `<p style="color:var(--text-secondary);padding:0 0 12px;">Цэс байхгүй байна.</p>` : `
         <div class="food-page-layout">
           <div id="food-menu-col" class="food-menu-col"></div>
           ${catRailHtml}
@@ -3576,6 +3576,12 @@ async function renderFoodOrder(gameId) {
     </div>`;
 
   if (available.length > 0) {
+    // Set cat-rail sticky offset to sit below the sticky head
+    const head = document.querySelector('.food-sticky-head');
+    const layout = document.querySelector('.food-page-layout');
+    if (head && layout) {
+      layout.style.setProperty('--food-head-top', (56 + head.offsetHeight) + 'px');
+    }
     document.getElementById('food-search').addEventListener('input', e => {
       searchQuery = e.target.value;
       renderMenu();
