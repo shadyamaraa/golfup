@@ -3454,16 +3454,23 @@ async function renderFoodOrder(gameId) {
 
   function renderItem(item) {
     const qty = foodCart[item.id] || 0;
+    const img = item.imageUrl
+      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(item.name)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
+      : `<div class="food-card-img-ph">🍽️</div>`;
     return `
-      <div class="food-item" data-id="${item.id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
-        <div style="flex:1;">
-          <div style="font-weight:600;">${esc(item.name)}${item.nameEn ? ` <span style="font-size:0.78rem;color:var(--text-secondary);">${esc(item.nameEn)}</span>` : ''}</div>
-          <div style="color:var(--text-secondary);font-size:0.85rem;">${item.price ? item.price.toLocaleString() + '₮' : ''}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          ${qty > 0 ? `<button class="food-dec btn btn-sm btn-outline" data-id="${item.id}" style="width:28px;height:28px;padding:0;">−</button>
-          <span style="min-width:18px;text-align:center;font-weight:700;">${qty}</span>` : ''}
-          <button class="food-inc btn btn-sm btn-primary" data-id="${item.id}" style="width:28px;height:28px;padding:0;">+</button>
+      <div class="food-card" data-id="${item.id}">
+        ${img}
+        <div class="food-card-body">
+          <div class="food-card-name">${esc(item.name)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${item.nameEn ? ` <span class="food-card-name-en">${esc(item.nameEn)}</span>` : ''}</div>
+          ${item.description ? `<div class="food-card-desc">${esc(item.description)}</div>` : ''}
+          <div class="food-card-foot">
+            <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
+            <div class="food-stepper">
+              ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
+              <span class="food-qty">${qty}</span>` : ''}
+              <button class="food-inc btn btn-primary food-step-btn" data-id="${item.id}">+</button>
+            </div>
+          </div>
         </div>
       </div>`;
   }
@@ -3938,9 +3945,12 @@ async function renderAdminMenuTab() {
         <h3 style="margin:0 0 10px;">${t('menuManage')}</h3>
         <div id="admin-menu-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${items.length === 0 ? '<p style="color:var(--text-secondary);">Цэс хоосон байна.</p>' : items.map(item => `
-            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;flex-wrap:wrap;">
+              ${item.imageUrl
+                ? `<img src="${esc(item.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
+                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);">🍽️</div>`}
               <div style="flex:1;min-width:140px;">
-                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}</div>
+                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
                 <div style="font-size:0.82rem;color:var(--text-secondary);">${item.price ? item.price.toLocaleString() + '₮' : ''} · ${esc(item.category || '')}</div>
               </div>
               <div style="display:flex;gap:6px;">
@@ -3956,6 +3966,9 @@ async function renderAdminMenuTab() {
             <input id="mi-name-en" type="text" placeholder="${t('itemNameEn')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
             <input id="mi-price" type="number" placeholder="${t('itemPrice')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
             <input id="mi-category" type="text" placeholder="${t('itemCategory')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <input id="mi-image" type="text" placeholder="${t('itemImageUrl')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+            <img id="mi-image-preview" src="" alt="" style="display:none;width:80px;height:80px;border-radius:8px;object-fit:cover;" />
+            <textarea id="mi-desc" rows="2" placeholder="${t('itemDescPlaceholder')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);resize:vertical;font-family:inherit;"></textarea>
             <label style="display:flex;align-items:center;gap:8px;"><input id="mi-popular" type="checkbox" /> ${t('itemPopular')}</label>
             <label style="display:flex;align-items:center;gap:8px;"><input id="mi-available" type="checkbox" checked /> ${t('itemAvailable')}</label>
             <div style="display:flex;gap:8px;">
@@ -3982,30 +3995,69 @@ async function renderAdminMenuTab() {
       </div>
     </div>`;
 
-  // show/hide add form
-  document.getElementById('show-add-menu-form-btn').onclick = () => {
-    document.getElementById('add-menu-form').style.display = 'block';
+  let editingMenuItem = null; // currently-edited item (null = adding new)
+
+  const form = document.getElementById('add-menu-form');
+  const imgInput = document.getElementById('mi-image');
+  const imgPreview = document.getElementById('mi-image-preview');
+
+  const updatePreview = () => {
+    const url = imgInput.value.trim();
+    if (url) { imgPreview.src = url; imgPreview.style.display = 'block'; }
+    else { imgPreview.style.display = 'none'; }
   };
-  document.getElementById('cancel-menu-item-btn').onclick = () => {
-    document.getElementById('add-menu-form').style.display = 'none';
+  imgInput.oninput = updatePreview;
+
+  const openForm = (item) => {
+    editingMenuItem = item || null;
+    document.getElementById('mi-name').value = item?.name || '';
+    document.getElementById('mi-name-en').value = item?.nameEn || '';
+    document.getElementById('mi-price').value = item?.price || '';
+    document.getElementById('mi-category').value = item?.category || '';
+    imgInput.value = item?.imageUrl || '';
+    document.getElementById('mi-desc').value = item?.description || '';
+    document.getElementById('mi-popular').checked = !!item?.popular;
+    document.getElementById('mi-available').checked = item ? item.available !== false : true;
+    updatePreview();
+    form.style.display = 'block';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
-  // save new menu item
+  // show add form
+  document.getElementById('show-add-menu-form-btn').onclick = () => openForm(null);
+  document.getElementById('cancel-menu-item-btn').onclick = () => {
+    editingMenuItem = null;
+    form.style.display = 'none';
+  };
+
+  // edit existing menu item
+  document.querySelectorAll('.edit-menu-item-btn').forEach(btn => {
+    btn.onclick = () => {
+      const item = items.find(i => i.id === btn.dataset.id);
+      if (item) openForm(item);
+    };
+  });
+
+  // save (add or edit) menu item
   document.getElementById('save-menu-item-btn').onclick = async () => {
     const name = document.getElementById('mi-name').value.trim();
     const price = Number(document.getElementById('mi-price').value);
     if (!name || !price) { showToast('Нэр, үнэ оруулна уу', 'error'); return; }
     const item = {
+      ...(editingMenuItem || {}),
       name,
       nameEn: document.getElementById('mi-name-en').value.trim(),
       price,
       category: document.getElementById('mi-category').value.trim(),
+      imageUrl: imgInput.value.trim(),
+      description: document.getElementById('mi-desc').value.trim(),
       popular: document.getElementById('mi-popular').checked,
       available: document.getElementById('mi-available').checked,
-      sortOrder: Date.now(),
+      sortOrder: editingMenuItem?.sortOrder || Date.now(),
     };
     await store.saveMenuItem(item);
-    showToast('✅ Нэмэгдлээ', 'success');
+    showToast(editingMenuItem ? '✅ Шинэчлэгдлээ' : '✅ Нэмэгдлээ', 'success');
+    editingMenuItem = null;
     await renderAdminMenuTab();
   };
 

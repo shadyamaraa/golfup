@@ -1,5 +1,26 @@
 # CHANGELOG_AI.md
 
+## 2026-06-18
+
+### Food menu — image-rich item cards + admin image/description fields
+
+- Menu items gained two optional fields: `imageUrl` (photo) and `description`
+  (ingredients/notes). `saveMenuItem` already persists the whole object, so no
+  store change was needed.
+- Customer menu (`renderFoodOrder`) redesigned from a plain list into modern
+  food-delivery-style cards: 84px photo (or 🍽️ gradient placeholder when no
+  image), name + EN name, 2-line clamped description, gold price, and a +/−
+  stepper. New `.food-card*` styles in `src/style.css`.
+- Admin menu tab (`renderAdminMenuTab`): added Image URL input with live
+  preview and a Description textarea; item rows now show a 44px thumbnail and an
+  "(идэвхгүй)" flag. Wired up the previously-dead ✏️ Edit button — it now loads
+  the item into the form and saves in place (preserves `id`/`sortOrder`).
+- Image URLs accept any source (external host or local `/menu/...` path);
+  broken images fall back to the placeholder via `onerror`. No Firebase config
+  or new dependencies.
+- New i18n keys (mn/en/kr): `itemImageUrl`, `itemDescription`,
+  `itemDescPlaceholder`.
+
 ## 2026-06-17
 
 ### Food ordering Phase 2 — Kitchen tray app (Tauri v2)
