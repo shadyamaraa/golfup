@@ -43,14 +43,14 @@ const ITEMS = [
     description: 'Өвчүүний махтай Монгол цуйван',
     descriptionEn: 'Mongolian-style stir-fried noodles with beef brisket',
     descriptionKr: '쇠고기 양지머리를 넣은 몽골식 볶음 면',
-    category: "Golfer's Favorite", popular: true, price: p(37.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/mongolian-fried-noodle.jpg'
+    category: "Golfer's Favorite", popular: true, price: p(37.9), imageUrl: ''
   },
   {
     name: 'Хуушуур', nameEn: 'Mongolian Khuushuur', nameKr: '몽골 호쇼르',
     description: 'Үхрийн махтай хуушуур — зөвхөн ажлын өдөр',
     descriptionEn: 'Crispy Mongolian fried dumplings with beef filling — weekdays only',
     descriptionKr: '쇠고기 속을 넣은 몽골식 튀긴 만두 — 평일만 제공',
-    category: "Golfer's Favorite", popular: true, weekdayOnly: true, price: p(39.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/khuushuur.jpg'
+    category: "Golfer's Favorite", popular: true, weekdayOnly: true, price: p(39.9), imageUrl: ''
   },
   {
     name: 'Chicken Fajita', nameEn: 'Chicken Fajita', nameKr: '치킨 파히타',
@@ -73,7 +73,7 @@ const ITEMS = [
     description: 'Халапеньо, үхрийн өвчүүний махан зууш (659 ккал)',
     descriptionEn: 'Tender beef brisket with jalapeño (659 kcal)',
     descriptionKr: '할라피뇨를 곁들인 부드러운 쇠고기 양지 전채 (659 kcal)',
-    category: 'Starter', price: p(31.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/beef-brisket-appetizer.jpg'
+    category: 'Starter', price: p(31.9), imageUrl: ''
   },
   {
     name: 'Бяслагны цуглуулга', nameEn: 'Mini Delicatessen', nameKr: '치즈 플래터',
@@ -96,14 +96,14 @@ const ITEMS = [
     description: 'Үхрийн гүзээ, газрын самар, буурцгийн сүмстэй салат (495 ккал)',
     descriptionEn: 'Beef tripe, peanuts and bean sprout dressing salad (495 kcal)',
     descriptionKr: '쇠고기 내장, 땅콩, 콩나물 드레싱 샐러드 (495 kcal)',
-    category: 'Salads', price: p(25.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/asian-triple-salad.jpg'
+    category: 'Salads', price: p(25.9), imageUrl: ''
   },
   {
     name: 'Хүрэн манжин, ногоон алимтай салат', nameEn: 'Red Beetroot & Green Apple Salad', nameKr: '비트 & 그린애플 샐러드',
     description: 'Хүрэн манжин, ногоон алимтай салат (219 ккал)',
     descriptionEn: 'Fresh red beetroot and crisp green apple salad (219 kcal)',
     descriptionKr: '신선한 빨간 비트와 아삭한 그린 애플 샐러드 (219 kcal)',
-    category: 'Salads', price: p(27.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/red-beetroot-salad.jpg'
+    category: 'Salads', price: p(27.9), imageUrl: ''
   },
   {
     name: 'Цезарь салат', nameEn: 'Caesar Salad', nameKr: '시저 샐러드',
@@ -117,7 +117,7 @@ const ITEMS = [
     description: 'Шинэхэн жимс, айсберг ногоон салат (161 ккал)',
     descriptionEn: 'Light salad with fresh fruit and crispy iceberg lettuce (161 kcal)',
     descriptionKr: '신선한 과일과 아삭한 아이스버그 상추 샐러드 (161 kcal)',
-    category: 'Salads', price: p(31.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/ice-garden-salad.jpg'
+    category: 'Salads', price: p(31.9), imageUrl: ''
   },
   {
     name: 'Лийр, Кешью, хөгцтэй бяслагтай салат', nameEn: 'Pear, Cashew & Blue Cheese Salad', nameKr: '배, 캐슈넛 & 블루치즈 샐러드',
@@ -147,14 +147,14 @@ const ITEMS = [
     description: 'Цагаан цэцэгт байцааны зутан шөл (426 ккал)',
     descriptionEn: 'Velvety cauliflower cream soup (426 kcal)',
     descriptionKr: '부드러운 콜리플라워 크림 수프 (426 kcal)',
-    category: 'Soups', price: p(26.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/cauliflower-cream-soup.jpg'
+    category: 'Soups', price: p(26.9), imageUrl: ''
   },
   {
     name: 'Мөөгний зутан шөл', nameEn: 'Mushroom Cream Soup', nameKr: '버섯 크림 수프',
     description: 'Мөөгний зутан шөл (400 ккал)',
     descriptionEn: 'Rich and creamy mushroom soup (400 kcal)',
     descriptionKr: '진하고 크리미한 버섯 수프 (400 kcal)',
-    category: 'Soups', price: p(26.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/mushroom-cream-soup.jpg'
+    category: 'Soups', price: p(26.9), imageUrl: ''
   },
   {
     name: 'Монгол гурилтай шөл', nameEn: 'Mongolian Noodle Soup', nameKr: '몽골 면 수프',
@@ -168,7 +168,7 @@ const ITEMS = [
     description: 'Халуун ногоотой, тахианы махтай сүүн шөл (600 ккал)',
     descriptionEn: 'Creamy chicken soup with a spicy kick (600 kcal)',
     descriptionKr: '매운맛이 살아있는 크리미 치킨 수프 (600 kcal)',
-    category: 'Soups', price: p(33.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/spicy-chicken-soup.jpg'
+    category: 'Soups', price: p(33.9), imageUrl: ''
   },
   {
     name: 'Тахианы Рамен', nameEn: 'Chicken Ramen', nameKr: '치킨 라멘',
@@ -189,7 +189,7 @@ const ITEMS = [
     description: 'Жигнэсэн үхрийн мах, цуутай чанасан өндөгтэй рамен (1230 ккал)',
     descriptionEn: 'Braised beef and soft-boiled egg ramen with spicy broth (1230 kcal)',
     descriptionKr: '매운 국물에 수육과 반숙 달걀을 올린 쇠고기 라멘 (1230 kcal)',
-    category: 'Soups', price: p(33.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/spicy-beef-ramen.jpg'
+    category: 'Soups', price: p(33.9), imageUrl: ''
   },
   {
     name: 'Мексик маягийн хар шошт шөл', nameEn: 'Mexican Beef & Black Bean Soup', nameKr: '멕시칸 쇠고기 블랙빈 수프',
@@ -203,7 +203,7 @@ const ITEMS = [
     description: 'Борцтой, хунчиртай банштай цай (1250 ккал)',
     descriptionEn: 'Traditional Mongolian salted milk tea with small dumplings and dried beef (1250 kcal)',
     descriptionKr: '작은 만두와 건조 쇠고기를 넣은 전통 몽골 짠 밀크티 (1250 kcal)',
-    category: 'Soups', price: p(34.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/mongolian-milk-tea.jpg'
+    category: 'Soups', price: p(34.9), imageUrl: ''
   },
   {
     name: 'Тойгны шөл', nameEn: 'Beef Hock Bone Soup', nameKr: '쇠족발 뼈 수프',
@@ -270,21 +270,21 @@ const ITEMS = [
     description: 'Өвчүүний махтай цуйван (1050 ккал)',
     descriptionEn: 'Traditional Mongolian stir-fried noodles with beef brisket (1050 kcal)',
     descriptionKr: '쇠고기 양지머리를 넣은 전통 몽골식 볶음 면 (1050 kcal)',
-    category: 'Main Course', price: p(37.9), popular: true, imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/mongolian-fried-noodle.jpg'
+    category: 'Main Course', price: p(37.9), popular: true, imageUrl: ''
   },
   {
     name: 'Хуушуур', nameEn: 'Mongolian Khuushuur', nameKr: '몽골 호쇼르',
     description: 'Шинэ ногооны салаттай, үхрийн махтай хуушуур (1200 ккал) — зөвхөн ажлын өдөр',
     descriptionEn: 'Crispy beef Mongolian fried dumplings with fresh salad (1200 kcal) — weekdays only',
     descriptionKr: '신선한 샐러드를 곁들인 쇠고기 몽골식 튀긴 만두 (1200 kcal) — 평일만 제공',
-    category: 'Main Course', weekdayOnly: true, price: p(39.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/khuushuur.jpg'
+    category: 'Main Course', weekdayOnly: true, price: p(39.9), imageUrl: ''
   },
   {
     name: 'Дорно маягийн тахиа', nameEn: 'Oriental Style Chicken', nameKr: '동양식 치킨',
     description: 'Буурцагны сүмстэй бүрмэл тахиа (1262 ккал)',
     descriptionEn: 'Whole chicken marinated and glazed with bean sauce (1262 kcal)',
     descriptionKr: '콩 소스로 마리네이드하여 구운 통닭 (1262 kcal)',
-    category: 'Main Course', price: p(43.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/oriental-chicken.jpg'
+    category: 'Main Course', price: p(43.9), imageUrl: ''
   },
   {
     name: 'Хятад маягийн бяслагтай тахиа', nameEn: 'Chinese Style Cheese Chicken', nameKr: '중국식 치즈 치킨',
@@ -435,14 +435,14 @@ const ITEMS = [
     description: 'Пармезан бяслаг, сүүн крем, гахайн утсан махтай гоймон (1250 ккал)',
     descriptionEn: 'Classic pasta with parmesan, cream and smoked pork belly (1250 kcal)',
     descriptionKr: '파마산, 크림, 훈제 삼겹살을 넣은 클래식 카르보나라 (1250 kcal)',
-    category: 'Pasta & Ravioli', price: p(41.9), popular: true, imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/carbonara.jpg'
+    category: 'Pasta & Ravioli', price: p(41.9), popular: true, imageUrl: ''
   },
   {
     name: 'Халуун Аррабиата', nameEn: 'Spicy Arrabbiata Pasta', nameKr: '매운 아라비아타',
     description: 'Халапеньо, улаан лоолийн сүмс, пармезан бяслаг, тахианы махтай гоймон (1100 ккал)',
     descriptionEn: 'Spicy pasta with jalapeño, tomato sauce, parmesan and chicken (1100 kcal)',
     descriptionKr: '할라피뇨, 토마토 소스, 파마산, 치킨을 넣은 매운 파스타 (1100 kcal)',
-    category: 'Pasta & Ravioli', price: p(41.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/arrabbiata.jpg'
+    category: 'Pasta & Ravioli', price: p(41.9), imageUrl: ''
   },
   {
     name: 'Далайн гоймонтой паста', nameEn: 'Seafood Strozzapreti Pasta', nameKr: '해산물 스트로차프레티 파스타',
@@ -491,7 +491,7 @@ const ITEMS = [
     description: 'Яргай загасны хучмал таглитель паста (1925 ккал)',
     descriptionEn: 'Oven-baked salmon tagliatelle pasta gratin (1925 kcal) — serves 1-2',
     descriptionKr: '오븐 구운 연어 탈리아텔레 그라탱 (1925 kcal) — 1-2인분',
-    category: 'Pasta & Ravioli', price: p(69.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/salmon-tagliatelle.jpg'
+    category: 'Pasta & Ravioli', price: p(69.9), imageUrl: ''
   },
 
   // ── PIZZA & BURGER ────────────────────────────────────────────────────────
@@ -500,21 +500,21 @@ const ITEMS = [
     description: 'Бяслагтай пицца (1316 ккал)',
     descriptionEn: 'Classic pizza with tomato sauce and melted mozzarella (1316 kcal)',
     descriptionKr: '토마토 소스와 녹인 모차렐라를 올린 클래식 마르게리타 피자 (1316 kcal)',
-    category: 'Pizza & Burger', price: p(42.9), popular: true, imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/margarita-pizza.jpg'
+    category: 'Pizza & Burger', price: p(42.9), popular: true, imageUrl: ''
   },
   {
     name: 'Махан пицца', nameEn: 'Meat Lovers Pizza', nameKr: '미트 러버 피자',
     description: 'Маханд дурлагсад пицца (1744 ккал)',
     descriptionEn: 'Pizza loaded with a generous selection of meats (1744 kcal)',
     descriptionKr: '다양한 고기를 듬뿍 올린 미트 러버 피자 (1744 kcal)',
-    category: 'Pizza & Burger', price: p(46.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/meat-pizza.jpg'
+    category: 'Pizza & Burger', price: p(46.9), imageUrl: ''
   },
   {
     name: 'Мексик халуун пицца', nameEn: 'Spicy Mexico Pizza', nameKr: '멕시칸 핫 피자',
     description: 'Тахианы мах, халопенотой пицца (1558 ккал)',
     descriptionEn: 'Spicy pizza with chicken and jalapeño (1558 kcal)',
     descriptionKr: '치킨과 할라피뇨를 올린 매운 멕시칸 피자 (1558 kcal)',
-    category: 'Pizza & Burger', price: p(46.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/mexico-pizza.jpg'
+    category: 'Pizza & Burger', price: p(46.9), imageUrl: ''
   },
   {
     name: 'Тахианы бүргер', nameEn: 'Spicy BBQ Chicken Burger', nameKr: '스파이시 BBQ 치킨 버거',
@@ -544,7 +544,7 @@ const ITEMS = [
     description: 'Газрын самар, Тайланд маягийн сүмстэй үхрийн гол махан салат (1328 ккал)',
     descriptionEn: 'Thai-style beef tenderloin salad with peanuts and tangy dressing (1328 kcal) — serves 4-6',
     descriptionKr: '땅콩과 새콤한 드레싱을 곁들인 태국식 쇠안심 샐러드 (1328 kcal) — 4-6인분',
-    category: 'Share Food', price: p(95.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/thai-beef-salad.jpg'
+    category: 'Share Food', price: p(95.9), imageUrl: ''
   },
   {
     name: 'Шинэхэн жимсний тавиур (4-6 хүн)', nameEn: 'Fresh Fruit Platter (4-6 per)', nameKr: '신선 과일 플래터 (4-6인)',
@@ -581,21 +581,21 @@ const ITEMS = [
     description: 'Пицца, сүүтэй будаа, жимсний салат, шарсан төмс',
     descriptionEn: 'Kids pizza with rice porridge, fruit salad and fries',
     descriptionKr: '아이용 피자, 죽, 과일 샐러드, 감자튀김 세트',
-    category: "Children's Set", price: p(24.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/children-pizza-set.jpg'
+    category: "Children's Set", price: p(24.9), imageUrl: ''
   },
   {
     name: 'Хүүхдийн тахианы сет', nameEn: "Children's Chicken Set", nameKr: '어린이 치킨 세트',
     description: 'Шарсан тахиа, бантан, жимсний салат, шарсан төмс',
     descriptionEn: 'Kids fried chicken with bantan soup, fruit salad and fries',
     descriptionKr: '아이용 치킨, 반탄 수프, 과일 샐러드, 감자튀김 세트',
-    category: "Children's Set", price: p(24.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/children-chicken-set.jpg'
+    category: "Children's Set", price: p(24.9), imageUrl: ''
   },
   {
     name: 'Хүүхдийн бөмбөлөгний сет', nameEn: "Children's Meat Ball Set", nameKr: '어린이 미트볼 세트',
     description: 'Шпагетти, хулууны зутан, жимсний салат, шарсан төмс',
     descriptionEn: 'Kids meatball spaghetti with zucchini cream, fruit salad and fries',
     descriptionKr: '아이용 미트볼 스파게티, 주키니 크림, 과일 샐러드, 감자튀김 세트',
-    category: "Children's Set", price: p(24.9), imageUrl: 'https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/children-meatball-set.jpg'
+    category: "Children's Set", price: p(24.9), imageUrl: ''
   },
 
   // ── DESSERT ───────────────────────────────────────────────────────────────
