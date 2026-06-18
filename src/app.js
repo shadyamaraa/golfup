@@ -3451,6 +3451,7 @@ async function renderFoodOrder(gameId) {
   const catLabel = c => CAT_LABELS[c] || c;
 
   let selectedCategory = categories[0] || 'all';
+  let searchQuery = '';
 
   function cartTotal() {
     return Object.entries(foodCart).reduce((sum, [id, qty]) => {
@@ -3487,27 +3488,38 @@ async function renderFoodOrder(gameId) {
   }
 
   function renderMenu() {
-    const filtered = selectedCategory === 'all'
+    const base = selectedCategory === 'all'
       ? available
       : available.filter(i => (i.category || 'Other') === selectedCategory);
+
+    const q = searchQuery.toLowerCase();
+    const filtered = q
+      ? base.filter(i =>
+          i.name.toLowerCase().includes(q) ||
+          (i.nameEn || '').toLowerCase().includes(q) ||
+          (i.description || '').toLowerCase().includes(q))
+      : base;
 
     const count = cartCount();
     const total = cartTotal();
 
     const itemsHtml = filtered.length
       ? filtered.map(renderItem).join('')
-      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">Энэ ангилалд хоол байхгүй.</p>`;
+      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? '🔍 Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
 
-    const cartHtml = count > 0 ? `
-      <div style="margin-top:16px;padding:12px;background:rgba(var(--primary-rgb,34,197,94),0.1);border-radius:8px;border:1px solid var(--primary-color);">
-        <div style="display:flex;justify-content:space-between;font-weight:600;margin-bottom:8px;">
-          <span>${t('orderTotal')}</span>
-          <span>${total.toLocaleString()}₮</span>
-        </div>
-        <button id="checkout-btn" class="btn btn-primary" style="width:100%;">${t('placeOrder')} (${count})</button>
-      </div>` : '';
+    document.getElementById('food-menu-col').innerHTML = itemsHtml;
 
-    document.getElementById('food-menu-col').innerHTML = itemsHtml + cartHtml;
+    // Update cart pill
+    const pill = document.getElementById('food-cart-pill');
+    if (pill) {
+      if (count > 0) {
+        pill.style.display = 'flex';
+        document.getElementById('cart-pill-label').textContent = `🛒 ${count} · ${total.toLocaleString()}₮`;
+      } else {
+        pill.style.display = 'none';
+      }
+    }
+
     document.querySelectorAll('.food-cat-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.cat === selectedCategory);
     });
@@ -3530,7 +3542,7 @@ async function renderFoodOrder(gameId) {
         renderMenu();
       };
     });
-    document.getElementById('checkout-btn')?.addEventListener('click', () => {
+    document.getElementById('cart-pill-btn')?.addEventListener('click', () => {
       showCheckoutModal(available, tables, gameId);
     });
   }
@@ -3545,8 +3557,17 @@ async function renderFoodOrder(gameId) {
     <div class="detail-container fade-in">
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
       <div class="glass-card">
-        <h2 class="card-title">🍽️ ${t('foodMenu')}</h2>
-        ${available.length === 0 ? `<p style="color:var(--text-secondary);">Цэс байхгүй байна.</p>` : `
+        <div class="food-top-bar">
+          <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
+          <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
+            <span id="cart-pill-label"></span>
+            <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
+          </div>
+        </div>
+        ${available.length === 0 ? `<p style="color:var(--text-secondary);margin-top:12px;">Цэс байхгүй байна.</p>` : `
+        <div class="food-search-wrap">
+          <input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />
+        </div>
         <div class="food-page-layout">
           <div id="food-menu-col" class="food-menu-col"></div>
           ${catRailHtml}
@@ -3555,6 +3576,10 @@ async function renderFoodOrder(gameId) {
     </div>`;
 
   if (available.length > 0) {
+    document.getElementById('food-search').addEventListener('input', e => {
+      searchQuery = e.target.value;
+      renderMenu();
+    });
     document.querySelectorAll('.food-cat-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         selectedCategory = btn.dataset.cat;
