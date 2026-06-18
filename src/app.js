@@ -368,6 +368,9 @@ async function renderHome() {
           <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
             <span class="btn-icon-left">+</span> ${t('createGame')}
           </a>
+          <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
+            🍽️ ${t('foodMenu')}
+          </a>
         </div>
       </div>
       <div id="notifications-section"></div>
@@ -3464,24 +3467,31 @@ async function renderFoodOrder(gameId) {
     return Object.values(foodCart).reduce((a, b) => a + b, 0);
   }
 
+  const dow = new Date().getDay();
+  const isWeekend = dow === 0 || dow === 6;
+
   function renderItem(item) {
     const qty = foodCart[item.id] || 0;
+    const blocked = item.weekdayOnly && isWeekend;
     const img = item.imageUrl
       ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(item.name)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
       : `<div class="food-card-img-ph">🍽️</div>`;
+    const stepper = blocked
+      ? `<span class="food-weekday-note">📅 Зөвхөн ажлын өдөр</span>`
+      : `<div class="food-stepper">
+              ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
+              <span class="food-qty">${qty}</span>` : ''}
+              <button class="food-inc btn btn-primary food-step-btn" data-id="${item.id}">+</button>
+            </div>`;
     return `
-      <div class="food-card" data-id="${item.id}">
+      <div class="food-card${blocked ? ' food-card-blocked' : ''}" data-id="${item.id}">
         ${img}
         <div class="food-card-body">
           <div class="food-card-name">${esc(item.name)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${item.nameEn ? ` <span class="food-card-name-en">${esc(item.nameEn)}</span>` : ''}</div>
           ${item.description ? `<div class="food-card-desc">${esc(item.description)}</div>` : ''}
           <div class="food-card-foot">
             <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
-            <div class="food-stepper">
-              ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
-              <span class="food-qty">${qty}</span>` : ''}
-              <button class="food-inc btn btn-primary food-step-btn" data-id="${item.id}">+</button>
-            </div>
+            ${stepper}
           </div>
         </div>
       </div>`;
@@ -3767,40 +3777,65 @@ function showCheckoutModal(menuItems, tables, gameId) {
 
 async function renderOrderDetail(orderId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
-  const order = await store.loadOrder(orderId);
-  if (!order) {
-    main().innerHTML = `<div class="detail-container fade-in"><a href="#/" class="back-link">← ${t('back')}</a><p>Захиалга олдсонгүй.</p></div>`;
-    return;
-  }
 
-  const statusLabel = order.status === 'completed' ? t('orderStatusCompleted')
-    : order.status === 'paid' ? t('orderStatusPaid')
-    : t('orderStatusPending');
+  const renderWith = (order) => {
+    if (!order) {
+      main().innerHTML = `<div class="detail-container fade-in"><a href="#/" class="back-link">← ${t('back')}</a><p>Захиалга олдсонгүй.</p></div>`;
+      return;
+    }
 
-  const deliveryLabel = order.deliveryLocation === 'table' ? t('deliveryTable')
-    : order.deliveryLocation === 'course' ? t('deliveryCourse')
-    : t('deliveryOutdoor');
+    const deliveryLabel = order.deliveryLocation === 'table' ? t('deliveryTable')
+      : order.deliveryLocation === 'course' ? t('deliveryCourse')
+      : t('deliveryOutdoor');
+    const pickupLabel = order.pickupTime === 'asap' ? t('pickupAsap') : order.pickupTime;
+    const done = order.status === 'completed';
 
-  const pickupLabel = order.pickupTime === 'asap' ? t('pickupAsap') : order.pickupTime;
+    // Two-step live status tracker
+    const step = done ? 2 : 1;
+    const tracker = `
+      <div class="order-status-track">
+        <div class="order-status-step ${step >= 1 ? 'reached' : ''}">
+          <div class="order-status-dot">${step >= 1 ? '✓' : '1'}</div>
+          <div class="order-status-text">${t('orderStatusPaid')}</div>
+        </div>
+        <div class="order-status-line ${step >= 2 ? 'reached' : ''}"></div>
+        <div class="order-status-step ${step >= 2 ? 'reached' : ''}">
+          <div class="order-status-dot">${step >= 2 ? '✓' : '2'}</div>
+          <div class="order-status-text">${t('orderStatusCompleted')}</div>
+        </div>
+      </div>`;
 
-  main().innerHTML = `
-    <div class="detail-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
-      <div class="glass-card">
-        <h2 class="card-title">🍽️ ${t('orderSummary')}</h2>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <div><strong>${t('orderStatusPaid')}:</strong> ${statusLabel}</div>
-          <div><strong>${t('customerName')}:</strong> ${esc(order.customerName)}</div>
-          <div><strong>${t('customerPhone')}:</strong> ${esc(order.customerPhone)}</div>
-          <div><strong>${t('deliveryLocation')}:</strong> ${deliveryLabel}</div>
-          <div><strong>${t('pickupTime')}:</strong> ${pickupLabel}</div>
-          <div style="margin-top:10px;border-top:1px solid var(--border-color);padding-top:10px;">
-            ${(order.items || []).map(i => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${esc(i.name)} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()}₮</span></div>`).join('')}
-            <div style="font-weight:700;margin-top:8px;display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${(order.total || 0).toLocaleString()}₮</span></div>
+    const banner = done
+      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
+      : `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`;
+
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="#/" class="back-link">← ${t('back')}</a>
+        <div class="glass-card">
+          <h2 class="card-title">🍽️ ${t('orderSummary')}</h2>
+          ${banner}
+          ${tracker}
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
+            <div><strong>${t('customerName')}:</strong> ${esc(order.customerName)}</div>
+            <div><strong>${t('customerPhone')}:</strong> ${esc(order.customerPhone)}</div>
+            <div><strong>${t('deliveryLocation')}:</strong> ${deliveryLabel}</div>
+            <div><strong>${t('pickupTime')}:</strong> ${pickupLabel}</div>
+            <div style="margin-top:10px;border-top:1px solid var(--border-color);padding-top:10px;">
+              ${(order.items || []).map(i => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${esc(i.name)} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()}₮</span></div>`).join('')}
+              <div style="font-weight:700;margin-top:8px;display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${(order.total || 0).toLocaleString()}₮</span></div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+  };
+
+  if (store.isUsingFirebase()) {
+    const unsub = store.onOrderChanged(orderId, renderWith);
+    if (unsub) activeUnsubs.push(unsub);
+  } else {
+    renderWith(await store.loadOrder(orderId));
+  }
 }
 
 // Kitchen display — password protected, real-time orders

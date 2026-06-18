@@ -367,3 +367,10 @@ export function onOrdersChanged(cb) {
   });
   return () => off(ordersRef);
 }
+
+export function onOrderChanged(id, cb) {
+  if (!useFirebase || !db) return () => {};
+  const r = ref(db, 'orders/' + id);
+  onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
+  return () => off(r);
+}

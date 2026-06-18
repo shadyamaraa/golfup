@@ -21,7 +21,7 @@ const ITEMS = [
   { nameEn: 'Mongolian Rice Soup', name: 'Будаатай шөл', description: 'Мах, ногоотой будаатай дулаан шөл', category: "Golfer's Favorite", popular: true, price: p(22.9) },
   { nameEn: 'Mongolian Noodle Soup', name: 'Гурилтай шөл', description: 'Үхрийн мах, хонины хавиргатай гурилтай шөл', category: "Golfer's Favorite", popular: true, price: p(29.9) },
   { nameEn: 'Mongolian Fried Noodle', name: 'Цуйван', description: 'Өвчүүний махтай Монгол цуйван', category: "Golfer's Favorite", popular: true, price: p(37.9) },
-  { nameEn: 'Mongolian Khuushuur', name: 'Хуушуур', description: 'Үхрийн махтай хуушуур — зөвхөн ажлын өдөр', category: "Golfer's Favorite", popular: true, price: p(39.9) },
+  { nameEn: 'Mongolian Khuushuur', name: 'Хуушуур', description: 'Үхрийн махтай хуушуур — зөвхөн ажлын өдөр', category: "Golfer's Favorite", popular: true, weekdayOnly: true, price: p(39.9) },
   { nameEn: 'Chicken Fajita', name: 'Chicken Fajita', description: 'Тахианы махтай Мексик маягийн фахита', category: "Golfer's Favorite", popular: true, price: p(45.9) },
   { nameEn: 'Bantan', name: 'Бантан', description: 'Үхрийн мах, хонины хавиргатай гурилтай Монгол бантан', category: "Golfer's Favorite", popular: true, price: p(25.9) },
 
@@ -62,7 +62,7 @@ const ITEMS = [
 
   // ── MAIN COURSE ───────────────────────────────────────────────────────────
   { nameEn: 'Mongolian Fried Noodle (Tsuivan)', name: 'Цуйван', description: 'Өвчүүний махтай цуйван (1050 ккал)', category: 'Main Course', price: p(37.9), popular: true },
-  { nameEn: 'Mongolian Khuushuur', name: 'Хуушуур', description: 'Шинэ ногооны салаттай, үхрийн махтай хуушуур (1200 ккал) — зөвхөн ажлын өдөр', category: 'Main Course', price: p(39.9) },
+  { nameEn: 'Mongolian Khuushuur', name: 'Хуушуур', description: 'Шинэ ногооны салаттай, үхрийн махтай хуушуур (1200 ккал) — зөвхөн ажлын өдөр', category: 'Main Course', weekdayOnly: true, price: p(39.9) },
   { nameEn: 'Oriental Style Chicken', name: 'Дорно маягийн тахиа', description: 'Буурцагны сүмстэй бүрмэл тахиа (1262 ккал)', category: 'Main Course', price: p(43.9) },
   { nameEn: 'Chinese Style Cheese Chicken', name: 'Хятад маягийн бяслагтай тахиа', description: 'Хятад маягаар амталсан бяслагтай тахиа (1150 ккал)', category: 'Main Course', price: p(45.9) },
   { nameEn: 'Mexican Chicken Fajita', name: 'Мексик Тахианы Фахита', description: 'Тахианы махтай Мексик Фахита (1300 ккал)', category: 'Main Course', price: p(45.9) },
@@ -193,6 +193,7 @@ async function seed() {
       category: item.category,
       available: true,
       popular: item.popular || false,
+      weekdayOnly: item.weekdayOnly || false,
       sortOrder: sortOrder++,
     };
     await set(ref(db, 'menu/' + id), record);
