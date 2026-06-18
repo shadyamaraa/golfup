@@ -3848,6 +3848,12 @@ async function renderKitchenDisplay() {
         <h2 style="margin:0;">👨‍🍳 ${t('kitchenTitle')}</h2>
         <button id="kitchen-logout-btn" class="btn btn-ghost btn-sm">Гарах</button>
       </div>
+      <div class="kitchen-tabs">
+        <button class="kitchen-tab active" data-tab="active">${t('kitchenTabActive')}<span class="kitchen-tab-count" id="kc-active">0</span></button>
+        <button class="kitchen-tab" data-tab="scheduled">${t('kitchenTabScheduled')}<span class="kitchen-tab-count" id="kc-scheduled">0</span></button>
+        <button class="kitchen-tab" data-tab="history">${t('kitchenTabHistory')}</button>
+        <button class="kitchen-tab" data-tab="report">${t('kitchenTabReport')}</button>
+      </div>
       <div id="kitchen-orders"><div class="loading-spinner"></div></div>
     </div>`;
 
@@ -3856,6 +3862,16 @@ async function renderKitchenDisplay() {
     localStorage.removeItem('kitchenUnlock');
     location.hash = '#/kitchen';
   };
+
+  let currentTab = 'active';
+  let latestOrders = [];
+  document.querySelectorAll('.kitchen-tab').forEach(tab => {
+    tab.onclick = () => {
+      currentTab = tab.dataset.tab;
+      document.querySelectorAll('.kitchen-tab').forEach(t2 => t2.classList.toggle('active', t2 === tab));
+      paint();
+    };
+  });
 
   let prevCount = 0;
   let audioCtx = null;
@@ -3916,59 +3932,100 @@ async function renderKitchenDisplay() {
     setTimeout(() => banner?.remove(), 8000);
   };
 
-  const unsub = store.onOrdersChanged((orders) => {
-    const active = orders.filter(o => o.status === 'paid');
-    if (active.length > prevCount) {
-      playBeep();
-      const newest = active[0];
-      if (newest) showOrderBanner(newest);
-      const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
-      window.__TAURI__?.core?.invoke?.('notify_new_order', {
-        title: '🔔 Шинэ захиалга!',
-        body: `${newest?.customerName || ''} — ${body}`,
-      }).catch(() => {});
-    }
-    prevCount = active.length;
+  const sameDay = (ts, ref) => {
+    const a = new Date(ts), b = new Date(ref);
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  };
+  // Scheduled order whose pickup time has arrived counts as active.
+  const scheduledDue = (o) => {
+    if (o.pickupTime === 'asap' || !o.pickupTime) return true;
+    const due = new Date(o.pickupTime).getTime();
+    return isNaN(due) ? true : due <= Date.now();
+  };
+  const isActive = (o) => o.status === 'paid' && scheduledDue(o);
+  const isScheduled = (o) => o.status === 'paid' && !scheduledDue(o);
 
+  const deliveryBadgeHtml = (order) => order.deliveryLocation === 'course'
+    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;">📍 Талбай</span>`
+    : order.deliveryLocation === 'table'
+    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🪑 Ширээ ${esc(order.tableId || '')}</span>`
+    : `<span style="background:#22c55e;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🌿 Гадаа</span>`;
+
+  const elapsedHtml = (createdAt) => {
+    if (!createdAt) return '';
+    const mins = Math.floor((Date.now() - createdAt) / 60000);
+    const color = mins >= 20 ? '#ef4444' : mins >= 10 ? '#f59e0b' : 'var(--text-secondary)';
+    const label = mins < 1 ? 'дөнгөж' : mins < 60 ? `${mins}м` : `${Math.floor(mins / 60)}ц ${mins % 60}м`;
+    return `<span style="font-size:0.82rem;font-weight:700;color:${color};">⏱ ${label}</span>`;
+  };
+
+  const orderCardHtml = (order, seq, opts = {}) => {
+    const pickup = order.pickupTime === 'asap' || !order.pickupTime
+      ? `<span style="font-size:0.82rem;color:var(--text-secondary);">Яаралтай</span>`
+      : `<span style="font-size:0.82rem;color:var(--gold);">⏰ ${esc((order.pickupTime + '').slice(11, 16) || order.pickupTime)}</span>`;
+    const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
+    const numBadge = seq ? `<span class="kitchen-order-num">#${seq}</span>` : '';
+    return `
+      <div class="glass-card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            ${numBadge}
+            <strong>${esc(order.customerName)}</strong>
+            <span style="color:var(--text-secondary);font-size:0.82rem;">${esc(order.customerPhone)}</span>
+            ${deliveryBadgeHtml(order)}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${opts.showElapsed ? elapsedHtml(order.createdAt) : ''}
+            ${pickup}
+            ${ts ? `<span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>` : ''}
+            ${opts.done ? `<button class="btn btn-sm btn-primary kitchen-done-btn" data-id="${order.id}">${t('kitchenMarkDone')} ✓</button>` : ''}
+          </div>
+        </div>
+        <div style="font-size:0.9rem;">
+          ${(order.items || []).map(i => `<div>• ${esc(i.name)} × ${i.qty}</div>`).join('')}
+        </div>
+        <div style="text-align:right;font-weight:700;margin-top:6px;">${(order.total || 0).toLocaleString()}₮</div>
+      </div>`;
+  };
+
+  // Daily sequence numbers (by createdAt ascending, today only)
+  const seqMap = () => {
+    const map = {};
+    const today = latestOrders.filter(o => sameDay(o.createdAt, Date.now()));
+    today.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((o, i) => { map[o.id] = i + 1; });
+    return map;
+  };
+
+  function paint() {
     const el = document.getElementById('kitchen-orders');
-    if (!el) { unsub(); return; }
-    if (active.length === 0) {
-      el.innerHTML = `<p style="color:var(--text-secondary);">${t('kitchenNoOrders')}</p>`;
-      return;
+    if (!el) return;
+    const seqs = seqMap();
+
+    // Update tab counts
+    const activeOrders = latestOrders.filter(isActive);
+    const scheduledOrders = latestOrders.filter(isScheduled);
+    const acEl = document.getElementById('kc-active');
+    const scEl = document.getElementById('kc-scheduled');
+    if (acEl) acEl.textContent = activeOrders.length;
+    if (scEl) scEl.textContent = scheduledOrders.length;
+
+    if (currentTab === 'active') {
+      el.innerHTML = activeOrders.length
+        ? activeOrders.map(o => orderCardHtml(o, seqs[o.id], { done: true, showElapsed: true })).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoOrders')}</p>`;
+    } else if (currentTab === 'scheduled') {
+      const sorted = scheduledOrders.slice().sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
+      el.innerHTML = sorted.length
+        ? sorted.map(o => orderCardHtml(o, seqs[o.id], { done: true })).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoScheduled')}</p>`;
+    } else if (currentTab === 'history') {
+      const done = latestOrders.filter(o => o.status === 'completed');
+      el.innerHTML = done.length
+        ? done.map(o => orderCardHtml(o, seqs[o.id], {})).join('')
+        : `<p style="color:var(--text-secondary);">${t('kitchenNoHistory')}</p>`;
+    } else if (currentTab === 'report') {
+      el.innerHTML = reportHtml();
     }
-
-    el.innerHTML = active.map(order => {
-      const deliveryBadge = order.deliveryLocation === 'course'
-        ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;">📍 Талбай</span>`
-        : order.deliveryLocation === 'table'
-        ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🪑 Ширээ ${esc(order.tableId || '')}</span>`
-        : `<span style="background:#22c55e;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🌿 Гадаа</span>`;
-
-      const pickup = order.pickupTime === 'asap' ? `<span style="font-size:0.82rem;color:var(--text-secondary);">Яаралтай</span>`
-        : `<span style="font-size:0.82rem;color:var(--gold);">⏰ ${esc(order.pickupTime?.slice(11,16) || order.pickupTime)}</span>`;
-
-      const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
-
-      return `
-        <div class="glass-card" style="margin-bottom:12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-              <strong>${esc(order.customerName)}</strong>
-              <span style="color:var(--text-secondary);font-size:0.82rem;">${esc(order.customerPhone)}</span>
-              ${deliveryBadge}
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              ${pickup}
-              ${ts ? `<span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>` : ''}
-              <button class="btn btn-sm btn-primary kitchen-done-btn" data-id="${order.id}">${t('kitchenMarkDone')} ✓</button>
-            </div>
-          </div>
-          <div style="font-size:0.9rem;">
-            ${(order.items || []).map(i => `<div>• ${esc(i.name)} × ${i.qty}</div>`).join('')}
-          </div>
-          <div style="text-align:right;font-weight:700;margin-top:6px;">${(order.total || 0).toLocaleString()}₮</div>
-        </div>`;
-    }).join('');
 
     document.querySelectorAll('.kitchen-done-btn').forEach(btn => {
       btn.onclick = async () => {
@@ -3976,8 +4033,59 @@ async function renderKitchenDisplay() {
         await store.updateOrderStatus(btn.dataset.id, 'completed');
       };
     });
+  }
+
+  function reportHtml() {
+    const today = latestOrders.filter(o => sameDay(o.createdAt, Date.now()));
+    const revenue = today.reduce((s, o) => s + (o.total || 0), 0);
+    const itemAgg = {};
+    today.forEach(o => (o.items || []).forEach(i => { itemAgg[i.name] = (itemAgg[i.name] || 0) + i.qty; }));
+    const top = Object.entries(itemAgg).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="glass-card" style="flex:1;min-width:120px;text-align:center;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);">${t('kitchenOrdersCount')}</div>
+          <div style="font-size:2rem;font-weight:800;">${today.length}</div>
+        </div>
+        <div class="glass-card" style="flex:1;min-width:120px;text-align:center;">
+          <div style="font-size:0.82rem;color:var(--text-secondary);">${t('kitchenRevenue')}</div>
+          <div style="font-size:2rem;font-weight:800;color:var(--gold);">${revenue.toLocaleString()}₮</div>
+        </div>
+      </div>
+      <div class="glass-card">
+        <h3 style="margin:0 0 10px;">${t('kitchenTopItems')}</h3>
+        ${top.length ? top.map(([name, qty]) => `
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-card);">
+            <span>${esc(name)}</span><strong>×${qty}</strong>
+          </div>`).join('') : `<p style="color:var(--text-secondary);">${t('kitchenNoHistory')}</p>`}
+      </div>`;
+  }
+
+  const unsub = store.onOrdersChanged((orders) => {
+    latestOrders = orders;
+    const paidCount = orders.filter(o => o.status === 'paid').length;
+    if (paidCount > prevCount) {
+      playBeep();
+      const newest = orders.filter(o => o.status === 'paid')[0];
+      if (newest) showOrderBanner(newest);
+      const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
+      window.__TAURI__?.core?.invoke?.('notify_new_order', {
+        title: '🔔 Шинэ захиалга!',
+        body: `${newest?.customerName || ''} — ${body}`,
+      }).catch(() => {});
+    }
+    prevCount = paidCount;
+    if (!document.getElementById('kitchen-orders')) { unsub(); return; }
+    paint();
   });
   activeUnsubs.push(unsub);
+
+  // Refresh elapsed times + scheduled→active transitions every 30s.
+  const refreshTimer = setInterval(() => {
+    if (!document.getElementById('kitchen-orders')) { clearInterval(refreshTimer); return; }
+    paint();
+  }, 30000);
+  activeUnsubs.push(() => clearInterval(refreshTimer));
 }
 
 // Admin: Menu management tab content

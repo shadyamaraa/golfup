@@ -489,6 +489,15 @@ input, button { font-family: var(--font); }
 .food-cat-btn:hover { border-color: var(--gold); }
 .food-cat-btn.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; }
 
+/* Kitchen display tabs */
+.kitchen-tabs { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.kitchen-tab { display: flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 10px; padding: 8px 14px; font-size: 0.9rem; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.kitchen-tab:hover { border-color: var(--gold); }
+.kitchen-tab.active { background: var(--gold); color: #000; border-color: var(--gold); }
+.kitchen-tab-count { background: rgba(0,0,0,0.25); color: inherit; border-radius: 10px; padding: 0 7px; font-size: 0.78rem; font-weight: 700; min-width: 18px; text-align: center; }
+.kitchen-tab:not(.active) .kitchen-tab-count { background: var(--gold); color: #000; }
+.kitchen-order-num { background: var(--emerald); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 0.82rem; font-weight: 800; }
+
 /* Logout button icon */
 .btn-logout-icon { cursor: pointer; background: none; border: none; opacity: 0.7; width: 20px; height: 20px; padding: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpolyline points='16 17 21 12 16 7'/%3E%3Cline x1='21' y1='12' x2='9' y2='12'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-size: contain; }
 .btn-logout-icon:hover { opacity: 1; }
