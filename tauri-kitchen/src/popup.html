@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Шинэ захиалга</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        font-family: Inter, "Segoe UI", Avenir, Arial, sans-serif;
+        cursor: default;
+        user-select: none;
+      }
+      .toast {
+        height: 100%;
+        background: linear-gradient(135deg, #16a34a, #15803d);
+        color: #fff;
+        border-radius: 14px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        animation: pop 0.25s ease;
+      }
+      @keyframes pop {
+        from { transform: scale(0.92); opacity: 0; }
+        to   { transform: scale(1);    opacity: 1; }
+      }
+      .h {
+        font-size: 1.15rem;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .b {
+        font-size: 0.95rem;
+        line-height: 1.35;
+        opacity: 0.96;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      .bar {
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        margin-top: auto;
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        background: #fff;
+        width: 100%;
+        animation: shrink 10s linear forwards;
+      }
+      @keyframes shrink {
+        from { width: 100%; }
+        to   { width: 0%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toast">
+      <div class="h" id="title">Шинэ захиалга!</div>
+      <div class="b" id="body"></div>
+      <div class="bar"><i></i></div>
+    </div>
+    <script>
+      const q = new URLSearchParams(location.search);
+      document.getElementById("title").textContent = q.get("title") || "Шинэ захиалга!";
+      document.getElementById("body").textContent = q.get("body") || "";
+
+      // Two-tone beep — no audio asset, no Tauri APIs needed.
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const tone = (f, s, d) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = "sine";
+          o.frequency.value = f;
+          o.connect(g);
+          g.connect(ctx.destination);
+          g.gain.setValueAtTime(0.001, ctx.currentTime + s);
+          g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + s + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + s + d);
+          o.start(ctx.currentTime + s);
+          o.stop(ctx.currentTime + s + d);
+        };
+        tone(880, 0, 0.18);
+        tone(1175, 0.2, 0.25);
+      } catch (e) {
+        /* audio unavailable */
+      }
+    </script>
+  </body>
+</html>

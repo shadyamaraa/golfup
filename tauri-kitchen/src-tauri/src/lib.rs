@@ -1,36 +1,83 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_notification::NotificationExt;
 
-// Called from the webview when a new paid order arrives.
-// Forces the window in front of every other window (including a fullscreen
-// cashier/ERP app) by toggling always-on-top, then drops back to a normal
-// z-order after a few seconds so the cashier can return to the ERP.
-#[tauri::command]
-fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
-    // Show and focus the window — works whether it was hidden to tray or just minimized.
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        // always-on-top forces the window above the foreground app (Windows
-        // blocks plain focus-stealing, so set_focus alone is not enough).
-        let _ = window.set_always_on_top(true);
-        let _ = window.set_focus();
-        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+// Minimal percent-encoding so order text (incl. Cyrillic) survives the query
+// string. Encodes raw UTF-8 bytes; the popup decodes with URLSearchParams.
+fn pct(s: &str) -> String {
+    let mut out = String::new();
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
 
-        // Release always-on-top after the alert has surfaced, so the kitchen
-        // window does not permanently cover the cashier's ERP.
+// Builds a small, borderless, always-on-top toast window in the top-right
+// corner. It is created `focused(false)` so it surfaces ON TOP of the cashier's
+// ERP without stealing keyboard focus — the cashier keeps working uninterrupted.
+// Auto-dismisses after a few seconds.
+fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
+    // Clear any earlier popups so they don't stack in the same spot.
+    for (label, w) in app.webview_windows() {
+        if label.starts_with("popup-") {
+            let _ = w.close();
+        }
+    }
+
+    let label = format!(
+        "popup-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    let url = format!("popup.html?title={}&body={}", pct(title), pct(body));
+
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title("Шинэ захиалга")
+        .inner_size(360.0, 140.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .focused(false) // do NOT take focus away from the ERP
+        .skip_taskbar(true)
+        .resizable(false)
+        .build();
+
+    if let Ok(win) = built {
+        // Park it in the top-right corner of the primary monitor.
+        if let Ok(Some(monitor)) = win.primary_monitor() {
+            let scale = monitor.scale_factor();
+            let mw = monitor.size().width as i32;
+            let pw = (360.0 * scale) as i32;
+            let margin = (20.0 * scale) as i32;
+            let _ = win.set_position(PhysicalPosition::new(mw - pw - margin, margin));
+        }
+        // Auto-dismiss.
         let app2 = app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(8));
-            if let Some(w) = app2.get_webview_window("main") {
-                let _ = w.set_always_on_top(false);
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            if let Some(w) = app2.get_webview_window(&label) {
+                let _ = w.close();
             }
         });
     }
+}
+
+// Called from the webview when a new paid order arrives. Shows an on-screen
+// popup (even when the kitchen window is minimized or hidden to tray) WITHOUT
+// stealing focus, plus a native OS toast. The main window is left untouched.
+#[tauri::command]
+fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
+    show_order_popup(&app, &title, &body);
     // Native toast — works when installed via MSI/NSIS; silently fails otherwise.
     let _ = app.notification().builder().title(&title).body(&body).show();
 }
