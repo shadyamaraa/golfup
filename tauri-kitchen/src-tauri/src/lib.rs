@@ -1,29 +1,16 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+    Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_notification::NotificationExt;
 
-// Minimal percent-encoding so order text (incl. Cyrillic) survives the query
-// string. Encodes raw UTF-8 bytes; the popup decodes with URLSearchParams.
-fn pct(s: &str) -> String {
-    let mut out = String::new();
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
-}
-
 // Builds a small, borderless, always-on-top toast window in the top-right
-// corner. It is created `focused(false)` so it surfaces ON TOP of the cashier's
-// ERP without stealing keyboard focus — the cashier keeps working uninterrupted.
-// Auto-dismisses after a few seconds.
+// corner. Created `focused(false)` so it surfaces ON TOP of the cashier's
+// ERP without stealing keyboard focus. Auto-dismisses after 10 seconds.
+// Data is passed via a Tauri event after the window loads (query-string
+// params in WebviewUrl::App are treated as part of the filename on Windows
+// and the page would fail to load).
 fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     // Clear any earlier popups so they don't stack in the same spot.
     for (label, w) in app.webview_windows() {
@@ -39,12 +26,8 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
             .map(|d| d.as_millis())
             .unwrap_or(0)
     );
-    let url = format!("popup.html?title={}&body={}", pct(title), pct(body));
 
-    // Note: no `.transparent(true)` — transparency needs an extra Cargo feature
-    // and, when it's missing, `build()` fails silently so NO popup ever appears.
-    // A solid (non-transparent) borderless window is fully reliable instead.
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("popup.html".into()))
         .title("Шинэ захиалга")
         .inner_size(360.0, 140.0)
         .decorations(false)
@@ -65,11 +48,17 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
                 let margin = (20.0 * scale) as i32;
                 let _ = win.set_position(PhysicalPosition::new(mw - pw - margin, margin));
             }
-            // Surface it above the ERP without grabbing keyboard focus.
             let _ = win.show();
-            // Auto-dismiss.
+
+            // Send order data via event once the page has had time to load.
+            let title_s = title.to_string();
+            let body_s = body.to_string();
+            let win2 = win.clone();
             let app2 = app.clone();
             std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                let _ = win2.emit("order-data", serde_json::json!({ "title": title_s, "body": body_s }));
+                // Auto-dismiss after 10 seconds.
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 if let Some(w) = app2.get_webview_window(&label) {
                     let _ = w.close();
@@ -82,9 +71,7 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     }
 }
 
-// Called from the webview when a new paid order arrives. Shows an on-screen
-// popup (even when the kitchen window is minimized or hidden to tray) WITHOUT
-// stealing focus, plus a native OS toast. The main window is left untouched.
+// Called from the webview when a new paid order arrives.
 #[tauri::command]
 fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
     show_order_popup(&app, &title, &body);
@@ -103,7 +90,6 @@ fn show_main_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // Focus the existing window if a second copy is launched.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
@@ -138,8 +124,6 @@ pub fn run() {
 
             Ok(())
         })
-        // Closing the window hides it to the tray instead of quitting, so the
-        // app keeps listening for new orders in the background.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();

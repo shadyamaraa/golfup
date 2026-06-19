@@ -22,8 +22,6 @@
         display: flex;
         flex-direction: column;
         gap: 6px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.25);
         animation: pop 0.25s ease;
       }
       @keyframes pop {
@@ -68,16 +66,19 @@
   </head>
   <body>
     <div class="toast">
-      <div class="h" id="title">Шинэ захиалга!</div>
+      <div class="h" id="title">🔔 Шинэ захиалга!</div>
       <div class="b" id="body"></div>
       <div class="bar"><i></i></div>
     </div>
     <script>
-      const q = new URLSearchParams(location.search);
-      document.getElementById("title").textContent = q.get("title") || "Шинэ захиалга!";
-      document.getElementById("body").textContent = q.get("body") || "";
+      // Receive order data via Tauri event (query-string params don't work
+      // reliably with WebviewUrl::App on Windows).
+      window.__TAURI__.event.listen('order-data', (e) => {
+        document.getElementById('title').textContent = e.payload.title || '🔔 Шинэ захиалга!';
+        document.getElementById('body').textContent = e.payload.body || '';
+      });
 
-      // Two-tone beep — no audio asset, no Tauri APIs needed.
+      // Two-tone beep — no audio asset needed.
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const tone = (f, s, d) => {
@@ -95,9 +96,7 @@
         };
         tone(880, 0, 0.18);
         tone(1175, 0.2, 0.25);
-      } catch (e) {
-        /* audio unavailable */
-      }
+      } catch (e) { /* audio unavailable */ }
     </script>
   </body>
 </html>
