@@ -5,32 +5,19 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
-// Percent-encode every byte except a small unreserved set. Used to embed the
-// whole HTML document (including Cyrillic) safely inside a data: URL.
-fn pct(s: &str) -> String {
-    let mut out = String::new();
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
-}
-
-// Escape text for safe insertion into HTML element content.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
 
-// Builds a small, borderless, always-on-top toast window in the top-right
-// corner. focused(false) keeps the cashier's ERP keyboard focus intact.
-// The entire UI is embedded in a data: URL so there is no file-serving,
-// no eval timing race, and no IPC dependency.
+// Builds a small, borderless, always-on-top toast window in the top-right corner.
+// focused(false) keeps the cashier's ERP keyboard focus intact.
+//
+// URL strategy: data: URLs are blocked by WebView2 on Windows, and
+// WebviewUrl::App treats query strings as part of the filesystem path, so
+// neither can carry per-order data. Instead we write a self-contained HTML
+// file to %TEMP% and load it as a file:// URL — fully supported by WebView2.
 fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     for (label, w) in app.webview_windows() {
         if label.starts_with("popup-") {
@@ -52,9 +39,9 @@ html,body{{height:100%;margin:0;padding:0}}
 body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;cursor:pointer}}
 .h{{font-size:1.15rem;font-weight:800}}
 .b{{font-size:.95rem;opacity:.96;line-height:1.35}}
-.hint{{font-size:.72rem;opacity:.8}}
+.hint{{font-size:.72rem;opacity:.75}}
 .bar{{height:4px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:auto;overflow:hidden}}
-.bar>i{{display:block;height:100%;background:#fff;width:100%;animation:s 10s linear forwards}}
+.bar>i{{display:block;height:100%;background:#fff;animation:s 10s linear forwards}}
 @keyframes s{{from{{width:100%}}to{{width:0}}}}
 </style></head><body>
 <div class="h">{title}</div>
@@ -68,11 +55,20 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
         body = html_escape(body),
     );
 
-    let data_url = format!("data:text/html;charset=utf-8,{}", pct(&html));
-    let parsed = match data_url.parse() {
+    // Write to %TEMP%\ubgolf_popup.html and load as file:// URL.
+    let temp_path = std::env::temp_dir().join("ubgolf_popup.html");
+    if let Err(e) = std::fs::write(&temp_path, html.as_bytes()) {
+        eprintln!("show_order_popup: write temp file failed: {e}");
+        return;
+    }
+    let url_str = format!(
+        "file:///{}",
+        temp_path.to_string_lossy().replace('\\', "/")
+    );
+    let parsed: url::Url = match url_str.parse() {
         Ok(u) => u,
         Err(e) => {
-            eprintln!("show_order_popup: bad data url: {e}");
+            eprintln!("show_order_popup: bad file url: {e}");
             return;
         }
     };
@@ -118,8 +114,6 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
 fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
     show_order_popup(&app, &title, &body);
     let _ = app.notification().builder().title(&title).body(&body).show();
-    // Flash the main window's taskbar icon to grab the cashier's attention,
-    // without forcing it to the foreground (would interrupt the ERP).
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.request_user_attention(Some(UserAttentionType::Critical));
     }
@@ -171,17 +165,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Closing the MAIN window hides it to the tray instead of quitting.
-            // Popup windows are allowed to close normally.
             tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 let _ = window.hide();
                 api.prevent_close();
             }
-            // Clicking the green popup focuses it — bring the main window up and
-            // dismiss the popup so the cashier lands straight on the orders list.
+            // Clicking the popup (focus event) → open main window.
+            // We do NOT close the popup here: on some systems a spurious
+            // Focused(true) fires during window creation and would make the
+            // popup disappear instantly. It auto-closes after 10 s instead.
             tauri::WindowEvent::Focused(true) if window.label().starts_with("popup-") => {
                 show_main_window(&window.app_handle().clone());
-                let _ = window.close();
             }
             _ => {}
         })
