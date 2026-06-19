@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-06-19 (2)
+
+### Kitchen floating popup now uses a locally bundled page
+
+- `popup.html` (new, repo root): standalone always-on-top toast for the Tauri
+  kitchen app. Reads injected `window.__ORDER_TITLE__`/`__ORDER_BODY__`, plays a
+  double beep, and on click invokes the `open_main` command.
+- `vite.config.js`: added `popup.html` as a second rollup input so it ships in
+  `dist/` and is served from `tauri://localhost/popup.html`.
+- `tauri-kitchen/src-tauri/src/lib.rs`: `show_order_popup` now loads
+  `WebviewUrl::App("popup.html")` (instead of the flaky `data:` URL that
+  WebView2 sometimes refused to render) and passes order text via
+  `initialization_script`. Added `open_main` command; removed the 800ms
+  `Focused(true)` click hack — the popup now opens the main window via a real
+  IPC call on click.
+- `tauri-kitchen/src-tauri/capabilities/default.json`: added `popup-*` to
+  `windows` so popup windows can invoke `open_main`.
+- Net effect: the green popup reliably floats above the ERP/cashier window
+  without stealing keyboard focus, and clicking it opens the kitchen window.
+
 ## 2026-06-19
 
 ### Food menu image fixes + orderNotes + preview deploy workflow

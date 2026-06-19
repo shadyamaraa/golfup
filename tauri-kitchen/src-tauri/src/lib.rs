@@ -12,34 +12,30 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
-// Percent-encode every byte except a small unreserved set, so the whole HTML
-// document (including Cyrillic) survives inside a data: URL.
-fn pct(s: &str) -> String {
-    let mut out = String::new();
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
+// Produce a JS string literal (quoted + escaped) so arbitrary text — including
+// Cyrillic and quotes — can be injected safely via initialization_script.
+fn js_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
         }
     }
+    out.push('"');
     out
 }
 
-// Escape text for safe insertion into HTML element content.
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-// Builds a small, borderless, always-on-top toast in the top-right corner.
-// focused(false) keeps the cashier's ERP keyboard focus intact. The whole UI
-// is embedded in a data: URL — no file serving, no eval timing, no IPC.
-// The window label encodes its creation time ("popup-<millis>") so the
-// click-to-open handler can distinguish a real click from the spurious focus
-// event that fires while the window is being created.
+// Builds a small, borderless, always-on-top toast in the top-right corner that
+// floats above the cashier's ERP window. focused(false) keeps the ERP keyboard
+// focus intact. The page is the locally bundled popup.html (served from
+// tauri://localhost), so window.__TAURI__ is injected and a click can invoke
+// open_main directly. Title/body are passed through initialization_script.
 fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     for (label, w) in app.webview_windows() {
         if label.starts_with("popup-") {
@@ -49,38 +45,13 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
 
     let label = format!("popup-{}", now_millis());
 
-    let html = format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{{height:100%;margin:0;padding:0}}
-body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;cursor:pointer}}
-.h{{font-size:1.15rem;font-weight:800}}
-.b{{font-size:.95rem;opacity:.96;line-height:1.35}}
-.hint{{font-size:.72rem;opacity:.75}}
-.bar{{height:4px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:auto;overflow:hidden}}
-.bar>i{{display:block;height:100%;background:#fff;width:100%;animation:s 10s linear forwards}}
-@keyframes s{{from{{width:100%}}to{{width:0}}}}
-</style></head><body>
-<div class="h">{title}</div>
-<div class="b">{body}</div>
-<div class="hint">👆 Дарж нээх</div>
-<div class="bar"><i></i></div>
-<script>
-try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,d){{var o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(c.destination);g.gain.setValueAtTime(.001,c.currentTime+s);g.gain.exponentialRampToValueAtTime(.4,c.currentTime+s+.02);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+s+d);o.start(c.currentTime+s);o.stop(c.currentTime+s+d)}}t(880,0,.18);t(1175,.2,.25)}}catch(e){{}}
-</script></body></html>"#,
-        title = html_escape(title),
-        body = html_escape(body),
+    let init = format!(
+        "window.__ORDER_TITLE__={};window.__ORDER_BODY__={};",
+        js_str(title),
+        js_str(body),
     );
 
-    let data_url = format!("data:text/html;charset=utf-8,{}", pct(&html));
-    let parsed: tauri::Url = match data_url.parse() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("show_order_popup: bad data url: {e}");
-            return;
-        }
-    };
-
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("popup.html".into()))
         .title("Шинэ захиалга")
         .inner_size(360.0, 140.0)
         .decorations(false)
@@ -89,6 +60,7 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
         .skip_taskbar(true)
         .resizable(false)
         .visible(true)
+        .initialization_script(&init)
         .additional_browser_args(
             "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI",
         )
@@ -135,6 +107,18 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+// Called from a popup's click handler — closes any popups and brings the main
+// kitchen window to the foreground.
+#[tauri::command]
+fn open_main(app: tauri::AppHandle) {
+    for (label, w) in app.webview_windows() {
+        if label.starts_with("popup-") {
+            let _ = w.close();
+        }
+    }
+    show_main_window(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -177,24 +161,9 @@ pub fn run() {
                 let _ = window.hide();
                 api.prevent_close();
             }
-            // Clicking the popup opens the main kitchen window. The popup is
-            // created focused(false), but some systems still emit a Focused(true)
-            // during creation — we ignore any focus within 800ms of creation
-            // (parsed from the label) so the ERP isn't pulled to the background.
-            tauri::WindowEvent::Focused(true) if window.label().starts_with("popup-") => {
-                let created: u128 = window
-                    .label()
-                    .strip_prefix("popup-")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                if now_millis().saturating_sub(created) > 800 {
-                    show_main_window(&window.app_handle().clone());
-                    let _ = window.close();
-                }
-            }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![notify_new_order])
+        .invoke_handler(tauri::generate_handler![notify_new_order, open_main])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
