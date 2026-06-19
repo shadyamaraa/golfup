@@ -5,75 +5,18 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-// Builds a small, borderless, always-on-top toast window in the top-right corner.
+// Builds a small, borderless, always-on-top toast in the top-right corner.
 // focused(false) keeps the cashier's ERP keyboard focus intact.
-//
-// URL strategy: data: URLs are blocked by WebView2 on Windows, and
-// WebviewUrl::App treats query strings as part of the filesystem path, so
-// neither can carry per-order data. Instead we write a self-contained HTML
-// file to %TEMP% and load it as a file:// URL — fully supported by WebView2.
+// Uses a fixed "popup" label (listed in capabilities) so WebviewUrl::App can
+// serve the local popup.html. Order data is injected via Rust eval() after
+// the page loads rather than through query strings or events.
 fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
-    for (label, w) in app.webview_windows() {
-        if label.starts_with("popup-") {
-            let _ = w.close();
-        }
+    // Close any existing popup first.
+    if let Some(w) = app.get_webview_window("popup") {
+        let _ = w.close();
     }
 
-    let label = format!(
-        "popup-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
-
-    let html = format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{{height:100%;margin:0;padding:0}}
-body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;cursor:pointer}}
-.h{{font-size:1.15rem;font-weight:800}}
-.b{{font-size:.95rem;opacity:.96;line-height:1.35}}
-.hint{{font-size:.72rem;opacity:.75}}
-.bar{{height:4px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:auto;overflow:hidden}}
-.bar>i{{display:block;height:100%;background:#fff;animation:s 10s linear forwards}}
-@keyframes s{{from{{width:100%}}to{{width:0}}}}
-</style></head><body>
-<div class="h">{title}</div>
-<div class="b">{body}</div>
-<div class="hint">👆 Дарж нээх</div>
-<div class="bar"><i></i></div>
-<script>
-try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,d){{var o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(c.destination);g.gain.setValueAtTime(.001,c.currentTime+s);g.gain.exponentialRampToValueAtTime(.4,c.currentTime+s+.02);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+s+d);o.start(c.currentTime+s);o.stop(c.currentTime+s+d)}}t(880,0,.18);t(1175,.2,.25)}}catch(e){{}}
-</script></body></html>"#,
-        title = html_escape(title),
-        body = html_escape(body),
-    );
-
-    // Write to %TEMP%\ubgolf_popup.html and load as file:// URL.
-    let temp_path = std::env::temp_dir().join("ubgolf_popup.html");
-    if let Err(e) = std::fs::write(&temp_path, html.as_bytes()) {
-        eprintln!("show_order_popup: write temp file failed: {e}");
-        return;
-    }
-    let url_str = format!(
-        "file:///{}",
-        temp_path.to_string_lossy().replace('\\', "/")
-    );
-    let parsed: url::Url = match url_str.parse() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("show_order_popup: bad file url: {e}");
-            return;
-        }
-    };
-
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
+    let built = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup.html".into()))
         .title("Шинэ захиалга")
         .inner_size(360.0, 140.0)
         .decorations(false)
@@ -82,9 +25,6 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
         .skip_taskbar(true)
         .resizable(false)
         .visible(true)
-        .additional_browser_args(
-            "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI",
-        )
         .build();
 
     match built {
@@ -98,10 +38,45 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
             }
             let _ = win.show();
 
+            // Inject the order data and start the beep once the page has loaded.
+            let title_s = title
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n");
+            let body_s = body
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n");
+            let win2 = win.clone();
             let app2 = app.clone();
             std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                let js = format!(
+                    r#"
+                    document.getElementById('t').textContent = "{title}";
+                    document.getElementById('b').textContent = "{body}";
+                    try {{
+                        var c = new (window.AudioContext || window.webkitAudioContext)();
+                        function tone(f, s, d) {{
+                            var o = c.createOscillator(), g = c.createGain();
+                            o.type = 'sine'; o.frequency.value = f;
+                            o.connect(g); g.connect(c.destination);
+                            g.gain.setValueAtTime(0.001, c.currentTime + s);
+                            g.gain.exponentialRampToValueAtTime(0.4, c.currentTime + s + 0.02);
+                            g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + s + d);
+                            o.start(c.currentTime + s); o.stop(c.currentTime + s + d);
+                        }}
+                        tone(880, 0, 0.18); tone(1175, 0.2, 0.25);
+                    }} catch(e) {{}}
+                    "#,
+                    title = title_s,
+                    body = body_s,
+                );
+                let _ = win2.eval(&js);
+
+                // Auto-dismiss after 10 seconds.
                 std::thread::sleep(std::time::Duration::from_secs(10));
-                if let Some(w) = app2.get_webview_window(&label) {
+                if let Some(w) = app2.get_webview_window("popup") {
                     let _ = w.close();
                 }
             });
@@ -169,11 +144,8 @@ pub fn run() {
                 let _ = window.hide();
                 api.prevent_close();
             }
-            // Clicking the popup (focus event) → open main window.
-            // We do NOT close the popup here: on some systems a spurious
-            // Focused(true) fires during window creation and would make the
-            // popup disappear instantly. It auto-closes after 10 s instead.
-            tauri::WindowEvent::Focused(true) if window.label().starts_with("popup-") => {
+            // Clicking the popup (fires Focused) → open the main kitchen window.
+            tauri::WindowEvent::Focused(true) if window.label() == "popup" => {
                 show_main_window(&window.app_handle().clone());
             }
             _ => {}

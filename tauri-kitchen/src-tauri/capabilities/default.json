@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": ["main", "popup"],
   "remote": {
     "urls": ["https://ubgolf.club/*", "https://golfup-app--claude-beldey-nguk4-6305hxsh.web.app/*"]
   },
