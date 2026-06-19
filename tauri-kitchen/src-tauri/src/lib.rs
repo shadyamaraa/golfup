@@ -6,16 +6,30 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 
 // Called from the webview when a new paid order arrives.
-// Pops the window to the front (most reliable alert for an unregistered app)
-// and attempts a native OS notification as a bonus.
+// Forces the window in front of every other window (including a fullscreen
+// cashier/ERP app) by toggling always-on-top, then drops back to a normal
+// z-order after a few seconds so the cashier can return to the ERP.
 #[tauri::command]
 fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
     // Show and focus the window — works whether it was hidden to tray or just minimized.
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
+        // always-on-top forces the window above the foreground app (Windows
+        // blocks plain focus-stealing, so set_focus alone is not enough).
+        let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
         let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+
+        // Release always-on-top after the alert has surfaced, so the kitchen
+        // window does not permanently cover the cashier's ERP.
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(8));
+            if let Some(w) = app2.get_webview_window("main") {
+                let _ = w.set_always_on_top(false);
+            }
+        });
     }
     // Native toast — works when installed via MSI/NSIS; silently fails otherwise.
     let _ = app.notification().builder().title(&title).body(&body).show();
