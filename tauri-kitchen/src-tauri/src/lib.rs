@@ -49,15 +49,17 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     let html = format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{height:100%;margin:0;padding:0}}
-body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}}
+body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;cursor:pointer}}
 .h{{font-size:1.15rem;font-weight:800}}
 .b{{font-size:.95rem;opacity:.96;line-height:1.35}}
+.hint{{font-size:.72rem;opacity:.8}}
 .bar{{height:4px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:auto;overflow:hidden}}
 .bar>i{{display:block;height:100%;background:#fff;width:100%;animation:s 10s linear forwards}}
 @keyframes s{{from{{width:100%}}to{{width:0}}}}
 </style></head><body>
 <div class="h">{title}</div>
 <div class="b">{body}</div>
+<div class="hint">👆 Дарж нээх</div>
 <div class="bar"><i></i></div>
 <script>
 try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,d){{var o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(c.destination);g.gain.setValueAtTime(.001,c.currentTime+s);g.gain.exponentialRampToValueAtTime(.4,c.currentTime+s+.02);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+s+d);o.start(c.currentTime+s);o.stop(c.currentTime+s+d)}}t(880,0,.18);t(1175,.2,.25)}}catch(e){{}}
@@ -168,11 +170,20 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            // Closing the MAIN window hides it to the tray instead of quitting.
+            // Popup windows are allowed to close normally.
+            tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 let _ = window.hide();
                 api.prevent_close();
             }
+            // Clicking the green popup focuses it — bring the main window up and
+            // dismiss the popup so the cashier lands straight on the orders list.
+            tauri::WindowEvent::Focused(true) if window.label().starts_with("popup-") => {
+                show_main_window(&window.app_handle().clone());
+                let _ = window.close();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![notify_new_order])
         .run(tauri::generate_context!())
