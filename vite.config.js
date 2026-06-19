@@ -6,13 +6,6 @@ export default defineConfig({
   root: '.',
   build: {
     outDir: 'dist',
-    rollupOptions: {
-      input: {
-        main: 'index.html',
-        // Standalone popup window loaded by the Tauri kitchen app.
-        popup: 'popup.html',
-      },
-    },
   },
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
