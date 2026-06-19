@@ -3701,6 +3701,11 @@ function showCheckoutModal(menuItems, tables, gameId) {
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>
         </div>
 
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('orderNotes')}</label>
+          <textarea id="co-notes" rows="2" placeholder="Нэмэлт хүсэлт, тайлбар..." style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);resize:vertical;font-family:inherit;font-size:0.95rem;"></textarea>
+        </div>
+
         <div style="display:flex;gap:8px;margin-top:4px;">
           <button id="co-submit" class="btn btn-primary" style="flex:1;">${t('placeOrder')}</button>
           <button id="co-cancel" class="btn btn-ghost">Болих</button>
@@ -3744,6 +3749,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
     if (submitting) return;
     const name = modal.querySelector('#co-name').value.trim();
     const phone = modal.querySelector('#co-phone').value.trim();
+    const notes = modal.querySelector('#co-notes').value.trim();
     const delivery = modal.querySelector('input[name="co-delivery"]:checked')?.value || 'outdoor';
     const pickupRadio = modal.querySelector('input[name="co-pickup"]:checked')?.value || 'asap';
     const pickupTimeVal = modal.querySelector('#co-pickup-time').value;
@@ -3768,6 +3774,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       deliveryLocation: delivery,
       tableId: delivery === 'table' ? selectedTableId : null,
       pickupTime: pickupRadio === 'asap' ? 'asap' : pickupTimeVal,
+      orderNotes: notes || '',
       status: 'paid',
       paidAt: new Date().toISOString(),
     };
@@ -3837,6 +3844,7 @@ async function renderOrderDetail(orderId) {
             <div><strong>${t('customerPhone')}:</strong> ${esc(order.customerPhone)}</div>
             <div><strong>${t('deliveryLocation')}:</strong> ${deliveryLabel}</div>
             <div><strong>${t('pickupTime')}:</strong> ${pickupLabel}</div>
+            ${order.orderNotes ? `<div><strong>${t('orderNotes')}:</strong> ${esc(order.orderNotes)}</div>` : ''}
             <div style="margin-top:10px;border-top:1px solid var(--border-color);padding-top:10px;">
               ${(order.items || []).map(i => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${esc(i.name)} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()}₮</span></div>`).join('')}
               <div style="font-weight:700;margin-top:8px;display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${(order.total || 0).toLocaleString()}₮</span></div>
@@ -4023,6 +4031,7 @@ async function renderKitchenDisplay() {
             ${numBadge}
             <strong>${esc(order.customerName)}</strong>
             <span style="color:var(--text-secondary);font-size:0.82rem;">${esc(order.customerPhone)}</span>
+            ${order.orderNotes ? `<span style="font-size:0.85rem;color:var(--gold);">💬 ${esc(order.orderNotes)}</span>` : ''}
             ${deliveryBadgeHtml(order)}
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
