@@ -3866,6 +3866,7 @@ async function renderOrderDetail(orderId) {
 let kitchenUnlock = localStorage.getItem('kitchenUnlock') === '1';
 
 async function renderKitchenDisplay() {
+  if (isKiosk) { kitchenUnlock = true; localStorage.setItem('kitchenUnlock', '1'); }
   if (!kitchenUnlock) {
     main().innerHTML = `
       <div class="detail-container fade-in">
@@ -3933,6 +3934,7 @@ async function renderKitchenDisplay() {
   });
 
   let prevCount = 0;
+  let kitchenReady = false;
   let audioCtx = null;
 
   const playBeep = () => {
@@ -4124,7 +4126,7 @@ async function renderKitchenDisplay() {
   const unsub = store.onOrdersChanged((orders) => {
     latestOrders = orders;
     const paidCount = orders.filter(o => o.status === 'paid').length;
-    if (paidCount > prevCount) {
+    if (kitchenReady && paidCount > prevCount) {
       playBeep();
       const newest = orders.filter(o => o.status === 'paid')[0];
       if (newest) showOrderBanner(newest);
@@ -4135,6 +4137,7 @@ async function renderKitchenDisplay() {
       }).catch(() => {});
     }
     prevCount = paidCount;
+    kitchenReady = true;
     if (!document.getElementById('kitchen-orders')) { unsub(); return; }
     paint();
   });
