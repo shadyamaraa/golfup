@@ -3777,6 +3777,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       orderNotes: notes || '',
       status: 'paid',
       paidAt: new Date().toISOString(),
+      notified: false,
     };
 
     submitting = true;
@@ -3866,6 +3867,7 @@ async function renderOrderDetail(orderId) {
 let kitchenUnlock = localStorage.getItem('kitchenUnlock') === '1';
 
 async function renderKitchenDisplay() {
+  if (isKiosk) { kitchenUnlock = true; localStorage.setItem('kitchenUnlock', '1'); }
   if (!kitchenUnlock) {
     main().innerHTML = `
       <div class="detail-container fade-in">
@@ -3932,7 +3934,11 @@ async function renderKitchenDisplay() {
     };
   });
 
-  let prevCount = 0;
+  // Track which paid orders we've already announced. Comparing counts misses
+  // the case where one order is completed and a new one arrives in the same
+  // snapshot (net count unchanged) — an id set catches every genuinely new order.
+  const seenPaidIds = new Set();
+  let kitchenReady = false;
   let audioCtx = null;
 
   const playBeep = () => {
@@ -4123,18 +4129,24 @@ async function renderKitchenDisplay() {
 
   const unsub = store.onOrdersChanged((orders) => {
     latestOrders = orders;
-    const paidCount = orders.filter(o => o.status === 'paid').length;
-    if (paidCount > prevCount) {
+    const paid = orders.filter(o => o.status === 'paid');
+    // Any paid order whose id we haven't announced yet is genuinely new.
+    const fresh = paid.filter(o => o.id && !seenPaidIds.has(o.id));
+    if (kitchenReady && fresh.length) {
       playBeep();
-      const newest = orders.filter(o => o.status === 'paid')[0];
-      if (newest) showOrderBanner(newest);
-      const body = newest ? (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ') : '';
+      const newest = fresh[0];
+      showOrderBanner(newest);
+      const body = (newest.items || []).map(i => `${i.name} ×${i.qty}`).join(', ');
       window.__TAURI__?.core?.invoke?.('notify_new_order', {
         title: '🔔 Шинэ захиалга!',
-        body: `${newest?.customerName || ''} — ${body}`,
+        body: `${newest.customerName || ''} — ${body}`,
       }).catch(() => {});
     }
-    prevCount = paidCount;
+    // Remember the current paid set (and drop ids no longer paid, so an order
+    // re-entering 'paid' status would re-announce).
+    seenPaidIds.clear();
+    paid.forEach(o => o.id && seenPaidIds.add(o.id));
+    kitchenReady = true;
     if (!document.getElementById('kitchen-orders')) { unsub(); return; }
     paint();
   });

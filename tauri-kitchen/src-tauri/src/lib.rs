@@ -1,25 +1,9 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, UserAttentionType,
 };
 use tauri_plugin_notification::NotificationExt;
-
-// Called from the webview when a new paid order arrives.
-// Pops the window to the front (most reliable alert for an unregistered app)
-// and attempts a native OS notification as a bonus.
-#[tauri::command]
-fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
-    // Show and focus the window — works whether it was hidden to tray or just minimized.
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
-    }
-    // Native toast — works when installed via MSI/NSIS; silently fails otherwise.
-    let _ = app.notification().builder().title(&title).body(&body).show();
-}
 
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -29,10 +13,29 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+// Floats the main kitchen window above the ERP/cashier for 10 s without
+// stealing keyboard focus, so the JS green banner is visible. No separate
+// popup window — one less thing that can go wrong.
+#[tauri::command]
+fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
+    let _ = app.notification().builder().title(&title).body(&body).show();
+
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show(); // make visible; does NOT steal focus on Windows
+        let _ = main.set_always_on_top(true);
+        let _ = main.request_user_attention(Some(UserAttentionType::Critical));
+
+        let main2 = main.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            let _ = main2.set_always_on_top(false);
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // Focus the existing window if a second copy is launched.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
@@ -45,7 +48,7 @@ pub fn run() {
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("UB Golf — Гал тогоо")
+                .tooltip("UB Golf Club")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -67,12 +70,12 @@ pub fn run() {
 
             Ok(())
         })
-        // Closing the window hides it to the tray instead of quitting, so the
-        // app keeps listening for new orders in the background.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                if window.label() == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![notify_new_order])

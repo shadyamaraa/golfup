@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Шинэ захиалга</title>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body {
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      color: #fff;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 14px 16px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      overflow: hidden;
+    }
+    .h { font-size: 1.15rem; font-weight: 800; }
+    .b { font-size: .95rem; opacity: .96; line-height: 1.35; }
+    .hint { font-size: .72rem; opacity: .75; }
+    .bar { height: 4px; background: rgba(255,255,255,.3); border-radius: 2px; margin-top: auto; overflow: hidden; }
+    .bar > i { display: block; height: 100%; background: #fff; width: 100%; animation: shrink 10s linear forwards; }
+    @keyframes shrink { from { width: 100%; } to { width: 0; } }
+  </style>
+</head>
+<body>
+  <div class="h" id="h">🔔 Шинэ захиалга!</div>
+  <div class="b" id="b"></div>
+  <div class="hint">👆 Дарж нээх</div>
+  <div class="bar"><i></i></div>
+  <script>
+    (function () {
+      // Title/body are injected by the Rust side via initialization_script.
+      var title = window.__ORDER_TITLE__ || '🔔 Шинэ захиалга!';
+      var body = window.__ORDER_BODY__ || '';
+      document.getElementById('h').textContent = title;
+      document.getElementById('b').textContent = body;
+
+      // Double beep so the kitchen hears it even when the window is hidden.
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        function tone(freq, start, dur) {
+          var osc = ctx.createOscillator(), gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(.001, ctx.currentTime + start);
+          gain.gain.exponentialRampToValueAtTime(.4, ctx.currentTime + start + .02);
+          gain.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + start + dur);
+          osc.start(ctx.currentTime + start);
+          osc.stop(ctx.currentTime + start + dur);
+        }
+        tone(880, 0, .18);
+        tone(1175, .2, .25);
+      } catch (e) {}
+
+      // This page is served from tauri://localhost, so window.__TAURI__ is
+      // injected — clicking opens the main kitchen window directly.
+      document.body.addEventListener('click', function () {
+        try { window.__TAURI__.core.invoke('open_main'); } catch (e) {}
+      });
+    })();
+  </script>
+</body>
+</html>
