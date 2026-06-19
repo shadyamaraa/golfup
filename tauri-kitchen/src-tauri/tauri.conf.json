@@ -4,14 +4,14 @@
   "version": "0.1.0",
   "identifier": "club.ubgolf.kitchen",
   "build": {
-    "frontendDist": "../src"
+    "beforeBuildCommand": "npm --prefix .. run build",
+    "frontendDist": "../../dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "url": "https://golfup-app--claude-beldey-nguk4-6305hxsh.web.app/#/kitchen",
         "title": "UB Golf — Гал тогоо",
         "width": 460,
         "height": 760,
