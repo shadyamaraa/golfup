@@ -1,7 +1,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+    Manager, PhysicalPosition, UserAttentionType, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -116,6 +116,11 @@ try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,
 fn notify_new_order(app: tauri::AppHandle, title: String, body: String) {
     show_order_popup(&app, &title, &body);
     let _ = app.notification().builder().title(&title).body(&body).show();
+    // Flash the main window's taskbar icon to grab the cashier's attention,
+    // without forcing it to the foreground (would interrupt the ERP).
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.request_user_attention(Some(UserAttentionType::Critical));
+    }
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
