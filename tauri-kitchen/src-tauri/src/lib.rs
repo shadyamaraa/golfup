@@ -41,34 +41,44 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     );
     let url = format!("popup.html?title={}&body={}", pct(title), pct(body));
 
+    // Note: no `.transparent(true)` — transparency needs an extra Cargo feature
+    // and, when it's missing, `build()` fails silently so NO popup ever appears.
+    // A solid (non-transparent) borderless window is fully reliable instead.
     let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
         .title("Шинэ захиалга")
         .inner_size(360.0, 140.0)
         .decorations(false)
-        .transparent(true)
         .always_on_top(true)
         .focused(false) // do NOT take focus away from the ERP
         .skip_taskbar(true)
         .resizable(false)
+        .visible(true)
         .build();
 
-    if let Ok(win) = built {
-        // Park it in the top-right corner of the primary monitor.
-        if let Ok(Some(monitor)) = win.primary_monitor() {
-            let scale = monitor.scale_factor();
-            let mw = monitor.size().width as i32;
-            let pw = (360.0 * scale) as i32;
-            let margin = (20.0 * scale) as i32;
-            let _ = win.set_position(PhysicalPosition::new(mw - pw - margin, margin));
-        }
-        // Auto-dismiss.
-        let app2 = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            if let Some(w) = app2.get_webview_window(&label) {
-                let _ = w.close();
+    match built {
+        Ok(win) => {
+            // Park it in the top-right corner of the primary monitor.
+            if let Ok(Some(monitor)) = win.primary_monitor() {
+                let scale = monitor.scale_factor();
+                let mw = monitor.size().width as i32;
+                let pw = (360.0 * scale) as i32;
+                let margin = (20.0 * scale) as i32;
+                let _ = win.set_position(PhysicalPosition::new(mw - pw - margin, margin));
             }
-        });
+            // Surface it above the ERP without grabbing keyboard focus.
+            let _ = win.show();
+            // Auto-dismiss.
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                if let Some(w) = app2.get_webview_window(&label) {
+                    let _ = w.close();
+                }
+            });
+        }
+        Err(e) => {
+            eprintln!("show_order_popup: failed to build popup window: {e}");
+        }
     }
 }
 
