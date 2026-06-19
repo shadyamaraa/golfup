@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-06-19 (3)
+
+### Rename desktop app to "UB Golf Club" + new icon + robust popup position
+
+- `tauri-kitchen/src-tauri/tauri.conf.json`: `productName` "UB Golf Kitchen" →
+  "UB Golf Club"; main window title → "UB Golf Club".
+- `tauri-kitchen/src-tauri/src/lib.rs`: tray tooltip → "UB Golf Club"; popup
+  now positions against `current_monitor()` (falling back to `primary_monitor`)
+  and accounts for the monitor origin, so it lands top-right of the active
+  display instead of drifting to 0,0.
+- `tauri-kitchen/src-tauri/icons/*`: regenerated the full icon set from
+  `public/UBGolf_app_icon.png` (the UB Golf Club logo).
+
 ## 2026-06-19 (2)
 
 ### Kitchen floating popup now uses a locally bundled page

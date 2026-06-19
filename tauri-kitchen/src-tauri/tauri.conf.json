@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "UB Golf Kitchen",
+  "productName": "UB Golf Club",
   "version": "0.1.0",
   "identifier": "club.ubgolf.kitchen",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "UB Golf — Гал тогоо",
+        "title": "UB Golf Club",
         "width": 460,
         "height": 760,
         "minWidth": 360,

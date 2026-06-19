@@ -68,12 +68,22 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
 
     match built {
         Ok(win) => {
-            if let Ok(Some(monitor)) = win.primary_monitor() {
+            // Pin to the top-right corner of whichever monitor we can resolve.
+            // current_monitor is most reliable once the window exists; fall back
+            // to primary_monitor. If both fail, leave the default position.
+            let monitor = win
+                .current_monitor()
+                .ok()
+                .flatten()
+                .or_else(|| win.primary_monitor().ok().flatten());
+            if let Some(monitor) = monitor {
                 let scale = monitor.scale_factor();
+                let mx = monitor.position().x;
+                let my = monitor.position().y;
                 let mw = monitor.size().width as i32;
                 let pw = (360.0 * scale) as i32;
                 let margin = (20.0 * scale) as i32;
-                let _ = win.set_position(PhysicalPosition::new(mw - pw - margin, margin));
+                let _ = win.set_position(PhysicalPosition::new(mx + mw - pw - margin, my + margin));
             }
             let _ = win.show();
 
@@ -134,7 +144,7 @@ pub fn run() {
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("UB Golf — Гал тогоо")
+                .tooltip("UB Golf Club")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
