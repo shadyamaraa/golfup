@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-06-19
+
+### Food menu image fixes + orderNotes + preview deploy workflow
+
+- `scripts/seed-asem-menu.js`: imageUrl paths changed from `/food/<slug>.jpg` to
+  `https://raw.githubusercontent.com/shadyamaraa/golfup/main/public/food/<slug>.jpg`
+  so images load without a hosting deploy.
+- 22 items with dark (CMYK-inverted) or mismatched photos had `imageUrl` reset to `''`
+  (🍽️ placeholder shown instead).
+- `src/app.js` + `src/i18n.js`: Added `orderNotes` textarea to food order checkout modal.
+  Value is persisted to RTDB, shown in `#/orders/:id` detail view, and shown as
+  💬 note in the kitchen display card.
+- `.github/workflows/preview-deploy.yml`: New workflow that auto-deploys to a Firebase
+  Hosting preview channel on every push to `claude/**` branches. Requires
+  `FIREBASE_SERVICE_ACCOUNT` GitHub secret.
+
 ## 2026-06-18 (2)
 
 ### Add food photos from QR menu PDF

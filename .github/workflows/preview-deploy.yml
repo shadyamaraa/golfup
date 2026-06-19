@@ -1,0 +1,32 @@
+name: Preview Deploy
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Sanitize branch name for channel ID
+        id: channel
+        run: echo "id=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_OUTPUT
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          projectId: golfup-app
+          channelId: ${{ steps.channel.outputs.id }}
+          expires: 7d
