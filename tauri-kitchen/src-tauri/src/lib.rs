@@ -5,11 +5,32 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
+// Percent-encode every byte except a small unreserved set. Used to embed the
+// whole HTML document (including Cyrillic) safely inside a data: URL.
+fn pct(s: &str) -> String {
+    let mut out = String::new();
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+// Escape text for safe insertion into HTML element content.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 // Builds a small, borderless, always-on-top toast window in the top-right
-// corner of the primary monitor. Focused(false) keeps the cashier's ERP
-// keyboard focus intact. Content is injected via eval() so we never rely
-// on file-serving (WebviewUrl::App treats "popup.html?..." as a literal
-// filename on Windows and the page would load blank).
+// corner. focused(false) keeps the cashier's ERP keyboard focus intact.
+// The entire UI is embedded in a data: URL so there is no file-serving,
+// no eval timing race, and no IPC dependency.
 fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
     for (label, w) in app.webview_windows() {
         if label.starts_with("popup-") {
@@ -25,8 +46,36 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
             .unwrap_or(0)
     );
 
-    // Load an empty local page — the real content is injected by eval() below.
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("popup.html".into()))
+    let html = format!(
+        r#"<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{{height:100%;margin:0;padding:0}}
+body{{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}}
+.h{{font-size:1.15rem;font-weight:800}}
+.b{{font-size:.95rem;opacity:.96;line-height:1.35}}
+.bar{{height:4px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:auto;overflow:hidden}}
+.bar>i{{display:block;height:100%;background:#fff;width:100%;animation:s 10s linear forwards}}
+@keyframes s{{from{{width:100%}}to{{width:0}}}}
+</style></head><body>
+<div class="h">{title}</div>
+<div class="b">{body}</div>
+<div class="bar"><i></i></div>
+<script>
+try{{var c=new(window.AudioContext||window.webkitAudioContext)();function t(f,s,d){{var o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(c.destination);g.gain.setValueAtTime(.001,c.currentTime+s);g.gain.exponentialRampToValueAtTime(.4,c.currentTime+s+.02);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+s+d);o.start(c.currentTime+s);o.stop(c.currentTime+s+d)}}t(880,0,.18);t(1175,.2,.25)}}catch(e){{}}
+</script></body></html>"#,
+        title = html_escape(title),
+        body = html_escape(body),
+    );
+
+    let data_url = format!("data:text/html;charset=utf-8,{}", pct(&html));
+    let parsed = match data_url.parse() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("show_order_popup: bad data url: {e}");
+            return;
+        }
+    };
+
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
         .title("Шинэ захиалга")
         .inner_size(360.0, 140.0)
         .decorations(false)
@@ -35,7 +84,9 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
         .skip_taskbar(true)
         .resizable(false)
         .visible(true)
-        .additional_browser_args("--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI")
+        .additional_browser_args(
+            "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI",
+        )
         .build();
 
     match built {
@@ -49,60 +100,8 @@ fn show_order_popup(app: &tauri::AppHandle, title: &str, body: &str) {
             }
             let _ = win.show();
 
-            // JSON-encode strings so any Cyrillic / special chars are safe in JS.
-            let title_j = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".into());
-            let body_j = serde_json::to_string(body).unwrap_or_else(|_| "\"\"".into());
-
-            let win2 = win.clone();
             let app2 = app.clone();
             std::thread::spawn(move || {
-                // Give WebView2 time to initialise before eval.
-                std::thread::sleep(std::time::Duration::from_millis(400));
-
-                // Inject the entire popup UI via eval — bypasses file-serving.
-                let js = format!(
-                    r#"(function(){{
-  var T={title};
-  var B={body};
-  var de=document.documentElement;
-  de.style.cssText='height:100%;margin:0;padding:0;';
-  document.body.style.cssText='height:100%;margin:0;padding:14px 16px;box-sizing:border-box;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-family:"Segoe UI",Inter,Arial,sans-serif;display:flex;flex-direction:column;gap:8px;';
-  de.style.background='#15803d';
-  var h=document.createElement('div');
-  h.style.cssText='font-size:1.15rem;font-weight:800;';
-  h.textContent=T;
-  var b=document.createElement('div');
-  b.style.cssText='font-size:0.95rem;opacity:0.96;';
-  b.textContent=B;
-  var bar=document.createElement('div');
-  bar.style.cssText='height:4px;background:rgba(255,255,255,0.3);border-radius:2px;margin-top:auto;overflow:hidden;';
-  var i=document.createElement('i');
-  i.style.cssText='display:block;height:100%;background:#fff;width:100%;';
-  bar.appendChild(i);
-  document.body.innerHTML='';
-  document.body.appendChild(h);
-  document.body.appendChild(b);
-  document.body.appendChild(bar);
-  i.animate([{{width:'100%'}},{{width:'0%'}}],{{duration:10000,fill:'forwards'}});
-  try{{
-    var c=new AudioContext();
-    var tone=function(f,s,d){{
-      var o=c.createOscillator(),g=c.createGain();
-      o.type='sine';o.frequency.value=f;
-      o.connect(g);g.connect(c.destination);
-      g.gain.setValueAtTime(0.001,c.currentTime+s);
-      g.gain.exponentialRampToValueAtTime(0.4,c.currentTime+s+0.02);
-      g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+s+d);
-      o.start(c.currentTime+s);o.stop(c.currentTime+s+d);
-    }};
-    tone(880,0,0.18);tone(1175,0.2,0.25);
-  }}catch(e){{}}
-}})();"#,
-                    title = title_j,
-                    body = body_j
-                );
-                let _ = win2.eval(&js);
-
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 if let Some(w) = app2.get_webview_window(&label) {
                     let _ = w.close();
