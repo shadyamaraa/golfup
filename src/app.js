@@ -3777,6 +3777,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       orderNotes: notes || '',
       status: 'paid',
       paidAt: new Date().toISOString(),
+      notified: false,
     };
 
     submitting = true;

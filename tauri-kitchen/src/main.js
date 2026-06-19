@@ -164,7 +164,7 @@ onValue(
     // (orders that arrived while the app was closed) is shown in the list but
     // marked notified silently to avoid a beep storm on startup.
     orders
-      .filter((o) => o.status === "paid" && o.notified === false)
+      .filter((o) => o.status === "paid" && !o.notified)
       .forEach((o) => {
         if (notifiedThisSession.has(o.id)) return;
         notifiedThisSession.add(o.id);
