@@ -1034,9 +1034,14 @@ async function renderCreateGame() {
       return;
     }
 
+    // Payment method (only meaningful when a tee slot is selected).
+    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
+    const useQpayTee = QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
+
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
+    let pendingBooking = null; // QPay: confirm is deferred to the server callback
 
     if (selectedTeeSlot) {
       const submitBtn = document.getElementById('create-submit-btn');
@@ -1046,11 +1051,23 @@ async function renderCreateGame() {
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
-        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
-        bookingCode = confirmed.bookingCode || null;
-        bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
-        showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
+        if (useQpayTee) {
+          // Hold the slot but DON'T confirm — the server confirms the MTBogd
+          // booking only after QPay payment succeeds (no orphan bookings).
+          pendingBooking = {
+            holdId: hold.holdId,
+            slotId: selectedTeeSlot.slotId,
+            customer: { firstName: playerName, phone: playerPhone },
+            players: playerList,
+            notes: '',
+          };
+        } else {
+          const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+          bookingCode = confirmed.bookingCode || null;
+          bookingId = confirmed.bookingId || null;
+          showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
+        }
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
         submitBtn.textContent = t('create');
@@ -1077,57 +1094,60 @@ async function renderCreateGame() {
       invitedIds,
       ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
     };
-    await store.saveGame(game);
 
-    const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
-    const followerIds = await store.getFollowerIds(currentUser.id);
-    const userById = Object.fromEntries(users.map(u => [u.id, u]));
-    // Build a per-user notification map so each user gets at most one notification
-    const notifMap = new Map();
-    for (const uid of invitedIds) {
-      if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
-    }
-    if (!isPrivate) {
-      for (const fid of followerIds) {
-        if (notifMap.has(fid) || fid === currentUser.id) continue;
-        if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
-          notifMap.set(fid, { type: 'new_game', ...notifPayload });
-        }
+    // Notifications reference the game, so they only fire once the game exists.
+    // For QPay tee-time the game is created server-side on payment, so this runs
+    // from the payment-success hook instead (best-effort if the browser is open).
+    const sendCreateNotifications = async () => {
+      const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+      const followerIds = await store.getFollowerIds(currentUser.id);
+      const userById = Object.fromEntries(users.map(u => [u.id, u]));
+      const notifMap = new Map();
+      for (const uid of invitedIds) {
+        if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
       }
-      if (targetCommunities.length > 0) {
-        for (const u of users) {
-          if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
-          if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
-            notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+      if (!isPrivate) {
+        for (const fid of followerIds) {
+          if (notifMap.has(fid) || fid === currentUser.id) continue;
+          if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
+            notifMap.set(fid, { type: 'new_game', ...notifPayload });
+          }
+        }
+        if (targetCommunities.length > 0) {
+          for (const u of users) {
+            if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
+            if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
+              notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+            }
           }
         }
       }
-    }
-    await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
+      await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
+    };
 
-    // Tee-time QPay: booking is already confirmed; this is an optional online
-    // payment for the slot price. Record lives in bookingPayments (not orders),
-    // so it never reaches the kitchen feed.
-    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
-    if (QPAY_ENABLED && teePayMethod === 'qpay' && selectedTeeSlot?.price) {
+    // QPay tee-time: stash the hold + full game in bookingPayments and let the
+    // server confirm the booking + create the game when payment lands. The game
+    // is NOT saved here — that keeps payment and fulfillment atomic on the server.
+    if (useQpayTee) {
       const paymentId = await store.createBookingPayment({
         gameId: game.id,
         total: selectedTeeSlot.price,
         customerName: currentUser.fullName || displayUsername(currentUser),
         customerPhone: currentUser.phone || '',
-        bookingCode: bookingCode || null,
-        bookingId: bookingId || null,
         status: 'pending',
         paymentMethod: 'qpay',
-        paidAt: null,
+        pendingBooking: { ...pendingBooking, game },
       });
-      showToast('✅ ' + t('createGame') + '!', 'success');
       await showQpayModal(paymentId, selectedTeeSlot.price, {
         collection: 'bookingPayments',
         doneHash: '#/game/' + game.id,
+        onPaid: async () => { try { await sendCreateNotifications(); } catch (_) {} },
       });
       return;
     }
+
+    await store.saveGame(game);
+    await sendCreateNotifications();
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -3886,44 +3906,55 @@ async function showQpayModal(orderId, total, opts = {}) {
   const closeBtn = modal.querySelector('#qpay-close');
 
   let pollTimer = null;
+  let settled = false;
 
   function stopPolling() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
-  function onPaid() {
+  async function onPaid(rec) {
+    if (settled) return;
+    settled = true;
     stopPolling();
     unsub();
     qrWrap.style.display = 'none';
     retryBtn.style.display = 'none';
     statusEl.textContent = '';
     successWrap.style.display = 'block';
+    if (opts.onPaid) { try { await opts.onPaid(rec); } catch (_) {} }
     setTimeout(() => {
       modal.remove();
-      showToast('✅ ' + t('qpaySuccess'), 'success');
+      // Payment landed but the server couldn't confirm the booking (e.g. hold
+      // expired) — tell the user instead of a plain success.
+      if (rec && rec.bookingError) {
+        showToast('⚠️ Төлбөр хүлээн авлаа, гэвч захиалга баталгаажсангүй. Бидэнтэй холбогдоно уу.', 'error');
+      } else {
+        showToast('✅ ' + t('qpaySuccess'), 'success');
+      }
       location.hash = doneHash;
     }, 1500);
   }
 
   closeBtn.onclick = () => { stopPolling(); unsub(); modal.remove(); location.hash = doneHash; };
 
+  // Server-side check finalizes the record (confirm booking + mark paid); the
+  // resulting RTDB write flows back through the listener below, which settles
+  // the modal with the full record (incl. any bookingError).
   retryBtn.onclick = async () => {
     retryBtn.style.display = 'none';
     statusEl.textContent = t('qpayWaiting');
     try {
       const result = await store.checkQpayPayment(orderId, collection);
-      if (result.paid) { onPaid(); return; }
-      statusEl.textContent = t('qpayWaiting');
-      retryBtn.style.display = 'inline-block';
+      if (!result.paid) { statusEl.textContent = t('qpayWaiting'); retryBtn.style.display = 'inline-block'; }
     } catch {
       retryBtn.style.display = 'inline-block';
     }
   };
 
-  // Listen for RTDB update from callback (instant when server confirms)
+  // Listen for RTDB update from callback/check (instant when server confirms)
   const unsub = onChanged(orderId, (rec) => {
     if (rec && rec.status === 'paid' && rec.paymentMethod === 'qpay') {
-      onPaid();
+      onPaid(rec);
     }
   });
   try {
@@ -3941,12 +3972,10 @@ async function showQpayModal(orderId, total, opts = {}) {
       bankLinks.appendChild(a);
     });
 
-    // Poll every 3 s as fallback
+    // Poll every 3 s as fallback. The check finalizes server-side; the listener
+    // above settles the modal, so the poll just nudges and ignores the result.
     pollTimer = setInterval(async () => {
-      try {
-        const result = await store.checkQpayPayment(orderId, collection);
-        if (result.paid) onPaid();
-      } catch { /* ignore poll errors */ }
+      try { await store.checkQpayPayment(orderId, collection); } catch { /* ignore poll errors */ }
     }, 3000);
   } catch (err) {
     statusEl.textContent = '⚠️ ' + err.message;

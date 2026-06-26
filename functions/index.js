@@ -172,6 +172,54 @@ function resolveCollection(value) {
   return QPAY_COLLECTIONS.includes(value) ? value : 'orders';
 }
 
+// Callback/check also confirm tee-time bookings, so they need the MTBogd key.
+const QPAY_FULFILL_SECRETS = [...QPAY_SECRETS, 'MTBOGD_API_KEY'];
+
+// Marks a paid QPay record. For tee-time bookingPayments that carry a deferred
+// MTBogd booking (pendingBooking), it atomically claims the record, confirms
+// the booking server-side, and writes the game — so payment and fulfilment are
+// one step and survive the browser closing. Food orders take the simple path.
+async function finalizePaidRecord(collection, orderId, record) {
+  const recRef = admin.database().ref(`${collection}/${orderId}`);
+  const pb = record && record.pendingBooking;
+  const base = { status: 'paid', paymentMethod: 'qpay', paidAt: new Date().toISOString() };
+
+  if (collection !== 'bookingPayments' || !pb) {
+    if (record.status !== 'paid') await recRef.update(base);
+    return;
+  }
+
+  // Claim the record so only one caller (QPay callback vs frontend poll) runs
+  // the confirm. pending -> confirming wins; anything else aborts.
+  // NOTE: if a confirm crashes after this point the record stays 'confirming';
+  // such a payment needs manual reconciliation (rare).
+  const claim = await recRef.child('status').transaction(cur => (cur === 'pending' ? 'confirming' : undefined));
+  if (!claim.committed || claim.snapshot.val() !== 'confirming') return;
+
+  try {
+    const apiKey = process.env.MTBOGD_API_KEY;
+    const upRes = await fetch(`${MTBOGD_BASE}/bookings`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holdId: pb.holdId, customer: pb.customer, players: pb.players, notes: pb.notes || '' }),
+    });
+    const booking = await upRes.json();
+    if (!upRes.ok) throw new Error(booking?.error?.message || booking?.message || `confirm ${upRes.status}`);
+
+    const bookingCode = booking.bookingCode || null;
+    const bookingId = booking.bookingId || null;
+    const game = { ...pb.game, ...(bookingCode && { bookingCode, bookingId, bookingSlotId: pb.slotId }) };
+    await admin.database().ref(`games/${game.id}`).set(game);
+
+    await recRef.update({ ...base, bookingCode, bookingId });
+  } catch (err) {
+    console.error('finalizePaidRecord booking confirm failed', err);
+    // Payment received but the booking could not be confirmed (e.g. hold
+    // expired). Flag it so the client shows a warning and staff can reconcile.
+    await recRef.update({ ...base, bookingError: err.message });
+  }
+}
+
 // POST /api/qpay/invoice  body:{orderId, collection?}
 // Creates a QPay invoice for the given record, stores invoice_id in
 // <collection>/<id>/qpay, returns QR image + bank deeplinks to the frontend.
@@ -215,9 +263,10 @@ exports.qpayCreateInvoice = functions
   });
 
 // GET|POST /api/qpay/callback?order_id=…&col=…
-// Called by QPay after payment. Verifies via payment/check and marks record paid.
+// Called by QPay after payment. Verifies via payment/check, then finalizes
+// (marks paid; for tee-time also confirms the MTBogd booking + creates the game).
 exports.qpayCallback = functions
-  .runWith({ secrets: QPAY_SECRETS })
+  .runWith({ secrets: QPAY_FULFILL_SECRETS })
   .https.onRequest(async (req, res) => {
     setCors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -235,13 +284,7 @@ exports.qpayCallback = functions
       if (!invoiceId) { res.status(400).send('no invoice on record'); return; }
 
       const result = await qpay.checkPayment(invoiceId);
-      if (result.paid) {
-        await admin.database().ref(`${collection}/${orderId}`).update({
-          status: 'paid',
-          paymentMethod: 'qpay',
-          paidAt: new Date().toISOString(),
-        });
-      }
+      if (result.paid) await finalizePaidRecord(collection, orderId, order);
 
       res.status(200).send('ok');
     } catch (err) {
@@ -251,9 +294,9 @@ exports.qpayCallback = functions
   });
 
 // POST /api/qpay/check  body:{orderId, collection?}
-// Frontend polling fallback — checks payment status and updates record if paid.
+// Frontend polling fallback — checks payment status and finalizes if paid.
 exports.qpayCheckPayment = functions
-  .runWith({ secrets: QPAY_SECRETS })
+  .runWith({ secrets: QPAY_FULFILL_SECRETS })
   .https.onRequest(async (req, res) => {
     setCors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
@@ -272,13 +315,7 @@ exports.qpayCheckPayment = functions
       if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on record' }); return; }
 
       const result = await qpay.checkPayment(invoiceId);
-      if (result.paid && order.status !== 'paid') {
-        await admin.database().ref(`${collection}/${orderId}`).update({
-          status: 'paid',
-          paymentMethod: 'qpay',
-          paidAt: new Date().toISOString(),
-        });
-      }
+      if (result.paid) await finalizePaidRecord(collection, orderId, order);
 
       res.status(200).json({ ok: true, paid: result.paid, paidAmount: result.paidAmount });
     } catch (err) {

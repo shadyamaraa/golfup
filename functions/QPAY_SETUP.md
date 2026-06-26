@@ -50,6 +50,25 @@ QPay 2 газар холбогдсон (хоёулаа preview-channel дээр 
 Backend функцууд `collection` параметр авдаг (allowlist: `orders`, `bookingPayments`),
 тэгэхээр нэг QPay client хоёр урсгалд хоёуланд нь үйлчилнэ.
 
+### Tee-time: төлбөр-эхэлсэн (payment-first) урсгал
+
+MTBogd booking-ийг **төлбөрийн ӨМНӨ баталгаажуулдаггүй** — өнчин захиалга үүсэхгүй:
+
+```
+1. Slot HOLD (mtbogd.createHold) — confirm хийхгүй
+2. bookingPayments бичлэгт hold + бүтэн game-ийг хадгална (pendingBooking)
+3. QPay QR → хэрэглэгч төлнө
+4. QPay callback (СЕРВЕР) → payment/check → амжилттай бол:
+   - MTBogd booking CONFIRM (server-side, x-api-key)
+   - games/{id} үүснэ (bookingCode/bookingId-тай)
+   - bookingPayments.status = 'paid'
+5. Frontend listener → game руу шилжинэ
+```
+
+- Callback + check функцууд `MTBOGD_API_KEY` secret-ийг ашигладаг (аль хэдийн тохируулсан).
+- Hold дуусах/confirm амжилтгүй бол `bookingError` тэмдэглэгдэж, хэрэглэгчид анхааруулна.
+- Callback/check хоёулаа транзакцаар нэг л удаа confirm хийнэ (давхар захиалгаас сэргийлнэ).
+
 ## 7. Хамаарах файлууд
 
 | Файл | Зорилго |
