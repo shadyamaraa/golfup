@@ -38,12 +38,25 @@ https://<your-preview-host>/api/qpay/callback?order_id=<orderId>
 2. QR modal гарах → банкны аппаар уншуулах
 3. RTDB `orders/<id>` дээр `status: 'paid'`, `paymentMethod: 'qpay'` болохыг шалгах
 
-## 6. Хамаарах файлууд
+## 6. Холбогдсон урсгалууд
+
+QPay 2 газар холбогдсон (хоёулаа preview-channel дээр л идэвхтэй):
+
+| Урсгал | RTDB collection | Тэмдэглэл |
+|--------|-----------------|-----------|
+| Хоолны захиалга (checkout) | `orders` | Гал тогооны дэлгэц эдгээрийг уншина |
+| Tee-time захиалга | `bookingPayments` | Гал тогоонд **орохгүй** — тусдаа бичлэг |
+
+Backend функцууд `collection` параметр авдаг (allowlist: `orders`, `bookingPayments`),
+тэгэхээр нэг QPay client хоёр урсгалд хоёуланд нь үйлчилнэ.
+
+## 7. Хамаарах файлууд
 
 | Файл | Зорилго |
 |------|---------|
 | `functions/qpay.js` | QPay API client (token cache, invoice, check) |
-| `functions/index.js` | `qpayCreateInvoice`, `qpayCallback`, `qpayCheckPayment` |
+| `functions/index.js` | `qpayCreateInvoice`, `qpayCallback`, `qpayCheckPayment` (collection-aware) |
 | `firebase.json` | `/api/qpay/*` rewrites |
-| `src/app.js` | `QPAY_ENABLED` flag, checkout flow, QR modal |
-| `src/store.js` | `createQpayInvoice`, `checkQpayPayment` fetch wrappers |
+| `database.rules.json` | `bookingPayments` зам |
+| `src/app.js` | `QPAY_ENABLED` flag, food + tee-time checkout, QR modal |
+| `src/store.js` | `createQpayInvoice`, `checkQpayPayment`, `createBookingPayment` |

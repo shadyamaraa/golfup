@@ -780,10 +780,15 @@ async function renderCreateGame() {
         <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
           <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
         </label>
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
+        ${QPAY_ENABLED
+          ? `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); cursor:pointer; font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="qpay"> 📱 ${t('payQpay')}
+        </label>`
+          : `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
           <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
           <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-        </label>
+        </label>`
+        }
       </div>
     </div>`;
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
@@ -1099,6 +1104,30 @@ async function renderCreateGame() {
       }
     }
     await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
+
+    // Tee-time QPay: booking is already confirmed; this is an optional online
+    // payment for the slot price. Record lives in bookingPayments (not orders),
+    // so it never reaches the kitchen feed.
+    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
+    if (QPAY_ENABLED && teePayMethod === 'qpay' && selectedTeeSlot?.price) {
+      const paymentId = await store.createBookingPayment({
+        gameId: game.id,
+        total: selectedTeeSlot.price,
+        customerName: currentUser.fullName || displayUsername(currentUser),
+        customerPhone: currentUser.phone || '',
+        bookingCode: bookingCode || null,
+        bookingId: bookingId || null,
+        status: 'pending',
+        paymentMethod: 'qpay',
+        paidAt: null,
+      });
+      showToast('✅ ' + t('createGame') + '!', 'success');
+      await showQpayModal(paymentId, selectedTeeSlot.price, {
+        collection: 'bookingPayments',
+        doneHash: '#/game/' + game.id,
+      });
+      return;
+    }
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -3799,7 +3828,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
       if (payMethod === 'qpay') {
         modal.remove();
         foodCart = {};
-        await showQpayModal(orderId, total, gameId);
+        await showQpayModal(orderId, total, {
+          collection: 'orders',
+          doneHash: gameId ? '#/game/' + gameId : '#/orders/' + orderId,
+        });
       } else {
         modal.remove();
         foodCart = {};
@@ -3815,7 +3847,13 @@ function showCheckoutModal(menuItems, tables, gameId) {
   };
 }
 
-async function showQpayModal(orderId, total, gameId) {
+// opts.collection: 'orders' (food) | 'bookingPayments' (tee-time)
+// opts.doneHash: where to navigate after success/close
+async function showQpayModal(orderId, total, opts = {}) {
+  const collection = opts.collection || 'orders';
+  const doneHash = opts.doneHash || '#/orders/' + orderId;
+  const onChanged = collection === 'bookingPayments' ? store.onBookingPaymentChanged : store.onOrderChanged;
+
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.innerHTML = `
@@ -3863,17 +3901,17 @@ async function showQpayModal(orderId, total, gameId) {
     setTimeout(() => {
       modal.remove();
       showToast('✅ ' + t('qpaySuccess'), 'success');
-      location.hash = gameId ? '#/game/' + gameId : '#/orders/' + orderId;
+      location.hash = doneHash;
     }, 1500);
   }
 
-  closeBtn.onclick = () => { stopPolling(); unsub(); modal.remove(); location.hash = '#/orders/' + orderId; };
+  closeBtn.onclick = () => { stopPolling(); unsub(); modal.remove(); location.hash = doneHash; };
 
   retryBtn.onclick = async () => {
     retryBtn.style.display = 'none';
     statusEl.textContent = t('qpayWaiting');
     try {
-      const result = await store.checkQpayPayment(orderId);
+      const result = await store.checkQpayPayment(orderId, collection);
       if (result.paid) { onPaid(); return; }
       statusEl.textContent = t('qpayWaiting');
       retryBtn.style.display = 'inline-block';
@@ -3883,13 +3921,13 @@ async function showQpayModal(orderId, total, gameId) {
   };
 
   // Listen for RTDB update from callback (instant when server confirms)
-  const unsub = store.onOrderChanged(orderId, (order) => {
-    if (order && order.status === 'paid' && order.paymentMethod === 'qpay') {
+  const unsub = onChanged(orderId, (rec) => {
+    if (rec && rec.status === 'paid' && rec.paymentMethod === 'qpay') {
       onPaid();
     }
   });
   try {
-    const invoice = await store.createQpayInvoice(orderId);
+    const invoice = await store.createQpayInvoice(orderId, collection);
     qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
     qrWrap.style.display = 'block';
     statusEl.textContent = t('qpayWaiting');
@@ -3906,7 +3944,7 @@ async function showQpayModal(orderId, total, gameId) {
     // Poll every 3 s as fallback
     pollTimer = setInterval(async () => {
       try {
-        const result = await store.checkQpayPayment(orderId);
+        const result = await store.checkQpayPayment(orderId, collection);
         if (result.paid) onPaid();
       } catch { /* ignore poll errors */ }
     }, 3000);

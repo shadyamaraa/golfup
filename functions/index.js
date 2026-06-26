@@ -163,9 +163,18 @@ function setCors(res) {
   Object.entries(CORS_HEADERS).forEach(([k, v]) => res.set(k, v));
 }
 
-// POST /api/qpay/invoice  body:{orderId}
-// Creates a QPay invoice for the given order, stores invoice_id in orders/{id}/qpay,
-// returns QR image + bank deeplinks to the frontend.
+// Allowlisted RTDB collections a QPay record may live in. Prevents arbitrary
+// path injection from the `collection` request parameter.
+//   orders          — food orders (kitchen reads these)
+//   bookingPayments — tee-time booking payments (kept out of the kitchen feed)
+const QPAY_COLLECTIONS = ['orders', 'bookingPayments'];
+function resolveCollection(value) {
+  return QPAY_COLLECTIONS.includes(value) ? value : 'orders';
+}
+
+// POST /api/qpay/invoice  body:{orderId, collection?}
+// Creates a QPay invoice for the given record, stores invoice_id in
+// <collection>/<id>/qpay, returns QR image + bank deeplinks to the frontend.
 exports.qpayCreateInvoice = functions
   .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
@@ -174,25 +183,26 @@ exports.qpayCreateInvoice = functions
     if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
 
     const { orderId } = req.body || {};
+    const collection = resolveCollection(req.body && req.body.collection);
     if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
 
     try {
-      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
+      if (!order) { res.status(404).json({ ok: false, error: 'Record not found' }); return; }
 
       const host = req.headers['x-forwarded-host'] || req.headers.host || 'ubgolf.club';
-      const callbackUrl = `https://${host}/api/qpay/callback?order_id=${orderId}`;
+      const callbackUrl = `https://${host}/api/qpay/callback?order_id=${orderId}&col=${collection}`;
 
       const invoice = await qpay.createInvoice({
         orderId,
         amount: order.total,
-        description: `UB Golf — захиалга #${orderId.slice(-6)}`,
+        description: `UB Golf — ${collection === 'bookingPayments' ? 'захиалга' : 'хоол'} #${orderId.slice(-6)}`,
         callbackUrl,
         receiverPhone: order.customerPhone || 'guest',
       });
 
-      await admin.database().ref(`orders/${orderId}/qpay`).set({
+      await admin.database().ref(`${collection}/${orderId}/qpay`).set({
         invoice_id: invoice.invoice_id,
         createdAt: Date.now(),
       });
@@ -204,8 +214,8 @@ exports.qpayCreateInvoice = functions
     }
   });
 
-// GET|POST /api/qpay/callback?order_id=…
-// Called by QPay after payment. Verifies via payment/check and marks order paid.
+// GET|POST /api/qpay/callback?order_id=…&col=…
+// Called by QPay after payment. Verifies via payment/check and marks record paid.
 exports.qpayCallback = functions
   .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
@@ -213,19 +223,20 @@ exports.qpayCallback = functions
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
     const orderId = req.query.order_id;
+    const collection = resolveCollection(req.query.col);
     if (!orderId) { res.status(400).send('order_id required'); return; }
 
     try {
-      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).send('order not found'); return; }
+      if (!order) { res.status(404).send('record not found'); return; }
 
       const invoiceId = order.qpay?.invoice_id;
-      if (!invoiceId) { res.status(400).send('no invoice on order'); return; }
+      if (!invoiceId) { res.status(400).send('no invoice on record'); return; }
 
       const result = await qpay.checkPayment(invoiceId);
       if (result.paid) {
-        await admin.database().ref(`orders/${orderId}`).update({
+        await admin.database().ref(`${collection}/${orderId}`).update({
           status: 'paid',
           paymentMethod: 'qpay',
           paidAt: new Date().toISOString(),
@@ -239,8 +250,8 @@ exports.qpayCallback = functions
     }
   });
 
-// POST /api/qpay/check  body:{orderId}
-// Frontend polling fallback — checks payment status and updates order if paid.
+// POST /api/qpay/check  body:{orderId, collection?}
+// Frontend polling fallback — checks payment status and updates record if paid.
 exports.qpayCheckPayment = functions
   .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
@@ -249,19 +260,20 @@ exports.qpayCheckPayment = functions
     if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
 
     const { orderId } = req.body || {};
+    const collection = resolveCollection(req.body && req.body.collection);
     if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
 
     try {
-      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
+      if (!order) { res.status(404).json({ ok: false, error: 'Record not found' }); return; }
 
       const invoiceId = order.qpay?.invoice_id;
-      if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on order' }); return; }
+      if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on record' }); return; }
 
       const result = await qpay.checkPayment(invoiceId);
       if (result.paid && order.status !== 'paid') {
-        await admin.database().ref(`orders/${orderId}`).update({
+        await admin.database().ref(`${collection}/${orderId}`).update({
           status: 'paid',
           paymentMethod: 'qpay',
           paidAt: new Date().toISOString(),
