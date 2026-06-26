@@ -5,6 +5,9 @@ import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const isKiosk = !!window.__TAURI__;
+// Preview channels have '--' in hostname (golfup-app--claude-…). Production domains don't.
+// This flag gates QPay UI even after merging to main, so production stays unaffected.
+const QPAY_ENABLED = /--|localhost|127\.0\.0\.1/.test(location.hostname);
 
 let currentUser = null;
 let allUsersMap = {};
@@ -3698,7 +3701,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
         <div style="display:flex;flex-direction:column;gap:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> 🏌️ ${t('payClubhouse')}</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>
+          ${QPAY_ENABLED
+            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> 📱 ${t('payQpay')}</label>`
+            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
+          }
         </div>
 
         <div style="display:flex;flex-direction:column;gap:6px;">
@@ -3764,6 +3770,8 @@ function showCheckoutModal(menuItems, tables, gameId) {
       return { itemId: id, name: item?.name || id, price: item?.price || 0, qty };
     });
 
+    const payMethod = modal.querySelector('input[name="co-pay"]:checked')?.value || 'clubhouse';
+
     const order = {
       customerName: name,
       customerPhone: phone,
@@ -3775,8 +3783,9 @@ function showCheckoutModal(menuItems, tables, gameId) {
       tableId: delivery === 'table' ? selectedTableId : null,
       pickupTime: pickupRadio === 'asap' ? 'asap' : pickupTimeVal,
       orderNotes: notes || '',
-      status: 'paid',
-      paidAt: new Date().toISOString(),
+      paymentMethod: payMethod,
+      status: payMethod === 'qpay' ? 'pending' : 'paid',
+      paidAt: payMethod === 'qpay' ? null : new Date().toISOString(),
       notified: false,
     };
 
@@ -3785,11 +3794,18 @@ function showCheckoutModal(menuItems, tables, gameId) {
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      await store.createOrder(order);
-      modal.remove();
-      foodCart = {};
-      showToast('✅ ' + t('orderPlaced'), 'success');
-      location.hash = gameId ? '#/game/' + gameId : '#/';
+      const orderId = await store.createOrder(order);
+
+      if (payMethod === 'qpay') {
+        modal.remove();
+        foodCart = {};
+        await showQpayModal(orderId, total, gameId);
+      } else {
+        modal.remove();
+        foodCart = {};
+        showToast('✅ ' + t('orderPlaced'), 'success');
+        location.hash = gameId ? '#/game/' + gameId : '#/';
+      }
     } catch (err) {
       showToast('Алдаа: ' + err.message, 'error');
       submitting = false;
@@ -3797,6 +3813,108 @@ function showCheckoutModal(menuItems, tables, gameId) {
       btn.textContent = t('placeOrder');
     }
   };
+}
+
+async function showQpayModal(orderId, total, gameId) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px;text-align:center;">
+      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <p id="qpay-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
+      <div id="qpay-qr-wrap" style="display:none;">
+        <img id="qpay-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
+        <p style="font-size:0.8rem;color:var(--text-secondary);margin:8px 0 0;">${t('qpayScanToPay')}</p>
+        <div style="font-size:1.1rem;font-weight:700;margin:8px 0;">₮${total.toLocaleString()}</div>
+        <div id="qpay-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
+      </div>
+      <div id="qpay-success-wrap" style="display:none;">
+        <div style="font-size:2.5rem;">✅</div>
+        <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
+        <button id="qpay-retry" class="btn btn-ghost" style="display:none;">${t('qpayRetry')}</button>
+        <button id="qpay-close" class="btn btn-ghost">Хаах</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const statusEl = modal.querySelector('#qpay-status');
+  const qrWrap = modal.querySelector('#qpay-qr-wrap');
+  const qrImg = modal.querySelector('#qpay-qr-img');
+  const bankLinks = modal.querySelector('#qpay-bank-links');
+  const successWrap = modal.querySelector('#qpay-success-wrap');
+  const retryBtn = modal.querySelector('#qpay-retry');
+  const closeBtn = modal.querySelector('#qpay-close');
+
+  let pollTimer = null;
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function onPaid() {
+    stopPolling();
+    unsub();
+    qrWrap.style.display = 'none';
+    retryBtn.style.display = 'none';
+    statusEl.textContent = '';
+    successWrap.style.display = 'block';
+    setTimeout(() => {
+      modal.remove();
+      showToast('✅ ' + t('qpaySuccess'), 'success');
+      location.hash = gameId ? '#/game/' + gameId : '#/orders/' + orderId;
+    }, 1500);
+  }
+
+  closeBtn.onclick = () => { stopPolling(); unsub(); modal.remove(); location.hash = '#/orders/' + orderId; };
+
+  retryBtn.onclick = async () => {
+    retryBtn.style.display = 'none';
+    statusEl.textContent = t('qpayWaiting');
+    try {
+      const result = await store.checkQpayPayment(orderId);
+      if (result.paid) { onPaid(); return; }
+      statusEl.textContent = t('qpayWaiting');
+      retryBtn.style.display = 'inline-block';
+    } catch {
+      retryBtn.style.display = 'inline-block';
+    }
+  };
+
+  // Listen for RTDB update from callback (instant when server confirms)
+  const unsub = store.onOrderChanged(orderId, (order) => {
+    if (order && order.status === 'paid' && order.paymentMethod === 'qpay') {
+      onPaid();
+    }
+  });
+  try {
+    const invoice = await store.createQpayInvoice(orderId);
+    qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
+    qrWrap.style.display = 'block';
+    statusEl.textContent = t('qpayWaiting');
+
+    (invoice.urls || []).slice(0, 6).forEach(u => {
+      const a = document.createElement('a');
+      a.href = u.link;
+      a.textContent = u.name || t('qpayOpenBank');
+      a.className = 'btn btn-ghost';
+      a.style.cssText = 'font-size:0.75rem;padding:4px 10px;';
+      bankLinks.appendChild(a);
+    });
+
+    // Poll every 3 s as fallback
+    pollTimer = setInterval(async () => {
+      try {
+        const result = await store.checkQpayPayment(orderId);
+        if (result.paid) onPaid();
+      } catch { /* ignore poll errors */ }
+    }, 3000);
+  } catch (err) {
+    statusEl.textContent = '⚠️ ' + err.message;
+    retryBtn.style.display = 'inline-block';
+    unsub();
+  }
 }
 
 async function renderOrderDetail(orderId) {

@@ -92,7 +92,10 @@ const T = {
     itemPrice: 'Үнэ (₮)', itemCategory: 'Ангилал', itemAvailable: 'Идэвхтэй', itemPopular: 'Алдартай',
     itemImageUrl: 'Зургийн URL', itemDescription: 'Тайлбар', itemDescPlaceholder: 'Орц, тайлбар…',
     tableManage: 'Ширээний тохиргоо', addTable: '+ Ширээ нэмэх', tableName: 'Ширээний нэр', tablePos: 'Байрлал (%)',
-    ordersCourse: '📍 Талбайд хүргэх', ordersOutdoor: '🌿 Гадаа ширээ'
+    ordersCourse: '📍 Талбайд хүргэх', ordersOutdoor: '🌿 Гадаа ширээ',
+    qpayScanToPay: 'QR уншуулж төлөх', qpayWaiting: 'Төлбөр хүлээж байна…',
+    qpaySuccess: 'Төлбөр амжилттай', qpayRetry: 'Дахин шалгах',
+    qpayOpenBank: 'Банкны апп нээх', qpayCreating: 'QR үүсгэж байна…'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -187,7 +190,10 @@ const T = {
     itemPrice: 'Price (₮)', itemCategory: 'Category', itemAvailable: 'Active', itemPopular: 'Popular',
     itemImageUrl: 'Image URL', itemDescription: 'Description', itemDescPlaceholder: 'Ingredients, notes…',
     tableManage: 'Table Setup', addTable: '+ Add Table', tableName: 'Table name', tablePos: 'Position (%)',
-    ordersCourse: '📍 Deliver to course', ordersOutdoor: '🌿 Outdoor table'
+    ordersCourse: '📍 Deliver to course', ordersOutdoor: '🌿 Outdoor table',
+    qpayScanToPay: 'Scan QR to pay', qpayWaiting: 'Waiting for payment…',
+    qpaySuccess: 'Payment successful', qpayRetry: 'Check again',
+    qpayOpenBank: 'Open banking app', qpayCreating: 'Generating QR…'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -282,7 +288,10 @@ const T = {
     itemPrice: '가격 (₮)', itemCategory: '카테고리', itemAvailable: '활성', itemPopular: '인기',
     itemImageUrl: '이미지 URL', itemDescription: '설명', itemDescPlaceholder: '재료, 메모…',
     tableManage: '테이블 설정', addTable: '+ 테이블 추가', tableName: '테이블 이름', tablePos: '위치 (%)',
-    ordersCourse: '📍 코스 배달', ordersOutdoor: '🌿 야외 테이블'
+    ordersCourse: '📍 코스 배달', ordersOutdoor: '🌿 야외 테이블',
+    qpayScanToPay: 'QR 스캔으로 결제', qpayWaiting: '결제 대기 중…',
+    qpaySuccess: '결제 성공', qpayRetry: '다시 확인',
+    qpayOpenBank: '은행 앱 열기', qpayCreating: 'QR 생성 중…'
   }
 };
 

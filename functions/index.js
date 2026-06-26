@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions/v1');
+const qpay = require('./qpay');
 
 admin.initializeApp();
 
@@ -148,6 +149,131 @@ exports.syncBookingPlayers = functions
     res.status(502).json({ error: err.message });
   }
 });
+
+// ---- QPay v2 integration (preview-channel only; production flag is hostname-based on frontend) ----
+
+const QPAY_SECRETS = ['QPAY_USERNAME', 'QPAY_PASSWORD', 'QPAY_INVOICE_CODE'];
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function setCors(res) {
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => res.set(k, v));
+}
+
+// POST /api/qpay/invoice  body:{orderId}
+// Creates a QPay invoice for the given order, stores invoice_id in orders/{id}/qpay,
+// returns QR image + bank deeplinks to the frontend.
+exports.qpayCreateInvoice = functions
+  .runWith({ secrets: QPAY_SECRETS })
+  .https.onRequest(async (req, res) => {
+    setCors(res);
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
+
+    const { orderId } = req.body || {};
+    if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
+
+    try {
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const order = snap.val();
+      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
+
+      const host = req.headers['x-forwarded-host'] || req.headers.host || 'ubgolf.club';
+      const callbackUrl = `https://${host}/api/qpay/callback?order_id=${orderId}`;
+
+      const invoice = await qpay.createInvoice({
+        orderId,
+        amount: order.total,
+        description: `UB Golf — захиалга #${orderId.slice(-6)}`,
+        callbackUrl,
+        receiverPhone: order.customerPhone || 'guest',
+      });
+
+      await admin.database().ref(`orders/${orderId}/qpay`).set({
+        invoice_id: invoice.invoice_id,
+        createdAt: Date.now(),
+      });
+
+      res.status(200).json({ ok: true, ...invoice });
+    } catch (err) {
+      console.error('qpayCreateInvoice error', err);
+      res.status(502).json({ ok: false, error: err.message });
+    }
+  });
+
+// GET|POST /api/qpay/callback?order_id=…
+// Called by QPay after payment. Verifies via payment/check and marks order paid.
+exports.qpayCallback = functions
+  .runWith({ secrets: QPAY_SECRETS })
+  .https.onRequest(async (req, res) => {
+    setCors(res);
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+    const orderId = req.query.order_id;
+    if (!orderId) { res.status(400).send('order_id required'); return; }
+
+    try {
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const order = snap.val();
+      if (!order) { res.status(404).send('order not found'); return; }
+
+      const invoiceId = order.qpay?.invoice_id;
+      if (!invoiceId) { res.status(400).send('no invoice on order'); return; }
+
+      const result = await qpay.checkPayment(invoiceId);
+      if (result.paid) {
+        await admin.database().ref(`orders/${orderId}`).update({
+          status: 'paid',
+          paymentMethod: 'qpay',
+          paidAt: new Date().toISOString(),
+        });
+      }
+
+      res.status(200).send('ok');
+    } catch (err) {
+      console.error('qpayCallback error', err);
+      res.status(502).send(err.message);
+    }
+  });
+
+// POST /api/qpay/check  body:{orderId}
+// Frontend polling fallback — checks payment status and updates order if paid.
+exports.qpayCheckPayment = functions
+  .runWith({ secrets: QPAY_SECRETS })
+  .https.onRequest(async (req, res) => {
+    setCors(res);
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
+
+    const { orderId } = req.body || {};
+    if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
+
+    try {
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
+      const order = snap.val();
+      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
+
+      const invoiceId = order.qpay?.invoice_id;
+      if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on order' }); return; }
+
+      const result = await qpay.checkPayment(invoiceId);
+      if (result.paid && order.status !== 'paid') {
+        await admin.database().ref(`orders/${orderId}`).update({
+          status: 'paid',
+          paymentMethod: 'qpay',
+          paidAt: new Date().toISOString(),
+        });
+      }
+
+      res.status(200).json({ ok: true, paid: result.paid, paidAmount: result.paidAmount });
+    } catch (err) {
+      console.error('qpayCheckPayment error', err);
+      res.status(502).json({ ok: false, error: err.message });
+    }
+  });
 
 const APP_URL = 'https://ubgolf.club';
 

@@ -374,3 +374,26 @@ export function onOrderChanged(id, cb) {
   onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
   return () => off(r);
 }
+
+// ---- QPay helpers ----
+export async function createQpayInvoice(orderId) {
+  const res = await fetch('/api/qpay/invoice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'QPay invoice failed');
+  return data;
+}
+
+export async function checkQpayPayment(orderId) {
+  const res = await fetch('/api/qpay/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'QPay check failed');
+  return data;
+}
