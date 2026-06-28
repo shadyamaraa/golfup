@@ -200,7 +200,7 @@ export async function router() {
     updateBottomNav(hash);
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen') {
+    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
     }
@@ -217,6 +217,7 @@ export async function router() {
     else if (hash === '#/orders') await renderMyOrders();
     else if (hash.startsWith('#/orders/')) await renderOrderDetail(hash.split('#/orders/')[1]);
     else if (hash === '#/kitchen') await renderKitchenDisplay();
+    else if (hash === '#/styleguide') renderStyleGuide();
     else await renderHome();
   } catch (err) {
     console.error('Router error:', err);
@@ -260,6 +261,108 @@ function updateBottomNav(hash) {
     : (hash === '#/menu' || hash.startsWith('#/order/')) ? 'food'
     : '';
   nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
+}
+
+// ---- Living style guide (#/styleguide) ----
+// A code-driven catalog of design tokens + components. It renders the real CSS
+// variables and classes, so it never drifts from the app. Use it as the shared
+// reference when doing a UI redesign.
+function renderStyleGuide() {
+  const semanticColors = [
+    '--color-bg', '--color-surface', '--color-surface-hover', '--color-border',
+    '--color-accent', '--color-accent-strong', '--color-brand',
+    '--color-success', '--color-danger', '--color-warning',
+    '--color-text', '--color-text-muted', '--color-text-faint',
+  ];
+  const primitiveColors = [
+    '--gold', '--gold-light', '--gold-dark', '--emerald', '--emerald-light',
+    '--emerald-dark', '--green-bright', '--red', '--red-light', '--amber',
+    '--bg-primary', '--bg-secondary',
+  ];
+  const spaces = ['--space-xs', '--space-sm', '--space-md', '--space-lg', '--space-xl', '--space-2xl'];
+  const radii = ['--radius-sm', '--radius-md', '--radius-lg', '--radius-xl'];
+  const types = [
+    ['--text-2xl', 'Heading 2xl'], ['--text-xl', 'Heading xl'], ['--text-lg', 'Heading lg'],
+    ['--text-base', 'Body base'], ['--text-sm', 'Small'], ['--text-xs', 'Caption xs'],
+  ];
+
+  const swatch = (name) => `
+    <div style="text-align:center;">
+      <div style="height:54px;border-radius:10px;background:var(${name});border:1px solid var(--color-border);"></div>
+      <code style="font-size:0.68rem;color:var(--color-text-muted);display:block;margin-top:4px;">${name}</code>
+    </div>`;
+
+  const section = (title, body) => `
+    <section style="margin:28px 0;">
+      <h2 style="font-size:var(--text-lg);font-weight:800;margin-bottom:12px;border-bottom:1px solid var(--color-border);padding-bottom:6px;">${title}</h2>
+      ${body}
+    </section>`;
+
+  const grid = (cols, body) => `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:10px;">${body}</div>`;
+
+  main().innerHTML = `
+    <div class="detail-container fade-in" style="max-width:860px;">
+      <a href="#/" class="back-link">← ${t('back')}</a>
+      <div class="glass-card">
+        <h1 style="font-size:var(--text-2xl);font-weight:800;">🎨 UB Golf — Design System</h1>
+        <p style="color:var(--color-text-muted);">Амьд style guide. Бүх token/компонент кодоос автоматаар уншигдана. Redesign хийхдээ <code>:root</code> дахь <code>--color-*</code> / <code>--space-*</code>-г өөрчилнө.</p>
+
+        ${section('Semantic colors (UI эдгээрийг ашиглана)', grid(4, semanticColors.map(swatch).join('')))}
+        ${section('Primitive colors (brand палитр)', grid(4, primitiveColors.map(swatch).join('')))}
+
+        ${section('Typography', types.map(([v, label]) => `<div style="font-size:var(${v});margin-bottom:6px;">${label} <code style="font-size:0.68rem;color:var(--color-text-muted);">${v}</code></div>`).join(''))}
+
+        ${section('Spacing scale', spaces.map(v => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><code style="width:90px;font-size:0.7rem;color:var(--color-text-muted);">${v}</code><div style="height:14px;width:var(${v});background:var(--color-accent);border-radius:3px;"></div></div>`).join(''))}
+
+        ${section('Radius', grid(4, radii.map(v => `<div style="text-align:center;"><div style="height:54px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(${v});"></div><code style="font-size:0.68rem;color:var(--color-text-muted);">${v}</code></div>`).join('')))}
+
+        ${section('Buttons', `
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <button class="btn btn-primary">Primary</button>
+            <button class="btn btn-outline">Outline</button>
+            <button class="btn btn-ghost">Ghost</button>
+            <button class="btn btn-danger">Danger</button>
+            <button class="btn btn-outline-danger">Outline danger</button>
+            <button class="btn btn-primary btn-sm">Small</button>
+            <button class="btn btn-primary btn-lg">Large</button>
+          </div>
+          <p style="font-size:0.72rem;color:var(--color-text-muted);margin-top:8px;"><code>.btn</code> + <code>.btn-primary/outline/ghost/danger</code> + <code>.btn-sm/lg</code></p>`)}
+
+        ${section('Status chips & badges', `
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <span class="order-chip pending">⏳ Pending</span>
+            <span class="order-chip paid">👨‍🍳 Paid</span>
+            <span class="order-chip done">✅ Done</span>
+            <span class="game-status status-open">Open</span>
+            <span class="game-status status-full">Full</span>
+          </div>
+          <div class="waitlist-banner" style="margin-top:12px;">⏳ Та хүлээлгийн жагсаалтын 2-р байранд</div>`)}
+
+        ${section('Cards', `
+          <div class="game-card glass-card" style="max-width:340px;">
+            <div class="game-card-body"><div class="game-location">📍 Sky Resort</div></div>
+            <div class="game-card-footer">
+              <div class="game-players-info"><span>3 / 4 ${t('players')}</span></div>
+              <div class="slot-progress"><div class="slot-progress-fill" style="width:75%;"></div></div>
+            </div>
+          </div>`)}
+
+        ${section('Form input', `<input type="text" class="food-search" placeholder="Жишээ input…" style="max-width:320px;" />`)}
+
+        ${section('Order tracker (4-step)', `
+          <div class="order-status-track">
+            <div class="order-status-step reached"><div class="order-status-dot">✓</div><div class="order-status-text">${t('trackOrdered')}</div></div>
+            <div class="order-status-line reached"></div>
+            <div class="order-status-step reached"><div class="order-status-dot">✓</div><div class="order-status-text">${t('orderStatusPaid')}</div></div>
+            <div class="order-status-line"></div>
+            <div class="order-status-step current"><div class="order-status-dot">3</div><div class="order-status-text">${t('trackPreparing')}</div></div>
+            <div class="order-status-line"></div>
+            <div class="order-status-step"><div class="order-status-dot">4</div><div class="order-status-text">${t('trackReady')}</div></div>
+          </div>`)}
+
+        ${section('Skeleton loader', skeletonCards(2))}
+      </div>
+    </div>`;
 }
 
 // ---- Onboarding (one-time, after first login) ----

@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-06-28 (3)
+
+### Design system foundation (for upcoming UI redesign)
+
+- `src/style.css` `:root`: added a **semantic token layer** (`--color-*`,
+  `--space-*`, `--text-*`, font weights) that aliases the existing primitives —
+  a redesign re-points these centrally without touching component code. Existing
+  primitives untouched (non-breaking).
+- `src/app.js` `renderStyleGuide()` + `#/styleguide` route (no login required):
+  a **living style guide** that renders the real tokens and component classes —
+  colors, type, spacing, radius, buttons, chips, cards, tracker, skeleton — so
+  it never drifts from the app.
+- `docs/design-system.md`: documents the 3-layer structure (primitive →
+  semantic → component), token reference, component class list, and a
+  step-by-step UI-redesign playbook. Stays vanilla JS (no React/Storybook).
+
 ## 2026-06-28 (2)
 
 ### UX improvements — remaining items (#1,6,7,9,10,12)
