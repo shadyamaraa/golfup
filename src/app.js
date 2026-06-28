@@ -213,6 +213,7 @@ export async function router() {
     else if (hash === '#/admin') await renderAdminPanel();
     else if (hash === '#/menu') await renderFoodOrder(null);
     else if (hash.startsWith('#/order/')) await renderFoodOrder(hash.split('#/order/')[1]);
+    else if (hash === '#/orders') await renderMyOrders();
     else if (hash.startsWith('#/orders/')) await renderOrderDetail(hash.split('#/orders/')[1]);
     else if (hash === '#/kitchen') await renderKitchenDisplay();
     else await renderHome();
@@ -373,6 +374,9 @@ async function renderHome() {
           </a>
           <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
             🍽️ ${t('foodMenu')}
+          </a>
+          <a href="#/orders" class="btn btn-outline btn-lg" id="home-orders-btn">
+            📦 ${t('myOrders')}
           </a>
         </div>
       </div>
@@ -593,7 +597,7 @@ function renderGamesHome(games) {
         </div>
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
   }
 
   if (pastContainer && historyOpen) {
@@ -615,6 +619,10 @@ function renderGamesCards(games, isPast = false) {
     const isFull = spotsLeft === 0;
     const dateStr = formatDate(g.date);
     const gameCommunities = gameCommunityIds(g);
+    const fillPct = totalSlots > 0 ? Math.min(100, Math.round((totalPlayers / totalSlots) * 100)) : 0;
+    // Social proof: how many players in this game the current user follows.
+    const followedCount = groups.flatMap(grp => ensureArray(grp))
+      .filter(p => p?.id && p.id !== currentUser?.id && currentUserFollows[p.id]).length;
     return `
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
         <div class="game-card-header">
@@ -637,6 +645,10 @@ function renderGamesCards(games, isPast = false) {
             <div class="player-dots">${renderPlayerDots(g)}</div>
             <span>${totalPlayers} / ${totalSlots} ${t('players')}</span>
           </div>
+          <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
+            <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
+          </div>
+          ${followedCount > 0 ? `<div class="game-card-social">👤 ${followedCount} ${t('followingHere')}</div>` : ''}
         </div>
       </a>`;
   }).join('');
@@ -1198,6 +1210,15 @@ async function renderGameDetail(gameId) {
   }
 }
 
+// Localized "you are #N on the waitlist" banner text (number interpolation
+// is clearer as a small lang switch than several glued i18n fragments).
+function waitlistBannerText(pos, ahead) {
+  const l = getLang();
+  if (l === 'en') return `You are #${pos} on the waitlist${ahead ? ` — ${ahead} ahead of you` : ''}`;
+  if (l === 'kr') return `대기자 목록 ${pos}번째${ahead ? ` — 앞에 ${ahead}명` : ''}`;
+  return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
+}
+
 function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
@@ -1251,6 +1272,12 @@ function renderGameView(game) {
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
           <a href="#/order/${game.id}" class="btn btn-outline">🍽️ ${t('orderFood')}</a>
         </div>
+        ${(() => {
+          const wIdx = waitingList.findIndex(p => p?.id === currentUser?.id);
+          return wIdx >= 0
+            ? `<div class="waitlist-banner">⏳ ${waitlistBannerText(wIdx + 1, wIdx)}</div>`
+            : '';
+        })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
@@ -1298,13 +1325,9 @@ function renderGameView(game) {
     </div>`;
 
   // Event listeners
-  document.getElementById('join-btn')?.addEventListener('click', () => {
-    if (game.description) {
-      showJoinConfirmModal(game);
-    } else {
-      handleJoin(game);
-    }
-  });
+  // One-click join — the description is already shown on this page, so no extra
+  // confirmation modal is needed (reduces friction, matches Meetup/Eventbrite).
+  document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
@@ -3997,6 +4020,52 @@ async function showQpayModal(orderId, total, opts = {}) {
   }
 }
 
+function orderStatusChip(status) {
+  if (status === 'completed') return `<span class="order-chip done">✅ ${t('orderStatusCompleted')}</span>`;
+  if (status === 'paid') return `<span class="order-chip paid">👨‍🍳 ${t('orderStatusPaid')}</span>`;
+  return `<span class="order-chip pending">⏳ ${t('orderStatusPending')}</span>`;
+}
+
+async function renderMyOrders() {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+
+  const renderWith = (orders) => {
+    const mine = (orders || [])
+      .filter(o => o.createdBy && o.createdBy === currentUser?.id)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const list = mine.length
+      ? mine.map(o => {
+          const ts = o.createdAt ? new Date(o.createdAt).toLocaleString('mn-MN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+          const items = (o.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(', ');
+          return `
+            <a href="#/orders/${o.id}" class="glass-card" style="display:block;margin-bottom:10px;text-decoration:none;color:inherit;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                ${orderStatusChip(o.status)}
+                <span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>
+              </div>
+              <div style="font-size:0.9rem;color:var(--text-secondary);">${items}</div>
+              <div style="text-align:right;font-weight:700;margin-top:4px;">${(o.total || 0).toLocaleString()}₮</div>
+            </a>`;
+        }).join('')
+      : `<div class="empty-state"><p>📦</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px;">🍽️ ${t('orderFood')}</a></div>`;
+
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="#/" class="back-link">← ${t('back')}</a>
+        <h2 class="card-title" style="margin:12px 0;">📦 ${t('myOrders')}</h2>
+        ${list}
+      </div>`;
+  };
+
+  if (store.isUsingFirebase()) {
+    const unsub = store.onOrdersChanged(renderWith);
+    if (unsub) activeUnsubs.push(unsub);
+  } else {
+    renderWith([]);
+  }
+}
+
 async function renderOrderDetail(orderId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
 
@@ -4013,19 +4082,23 @@ async function renderOrderDetail(orderId) {
     const done = order.status === 'completed';
     const paid = order.status === 'paid' || done;
 
-    // Two-step live status tracker. Pending (unpaid QPay) reaches neither step.
-    const step = done ? 2 : (paid ? 1 : 0);
+    // Four-step live tracker: Ordered → Paid → Preparing → Ready.
+    // Pending (unpaid QPay) sits at "Paid" as the current step.
+    const steps = [t('trackOrdered'), t('orderStatusPaid'), t('trackPreparing'), t('trackReady')];
+    const reachedIdx = done ? 3 : (paid ? 1 : 0);
+    const currentIdx = done ? -1 : (paid ? 2 : 1);
     const tracker = `
       <div class="order-status-track">
-        <div class="order-status-step ${step >= 1 ? 'reached' : ''}">
-          <div class="order-status-dot">${step >= 1 ? '✓' : '1'}</div>
-          <div class="order-status-text">${t('orderStatusPaid')}</div>
-        </div>
-        <div class="order-status-line ${step >= 2 ? 'reached' : ''}"></div>
-        <div class="order-status-step ${step >= 2 ? 'reached' : ''}">
-          <div class="order-status-dot">${step >= 2 ? '✓' : '2'}</div>
-          <div class="order-status-text">${t('orderStatusCompleted')}</div>
-        </div>
+        ${steps.map((label, i) => {
+          const isReached = i <= reachedIdx;
+          const isCurrent = i === currentIdx;
+          const line = i < steps.length - 1
+            ? `<div class="order-status-line ${i < reachedIdx ? 'reached' : ''}"></div>` : '';
+          return `<div class="order-status-step ${isReached ? 'reached' : ''} ${isCurrent ? 'current' : ''}">
+            <div class="order-status-dot">${isReached ? '✓' : (i + 1)}</div>
+            <div class="order-status-text">${label}</div>
+          </div>${line}`;
+        }).join('')}
       </div>`;
 
     const banner = done
@@ -4127,6 +4200,7 @@ async function renderKitchenDisplay() {
 
   let currentTab = 'active';
   let latestOrders = [];
+  let bumpToId = null; // next active order to highlight after a "done" tap
   document.querySelectorAll('.kitchen-tab').forEach(tab => {
     tab.onclick = () => {
       currentTab = tab.dataset.tab;
@@ -4232,7 +4306,7 @@ async function renderKitchenDisplay() {
     const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
     const numBadge = seq ? `<span class="kitchen-order-num">#${seq}</span>` : '';
     return `
-      <div class="glass-card" style="margin-bottom:12px;">
+      <div class="glass-card kitchen-order-card" id="kitchen-order-${order.id}" style="margin-bottom:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             ${numBadge}
@@ -4280,6 +4354,17 @@ async function renderKitchenDisplay() {
       el.innerHTML = activeOrders.length
         ? activeOrders.map(o => orderCardHtml(o, seqs[o.id], { done: true, showElapsed: true })).join('')
         : `<p style="color:var(--text-secondary);">${t('kitchenNoOrders')}</p>`;
+      // Kitchen "bump": after a done-tap, bring the next active order into view
+      // and flash it so staff's eye lands on what to cook next.
+      if (bumpToId) {
+        const next = document.getElementById('kitchen-order-' + bumpToId);
+        bumpToId = null;
+        if (next) {
+          next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          next.classList.add('kitchen-bump');
+          setTimeout(() => next.classList.remove('kitchen-bump'), 1500);
+        }
+      }
     } else if (currentTab === 'scheduled') {
       const sorted = scheduledOrders.slice().sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
       el.innerHTML = sorted.length
@@ -4297,6 +4382,9 @@ async function renderKitchenDisplay() {
     document.querySelectorAll('.kitchen-done-btn').forEach(btn => {
       btn.onclick = async () => {
         btn.disabled = true;
+        // Remember the next active order so the repaint can highlight it.
+        const remaining = latestOrders.filter(isActive).filter(o => o.id !== btn.dataset.id);
+        bumpToId = remaining[0]?.id || null;
         await store.updateOrderStatus(btn.dataset.id, 'completed');
       };
     });

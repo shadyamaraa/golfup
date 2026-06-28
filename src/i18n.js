@@ -96,7 +96,10 @@ const T = {
     qpayScanToPay: 'QR уншуулж төлөх', qpayWaiting: 'Төлбөр хүлээж байна…',
     qpaySuccess: 'Төлбөр амжилттай', qpayRetry: 'Дахин шалгах',
     qpayOpenBank: 'Банкны апп нээх', qpayCreating: 'QR үүсгэж байна…',
-    qpayCancelled: 'Төлбөр цуцлагдлаа'
+    qpayCancelled: 'Төлбөр цуцлагдлаа',
+    myOrders: 'Миний захиалга', noOrdersYet: 'Танд захиалга алга байна',
+    trackOrdered: 'Захиалсан', trackPreparing: 'Бэлдэж байна', trackReady: 'Бэлэн',
+    followingHere: 'дагадаг', createFirstGame: 'Тоглолт үүсгэх'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -195,7 +198,10 @@ const T = {
     qpayScanToPay: 'Scan QR to pay', qpayWaiting: 'Waiting for payment…',
     qpaySuccess: 'Payment successful', qpayRetry: 'Check again',
     qpayOpenBank: 'Open banking app', qpayCreating: 'Generating QR…',
-    qpayCancelled: 'Payment cancelled'
+    qpayCancelled: 'Payment cancelled',
+    myOrders: 'My Orders', noOrdersYet: 'No orders yet',
+    trackOrdered: 'Ordered', trackPreparing: 'Preparing', trackReady: 'Ready',
+    followingHere: 'you follow', createFirstGame: 'Create a game'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -294,7 +300,10 @@ const T = {
     qpayScanToPay: 'QR 스캔으로 결제', qpayWaiting: '결제 대기 중…',
     qpaySuccess: '결제 성공', qpayRetry: '다시 확인',
     qpayOpenBank: '은행 앱 열기', qpayCreating: 'QR 생성 중…',
-    qpayCancelled: '결제가 취소되었습니다'
+    qpayCancelled: '결제가 취소되었습니다',
+    myOrders: '내 주문', noOrdersYet: '아직 주문이 없습니다',
+    trackOrdered: '주문함', trackPreparing: '준비 중', trackReady: '준비 완료',
+    followingHere: '팔로우', createFirstGame: '게임 만들기'
   }
 };
 

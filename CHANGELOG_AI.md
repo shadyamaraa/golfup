@@ -1,5 +1,28 @@
 # CHANGELOG_AI.md
 
+## 2026-06-28
+
+### UX improvements batch (high-impact quick wins from docs/ux-improvements.md)
+
+- **Waiting-list position** (`src/app.js` `renderGameView`): when the current
+  user is on a game's waiting list, a banner shows their spot ("Та хүлээлгийн
+  жагсаалтын N-р байранд") via `waitlistBannerText` (mn/en/kr).
+- **Order tracking** (`renderOrderDetail`): 2-step tracker → 4-step
+  Захиалсан → Төлсөн → Бэлдэж байна → Бэлэн, with a pulsing "current" step.
+  New `#/orders` "Миний захиалга" view (`renderMyOrders`) listing the user's
+  orders with status chips, plus a shortcut button on the home hero.
+- **Game cards** (`renderGamesCards`): slot progress bar + "N дагадаг" social
+  proof for players the user follows.
+- **Join friction** (`renderGameView`): one-click join — the confirm modal is
+  dropped since the description already shows on the detail page.
+- **Empty state** (home): added a "Тоглолт үүсгэх" CTA under the empty message.
+- **Kitchen bump** (`renderKitchenDisplay`): tapping "Дууссан ✓" smooth-scrolls
+  to and flashes the next active order.
+- `src/i18n.js`: keys myOrders, noOrdersYet, trackOrdered/Preparing/Ready,
+  followingHere, createFirstGame (mn/en/kr).
+- `src/style.css`: slot progress, status chips, waitlist banner, current-step
+  pulse, kitchen-bump flash.
+
 ## 2026-06-19 (3)
 
 ### Rename desktop app to "UB Golf Club" + new icon + robust popup position
