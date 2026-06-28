@@ -399,6 +399,20 @@ export async function checkQpayPayment(orderId, collection = 'orders') {
   return data;
 }
 
+// Remove an unpaid QPay record when the user backs out of payment.
+// Guarded: only deletes while still 'pending', so a payment that landed in a
+// race is never destroyed. collection: 'orders' | 'bookingPayments'.
+export async function cancelPendingPayment(collection, id) {
+  if (!useFirebase || !db) return false;
+  const path = `${collection}/${id}`;
+  const snap = await get(ref(db, path));
+  if (snap.exists() && snap.val().status === 'pending') {
+    await remove(ref(db, path));
+    return true;
+  }
+  return false;
+}
+
 // ---- Booking payments (RTDB, separate from kitchen orders) ----
 export async function createBookingPayment(payment) {
   if (!useFirebase || !db) throw new Error('Firebase not configured');

@@ -95,7 +95,8 @@ const T = {
     ordersCourse: '📍 Талбайд хүргэх', ordersOutdoor: '🌿 Гадаа ширээ',
     qpayScanToPay: 'QR уншуулж төлөх', qpayWaiting: 'Төлбөр хүлээж байна…',
     qpaySuccess: 'Төлбөр амжилттай', qpayRetry: 'Дахин шалгах',
-    qpayOpenBank: 'Банкны апп нээх', qpayCreating: 'QR үүсгэж байна…'
+    qpayOpenBank: 'Банкны апп нээх', qpayCreating: 'QR үүсгэж байна…',
+    qpayCancelled: 'Төлбөр цуцлагдлаа'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -193,7 +194,8 @@ const T = {
     ordersCourse: '📍 Deliver to course', ordersOutdoor: '🌿 Outdoor table',
     qpayScanToPay: 'Scan QR to pay', qpayWaiting: 'Waiting for payment…',
     qpaySuccess: 'Payment successful', qpayRetry: 'Check again',
-    qpayOpenBank: 'Open banking app', qpayCreating: 'Generating QR…'
+    qpayOpenBank: 'Open banking app', qpayCreating: 'Generating QR…',
+    qpayCancelled: 'Payment cancelled'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -291,7 +293,8 @@ const T = {
     ordersCourse: '📍 코스 배달', ordersOutdoor: '🌿 야외 테이블',
     qpayScanToPay: 'QR 스캔으로 결제', qpayWaiting: '결제 대기 중…',
     qpaySuccess: '결제 성공', qpayRetry: '다시 확인',
-    qpayOpenBank: '은행 앱 열기', qpayCreating: 'QR 생성 중…'
+    qpayOpenBank: '은행 앱 열기', qpayCreating: 'QR 생성 중…',
+    qpayCancelled: '결제가 취소되었습니다'
   }
 };
 

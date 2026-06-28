@@ -1141,6 +1141,7 @@ async function renderCreateGame() {
       await showQpayModal(paymentId, selectedTeeSlot.price, {
         collection: 'bookingPayments',
         doneHash: '#/game/' + game.id,
+        cancelHash: '#/',
         onPaid: async () => { try { await sendCreateNotifications(); } catch (_) {} },
       });
       return;
@@ -3851,6 +3852,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
         await showQpayModal(orderId, total, {
           collection: 'orders',
           doneHash: gameId ? '#/game/' + gameId : '#/orders/' + orderId,
+          cancelHash: gameId ? '#/game/' + gameId : '#/',
         });
       } else {
         modal.remove();
@@ -3872,6 +3874,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
 async function showQpayModal(orderId, total, opts = {}) {
   const collection = opts.collection || 'orders';
   const doneHash = opts.doneHash || '#/orders/' + orderId;
+  const cancelHash = opts.cancelHash || '#/';
   const onChanged = collection === 'bookingPayments' ? store.onBookingPaymentChanged : store.onOrderChanged;
 
   const modal = document.createElement('div');
@@ -3935,7 +3938,17 @@ async function showQpayModal(orderId, total, opts = {}) {
     }, 1500);
   }
 
-  closeBtn.onclick = () => { stopPolling(); unsub(); modal.remove(); location.hash = doneHash; };
+  closeBtn.onclick = async () => {
+    stopPolling();
+    unsub();
+    if (settled) { modal.remove(); location.hash = doneHash; return; }
+    // Backed out before paying — remove the dangling unpaid record so it never
+    // shows up as a phantom order, then leave to a safe page.
+    try { await store.cancelPendingPayment(collection, orderId); } catch (_) {}
+    modal.remove();
+    showToast(t('qpayCancelled'), 'info');
+    location.hash = cancelHash;
+  };
 
   // Server-side check finalizes the record (confirm booking + mark paid); the
   // resulting RTDB write flows back through the listener below, which settles
@@ -3998,9 +4011,10 @@ async function renderOrderDetail(orderId) {
       : t('deliveryOutdoor');
     const pickupLabel = order.pickupTime === 'asap' ? t('pickupAsap') : order.pickupTime;
     const done = order.status === 'completed';
+    const paid = order.status === 'paid' || done;
 
-    // Two-step live status tracker
-    const step = done ? 2 : 1;
+    // Two-step live status tracker. Pending (unpaid QPay) reaches neither step.
+    const step = done ? 2 : (paid ? 1 : 0);
     const tracker = `
       <div class="order-status-track">
         <div class="order-status-step ${step >= 1 ? 'reached' : ''}">
@@ -4016,7 +4030,9 @@ async function renderOrderDetail(orderId) {
 
     const banner = done
       ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
-      : `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`;
+      : paid
+      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`
+      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;">⏳ ${t('orderStatusPending')}</div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
