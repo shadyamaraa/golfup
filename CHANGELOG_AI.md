@@ -1,5 +1,26 @@
 # CHANGELOG_AI.md
 
+## 2026-06-28 (2)
+
+### UX improvements — remaining items (#1,6,7,9,10,12)
+
+- **Bottom navigation** (`index.html`, `updateBottomNav`): fixed mobile nav
+  (🏠 Нүүр / ➕ Тоглолт / 🍽️ Хоол / 👤 Профайл) with active-route highlight;
+  hidden in kiosk, auth and kitchen. Profile opens the existing profile modal.
+- **Onboarding** (`showOnboarding`/`maybeShowOnboarding`): one-time 3-step intro
+  after first login (localStorage `golfup_onboarded`), gated behind profile
+  completion.
+- **Skeleton loader** (`skeletonCards`): shimmer placeholders replace the home
+  feed spinner.
+- **Pull-to-refresh** (`initPullToRefresh`): pull down at the top to re-run the
+  router (mobile only; skipped when a modal is open).
+- **Food → Game link** (`renderFoodOrder`): entering #/menu with no game context
+  shows a picker of the user's upcoming games to attach the order to.
+- **Tee-time picker** (#12): single-tee times select in one tap; multi-tee
+  times show a count badge.
+- i18n: nav/onboarding/ptr/food-picker keys (mn/en/kr). CSS: bottom nav,
+  skeleton, pull-to-refresh, onboarding.
+
 ## 2026-06-28
 
 ### UX improvements batch (high-impact quick wins from docs/ux-improvements.md)

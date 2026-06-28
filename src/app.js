@@ -197,6 +197,7 @@ export async function router() {
       followsLoadedForUser = currentUser.id;
     }
     updateHeader();
+    updateBottomNav(hash);
     clearActiveListeners();
 
     if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen') {
@@ -241,6 +242,68 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
+}
+
+function updateBottomNav(hash) {
+  const nav = document.getElementById('bottom-nav');
+  if (!nav) return;
+  // Hidden in kiosk, on the auth screen, and on the kitchen display.
+  const hide = isKiosk || !currentUser || hash === '#/kitchen';
+  nav.classList.toggle('hidden', hide);
+  if (hide) return;
+
+  const labels = { 'bn-home': 'navHome', 'bn-create': 'navCreate', 'bn-food': 'navFood', 'bn-profile': 'navProfile' };
+  Object.entries(labels).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t(key); });
+
+  const active = (hash === '#/' || hash === '#/home') ? 'home'
+    : hash === '#/create' ? 'create'
+    : (hash === '#/menu' || hash.startsWith('#/order/')) ? 'food'
+    : '';
+  nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
+}
+
+// ---- Onboarding (one-time, after first login) ----
+function maybeShowOnboarding() {
+  if (!currentUser || isKiosk) return;
+  if (localStorage.getItem('golfup_onboarded')) return;
+  if (needsProfileCompletion(currentUser)) return; // let the profile modal finish first
+  if (document.querySelector('.modal-overlay, .onboard-overlay')) return;
+  showOnboarding();
+}
+
+function showOnboarding() {
+  const steps = [
+    { emoji: '⛳', title: t('onboardStep1Title'), body: t('onboardStep1Body') },
+    { emoji: '➕', title: t('onboardStep2Title'), body: t('onboardStep2Body') },
+    { emoji: '🍽️', title: t('onboardStep3Title'), body: t('onboardStep3Body') },
+  ];
+  let i = 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'onboard-overlay';
+  document.body.appendChild(overlay);
+
+  const finish = () => { localStorage.setItem('golfup_onboarded', '1'); overlay.remove(); };
+
+  const paint = () => {
+    const s = steps[i];
+    const last = i === steps.length - 1;
+    overlay.innerHTML = `
+      <div class="onboard-card glass-card">
+        ${i === 0 ? `<div style="font-size:0.85rem;color:var(--gold);font-weight:700;margin-bottom:4px;">${t('onboardWelcome')}</div>` : ''}
+        <div class="onboard-emoji">${s.emoji}</div>
+        <div class="onboard-title">${s.title}</div>
+        <div class="onboard-body">${s.body}</div>
+        <div class="onboard-dots">${steps.map((_, idx) => `<span class="onboard-dot ${idx === i ? 'active' : ''}"></span>`).join('')}</div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <button class="btn btn-ghost" id="ob-skip">${t('onboardSkip')}</button>
+          <button class="btn btn-primary" id="ob-next" style="flex:1;">${last ? t('onboardDone') : t('onboardNext')}</button>
+        </div>
+      </div>`;
+    overlay.querySelector('#ob-skip').onclick = finish;
+    overlay.querySelector('#ob-next').onclick = () => { if (last) finish(); else { i++; paint(); } };
+  };
+  paint();
 }
 
 // ---- Auth View ----
@@ -382,7 +445,7 @@ async function renderHome() {
       </div>
       <div id="notifications-section"></div>
       <div class="section">
-        <div class="game-filter-tabs">
+        <div class="game-filter-tabs" id="home-filter-tabs">
           <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
           <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
           <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
@@ -390,7 +453,7 @@ async function renderHome() {
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
           <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
         </div>
-        <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
+        <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
       </div>
       <div class="section past-section" style="margin-top: 40px;">
         <div class="history-toggle-header" id="history-toggle">
@@ -452,6 +515,8 @@ async function renderHome() {
     if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
     if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
+
+  maybeShowOnboarding();
 }
 
 function renderNotifications(notifs) {
@@ -607,6 +672,15 @@ function renderGamesHome(games) {
   if (archiveContainer && archiveOpen) {
     archiveContainer.innerHTML = archivedGames.length > 0 ? renderGamesCards(archivedGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noArchive')}</p>`;
   }
+}
+
+function skeletonCards(n = 3) {
+  return Array.from({ length: n }, () => `
+    <div class="skeleton-card">
+      <div class="skeleton-line tall short"></div>
+      <div class="skeleton-line med"></div>
+      <div class="skeleton-line short"></div>
+    </div>`).join('');
 }
 
 function renderGamesCards(games, isPast = false) {
@@ -888,7 +962,7 @@ async function renderCreateGame() {
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
               <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
-                ${time}
+                ${time}${tees.length > 1 ? ` <span style="font-size:0.7rem;color:var(--text-secondary);">·${tees.length}</span>` : ''}
               </button>${teeRow}
             </div>`;
           }).join('')
@@ -910,7 +984,10 @@ async function renderCreateGame() {
           renderGroups();
         });
         slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
-          const id = b.dataset.key + '|' + b.dataset.time;
+          const key = b.dataset.key, time = b.dataset.time;
+          const tees = groups[key].filter(s => s.time === time);
+          if (tees.length === 1) { selectSlot(tees[0]); return; } // single option → pick in one tap
+          const id = key + '|' + time;
           openTime = (openTime === id) ? null : id;
           renderGroups();
         });
@@ -3165,6 +3242,49 @@ async function initFCM(user) {
 }
 
 // ---- Init ----
+// Lightweight mobile pull-to-refresh: pulling down at the top of the page
+// re-runs the router (re-renders the current view). Data is already live via
+// Firebase listeners, so this is mostly a familiar affordance.
+function initPullToRefresh() {
+  if (isKiosk) return;
+  const THRESH = 70;
+  let startY = 0, pulling = false, dist = 0;
+
+  const indicator = document.createElement('div');
+  indicator.className = 'ptr-indicator';
+  indicator.innerHTML = `<span class="ptr-spin"></span><span class="ptr-text"></span>`;
+  document.body.appendChild(indicator);
+  const textEl = indicator.querySelector('.ptr-text');
+
+  const blocked = () => document.querySelector('.modal-overlay, .onboard-overlay, .popup-overlay');
+
+  window.addEventListener('touchstart', (e) => {
+    if (window.scrollY > 0 || e.touches.length !== 1 || blocked()) { pulling = false; return; }
+    startY = e.touches[0].clientY; pulling = true; dist = 0;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if (dist <= 0) { indicator.style.height = '0'; return; }
+    indicator.style.height = Math.min(56, dist * 0.5) + 'px';
+    textEl.textContent = dist >= THRESH ? t('ptrRelease') : '';
+  }, { passive: true });
+
+  window.addEventListener('touchend', async () => {
+    if (!pulling) return;
+    pulling = false;
+    if (dist >= THRESH) {
+      indicator.style.height = '40px';
+      indicator.classList.add('spinning');
+      textEl.textContent = t('ptrRefreshing');
+      try { await router(); } catch (_) {}
+      indicator.classList.remove('spinning');
+    }
+    indicator.style.height = '0';
+  });
+}
+
 export function initApp() {
   document.getElementById('lang-toggle')?.addEventListener('click', () => {
     const newLang = toggleLang();
@@ -3188,6 +3308,13 @@ export function initApp() {
     if (!currentUser) return;
     showProfileModal(currentUser);
   });
+
+  document.getElementById('bn-profile-btn')?.addEventListener('click', () => {
+    if (!currentUser) return;
+    showProfileModal(currentUser);
+  });
+
+  initPullToRefresh();
 
   // Close any modal/popup when its backdrop is clicked
   document.body.addEventListener('click', (e) => {
@@ -3518,6 +3645,22 @@ async function renderFoodOrder(gameId) {
   const available = menuItems.filter(i => i.available !== false);
   foodCart = {};
 
+  // #/menu has no game context → offer to attach the order to one of the user's
+  // upcoming games so it isn't an "orphan" order.
+  let myUpcomingGames = [];
+  if (!gameId && currentUser) {
+    try {
+      const games = await store.loadAllGames();
+      const now = Date.now();
+      myUpcomingGames = games
+        .filter(g => {
+          const gt = new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+          return gt >= now && isPlayerInGame(g, currentUser.id);
+        })
+        .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
+    } catch (_) {}
+  }
+
   // Build ordered category list (by min sortOrder of items in each category)
   const catMinOrder = {};
   available.forEach(item => {
@@ -3658,6 +3801,14 @@ async function renderFoodOrder(gameId) {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
+      ${(!gameId && myUpcomingGames.length) ? `
+        <div class="glass-card" id="game-context-picker" style="margin-bottom:12px;padding:12px 14px;">
+          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">🍽️ ${t('chooseGameForOrder')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${myUpcomingGames.slice(0, 6).map(g => `<a href="#/order/${g.id}" class="btn btn-outline btn-sm" style="text-decoration:none;">${formatDate(g.date)} · ${g.time} · ${esc(g.location || '')}</a>`).join('')}
+            <button type="button" id="order-no-game" class="btn btn-ghost btn-sm">${t('orderNoGame')}</button>
+          </div>
+        </div>` : ''}
       <div class="glass-card">
         <div class="food-sticky-head">
           <div class="food-top-bar">
@@ -3676,6 +3827,10 @@ async function renderFoodOrder(gameId) {
         </div>`}
       </div>
     </div>`;
+
+  document.getElementById('order-no-game')?.addEventListener('click', () => {
+    document.getElementById('game-context-picker')?.remove();
+  });
 
   if (available.length > 0) {
     // Set cat-rail sticky offset to sit below the sticky head

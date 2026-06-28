@@ -99,7 +99,14 @@ const T = {
     qpayCancelled: 'Төлбөр цуцлагдлаа',
     myOrders: 'Миний захиалга', noOrdersYet: 'Танд захиалга алга байна',
     trackOrdered: 'Захиалсан', trackPreparing: 'Бэлдэж байна', trackReady: 'Бэлэн',
-    followingHere: 'дагадаг', createFirstGame: 'Тоглолт үүсгэх'
+    followingHere: 'дагадаг', createFirstGame: 'Тоглолт үүсгэх',
+    navHome: 'Нүүр', navCreate: 'Тоглолт', navFood: 'Хоол', navProfile: 'Профайл',
+    ptrRelease: 'Тавихад шинэчилнэ', ptrRefreshing: 'Шинэчилж байна…',
+    onboardWelcome: 'Тавтай морил!', onboardSkip: 'Алгасах', onboardNext: 'Цааш', onboardDone: 'Эхлэх',
+    onboardStep1Title: 'Тоглолт олж нэгдээрэй', onboardStep1Body: 'Нүүр хуудаснаас идэвхтэй тоглолтуудыг хараад нэг товшилтоор нэгдэнэ.',
+    onboardStep2Title: 'Өөрөө тоглолт зохион байгуул', onboardStep2Body: 'Огноо, цаг, талбайгаа сонгоод найзуудаа урь. Tee time мөн захиалж болно.',
+    onboardStep3Title: 'Хоол захиал', onboardStep3Body: 'Тоглолтын үеэр талбай эсвэл ширээ рүүгээ хоол захиалаарай.',
+    chooseGameForOrder: 'Аль тоглолтод зориулах вэ?', orderNoGame: 'Тоглолтгүй захиалах'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -201,7 +208,14 @@ const T = {
     qpayCancelled: 'Payment cancelled',
     myOrders: 'My Orders', noOrdersYet: 'No orders yet',
     trackOrdered: 'Ordered', trackPreparing: 'Preparing', trackReady: 'Ready',
-    followingHere: 'you follow', createFirstGame: 'Create a game'
+    followingHere: 'you follow', createFirstGame: 'Create a game',
+    navHome: 'Home', navCreate: 'Create', navFood: 'Food', navProfile: 'Profile',
+    ptrRelease: 'Release to refresh', ptrRefreshing: 'Refreshing…',
+    onboardWelcome: 'Welcome!', onboardSkip: 'Skip', onboardNext: 'Next', onboardDone: 'Get started',
+    onboardStep1Title: 'Find & join games', onboardStep1Body: 'Browse active games on the home feed and join with one tap.',
+    onboardStep2Title: 'Organize your own', onboardStep2Body: 'Pick a date, time and course, then invite friends. You can book a tee time too.',
+    onboardStep3Title: 'Order food', onboardStep3Body: 'Order food to the course or your table during a game.',
+    chooseGameForOrder: 'Which game is this for?', orderNoGame: 'Order without a game'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -303,7 +317,14 @@ const T = {
     qpayCancelled: '결제가 취소되었습니다',
     myOrders: '내 주문', noOrdersYet: '아직 주문이 없습니다',
     trackOrdered: '주문함', trackPreparing: '준비 중', trackReady: '준비 완료',
-    followingHere: '팔로우', createFirstGame: '게임 만들기'
+    followingHere: '팔로우', createFirstGame: '게임 만들기',
+    navHome: '홈', navCreate: '게임', navFood: '음식', navProfile: '프로필',
+    ptrRelease: '놓으면 새로고침', ptrRefreshing: '새로고침 중…',
+    onboardWelcome: '환영합니다!', onboardSkip: '건너뛰기', onboardNext: '다음', onboardDone: '시작하기',
+    onboardStep1Title: '게임 찾기 & 참가', onboardStep1Body: '홈에서 진행 중인 게임을 보고 한 번에 참가하세요.',
+    onboardStep2Title: '직접 게임 만들기', onboardStep2Body: '날짜, 시간, 코스를 정하고 친구를 초대하세요. 티 타임도 예약할 수 있습니다.',
+    onboardStep3Title: '음식 주문', onboardStep3Body: '게임 중 코스나 테이블로 음식을 주문하세요.',
+    chooseGameForOrder: '어느 게임을 위한 주문인가요?', orderNoGame: '게임 없이 주문'
   }
 };
 

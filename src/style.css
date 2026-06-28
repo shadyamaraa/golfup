@@ -522,6 +522,57 @@ input, button { font-family: var(--font); }
 .kitchen-bump { animation: kitchen-bump-flash 1.5s ease; }
 @keyframes kitchen-bump-flash { 0%, 100% { box-shadow: none; } 20%, 60% { box-shadow: 0 0 0 3px var(--gold); } }
 
+/* ====== Bottom navigation ====== */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+  display: flex; gap: 2px;
+  background: rgba(15,36,26,0.96); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border-card);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.bottom-nav.hidden { display: none; }
+.bn-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 0 7px; background: none; border: none; cursor: pointer;
+  text-decoration: none; color: var(--text-secondary); font-size: 0.68rem; font-weight: 600;
+  transition: color 0.15s;
+}
+.bn-item .bn-icon { font-size: 1.3rem; line-height: 1; filter: grayscale(0.4); transition: filter 0.15s, transform 0.15s; }
+.bn-item.active { color: var(--gold); }
+.bn-item.active .bn-icon { filter: none; transform: translateY(-1px); }
+.bn-item:active .bn-icon { transform: scale(0.9); }
+/* Keep content clear of the fixed bar (only matters while it's shown) */
+body:has(.bottom-nav:not(.hidden)) #main-content { padding-bottom: 76px; }
+
+/* ====== Skeleton loader ====== */
+.skeleton-card { border-radius: var(--radius-md); background: var(--bg-card); border: 1px solid var(--border-card); padding: 16px; margin-bottom: 12px; }
+.skeleton-line { height: 12px; border-radius: 6px; margin-bottom: 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.10) 37%, rgba(255,255,255,0.04) 63%);
+  background-size: 400% 100%; animation: skeleton-shine 1.4s ease infinite; }
+.skeleton-line.short { width: 45%; } .skeleton-line.med { width: 70%; } .skeleton-line.tall { height: 20px; }
+@keyframes skeleton-shine { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+/* ====== Pull to refresh ====== */
+.ptr-indicator {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 950;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 0; overflow: hidden; color: var(--gold); font-size: 0.85rem; font-weight: 600;
+  background: rgba(15,36,26,0.9); transition: height 0.15s;
+}
+.ptr-indicator .ptr-spin { width: 16px; height: 16px; border: 2px solid var(--gold); border-top-color: transparent; border-radius: 50%; }
+.ptr-indicator.spinning .ptr-spin { animation: ptr-rotate 0.7s linear infinite; }
+@keyframes ptr-rotate { to { transform: rotate(360deg); } }
+
+/* ====== Onboarding ====== */
+.onboard-overlay { position: fixed; inset: 0; z-index: 1200; background: rgba(5,12,8,0.85); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.onboard-card { max-width: 360px; width: 100%; text-align: center; }
+.onboard-emoji { font-size: 3rem; margin-bottom: 8px; }
+.onboard-title { font-size: 1.25rem; font-weight: 800; margin-bottom: 8px; }
+.onboard-body { color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; }
+.onboard-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 16px; }
+.onboard-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-card); transition: background 0.2s, width 0.2s; }
+.onboard-dot.active { background: var(--gold); width: 20px; border-radius: 4px; }
+
 /* Weekday-only item note */
 .food-weekday-note { font-size: 0.78rem; color: #f59e0b; font-weight: 600; white-space: nowrap; }
 .food-card-blocked { opacity: 0.6; }
