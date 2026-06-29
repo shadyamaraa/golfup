@@ -191,6 +191,15 @@ export function onAllGamesChanged(callback) {
   }
 }
 
+export async function markBookingPaid(id, amount) {
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'games/' + id), {
+    bookingPaid: true,
+    paidAt: new Date().toISOString(),
+    paidAmount: amount || null,
+  });
+}
+
 export function onGameChanged(id, callback) {
   if (useFirebase && db) {
     const gameRef = ref(db, 'games/' + id);

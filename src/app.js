@@ -1478,6 +1478,16 @@ function renderGameView(game) {
     </div>`;
 
   // Event listeners
+  // Nudge MTBogd to re-verify QPay payment for a booking still pending in our
+  // records. Calling qpay-status makes MTBogd re-check QPay and flip to paid —
+  // covers the case where the user paid after closing the QPay modal (or QPay's
+  // own callback to MTBogd never fired).
+  if (game.bookingId && !game.bookingPaid) {
+    mtbogd.getQpayStatus(game.bookingId)
+      .then(s => { if (s && s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount); })
+      .catch(() => {});
+  }
+
   // One-click join — the description is already shown on this page, so no extra
   // confirmation modal is needed (reduces friction, matches Meetup/Eventbrite).
   document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
