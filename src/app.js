@@ -4235,13 +4235,17 @@ async function showQpayModal(orderId, total, opts = {}) {
   // resulting RTDB write flows back through the listener below, which settles
   // the modal with the full record (incl. any bookingError).
   retryBtn.onclick = async () => {
-    retryBtn.style.display = 'none';
-    statusEl.textContent = t('qpayWaiting');
+    retryBtn.disabled = true;
+    statusEl.textContent = t('verifying');
     try {
       const result = await store.checkQpayPayment(orderId, collection);
-      if (!result.paid) { statusEl.textContent = t('qpayWaiting'); retryBtn.style.display = 'inline-block'; }
+      // If paid, the server marks the record paid and the listener settles the
+      // modal. Otherwise keep waiting.
+      if (!result.paid) statusEl.textContent = t('qpayWaiting');
     } catch {
-      retryBtn.style.display = 'inline-block';
+      statusEl.textContent = t('qpayWaiting');
+    } finally {
+      retryBtn.disabled = false;
     }
   };
 
@@ -4256,6 +4260,7 @@ async function showQpayModal(orderId, total, opts = {}) {
     qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
     qrWrap.style.display = 'block';
     statusEl.textContent = t('qpayWaiting');
+    retryBtn.style.display = 'inline-block'; // manual "check payment" button while waiting
 
     (invoice.urls || []).slice(0, 6).forEach(u => {
       const a = document.createElement('a');

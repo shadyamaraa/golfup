@@ -185,16 +185,16 @@ async function finalizePaidRecord(collection, orderId, record) {
   const pb = record && record.pendingBooking;
   const base = { status: 'paid', paymentMethod: 'qpay', paidAt: new Date().toISOString() };
 
-  if (collection !== 'bookingPayments' || !pb) {
-    if (record.status !== 'paid') await recRef.update(base);
-    return;
-  }
+  // 1. Mark paid IMMEDIATELY so the client modal updates fast. This is decoupled
+  //    from the (slower, flakier) MTBogd booking confirm below — a hanging confirm
+  //    can no longer block the paid status.
+  if (record.status !== 'paid') await recRef.update(base);
 
-  // Claim the record so only one caller (QPay callback vs frontend poll) runs
-  // the confirm. pending -> confirming wins; anything else aborts.
-  // NOTE: if a confirm crashes after this point the record stays 'confirming';
-  // such a payment needs manual reconciliation (rare).
-  const claim = await recRef.child('status').transaction(cur => (cur === 'pending' ? 'confirming' : undefined));
+  if (collection !== 'bookingPayments' || !pb) return;
+
+  // 2. Confirm the MTBogd booking exactly once. A separate `bookingState` flag
+  //    claims the work so the callback and the poll don't double-confirm.
+  const claim = await recRef.child('bookingState').transaction(cur => (cur ? undefined : 'confirming'));
   if (!claim.committed || claim.snapshot.val() !== 'confirming') return;
 
   try {
@@ -213,12 +213,12 @@ async function finalizePaidRecord(collection, orderId, record) {
     if (record.gameId && bookingCode) {
       await admin.database().ref(`games/${record.gameId}`).update({ bookingCode, bookingId, bookingSlotId: pb.slotId });
     }
-    await recRef.update({ ...base, bookingCode, bookingId });
+    await recRef.update({ bookingState: 'done', bookingCode, bookingId });
   } catch (err) {
     console.error('finalizePaidRecord booking confirm failed', err);
-    // Payment received but the booking could not be confirmed (e.g. hold
-    // expired). The game still exists; flag the payment for reconciliation.
-    await recRef.update({ ...base, bookingError: err.message });
+    // Payment already marked paid; the game still exists. Flag the booking for
+    // reconciliation (e.g. hold expired during payment).
+    await recRef.update({ bookingState: 'failed', bookingError: err.message });
   }
 }
 
