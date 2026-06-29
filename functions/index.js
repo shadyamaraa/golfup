@@ -175,10 +175,11 @@ function resolveCollection(value) {
 // Callback/check also confirm tee-time bookings, so they need the MTBogd key.
 const QPAY_FULFILL_SECRETS = [...QPAY_SECRETS, 'MTBOGD_API_KEY'];
 
-// Marks a paid QPay record. For tee-time bookingPayments that carry a deferred
-// MTBogd booking (pendingBooking), it atomically claims the record, confirms
-// the booking server-side, and writes the game — so payment and fulfilment are
-// one step and survive the browser closing. Food orders take the simple path.
+// Marks a paid QPay record. For tee-time bookingPayments (pendingBooking), it
+// atomically claims the record, confirms the MTBogd booking server-side, and
+// stamps the booking code onto the EXISTING game (created client-side at submit,
+// so it never vanishes). If the confirm fails, the game survives without a
+// booking and the payment is flagged for reconciliation. Food orders: simple path.
 async function finalizePaidRecord(collection, orderId, record) {
   const recRef = admin.database().ref(`${collection}/${orderId}`);
   const pb = record && record.pendingBooking;
@@ -208,14 +209,15 @@ async function finalizePaidRecord(collection, orderId, record) {
 
     const bookingCode = booking.bookingCode || null;
     const bookingId = booking.bookingId || null;
-    const game = { ...pb.game, ...(bookingCode && { bookingCode, bookingId, bookingSlotId: pb.slotId }) };
-    await admin.database().ref(`games/${game.id}`).set(game);
-
+    // Stamp the booking onto the existing game (do NOT recreate it).
+    if (record.gameId && bookingCode) {
+      await admin.database().ref(`games/${record.gameId}`).update({ bookingCode, bookingId, bookingSlotId: pb.slotId });
+    }
     await recRef.update({ ...base, bookingCode, bookingId });
   } catch (err) {
     console.error('finalizePaidRecord booking confirm failed', err);
     // Payment received but the booking could not be confirmed (e.g. hold
-    // expired). Flag it so the client shows a warning and staff can reconcile.
+    // expired). The game still exists; flag the payment for reconciliation.
     await recRef.update({ ...base, bookingError: err.message });
   }
 }

@@ -1287,9 +1287,7 @@ async function renderCreateGame() {
       ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
     };
 
-    // Notifications reference the game, so they only fire once the game exists.
-    // For QPay tee-time the game is created server-side on payment, so this runs
-    // from the payment-success hook instead (best-effort if the browser is open).
+    // Notifications reference the game, so they fire right after it is saved.
     const sendCreateNotifications = async () => {
       const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
       const followerIds = await store.getFollowerIds(currentUser.id);
@@ -1317,10 +1315,12 @@ async function renderCreateGame() {
       await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
     };
 
-    // QPay tee-time: stash the hold + full game in bookingPayments and let the
-    // server confirm the booking + create the game when payment lands. The game
-    // is NOT saved here — that keeps payment and fulfillment atomic on the server.
+    // QPay tee-time: create the game NOW (no booking yet) so it never vanishes,
+    // then confirm the MTBogd booking server-side on payment. If payment never
+    // lands, the game simply has no booking (no orphan MTBogd booking either).
     if (useQpayTee) {
+      await store.saveGame(game);
+      await sendCreateNotifications();
       const paymentId = await store.createBookingPayment({
         gameId: game.id,
         total: selectedTeeSlot.price,
@@ -1328,13 +1328,13 @@ async function renderCreateGame() {
         customerPhone: currentUser.phone || '',
         status: 'pending',
         paymentMethod: 'qpay',
-        pendingBooking: { ...pendingBooking, game },
+        pendingBooking, // holdId/slotId/customer/players/notes — server confirms on payment
       });
+      showToast('✅ ' + t('createGame') + '!', 'success');
       await showQpayModal(paymentId, selectedTeeSlot.price, {
         collection: 'bookingPayments',
         doneHash: '#/game/' + game.id,
-        cancelHash: '#/',
-        onPaid: async () => { try { await sendCreateNotifications(); } catch (_) {} },
+        cancelHash: '#/game/' + game.id, // game exists regardless of payment
       });
       return;
     }
