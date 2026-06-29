@@ -38,44 +38,22 @@ https://<your-preview-host>/api/qpay/callback?order_id=<orderId>
 2. QR modal гарах → банкны аппаар уншуулах
 3. RTDB `orders/<id>` дээр `status: 'paid'`, `paymentMethod: 'qpay'` болохыг шалгах
 
-## 6. Холбогдсон урсгалууд
+## 6. Хамрах хүрээ — ЗӨВХӨН хоолны захиалга
 
-QPay 2 газар холбогдсон (хоёулаа preview-channel дээр л идэвхтэй):
+Энэ UBGolf-ийн өөрийн QPay (`CDY_SKYRES` merchant) нь **зөвхөн хоолны захиалгад** үйлчилнэ:
 
 | Урсгал | RTDB collection | Тэмдэглэл |
 |--------|-----------------|-----------|
 | Хоолны захиалга (checkout) | `orders` | Гал тогооны дэлгэц эдгээрийг уншина |
-| Tee-time захиалга | `bookingPayments` | Гал тогоонд **орохгүй** — тусдаа бичлэг |
 
-Backend функцууд `collection` параметр авдаг (allowlist: `orders`, `bookingPayments`),
-тэгэхээр нэг QPay client хоёр урсгалд хоёуланд нь үйлчилнэ.
-
-### Tee-time: төлбөр-эхэлсэн (payment-first) урсгал
-
-MTBogd booking-ийг **төлбөрийн ӨМНӨ баталгаажуулдаггүй** — өнчин захиалга үүсэхгүй:
-
-```
-1. Slot HOLD (mtbogd.createHold) — confirm хийхгүй
-2. bookingPayments бичлэгт hold + бүтэн game-ийг хадгална (pendingBooking)
-3. QPay QR → хэрэглэгч төлнө
-4. QPay callback (СЕРВЕР) → payment/check → амжилттай бол:
-   - MTBogd booking CONFIRM (server-side, x-api-key)
-   - games/{id} үүснэ (bookingCode/bookingId-тай)
-   - bookingPayments.status = 'paid'
-5. Frontend listener → game руу шилжинэ
-```
-
-- Callback + check функцууд `MTBOGD_API_KEY` secret-ийг ашигладаг (аль хэдийн тохируулсан).
-- Hold дуусах/confirm амжилтгүй бол `bookingError` тэмдэглэгдэж, хэрэглэгчид анхааруулна.
-- Callback/check хоёулаа транзакцаар нэг л удаа confirm хийнэ (давхар захиалгаас сэргийлнэ).
+> **Tee-time QPay нь энд БИШ** — MTBogd эзэмшинэ. `functions/MTBOGD_QPAY.md` харна уу.
 
 ## 7. Хамаарах файлууд
 
 | Файл | Зорилго |
 |------|---------|
 | `functions/qpay.js` | QPay API client (token cache, invoice, check) |
-| `functions/index.js` | `qpayCreateInvoice`, `qpayCallback`, `qpayCheckPayment` (collection-aware) |
+| `functions/index.js` | `qpayCreateInvoice`, `qpayCallback`, `qpayCheckPayment` (orders) |
 | `firebase.json` | `/api/qpay/*` rewrites |
-| `database.rules.json` | `bookingPayments` зам |
-| `src/app.js` | `QPAY_ENABLED` flag, food + tee-time checkout, QR modal |
-| `src/store.js` | `createQpayInvoice`, `checkQpayPayment`, `createBookingPayment` |
+| `src/app.js` | `showQpayModal` (food checkout QR modal) |
+| `src/store.js` | `createQpayInvoice`, `checkQpayPayment`, `cancelPendingPayment` |

@@ -4114,7 +4114,6 @@ function showCheckoutModal(menuItems, tables, gameId) {
         modal.remove();
         foodCart = {};
         await showQpayModal(orderId, total, {
-          collection: 'orders',
           doneHash: gameId ? '#/game/' + gameId : '#/orders/' + orderId,
           cancelHash: gameId ? '#/game/' + gameId : '#/',
         });
@@ -4136,7 +4135,6 @@ function showCheckoutModal(menuItems, tables, gameId) {
 // Food-order QPay (UBGolf's own QPay). Tee-time uses showMtbogdQpayModal.
 // opts.doneHash: where to navigate after success/close
 async function showQpayModal(orderId, total, opts = {}) {
-  const collection = 'orders';
   const doneHash = opts.doneHash || '#/orders/' + orderId;
   const cancelHash = opts.cancelHash || '#/';
   const onChanged = store.onOrderChanged;
@@ -4208,7 +4206,7 @@ async function showQpayModal(orderId, total, opts = {}) {
     if (settled) { modal.remove(); location.hash = doneHash; return; }
     // Backed out before paying — remove the dangling unpaid record so it never
     // shows up as a phantom order, then leave to a safe page.
-    try { await store.cancelPendingPayment(collection, orderId); } catch (_) {}
+    try { await store.cancelPendingPayment(orderId); } catch (_) {}
     modal.remove();
     showToast(t('qpayCancelled'), 'info');
     location.hash = cancelHash;
@@ -4221,7 +4219,7 @@ async function showQpayModal(orderId, total, opts = {}) {
     retryBtn.disabled = true;
     statusEl.textContent = t('verifying');
     try {
-      const result = await store.checkQpayPayment(orderId, collection);
+      const result = await store.checkQpayPayment(orderId);
       // If paid, the server marks the record paid and the listener settles the
       // modal. Otherwise keep waiting.
       if (!result.paid) statusEl.textContent = t('qpayWaiting');
@@ -4239,7 +4237,7 @@ async function showQpayModal(orderId, total, opts = {}) {
     }
   });
   try {
-    const invoice = await store.createQpayInvoice(orderId, collection);
+    const invoice = await store.createQpayInvoice(orderId);
     qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
     qrWrap.style.display = 'block';
     statusEl.textContent = t('qpayWaiting');
@@ -4257,7 +4255,7 @@ async function showQpayModal(orderId, total, opts = {}) {
     // Poll every 3 s as fallback. The check finalizes server-side; the listener
     // above settles the modal, so the poll just nudges and ignores the result.
     pollTimer = setInterval(async () => {
-      try { await store.checkQpayPayment(orderId, collection); } catch { /* ignore poll errors */ }
+      try { await store.checkQpayPayment(orderId); } catch { /* ignore poll errors */ }
     }, 3000);
   } catch (err) {
     statusEl.textContent = '⚠️ ' + err.message;

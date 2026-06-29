@@ -164,68 +164,17 @@ function setCors(res) {
   Object.entries(CORS_HEADERS).forEach(([k, v]) => res.set(k, v));
 }
 
-// Allowlisted RTDB collections a QPay record may live in. Prevents arbitrary
-// path injection from the `collection` request parameter.
-//   orders          — food orders (kitchen reads these)
-//   bookingPayments — tee-time booking payments (kept out of the kitchen feed)
-const QPAY_COLLECTIONS = ['orders', 'bookingPayments'];
-function resolveCollection(value) {
-  return QPAY_COLLECTIONS.includes(value) ? value : 'orders';
+// Marks a food order paid. (Tee-time payments are owned by MTBogd, not here.)
+async function markOrderPaid(orderId, order) {
+  if (order.status === 'paid') return;
+  await admin.database().ref(`orders/${orderId}`).update({
+    status: 'paid', paymentMethod: 'qpay', paidAt: new Date().toISOString(),
+  });
 }
 
-// Callback/check also confirm tee-time bookings, so they need the MTBogd key.
-const QPAY_FULFILL_SECRETS = [...QPAY_SECRETS, 'MTBOGD_API_KEY'];
-
-// Marks a paid QPay record. For tee-time bookingPayments (pendingBooking), it
-// atomically claims the record, confirms the MTBogd booking server-side, and
-// stamps the booking code onto the EXISTING game (created client-side at submit,
-// so it never vanishes). If the confirm fails, the game survives without a
-// booking and the payment is flagged for reconciliation. Food orders: simple path.
-async function finalizePaidRecord(collection, orderId, record) {
-  const recRef = admin.database().ref(`${collection}/${orderId}`);
-  const pb = record && record.pendingBooking;
-  const base = { status: 'paid', paymentMethod: 'qpay', paidAt: new Date().toISOString() };
-
-  // 1. Mark paid IMMEDIATELY so the client modal updates fast. This is decoupled
-  //    from the (slower, flakier) MTBogd booking confirm below — a hanging confirm
-  //    can no longer block the paid status.
-  if (record.status !== 'paid') await recRef.update(base);
-
-  if (collection !== 'bookingPayments' || !pb) return;
-
-  // 2. Confirm the MTBogd booking exactly once. A separate `bookingState` flag
-  //    claims the work so the callback and the poll don't double-confirm.
-  const claim = await recRef.child('bookingState').transaction(cur => (cur ? undefined : 'confirming'));
-  if (!claim.committed || claim.snapshot.val() !== 'confirming') return;
-
-  try {
-    const apiKey = process.env.MTBOGD_API_KEY;
-    const upRes = await fetch(`${MTBOGD_BASE}/bookings`, {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ holdId: pb.holdId, customer: pb.customer, players: pb.players, notes: pb.notes || '' }),
-    });
-    const booking = await upRes.json();
-    if (!upRes.ok) throw new Error(booking?.error?.message || booking?.message || `confirm ${upRes.status}`);
-
-    const bookingCode = booking.bookingCode || null;
-    const bookingId = booking.bookingId || null;
-    // Stamp the booking onto the existing game (do NOT recreate it).
-    if (record.gameId && bookingCode) {
-      await admin.database().ref(`games/${record.gameId}`).update({ bookingCode, bookingId, bookingSlotId: pb.slotId });
-    }
-    await recRef.update({ bookingState: 'done', bookingCode, bookingId });
-  } catch (err) {
-    console.error('finalizePaidRecord booking confirm failed', err);
-    // Payment already marked paid; the game still exists. Flag the booking for
-    // reconciliation (e.g. hold expired during payment).
-    await recRef.update({ bookingState: 'failed', bookingError: err.message });
-  }
-}
-
-// POST /api/qpay/invoice  body:{orderId, collection?}
-// Creates a QPay invoice for the given record, stores invoice_id in
-// <collection>/<id>/qpay, returns QR image + bank deeplinks to the frontend.
+// POST /api/qpay/invoice  body:{orderId}
+// Creates a QPay invoice for a food order, stores invoice_id in orders/<id>/qpay,
+// returns QR image + bank deeplinks to the frontend.
 exports.qpayCreateInvoice = functions
   .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
@@ -234,26 +183,25 @@ exports.qpayCreateInvoice = functions
     if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
 
     const { orderId } = req.body || {};
-    const collection = resolveCollection(req.body && req.body.collection);
     if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
 
     try {
-      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).json({ ok: false, error: 'Record not found' }); return; }
+      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
 
       const host = req.headers['x-forwarded-host'] || req.headers.host || 'ubgolf.club';
-      const callbackUrl = `https://${host}/api/qpay/callback?order_id=${orderId}&col=${collection}`;
+      const callbackUrl = `https://${host}/api/qpay/callback?order_id=${orderId}`;
 
       const invoice = await qpay.createInvoice({
         orderId,
         amount: order.total,
-        description: `UB Golf — ${collection === 'bookingPayments' ? 'захиалга' : 'хоол'} #${orderId.slice(-6)}`,
+        description: `UB Golf — хоол #${orderId.slice(-6)}`,
         callbackUrl,
         receiverPhone: order.customerPhone || 'guest',
       });
 
-      await admin.database().ref(`${collection}/${orderId}/qpay`).set({
+      await admin.database().ref(`orders/${orderId}/qpay`).set({
         invoice_id: invoice.invoice_id,
         createdAt: Date.now(),
       });
@@ -265,29 +213,27 @@ exports.qpayCreateInvoice = functions
     }
   });
 
-// GET|POST /api/qpay/callback?order_id=…&col=…
-// Called by QPay after payment. Verifies via payment/check, then finalizes
-// (marks paid; for tee-time also confirms the MTBogd booking + creates the game).
+// GET|POST /api/qpay/callback?order_id=…
+// Called by QPay after payment. Verifies via payment/check, then marks paid.
 exports.qpayCallback = functions
-  .runWith({ secrets: QPAY_FULFILL_SECRETS })
+  .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
     setCors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
     const orderId = req.query.order_id;
-    const collection = resolveCollection(req.query.col);
     if (!orderId) { res.status(400).send('order_id required'); return; }
 
     try {
-      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).send('record not found'); return; }
+      if (!order) { res.status(404).send('order not found'); return; }
 
       const invoiceId = order.qpay?.invoice_id;
-      if (!invoiceId) { res.status(400).send('no invoice on record'); return; }
+      if (!invoiceId) { res.status(400).send('no invoice on order'); return; }
 
       const result = await qpay.checkPayment(invoiceId);
-      if (result.paid) await finalizePaidRecord(collection, orderId, order);
+      if (result.paid) await markOrderPaid(orderId, order);
 
       res.status(200).send('ok');
     } catch (err) {
@@ -296,29 +242,28 @@ exports.qpayCallback = functions
     }
   });
 
-// POST /api/qpay/check  body:{orderId, collection?}
-// Frontend polling fallback — checks payment status and finalizes if paid.
+// POST /api/qpay/check  body:{orderId}
+// Frontend polling fallback — checks payment status and marks paid.
 exports.qpayCheckPayment = functions
-  .runWith({ secrets: QPAY_FULFILL_SECRETS })
+  .runWith({ secrets: QPAY_SECRETS })
   .https.onRequest(async (req, res) => {
     setCors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
 
     const { orderId } = req.body || {};
-    const collection = resolveCollection(req.body && req.body.collection);
     if (!orderId) { res.status(400).json({ ok: false, error: 'orderId required' }); return; }
 
     try {
-      const snap = await admin.database().ref(`${collection}/${orderId}`).once('value');
+      const snap = await admin.database().ref(`orders/${orderId}`).once('value');
       const order = snap.val();
-      if (!order) { res.status(404).json({ ok: false, error: 'Record not found' }); return; }
+      if (!order) { res.status(404).json({ ok: false, error: 'Order not found' }); return; }
 
       const invoiceId = order.qpay?.invoice_id;
-      if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on record' }); return; }
+      if (!invoiceId) { res.status(400).json({ ok: false, error: 'No invoice on order' }); return; }
 
       const result = await qpay.checkPayment(invoiceId);
-      if (result.paid) await finalizePaidRecord(collection, orderId, order);
+      if (result.paid) await markOrderPaid(orderId, order);
 
       res.status(200).json({ ok: true, paid: result.paid, paidAmount: result.paidAmount });
     } catch (err) {
