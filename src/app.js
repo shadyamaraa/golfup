@@ -1734,7 +1734,9 @@ async function handleDelete(game) {
     try {
       await mtbogd.cancelBooking(game.id);
     } catch (err) {
-      showToast('MTBogd цуцлалт амжилтгүй: ' + err.message, 'warning');
+      // Auto-cancel failed — the game is still deleted, but tell the user to
+      // cancel the MTBogd booking manually so the slot is freed.
+      showToast(t('bookingCancelFailed'), 'warning');
     }
   }
 

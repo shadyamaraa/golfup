@@ -105,11 +105,12 @@ exports.cancelGameBooking = functions
   if (!game.bookingId) { res.status(400).json({ error: 'No booking on this game' }); return; }
 
   const apiKey = process.env.MTBOGD_API_KEY;
+  const reason = (req.body && req.body.reason) || 'Cancelled from UBGolf';
   try {
     const upRes = await fetch(`${MTBOGD_BASE}/bookings/${game.bookingId}/cancel`, {
-      method: 'PATCH',
+      method: 'POST',
       headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ reason }),
     });
     const data = await upRes.json();
     res.status(upRes.status).json(data);
