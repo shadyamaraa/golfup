@@ -1,9 +1,9 @@
 name: Production Deploy
 
+# Manual trigger only — deploy to production from the GitHub Actions tab
+# ("Run workflow"). Pushing to main does NOT auto-deploy, so a merge is safe.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
