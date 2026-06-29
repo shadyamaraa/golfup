@@ -5,9 +5,9 @@ import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const isKiosk = !!window.__TAURI__;
-// Preview channels have '--' in hostname (golfup-app--claude-…). Production domains don't.
-// This flag gates QPay UI even after merging to main, so production stays unaffected.
-const QPAY_ENABLED = /--|localhost|127\.0\.0\.1/.test(location.hostname);
+// QPay is live everywhere, including production (ubgolf.club). To restrict it to
+// preview/localhost again, use: /--|localhost|127\.0\.0\.1/.test(location.hostname)
+const QPAY_ENABLED = true;
 
 let currentUser = null;
 let allUsersMap = {};
