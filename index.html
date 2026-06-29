@@ -51,6 +51,14 @@
 
     <!-- Toast Container -->
     <div id="toast-container"></div>
+
+    <!-- Bottom navigation (mobile-first; shown when logged in, hidden in kiosk) -->
+    <nav id="bottom-nav" class="bottom-nav hidden">
+      <a href="#/" class="bn-item" data-route="home"><span class="bn-icon">🏠</span><span class="bn-label" id="bn-home"></span></a>
+      <a href="#/create" class="bn-item" data-route="create"><span class="bn-icon">➕</span><span class="bn-label" id="bn-create"></span></a>
+      <a href="#/menu" class="bn-item" data-route="food"><span class="bn-icon">🍽️</span><span class="bn-label" id="bn-food"></span></a>
+      <button type="button" class="bn-item" id="bn-profile-btn" data-route="profile"><span class="bn-icon">👤</span><span class="bn-label" id="bn-profile"></span></button>
+    </nav>
   </div>
 
   <script type="module" src="/src/main.js"></script>

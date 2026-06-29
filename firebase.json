@@ -52,6 +52,18 @@
         "function": "syncBookingPlayers"
       },
       {
+        "source": "/api/qpay/invoice",
+        "function": "qpayCreateInvoice"
+      },
+      {
+        "source": "/api/qpay/callback",
+        "function": "qpayCallback"
+      },
+      {
+        "source": "/api/qpay/check",
+        "function": "qpayCheckPayment"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

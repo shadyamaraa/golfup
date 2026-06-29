@@ -1,5 +1,65 @@
 # CHANGELOG_AI.md
 
+## 2026-06-28 (3)
+
+### Design system foundation (for upcoming UI redesign)
+
+- `src/style.css` `:root`: added a **semantic token layer** (`--color-*`,
+  `--space-*`, `--text-*`, font weights) that aliases the existing primitives —
+  a redesign re-points these centrally without touching component code. Existing
+  primitives untouched (non-breaking).
+- `src/app.js` `renderStyleGuide()` + `#/styleguide` route (no login required):
+  a **living style guide** that renders the real tokens and component classes —
+  colors, type, spacing, radius, buttons, chips, cards, tracker, skeleton — so
+  it never drifts from the app.
+- `docs/design-system.md`: documents the 3-layer structure (primitive →
+  semantic → component), token reference, component class list, and a
+  step-by-step UI-redesign playbook. Stays vanilla JS (no React/Storybook).
+
+## 2026-06-28 (2)
+
+### UX improvements — remaining items (#1,6,7,9,10,12)
+
+- **Bottom navigation** (`index.html`, `updateBottomNav`): fixed mobile nav
+  (🏠 Нүүр / ➕ Тоглолт / 🍽️ Хоол / 👤 Профайл) with active-route highlight;
+  hidden in kiosk, auth and kitchen. Profile opens the existing profile modal.
+- **Onboarding** (`showOnboarding`/`maybeShowOnboarding`): one-time 3-step intro
+  after first login (localStorage `golfup_onboarded`), gated behind profile
+  completion.
+- **Skeleton loader** (`skeletonCards`): shimmer placeholders replace the home
+  feed spinner.
+- **Pull-to-refresh** (`initPullToRefresh`): pull down at the top to re-run the
+  router (mobile only; skipped when a modal is open).
+- **Food → Game link** (`renderFoodOrder`): entering #/menu with no game context
+  shows a picker of the user's upcoming games to attach the order to.
+- **Tee-time picker** (#12): single-tee times select in one tap; multi-tee
+  times show a count badge.
+- i18n: nav/onboarding/ptr/food-picker keys (mn/en/kr). CSS: bottom nav,
+  skeleton, pull-to-refresh, onboarding.
+
+## 2026-06-28
+
+### UX improvements batch (high-impact quick wins from docs/ux-improvements.md)
+
+- **Waiting-list position** (`src/app.js` `renderGameView`): when the current
+  user is on a game's waiting list, a banner shows their spot ("Та хүлээлгийн
+  жагсаалтын N-р байранд") via `waitlistBannerText` (mn/en/kr).
+- **Order tracking** (`renderOrderDetail`): 2-step tracker → 4-step
+  Захиалсан → Төлсөн → Бэлдэж байна → Бэлэн, with a pulsing "current" step.
+  New `#/orders` "Миний захиалга" view (`renderMyOrders`) listing the user's
+  orders with status chips, plus a shortcut button on the home hero.
+- **Game cards** (`renderGamesCards`): slot progress bar + "N дагадаг" social
+  proof for players the user follows.
+- **Join friction** (`renderGameView`): one-click join — the confirm modal is
+  dropped since the description already shows on the detail page.
+- **Empty state** (home): added a "Тоглолт үүсгэх" CTA under the empty message.
+- **Kitchen bump** (`renderKitchenDisplay`): tapping "Дууссан ✓" smooth-scrolls
+  to and flashes the next active order.
+- `src/i18n.js`: keys myOrders, noOrdersYet, trackOrdered/Preparing/Ready,
+  followingHere, createFirstGame (mn/en/kr).
+- `src/style.css`: slot progress, status chips, waitlist banner, current-step
+  pulse, kitchen-bump flash.
+
 ## 2026-06-19 (3)
 
 ### Rename desktop app to "UB Golf Club" + new icon + robust popup position

@@ -5,6 +5,9 @@ import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const isKiosk = !!window.__TAURI__;
+// Preview channels have '--' in hostname (golfup-app--claude-…). Production domains don't.
+// This flag gates QPay UI even after merging to main, so production stays unaffected.
+const QPAY_ENABLED = /--|localhost|127\.0\.0\.1/.test(location.hostname);
 
 let currentUser = null;
 let allUsersMap = {};
@@ -194,9 +197,10 @@ export async function router() {
       followsLoadedForUser = currentUser.id;
     }
     updateHeader();
+    updateBottomNav(hash);
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen') {
+    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
     }
@@ -210,8 +214,10 @@ export async function router() {
     else if (hash === '#/admin') await renderAdminPanel();
     else if (hash === '#/menu') await renderFoodOrder(null);
     else if (hash.startsWith('#/order/')) await renderFoodOrder(hash.split('#/order/')[1]);
+    else if (hash === '#/orders') await renderMyOrders();
     else if (hash.startsWith('#/orders/')) await renderOrderDetail(hash.split('#/orders/')[1]);
     else if (hash === '#/kitchen') await renderKitchenDisplay();
+    else if (hash === '#/styleguide') renderStyleGuide();
     else await renderHome();
   } catch (err) {
     console.error('Router error:', err);
@@ -237,6 +243,170 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
+}
+
+function updateBottomNav(hash) {
+  const nav = document.getElementById('bottom-nav');
+  if (!nav) return;
+  // Hidden in kiosk, on the auth screen, and on the kitchen display.
+  const hide = isKiosk || !currentUser || hash === '#/kitchen';
+  nav.classList.toggle('hidden', hide);
+  if (hide) return;
+
+  const labels = { 'bn-home': 'navHome', 'bn-create': 'navCreate', 'bn-food': 'navFood', 'bn-profile': 'navProfile' };
+  Object.entries(labels).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t(key); });
+
+  const active = (hash === '#/' || hash === '#/home') ? 'home'
+    : hash === '#/create' ? 'create'
+    : (hash === '#/menu' || hash.startsWith('#/order/')) ? 'food'
+    : '';
+  nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
+}
+
+// ---- Living style guide (#/styleguide) ----
+// A code-driven catalog of design tokens + components. It renders the real CSS
+// variables and classes, so it never drifts from the app. Use it as the shared
+// reference when doing a UI redesign.
+function renderStyleGuide() {
+  const semanticColors = [
+    '--color-bg', '--color-surface', '--color-surface-hover', '--color-border',
+    '--color-accent', '--color-accent-strong', '--color-brand',
+    '--color-success', '--color-danger', '--color-warning',
+    '--color-text', '--color-text-muted', '--color-text-faint',
+  ];
+  const primitiveColors = [
+    '--gold', '--gold-light', '--gold-dark', '--emerald', '--emerald-light',
+    '--emerald-dark', '--green-bright', '--red', '--red-light', '--amber',
+    '--bg-primary', '--bg-secondary',
+  ];
+  const spaces = ['--space-xs', '--space-sm', '--space-md', '--space-lg', '--space-xl', '--space-2xl'];
+  const radii = ['--radius-sm', '--radius-md', '--radius-lg', '--radius-xl'];
+  const types = [
+    ['--text-2xl', 'Heading 2xl'], ['--text-xl', 'Heading xl'], ['--text-lg', 'Heading lg'],
+    ['--text-base', 'Body base'], ['--text-sm', 'Small'], ['--text-xs', 'Caption xs'],
+  ];
+
+  const swatch = (name) => `
+    <div style="text-align:center;">
+      <div style="height:54px;border-radius:10px;background:var(${name});border:1px solid var(--color-border);"></div>
+      <code style="font-size:0.68rem;color:var(--color-text-muted);display:block;margin-top:4px;">${name}</code>
+    </div>`;
+
+  const section = (title, body) => `
+    <section style="margin:28px 0;">
+      <h2 style="font-size:var(--text-lg);font-weight:800;margin-bottom:12px;border-bottom:1px solid var(--color-border);padding-bottom:6px;">${title}</h2>
+      ${body}
+    </section>`;
+
+  const grid = (cols, body) => `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:10px;">${body}</div>`;
+
+  main().innerHTML = `
+    <div class="detail-container fade-in" style="max-width:860px;">
+      <a href="#/" class="back-link">← ${t('back')}</a>
+      <div class="glass-card">
+        <h1 style="font-size:var(--text-2xl);font-weight:800;">🎨 UB Golf — Design System</h1>
+        <p style="color:var(--color-text-muted);">Амьд style guide. Бүх token/компонент кодоос автоматаар уншигдана. Redesign хийхдээ <code>:root</code> дахь <code>--color-*</code> / <code>--space-*</code>-г өөрчилнө.</p>
+
+        ${section('Semantic colors (UI эдгээрийг ашиглана)', grid(4, semanticColors.map(swatch).join('')))}
+        ${section('Primitive colors (brand палитр)', grid(4, primitiveColors.map(swatch).join('')))}
+
+        ${section('Typography', types.map(([v, label]) => `<div style="font-size:var(${v});margin-bottom:6px;">${label} <code style="font-size:0.68rem;color:var(--color-text-muted);">${v}</code></div>`).join(''))}
+
+        ${section('Spacing scale', spaces.map(v => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><code style="width:90px;font-size:0.7rem;color:var(--color-text-muted);">${v}</code><div style="height:14px;width:var(${v});background:var(--color-accent);border-radius:3px;"></div></div>`).join(''))}
+
+        ${section('Radius', grid(4, radii.map(v => `<div style="text-align:center;"><div style="height:54px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(${v});"></div><code style="font-size:0.68rem;color:var(--color-text-muted);">${v}</code></div>`).join('')))}
+
+        ${section('Buttons', `
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <button class="btn btn-primary">Primary</button>
+            <button class="btn btn-outline">Outline</button>
+            <button class="btn btn-ghost">Ghost</button>
+            <button class="btn btn-danger">Danger</button>
+            <button class="btn btn-outline-danger">Outline danger</button>
+            <button class="btn btn-primary btn-sm">Small</button>
+            <button class="btn btn-primary btn-lg">Large</button>
+          </div>
+          <p style="font-size:0.72rem;color:var(--color-text-muted);margin-top:8px;"><code>.btn</code> + <code>.btn-primary/outline/ghost/danger</code> + <code>.btn-sm/lg</code></p>`)}
+
+        ${section('Status chips & badges', `
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <span class="order-chip pending">⏳ Pending</span>
+            <span class="order-chip paid">👨‍🍳 Paid</span>
+            <span class="order-chip done">✅ Done</span>
+            <span class="game-status status-open">Open</span>
+            <span class="game-status status-full">Full</span>
+          </div>
+          <div class="waitlist-banner" style="margin-top:12px;">⏳ Та хүлээлгийн жагсаалтын 2-р байранд</div>`)}
+
+        ${section('Cards', `
+          <div class="game-card glass-card" style="max-width:340px;">
+            <div class="game-card-body"><div class="game-location">📍 Sky Resort</div></div>
+            <div class="game-card-footer">
+              <div class="game-players-info"><span>3 / 4 ${t('players')}</span></div>
+              <div class="slot-progress"><div class="slot-progress-fill" style="width:75%;"></div></div>
+            </div>
+          </div>`)}
+
+        ${section('Form input', `<input type="text" class="food-search" placeholder="Жишээ input…" style="max-width:320px;" />`)}
+
+        ${section('Order tracker (4-step)', `
+          <div class="order-status-track">
+            <div class="order-status-step reached"><div class="order-status-dot">✓</div><div class="order-status-text">${t('trackOrdered')}</div></div>
+            <div class="order-status-line reached"></div>
+            <div class="order-status-step reached"><div class="order-status-dot">✓</div><div class="order-status-text">${t('orderStatusPaid')}</div></div>
+            <div class="order-status-line"></div>
+            <div class="order-status-step current"><div class="order-status-dot">3</div><div class="order-status-text">${t('trackPreparing')}</div></div>
+            <div class="order-status-line"></div>
+            <div class="order-status-step"><div class="order-status-dot">4</div><div class="order-status-text">${t('trackReady')}</div></div>
+          </div>`)}
+
+        ${section('Skeleton loader', skeletonCards(2))}
+      </div>
+    </div>`;
+}
+
+// ---- Onboarding (one-time, after first login) ----
+function maybeShowOnboarding() {
+  if (!currentUser || isKiosk) return;
+  if (localStorage.getItem('golfup_onboarded')) return;
+  if (needsProfileCompletion(currentUser)) return; // let the profile modal finish first
+  if (document.querySelector('.modal-overlay, .onboard-overlay')) return;
+  showOnboarding();
+}
+
+function showOnboarding() {
+  const steps = [
+    { emoji: '⛳', title: t('onboardStep1Title'), body: t('onboardStep1Body') },
+    { emoji: '➕', title: t('onboardStep2Title'), body: t('onboardStep2Body') },
+    { emoji: '🍽️', title: t('onboardStep3Title'), body: t('onboardStep3Body') },
+  ];
+  let i = 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'onboard-overlay';
+  document.body.appendChild(overlay);
+
+  const finish = () => { localStorage.setItem('golfup_onboarded', '1'); overlay.remove(); };
+
+  const paint = () => {
+    const s = steps[i];
+    const last = i === steps.length - 1;
+    overlay.innerHTML = `
+      <div class="onboard-card glass-card">
+        ${i === 0 ? `<div style="font-size:0.85rem;color:var(--gold);font-weight:700;margin-bottom:4px;">${t('onboardWelcome')}</div>` : ''}
+        <div class="onboard-emoji">${s.emoji}</div>
+        <div class="onboard-title">${s.title}</div>
+        <div class="onboard-body">${s.body}</div>
+        <div class="onboard-dots">${steps.map((_, idx) => `<span class="onboard-dot ${idx === i ? 'active' : ''}"></span>`).join('')}</div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <button class="btn btn-ghost" id="ob-skip">${t('onboardSkip')}</button>
+          <button class="btn btn-primary" id="ob-next" style="flex:1;">${last ? t('onboardDone') : t('onboardNext')}</button>
+        </div>
+      </div>`;
+    overlay.querySelector('#ob-skip').onclick = finish;
+    overlay.querySelector('#ob-next').onclick = () => { if (last) finish(); else { i++; paint(); } };
+  };
+  paint();
 }
 
 // ---- Auth View ----
@@ -371,11 +541,14 @@ async function renderHome() {
           <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
             🍽️ ${t('foodMenu')}
           </a>
+          <a href="#/orders" class="btn btn-outline btn-lg" id="home-orders-btn">
+            📦 ${t('myOrders')}
+          </a>
         </div>
       </div>
       <div id="notifications-section"></div>
       <div class="section">
-        <div class="game-filter-tabs">
+        <div class="game-filter-tabs" id="home-filter-tabs">
           <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
           <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
           <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
@@ -383,7 +556,7 @@ async function renderHome() {
           <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
           <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
         </div>
-        <div id="active-games-list" class="games-list"><div class="loading-spinner"></div></div>
+        <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
       </div>
       <div class="section past-section" style="margin-top: 40px;">
         <div class="history-toggle-header" id="history-toggle">
@@ -445,6 +618,8 @@ async function renderHome() {
     if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
     if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
+
+  maybeShowOnboarding();
 }
 
 function renderNotifications(notifs) {
@@ -590,7 +765,7 @@ function renderGamesHome(games) {
         </div>
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
   }
 
   if (pastContainer && historyOpen) {
@@ -600,6 +775,15 @@ function renderGamesHome(games) {
   if (archiveContainer && archiveOpen) {
     archiveContainer.innerHTML = archivedGames.length > 0 ? renderGamesCards(archivedGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noArchive')}</p>`;
   }
+}
+
+function skeletonCards(n = 3) {
+  return Array.from({ length: n }, () => `
+    <div class="skeleton-card">
+      <div class="skeleton-line tall short"></div>
+      <div class="skeleton-line med"></div>
+      <div class="skeleton-line short"></div>
+    </div>`).join('');
 }
 
 function renderGamesCards(games, isPast = false) {
@@ -612,6 +796,10 @@ function renderGamesCards(games, isPast = false) {
     const isFull = spotsLeft === 0;
     const dateStr = formatDate(g.date);
     const gameCommunities = gameCommunityIds(g);
+    const fillPct = totalSlots > 0 ? Math.min(100, Math.round((totalPlayers / totalSlots) * 100)) : 0;
+    // Social proof: how many players in this game the current user follows.
+    const followedCount = groups.flatMap(grp => ensureArray(grp))
+      .filter(p => p?.id && p.id !== currentUser?.id && currentUserFollows[p.id]).length;
     return `
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
         <div class="game-card-header">
@@ -634,6 +822,10 @@ function renderGamesCards(games, isPast = false) {
             <div class="player-dots">${renderPlayerDots(g)}</div>
             <span>${totalPlayers} / ${totalSlots} ${t('players')}</span>
           </div>
+          <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
+            <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
+          </div>
+          ${followedCount > 0 ? `<div class="game-card-social">👤 ${followedCount} ${t('followingHere')}</div>` : ''}
         </div>
       </a>`;
   }).join('');
@@ -777,10 +969,15 @@ async function renderCreateGame() {
         <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
           <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
         </label>
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
+        ${QPAY_ENABLED
+          ? `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); cursor:pointer; font-size:0.9rem;">
+          <input type="radio" name="create-payment" value="qpay"> 📱 ${t('payQpay')}
+        </label>`
+          : `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
           <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
           <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-        </label>
+        </label>`
+        }
       </div>
     </div>`;
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
@@ -868,7 +1065,7 @@ async function renderCreateGame() {
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
               <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
-                ${time}
+                ${time}${tees.length > 1 ? ` <span style="font-size:0.7rem;color:var(--text-secondary);">·${tees.length}</span>` : ''}
               </button>${teeRow}
             </div>`;
           }).join('')
@@ -890,7 +1087,10 @@ async function renderCreateGame() {
           renderGroups();
         });
         slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
-          const id = b.dataset.key + '|' + b.dataset.time;
+          const key = b.dataset.key, time = b.dataset.time;
+          const tees = groups[key].filter(s => s.time === time);
+          if (tees.length === 1) { selectSlot(tees[0]); return; } // single option → pick in one tap
+          const id = key + '|' + time;
           openTime = (openTime === id) ? null : id;
           renderGroups();
         });
@@ -1026,9 +1226,14 @@ async function renderCreateGame() {
       return;
     }
 
+    // Payment method (only meaningful when a tee slot is selected).
+    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
+    const useQpayTee = QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
+
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
+    let pendingBooking = null; // QPay: confirm is deferred to the server callback
 
     if (selectedTeeSlot) {
       const submitBtn = document.getElementById('create-submit-btn');
@@ -1038,11 +1243,23 @@ async function renderCreateGame() {
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
-        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
-        bookingCode = confirmed.bookingCode || null;
-        bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
-        showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
+        if (useQpayTee) {
+          // Hold the slot but DON'T confirm — the server confirms the MTBogd
+          // booking only after QPay payment succeeds (no orphan bookings).
+          pendingBooking = {
+            holdId: hold.holdId,
+            slotId: selectedTeeSlot.slotId,
+            customer: { firstName: playerName, phone: playerPhone },
+            players: playerList,
+            notes: '',
+          };
+        } else {
+          const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+          bookingCode = confirmed.bookingCode || null;
+          bookingId = confirmed.bookingId || null;
+          showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
+        }
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
         submitBtn.textContent = t('create');
@@ -1069,33 +1286,61 @@ async function renderCreateGame() {
       invitedIds,
       ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
     };
-    await store.saveGame(game);
 
-    const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
-    const followerIds = await store.getFollowerIds(currentUser.id);
-    const userById = Object.fromEntries(users.map(u => [u.id, u]));
-    // Build a per-user notification map so each user gets at most one notification
-    const notifMap = new Map();
-    for (const uid of invitedIds) {
-      if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
-    }
-    if (!isPrivate) {
-      for (const fid of followerIds) {
-        if (notifMap.has(fid) || fid === currentUser.id) continue;
-        if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
-          notifMap.set(fid, { type: 'new_game', ...notifPayload });
-        }
+    // Notifications reference the game, so they only fire once the game exists.
+    // For QPay tee-time the game is created server-side on payment, so this runs
+    // from the payment-success hook instead (best-effort if the browser is open).
+    const sendCreateNotifications = async () => {
+      const notifPayload = { gameId: game.id, from: displayUsername(currentUser), gameDate: game.date, gameTime: game.time, gameLocation: game.location };
+      const followerIds = await store.getFollowerIds(currentUser.id);
+      const userById = Object.fromEntries(users.map(u => [u.id, u]));
+      const notifMap = new Map();
+      for (const uid of invitedIds) {
+        if (uid !== currentUser.id) notifMap.set(uid, { type: 'invite', ...notifPayload });
       }
-      if (targetCommunities.length > 0) {
-        for (const u of users) {
-          if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
-          if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
-            notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+      if (!isPrivate) {
+        for (const fid of followerIds) {
+          if (notifMap.has(fid) || fid === currentUser.id) continue;
+          if (targetCommunities.length === 0 || targetCommunities.some(id => userCommunityIds(userById[fid]).includes(id))) {
+            notifMap.set(fid, { type: 'new_game', ...notifPayload });
+          }
+        }
+        if (targetCommunities.length > 0) {
+          for (const u of users) {
+            if (notifMap.has(u.id) || u.id === currentUser.id || u.status === 'hold') continue;
+            if (targetCommunities.some(id => userCommunityIds(u).includes(id))) {
+              notifMap.set(u.id, { type: 'new_game', ...notifPayload });
+            }
           }
         }
       }
+      await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
+    };
+
+    // QPay tee-time: stash the hold + full game in bookingPayments and let the
+    // server confirm the booking + create the game when payment lands. The game
+    // is NOT saved here — that keeps payment and fulfillment atomic on the server.
+    if (useQpayTee) {
+      const paymentId = await store.createBookingPayment({
+        gameId: game.id,
+        total: selectedTeeSlot.price,
+        customerName: currentUser.fullName || displayUsername(currentUser),
+        customerPhone: currentUser.phone || '',
+        status: 'pending',
+        paymentMethod: 'qpay',
+        pendingBooking: { ...pendingBooking, game },
+      });
+      await showQpayModal(paymentId, selectedTeeSlot.price, {
+        collection: 'bookingPayments',
+        doneHash: '#/game/' + game.id,
+        cancelHash: '#/',
+        onPaid: async () => { try { await sendCreateNotifications(); } catch (_) {} },
+      });
+      return;
     }
-    await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
+
+    await store.saveGame(game);
+    await sendCreateNotifications();
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -1143,6 +1388,15 @@ async function renderGameDetail(gameId) {
     showToast('Мэдээлэл уншихад алдаа гарлаа. Та дахин нэвтэрч үзнэ үү.', 'error');
     location.hash = '#/';
   }
+}
+
+// Localized "you are #N on the waitlist" banner text (number interpolation
+// is clearer as a small lang switch than several glued i18n fragments).
+function waitlistBannerText(pos, ahead) {
+  const l = getLang();
+  if (l === 'en') return `You are #${pos} on the waitlist${ahead ? ` — ${ahead} ahead of you` : ''}`;
+  if (l === 'kr') return `대기자 목록 ${pos}번째${ahead ? ` — 앞에 ${ahead}명` : ''}`;
+  return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
 }
 
 function renderGameView(game) {
@@ -1198,6 +1452,12 @@ function renderGameView(game) {
           <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
           <a href="#/order/${game.id}" class="btn btn-outline">🍽️ ${t('orderFood')}</a>
         </div>
+        ${(() => {
+          const wIdx = waitingList.findIndex(p => p?.id === currentUser?.id);
+          return wIdx >= 0
+            ? `<div class="waitlist-banner">⏳ ${waitlistBannerText(wIdx + 1, wIdx)}</div>`
+            : '';
+        })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
@@ -1245,13 +1505,9 @@ function renderGameView(game) {
     </div>`;
 
   // Event listeners
-  document.getElementById('join-btn')?.addEventListener('click', () => {
-    if (game.description) {
-      showJoinConfirmModal(game);
-    } else {
-      handleJoin(game);
-    }
-  });
+  // One-click join — the description is already shown on this page, so no extra
+  // confirmation modal is needed (reduces friction, matches Meetup/Eventbrite).
+  document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
@@ -3089,6 +3345,49 @@ async function initFCM(user) {
 }
 
 // ---- Init ----
+// Lightweight mobile pull-to-refresh: pulling down at the top of the page
+// re-runs the router (re-renders the current view). Data is already live via
+// Firebase listeners, so this is mostly a familiar affordance.
+function initPullToRefresh() {
+  if (isKiosk) return;
+  const THRESH = 70;
+  let startY = 0, pulling = false, dist = 0;
+
+  const indicator = document.createElement('div');
+  indicator.className = 'ptr-indicator';
+  indicator.innerHTML = `<span class="ptr-spin"></span><span class="ptr-text"></span>`;
+  document.body.appendChild(indicator);
+  const textEl = indicator.querySelector('.ptr-text');
+
+  const blocked = () => document.querySelector('.modal-overlay, .onboard-overlay, .popup-overlay');
+
+  window.addEventListener('touchstart', (e) => {
+    if (window.scrollY > 0 || e.touches.length !== 1 || blocked()) { pulling = false; return; }
+    startY = e.touches[0].clientY; pulling = true; dist = 0;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if (dist <= 0) { indicator.style.height = '0'; return; }
+    indicator.style.height = Math.min(56, dist * 0.5) + 'px';
+    textEl.textContent = dist >= THRESH ? t('ptrRelease') : '';
+  }, { passive: true });
+
+  window.addEventListener('touchend', async () => {
+    if (!pulling) return;
+    pulling = false;
+    if (dist >= THRESH) {
+      indicator.style.height = '40px';
+      indicator.classList.add('spinning');
+      textEl.textContent = t('ptrRefreshing');
+      try { await router(); } catch (_) {}
+      indicator.classList.remove('spinning');
+    }
+    indicator.style.height = '0';
+  });
+}
+
 export function initApp() {
   document.getElementById('lang-toggle')?.addEventListener('click', () => {
     const newLang = toggleLang();
@@ -3112,6 +3411,13 @@ export function initApp() {
     if (!currentUser) return;
     showProfileModal(currentUser);
   });
+
+  document.getElementById('bn-profile-btn')?.addEventListener('click', () => {
+    if (!currentUser) return;
+    showProfileModal(currentUser);
+  });
+
+  initPullToRefresh();
 
   // Close any modal/popup when its backdrop is clicked
   document.body.addEventListener('click', (e) => {
@@ -3442,6 +3748,22 @@ async function renderFoodOrder(gameId) {
   const available = menuItems.filter(i => i.available !== false);
   foodCart = {};
 
+  // #/menu has no game context → offer to attach the order to one of the user's
+  // upcoming games so it isn't an "orphan" order.
+  let myUpcomingGames = [];
+  if (!gameId && currentUser) {
+    try {
+      const games = await store.loadAllGames();
+      const now = Date.now();
+      myUpcomingGames = games
+        .filter(g => {
+          const gt = new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+          return gt >= now && isPlayerInGame(g, currentUser.id);
+        })
+        .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
+    } catch (_) {}
+  }
+
   // Build ordered category list (by min sortOrder of items in each category)
   const catMinOrder = {};
   available.forEach(item => {
@@ -3582,6 +3904,14 @@ async function renderFoodOrder(gameId) {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
+      ${(!gameId && myUpcomingGames.length) ? `
+        <div class="glass-card" id="game-context-picker" style="margin-bottom:12px;padding:12px 14px;">
+          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">🍽️ ${t('chooseGameForOrder')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${myUpcomingGames.slice(0, 6).map(g => `<a href="#/order/${g.id}" class="btn btn-outline btn-sm" style="text-decoration:none;">${formatDate(g.date)} · ${g.time} · ${esc(g.location || '')}</a>`).join('')}
+            <button type="button" id="order-no-game" class="btn btn-ghost btn-sm">${t('orderNoGame')}</button>
+          </div>
+        </div>` : ''}
       <div class="glass-card">
         <div class="food-sticky-head">
           <div class="food-top-bar">
@@ -3600,6 +3930,10 @@ async function renderFoodOrder(gameId) {
         </div>`}
       </div>
     </div>`;
+
+  document.getElementById('order-no-game')?.addEventListener('click', () => {
+    document.getElementById('game-context-picker')?.remove();
+  });
 
   if (available.length > 0) {
     // Set cat-rail sticky offset to sit below the sticky head
@@ -3698,7 +4032,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
         <div style="display:flex;flex-direction:column;gap:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> 🏌️ ${t('payClubhouse')}</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>
+          ${QPAY_ENABLED
+            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> 📱 ${t('payQpay')}</label>`
+            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
+          }
         </div>
 
         <div style="display:flex;flex-direction:column;gap:6px;">
@@ -3764,6 +4101,8 @@ function showCheckoutModal(menuItems, tables, gameId) {
       return { itemId: id, name: item?.name || id, price: item?.price || 0, qty };
     });
 
+    const payMethod = modal.querySelector('input[name="co-pay"]:checked')?.value || 'clubhouse';
+
     const order = {
       customerName: name,
       customerPhone: phone,
@@ -3775,8 +4114,9 @@ function showCheckoutModal(menuItems, tables, gameId) {
       tableId: delivery === 'table' ? selectedTableId : null,
       pickupTime: pickupRadio === 'asap' ? 'asap' : pickupTimeVal,
       orderNotes: notes || '',
-      status: 'paid',
-      paidAt: new Date().toISOString(),
+      paymentMethod: payMethod,
+      status: payMethod === 'qpay' ? 'pending' : 'paid',
+      paidAt: payMethod === 'qpay' ? null : new Date().toISOString(),
       notified: false,
     };
 
@@ -3785,11 +4125,22 @@ function showCheckoutModal(menuItems, tables, gameId) {
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      await store.createOrder(order);
-      modal.remove();
-      foodCart = {};
-      showToast('✅ ' + t('orderPlaced'), 'success');
-      location.hash = gameId ? '#/game/' + gameId : '#/';
+      const orderId = await store.createOrder(order);
+
+      if (payMethod === 'qpay') {
+        modal.remove();
+        foodCart = {};
+        await showQpayModal(orderId, total, {
+          collection: 'orders',
+          doneHash: gameId ? '#/game/' + gameId : '#/orders/' + orderId,
+          cancelHash: gameId ? '#/game/' + gameId : '#/',
+        });
+      } else {
+        modal.remove();
+        foodCart = {};
+        showToast('✅ ' + t('orderPlaced'), 'success');
+        location.hash = gameId ? '#/game/' + gameId : '#/';
+      }
     } catch (err) {
       showToast('Алдаа: ' + err.message, 'error');
       submitting = false;
@@ -3797,6 +4148,180 @@ function showCheckoutModal(menuItems, tables, gameId) {
       btn.textContent = t('placeOrder');
     }
   };
+}
+
+// opts.collection: 'orders' (food) | 'bookingPayments' (tee-time)
+// opts.doneHash: where to navigate after success/close
+async function showQpayModal(orderId, total, opts = {}) {
+  const collection = opts.collection || 'orders';
+  const doneHash = opts.doneHash || '#/orders/' + orderId;
+  const cancelHash = opts.cancelHash || '#/';
+  const onChanged = collection === 'bookingPayments' ? store.onBookingPaymentChanged : store.onOrderChanged;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px;text-align:center;">
+      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <p id="qpay-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
+      <div id="qpay-qr-wrap" style="display:none;">
+        <img id="qpay-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
+        <p style="font-size:0.8rem;color:var(--text-secondary);margin:8px 0 0;">${t('qpayScanToPay')}</p>
+        <div style="font-size:1.1rem;font-weight:700;margin:8px 0;">₮${total.toLocaleString()}</div>
+        <div id="qpay-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
+      </div>
+      <div id="qpay-success-wrap" style="display:none;">
+        <div style="font-size:2.5rem;">✅</div>
+        <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
+        <button id="qpay-retry" class="btn btn-ghost" style="display:none;">${t('qpayRetry')}</button>
+        <button id="qpay-close" class="btn btn-ghost">Хаах</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const statusEl = modal.querySelector('#qpay-status');
+  const qrWrap = modal.querySelector('#qpay-qr-wrap');
+  const qrImg = modal.querySelector('#qpay-qr-img');
+  const bankLinks = modal.querySelector('#qpay-bank-links');
+  const successWrap = modal.querySelector('#qpay-success-wrap');
+  const retryBtn = modal.querySelector('#qpay-retry');
+  const closeBtn = modal.querySelector('#qpay-close');
+
+  let pollTimer = null;
+  let settled = false;
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  async function onPaid(rec) {
+    if (settled) return;
+    settled = true;
+    stopPolling();
+    unsub();
+    qrWrap.style.display = 'none';
+    retryBtn.style.display = 'none';
+    statusEl.textContent = '';
+    successWrap.style.display = 'block';
+    if (opts.onPaid) { try { await opts.onPaid(rec); } catch (_) {} }
+    setTimeout(() => {
+      modal.remove();
+      // Payment landed but the server couldn't confirm the booking (e.g. hold
+      // expired) — tell the user instead of a plain success.
+      if (rec && rec.bookingError) {
+        showToast('⚠️ Төлбөр хүлээн авлаа, гэвч захиалга баталгаажсангүй. Бидэнтэй холбогдоно уу.', 'error');
+      } else {
+        showToast('✅ ' + t('qpaySuccess'), 'success');
+      }
+      location.hash = doneHash;
+    }, 1500);
+  }
+
+  closeBtn.onclick = async () => {
+    stopPolling();
+    unsub();
+    if (settled) { modal.remove(); location.hash = doneHash; return; }
+    // Backed out before paying — remove the dangling unpaid record so it never
+    // shows up as a phantom order, then leave to a safe page.
+    try { await store.cancelPendingPayment(collection, orderId); } catch (_) {}
+    modal.remove();
+    showToast(t('qpayCancelled'), 'info');
+    location.hash = cancelHash;
+  };
+
+  // Server-side check finalizes the record (confirm booking + mark paid); the
+  // resulting RTDB write flows back through the listener below, which settles
+  // the modal with the full record (incl. any bookingError).
+  retryBtn.onclick = async () => {
+    retryBtn.style.display = 'none';
+    statusEl.textContent = t('qpayWaiting');
+    try {
+      const result = await store.checkQpayPayment(orderId, collection);
+      if (!result.paid) { statusEl.textContent = t('qpayWaiting'); retryBtn.style.display = 'inline-block'; }
+    } catch {
+      retryBtn.style.display = 'inline-block';
+    }
+  };
+
+  // Listen for RTDB update from callback/check (instant when server confirms)
+  const unsub = onChanged(orderId, (rec) => {
+    if (rec && rec.status === 'paid' && rec.paymentMethod === 'qpay') {
+      onPaid(rec);
+    }
+  });
+  try {
+    const invoice = await store.createQpayInvoice(orderId, collection);
+    qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
+    qrWrap.style.display = 'block';
+    statusEl.textContent = t('qpayWaiting');
+
+    (invoice.urls || []).slice(0, 6).forEach(u => {
+      const a = document.createElement('a');
+      a.href = u.link;
+      a.textContent = u.name || t('qpayOpenBank');
+      a.className = 'btn btn-ghost';
+      a.style.cssText = 'font-size:0.75rem;padding:4px 10px;';
+      bankLinks.appendChild(a);
+    });
+
+    // Poll every 3 s as fallback. The check finalizes server-side; the listener
+    // above settles the modal, so the poll just nudges and ignores the result.
+    pollTimer = setInterval(async () => {
+      try { await store.checkQpayPayment(orderId, collection); } catch { /* ignore poll errors */ }
+    }, 3000);
+  } catch (err) {
+    statusEl.textContent = '⚠️ ' + err.message;
+    retryBtn.style.display = 'inline-block';
+    unsub();
+  }
+}
+
+function orderStatusChip(status) {
+  if (status === 'completed') return `<span class="order-chip done">✅ ${t('orderStatusCompleted')}</span>`;
+  if (status === 'paid') return `<span class="order-chip paid">👨‍🍳 ${t('orderStatusPaid')}</span>`;
+  return `<span class="order-chip pending">⏳ ${t('orderStatusPending')}</span>`;
+}
+
+async function renderMyOrders() {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+
+  const renderWith = (orders) => {
+    const mine = (orders || [])
+      .filter(o => o.createdBy && o.createdBy === currentUser?.id)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const list = mine.length
+      ? mine.map(o => {
+          const ts = o.createdAt ? new Date(o.createdAt).toLocaleString('mn-MN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+          const items = (o.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(', ');
+          return `
+            <a href="#/orders/${o.id}" class="glass-card" style="display:block;margin-bottom:10px;text-decoration:none;color:inherit;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                ${orderStatusChip(o.status)}
+                <span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>
+              </div>
+              <div style="font-size:0.9rem;color:var(--text-secondary);">${items}</div>
+              <div style="text-align:right;font-weight:700;margin-top:4px;">${(o.total || 0).toLocaleString()}₮</div>
+            </a>`;
+        }).join('')
+      : `<div class="empty-state"><p>📦</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px;">🍽️ ${t('orderFood')}</a></div>`;
+
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="#/" class="back-link">← ${t('back')}</a>
+        <h2 class="card-title" style="margin:12px 0;">📦 ${t('myOrders')}</h2>
+        ${list}
+      </div>`;
+  };
+
+  if (store.isUsingFirebase()) {
+    const unsub = store.onOrdersChanged(renderWith);
+    if (unsub) activeUnsubs.push(unsub);
+  } else {
+    renderWith([]);
+  }
 }
 
 async function renderOrderDetail(orderId) {
@@ -3813,25 +4338,32 @@ async function renderOrderDetail(orderId) {
       : t('deliveryOutdoor');
     const pickupLabel = order.pickupTime === 'asap' ? t('pickupAsap') : order.pickupTime;
     const done = order.status === 'completed';
+    const paid = order.status === 'paid' || done;
 
-    // Two-step live status tracker
-    const step = done ? 2 : 1;
+    // Four-step live tracker: Ordered → Paid → Preparing → Ready.
+    // Pending (unpaid QPay) sits at "Paid" as the current step.
+    const steps = [t('trackOrdered'), t('orderStatusPaid'), t('trackPreparing'), t('trackReady')];
+    const reachedIdx = done ? 3 : (paid ? 1 : 0);
+    const currentIdx = done ? -1 : (paid ? 2 : 1);
     const tracker = `
       <div class="order-status-track">
-        <div class="order-status-step ${step >= 1 ? 'reached' : ''}">
-          <div class="order-status-dot">${step >= 1 ? '✓' : '1'}</div>
-          <div class="order-status-text">${t('orderStatusPaid')}</div>
-        </div>
-        <div class="order-status-line ${step >= 2 ? 'reached' : ''}"></div>
-        <div class="order-status-step ${step >= 2 ? 'reached' : ''}">
-          <div class="order-status-dot">${step >= 2 ? '✓' : '2'}</div>
-          <div class="order-status-text">${t('orderStatusCompleted')}</div>
-        </div>
+        ${steps.map((label, i) => {
+          const isReached = i <= reachedIdx;
+          const isCurrent = i === currentIdx;
+          const line = i < steps.length - 1
+            ? `<div class="order-status-line ${i < reachedIdx ? 'reached' : ''}"></div>` : '';
+          return `<div class="order-status-step ${isReached ? 'reached' : ''} ${isCurrent ? 'current' : ''}">
+            <div class="order-status-dot">${isReached ? '✓' : (i + 1)}</div>
+            <div class="order-status-text">${label}</div>
+          </div>${line}`;
+        }).join('')}
       </div>`;
 
     const banner = done
       ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
-      : `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`;
+      : paid
+      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`
+      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;">⏳ ${t('orderStatusPending')}</div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
@@ -3926,6 +4458,7 @@ async function renderKitchenDisplay() {
 
   let currentTab = 'active';
   let latestOrders = [];
+  let bumpToId = null; // next active order to highlight after a "done" tap
   document.querySelectorAll('.kitchen-tab').forEach(tab => {
     tab.onclick = () => {
       currentTab = tab.dataset.tab;
@@ -4031,7 +4564,7 @@ async function renderKitchenDisplay() {
     const ts = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit' }) : '';
     const numBadge = seq ? `<span class="kitchen-order-num">#${seq}</span>` : '';
     return `
-      <div class="glass-card" style="margin-bottom:12px;">
+      <div class="glass-card kitchen-order-card" id="kitchen-order-${order.id}" style="margin-bottom:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             ${numBadge}
@@ -4079,6 +4612,17 @@ async function renderKitchenDisplay() {
       el.innerHTML = activeOrders.length
         ? activeOrders.map(o => orderCardHtml(o, seqs[o.id], { done: true, showElapsed: true })).join('')
         : `<p style="color:var(--text-secondary);">${t('kitchenNoOrders')}</p>`;
+      // Kitchen "bump": after a done-tap, bring the next active order into view
+      // and flash it so staff's eye lands on what to cook next.
+      if (bumpToId) {
+        const next = document.getElementById('kitchen-order-' + bumpToId);
+        bumpToId = null;
+        if (next) {
+          next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          next.classList.add('kitchen-bump');
+          setTimeout(() => next.classList.remove('kitchen-bump'), 1500);
+        }
+      }
     } else if (currentTab === 'scheduled') {
       const sorted = scheduledOrders.slice().sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
       el.innerHTML = sorted.length
@@ -4096,6 +4640,9 @@ async function renderKitchenDisplay() {
     document.querySelectorAll('.kitchen-done-btn').forEach(btn => {
       btn.onclick = async () => {
         btn.disabled = true;
+        // Remember the next active order so the repaint can highlight it.
+        const remaining = latestOrders.filter(isActive).filter(o => o.id !== btn.dataset.id);
+        bumpToId = remaining[0]?.id || null;
         await store.updateOrderStatus(btn.dataset.id, 'completed');
       };
     });

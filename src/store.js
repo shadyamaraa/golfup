@@ -374,3 +374,57 @@ export function onOrderChanged(id, cb) {
   onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
   return () => off(r);
 }
+
+// ---- QPay helpers ----
+// collection: 'orders' (food) | 'bookingPayments' (tee-time). Default 'orders'.
+export async function createQpayInvoice(orderId, collection = 'orders') {
+  const res = await fetch('/api/qpay/invoice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId, collection }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'QPay invoice failed');
+  return data;
+}
+
+export async function checkQpayPayment(orderId, collection = 'orders') {
+  const res = await fetch('/api/qpay/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId, collection }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'QPay check failed');
+  return data;
+}
+
+// Remove an unpaid QPay record when the user backs out of payment.
+// Guarded: only deletes while still 'pending', so a payment that landed in a
+// race is never destroyed. collection: 'orders' | 'bookingPayments'.
+export async function cancelPendingPayment(collection, id) {
+  if (!useFirebase || !db) return false;
+  const path = `${collection}/${id}`;
+  const snap = await get(ref(db, path));
+  if (snap.exists() && snap.val().status === 'pending') {
+    await remove(ref(db, path));
+    return true;
+  }
+  return false;
+}
+
+// ---- Booking payments (RTDB, separate from kitchen orders) ----
+export async function createBookingPayment(payment) {
+  if (!useFirebase || !db) throw new Error('Firebase not configured');
+  const id = 'bp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const record = { ...payment, id, createdAt: Date.now() };
+  await set(ref(db, 'bookingPayments/' + id), record);
+  return id;
+}
+
+export function onBookingPaymentChanged(id, cb) {
+  if (!useFirebase || !db) return () => {};
+  const r = ref(db, 'bookingPayments/' + id);
+  onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
+  return () => off(r);
+}
