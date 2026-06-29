@@ -1233,7 +1233,6 @@ async function renderCreateGame() {
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
-    let pendingBooking = null; // QPay: confirm is deferred to the server callback
 
     if (selectedTeeSlot) {
       const submitBtn = document.getElementById('create-submit-btn');
@@ -1243,23 +1242,13 @@ async function renderCreateGame() {
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
+        // Always confirm the booking now (MTBogd: status confirmed, paymentStatus
+        // pending). QPay is an optional payment step after, handled by MTBogd.
+        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+        bookingCode = confirmed.bookingCode || null;
+        bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
-        if (useQpayTee) {
-          // Hold the slot but DON'T confirm — the server confirms the MTBogd
-          // booking only after QPay payment succeeds (no orphan bookings).
-          pendingBooking = {
-            holdId: hold.holdId,
-            slotId: selectedTeeSlot.slotId,
-            customer: { firstName: playerName, phone: playerPhone },
-            players: playerList,
-            notes: '',
-          };
-        } else {
-          const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
-          bookingCode = confirmed.bookingCode || null;
-          bookingId = confirmed.bookingId || null;
-          showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
-        }
+        showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
         showToast(t('bookFailed') + ': ' + err.message, 'error');
         submitBtn.textContent = t('create');
@@ -1315,32 +1304,16 @@ async function renderCreateGame() {
       await Promise.all([...notifMap.entries()].map(([uid, payload]) => store.saveNotification(uid, payload)));
     };
 
-    // QPay tee-time: create the game NOW (no booking yet) so it never vanishes,
-    // then confirm the MTBogd booking server-side on payment. If payment never
-    // lands, the game simply has no booking (no orphan MTBogd booking either).
-    if (useQpayTee) {
-      await store.saveGame(game);
-      await sendCreateNotifications();
-      const paymentId = await store.createBookingPayment({
-        gameId: game.id,
-        total: selectedTeeSlot.price,
-        customerName: currentUser.fullName || displayUsername(currentUser),
-        customerPhone: currentUser.phone || '',
-        status: 'pending',
-        paymentMethod: 'qpay',
-        pendingBooking, // holdId/slotId/customer/players/notes — server confirms on payment
-      });
-      showToast('✅ ' + t('createGame') + '!', 'success');
-      await showQpayModal(paymentId, selectedTeeSlot.price, {
-        collection: 'bookingPayments',
-        doneHash: '#/game/' + game.id,
-        cancelHash: '#/game/' + game.id, // game exists regardless of payment
-      });
-      return;
-    }
-
     await store.saveGame(game);
     await sendCreateNotifications();
+
+    // QPay tee-time: the booking is already confirmed above; show MTBogd's QPay
+    // QR and let MTBogd own the payment lifecycle. The game exists regardless of
+    // whether the user completes payment.
+    if (useQpayTee && bookingId) {
+      await showMtbogdQpayModal(bookingId, game.id);
+      return;
+    }
 
     showToast('✅ ' + t('createGame') + '!', 'success');
     location.hash = '#/game/' + game.id;
@@ -4150,13 +4123,13 @@ function showCheckoutModal(menuItems, tables, gameId) {
   };
 }
 
-// opts.collection: 'orders' (food) | 'bookingPayments' (tee-time)
+// Food-order QPay (UBGolf's own QPay). Tee-time uses showMtbogdQpayModal.
 // opts.doneHash: where to navigate after success/close
 async function showQpayModal(orderId, total, opts = {}) {
-  const collection = opts.collection || 'orders';
+  const collection = 'orders';
   const doneHash = opts.doneHash || '#/orders/' + orderId;
   const cancelHash = opts.cancelHash || '#/';
-  const onChanged = collection === 'bookingPayments' ? store.onBookingPaymentChanged : store.onOrderChanged;
+  const onChanged = store.onOrderChanged;
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -4280,6 +4253,94 @@ async function showQpayModal(orderId, total, opts = {}) {
     statusEl.textContent = '⚠️ ' + err.message;
     retryBtn.style.display = 'inline-block';
     unsub();
+  }
+}
+
+// Tee-time QPay via MTBogd: the booking is already confirmed; this shows the QR
+// from MTBogd and polls MTBogd's payment status. The game exists regardless.
+async function showMtbogdQpayModal(bookingId, gameId) {
+  const doneHash = '#/game/' + gameId;
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px;text-align:center;">
+      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <p id="mq-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
+      <div id="mq-qr-wrap" style="display:none;">
+        <img id="mq-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
+        <p style="font-size:0.8rem;color:var(--text-secondary);margin:8px 0 0;">${t('qpayScanToPay')}</p>
+        <div id="mq-amount" style="font-size:1.1rem;font-weight:700;margin:8px 0;"></div>
+        <div id="mq-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
+      </div>
+      <div id="mq-success" style="display:none;">
+        <div style="font-size:2.5rem;">✅</div>
+        <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
+        <button id="mq-check" class="btn btn-ghost" style="display:none;">${t('qpayRetry')}</button>
+        <button id="mq-close" class="btn btn-ghost">Хаах</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const statusEl = modal.querySelector('#mq-status');
+  const qrWrap = modal.querySelector('#mq-qr-wrap');
+  const qrImg = modal.querySelector('#mq-qr-img');
+  const amountEl = modal.querySelector('#mq-amount');
+  const bankLinks = modal.querySelector('#mq-bank-links');
+  const successEl = modal.querySelector('#mq-success');
+  const checkBtn = modal.querySelector('#mq-check');
+  const closeBtn = modal.querySelector('#mq-close');
+
+  let pollTimer = null, settled = false;
+  const stop = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+
+  function onPaid() {
+    if (settled) return;
+    settled = true;
+    stop();
+    qrWrap.style.display = 'none';
+    checkBtn.style.display = 'none';
+    statusEl.textContent = '';
+    successEl.style.display = 'block';
+    setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); location.hash = doneHash; }, 1500);
+  }
+
+  closeBtn.onclick = () => { stop(); modal.remove(); location.hash = doneHash; };
+
+  checkBtn.onclick = async () => {
+    checkBtn.disabled = true;
+    statusEl.textContent = t('verifying');
+    try {
+      const s = await mtbogd.getQpayStatus(bookingId);
+      if (s.paymentStatus === 'paid') { onPaid(); return; }
+      statusEl.textContent = t('qpayWaiting');
+    } catch { statusEl.textContent = t('qpayWaiting'); }
+    finally { checkBtn.disabled = false; }
+  };
+
+  try {
+    const inv = await mtbogd.createQpayInvoice(bookingId);
+    if (inv.alreadyPaid || inv.paymentStatus === 'paid') { onPaid(); return; }
+    qrImg.src = `data:image/png;base64,${inv.qrImage}`;
+    amountEl.textContent = inv.amount ? `₮${Number(inv.amount).toLocaleString()}` : '';
+    qrWrap.style.display = 'block';
+    statusEl.textContent = t('qpayWaiting');
+    checkBtn.style.display = 'inline-block';
+    (inv.urls || []).slice(0, 6).forEach(u => {
+      const a = document.createElement('a');
+      a.href = u.link;
+      a.textContent = u.name || t('qpayOpenBank');
+      a.className = 'btn btn-ghost';
+      a.style.cssText = 'font-size:0.75rem;padding:4px 10px;';
+      bankLinks.appendChild(a);
+    });
+    pollTimer = setInterval(async () => {
+      try { const s = await mtbogd.getQpayStatus(bookingId); if (s.paymentStatus === 'paid') onPaid(); } catch { /* ignore */ }
+    }, 3000);
+  } catch (err) {
+    statusEl.textContent = '⚠️ ' + err.message;
+    checkBtn.style.display = 'inline-block';
   }
 }
 

@@ -37,6 +37,20 @@ export async function confirmBooking(holdId, customer, players, notes = '') {
   }));
 }
 
+// QPay invoice for a confirmed booking (MTBogd owns the QPay merchant + lifecycle).
+export async function createQpayInvoice(bookingId) {
+  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/qpay-invoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  }));
+}
+
+// Payment status polling fallback (webhook is the primary signal).
+export async function getQpayStatus(bookingId) {
+  return checkOk(await fetch(`${BASE}/bookings/${bookingId}/qpay-status`));
+}
+
 // gameId (Firebase) is sent; server looks up bookingId from RTDB.
 export async function updateBookingPlayers(gameId, players) {
   return checkOk(await fetch('/api/sync-players', {

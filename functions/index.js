@@ -1,10 +1,11 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions/v1');
+const crypto = require('crypto');
 const qpay = require('./qpay');
 
 admin.initializeApp();
 
-const MTBOGD_BASE = 'https://asia-east2-mt-b-993b7.cloudfunctions.net/api/external/v1';
+const MTBOGD_BASE = 'https://api-sci3zq7dca-df.a.run.app/external/v1';
 
 // Kitchen display password — stored in Secret Manager as KITCHEN_PASSWORD.
 // Reachable at /api/kitchen-login via a hosting rewrite.
@@ -323,6 +324,61 @@ exports.qpayCheckPayment = functions
     } catch (err) {
       console.error('qpayCheckPayment error', err);
       res.status(502).json({ ok: false, error: err.message });
+    }
+  });
+
+// POST /api/mtbogd-webhook
+// MTBogd notifies us when a booking is created/paid/cancelled. We verify the
+// HMAC signature, dedup by delivery id, and reflect the payment on the game.
+exports.mtbogdWebhook = functions
+  .runWith({ secrets: ['MTBOGD_WEBHOOK_SECRET'] })
+  .https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).send('Method not allowed'); return; }
+
+    const secret = process.env.MTBOGD_WEBHOOK_SECRET;
+    const sigHeader = req.get('X-MTBogd-Signature') || '';
+    // req.rawBody is the unparsed body Firebase preserves — required for HMAC.
+    const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    const ok = sigHeader.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(sigHeader), Buffer.from(expected));
+    if (!ok) { res.status(401).send('bad signature'); return; }
+
+    const deliveryId = req.get('X-MTBogd-Delivery') || '';
+    const event = req.get('X-MTBogd-Event') || (req.body && req.body.event) || '';
+    const booking = (req.body && req.body.booking) || {};
+    const bookingId = booking.bookingId;
+
+    try {
+      // Dedup: claim the delivery id; if already seen, ack and stop.
+      if (deliveryId) {
+        const dRef = admin.database().ref(`mtbogdDeliveries/${deliveryId}`);
+        const claim = await dRef.transaction(cur => (cur ? undefined : { event, at: Date.now() }));
+        if (!claim.committed) { res.status(200).send('duplicate'); return; }
+      }
+
+      if (bookingId) {
+        const snap = await admin.database().ref('games').orderByChild('bookingId').equalTo(bookingId).once('value');
+        const games = snap.val() || {};
+        const gameId = Object.keys(games)[0];
+        if (gameId) {
+          if (event === 'paid') {
+            await admin.database().ref(`games/${gameId}`).update({
+              bookingPaid: true,
+              paidAt: new Date().toISOString(),
+              paidAmount: booking.paidAmount || null,
+              paymentMethod: 'qpay',
+            });
+          } else if (event === 'cancelled') {
+            await admin.database().ref(`games/${gameId}`).update({ bookingCancelled: true });
+          }
+        }
+      }
+
+      res.status(200).send('ok');
+    } catch (err) {
+      console.error('mtbogdWebhook error', err);
+      res.status(500).send(err.message);
     }
   });
 

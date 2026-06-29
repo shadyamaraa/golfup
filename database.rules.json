@@ -2,7 +2,8 @@
   "rules": {
     ".read": "now < 1780416000000",
     ".write": "now < 1780416000000",
-    "games": { ".read": true, ".write": true },
+    "games": { ".read": true, ".write": true, ".indexOn": ["bookingId"] },
+    "mtbogdDeliveries": { ".read": false, ".write": false },
     "users": { ".read": true, ".write": true },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },

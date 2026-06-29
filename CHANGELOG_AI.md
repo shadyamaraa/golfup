@@ -1,5 +1,28 @@
 # CHANGELOG_AI.md
 
+## 2026-07-02
+
+### Tee-time QPay moves to MTBogd (MTBogd owns the QPay lifecycle)
+
+UBGolf no longer creates QPay invoices for tee-time itself. MTBogd owns the QPay
+merchant + payment lifecycle; UBGolf calls MTBogd's API and shows the QR.
+
+- `functions/index.js`: `MTBOGD_BASE` → `https://api-sci3zq7dca-df.a.run.app/external/v1`
+  (all MTBogd calls migrate to the new base + new `mbg_live_` key). New
+  `mtbogdWebhook` (`/api/mtbogd-webhook`): HMAC-SHA256 signature verify
+  (`MTBOGD_WEBHOOK_SECRET`), delivery dedup, reflects `paid`/`cancelled` onto the
+  game (found by `bookingId`).
+- `src/booking.js`: `createQpayInvoice(bookingId)`, `getQpayStatus(bookingId)`.
+- `src/app.js`: tee-time QPay now confirms the booking up front (like clubhouse),
+  saves the game, then shows `showMtbogdQpayModal` (MTBogd QR + status polling).
+  The game always exists regardless of payment. Removed the bookingPayments /
+  server-confirm tee-time flow.
+- `firebase.json`: `/api/mtbogd-webhook` rewrite.
+- `database.rules.json`: `games` `.indexOn ["bookingId"]`; `mtbogdDeliveries`.
+- Food-order QPay (UBGolf's own) is unchanged.
+- New secret `MTBOGD_WEBHOOK_SECRET`; `MTBOGD_API_KEY` re-set to the new key.
+- Docs: `functions/MTBOGD_QPAY.md`.
+
 ## 2026-06-28 (3)
 
 ### Design system foundation (for upcoming UI redesign)

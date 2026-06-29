@@ -64,6 +64,10 @@
         "function": "qpayCheckPayment"
       },
       {
+        "source": "/api/mtbogd-webhook",
+        "function": "mtbogdWebhook"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
