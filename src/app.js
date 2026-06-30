@@ -1087,30 +1087,18 @@ async function renderCreateGame() {
   const followedInviteUsers = availableUsers.filter(u => !!currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
+  let selectedFormat = 'stroke';
+  let selectedHoles = 'full18';
 
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/" class="back-link" id="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
       <div class="create-card glass-card">
-        <h2 class="card-title">${t('createGame')}</h2>
+        <h2 class="card-title" style="margin-bottom:4px;">${t('createGame')}</h2>
+        <p class="create-sub">${t('createSub')}</p>
         <form id="create-form" class="create-form">
-          <div class="input-group">
-            <label for="game-date">${t('date')}</label>
-            <input type="date" id="game-date" required min="${today}" value="${today}" />
-          </div>
-          <div class="input-group">
-            <label for="game-time">${t('time')}</label>
-            <div style="display: flex; gap: 10px;">
-              <select id="game-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-              <select id="game-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="input-group">
-            <label>${t('location')}</label>
+          <div class="create-section">
+            <div class="cs-label">${t('location')}</div>
             <select id="game-location" required style="display:none;">
               <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
               <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
@@ -1124,6 +1112,49 @@ async function renderCreateGame() {
                 </button>`).join('')}
             </div>
           </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('dateTime')}</div>
+            <div class="dt-row">
+              <label class="dt-card" for="game-date">
+                <span class="dt-ic">${icon('bookings', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('date')}</span>
+                  <input type="date" id="game-date" required min="${today}" value="${today}" class="dt-input" />
+                </span>
+              </label>
+              <div class="dt-card">
+                <span class="dt-ic">${icon('time', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('time')}</span>
+                  <span class="dt-time">
+                    <select id="game-hour" required class="dt-sel">
+                      ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                    </select><span class="dt-colon">:</span><select id="game-minute" required class="dt-sel">
+                      ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
+                    </select>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('gameFormat')}</div>
+            <div class="chip-row" id="format-chips">
+              <button type="button" class="seg-chip active" data-format="stroke">${t('fmtStroke')}</button>
+              <button type="button" class="seg-chip" data-format="match">${t('fmtMatch')}</button>
+              <button type="button" class="seg-chip" data-format="scramble">${t('fmtScramble')}</button>
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('numHoles')}</div>
+            <div class="chip-row" id="holes-chips">
+              <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
+              <button type="button" class="seg-chip" data-holes="back9">${t('holesBack9')}</button>
+              <button type="button" class="seg-chip active" data-holes="full18">${t('holesFull18')}</button>
+            </div>
+          </div>
+
           <div class="input-group" id="mtbogd-section" style="display:none;">
             <label>⛳ ${t('bookTeetime')}</label>
             <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -1173,14 +1204,16 @@ async function renderCreateGame() {
               ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
-          <div class="input-group">
-            <label>${t('invitePlayers')}</label>
-            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%; gap:8px;">${icon('members', { size: 17 })} ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
+          <div class="create-section">
+            <div class="cs-label">${t('invitePlayers')}</div>
+            <div class="invite-wrap">
+              <div id="invite-chips-container" class="invite-avatars"></div>
+              ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="invite-add" title="${t('inviteSelectBtn')}">${icon('create', { size: 16 })}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);margin:0;">${t('noUsersFound')}</p>`}
+            </div>
           </div>
-          <div class="form-actions">
-            <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
-            <button type="submit" class="btn btn-primary" id="create-submit-btn">${t('create')}</button>
+          <div class="create-cta-wrap">
+            <button type="submit" class="btn btn-primary create-cta" id="create-submit-btn">${icon('play', { size: 18 })} ${t('publishGame')}</button>
+            <a href="#/" class="btn btn-ghost" style="width:100%;">${t('cancel')}</a>
           </div>
         </form>
       </div>
@@ -1364,6 +1397,22 @@ async function renderCreateGame() {
   });
   updateMtbogdSectionVisibility();
 
+  // Format / holes segmented chips (additive game fields).
+  document.querySelectorAll('#format-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#format-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedFormat = chip.dataset.format;
+    });
+  });
+  document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#holes-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedHoles = chip.dataset.holes;
+    });
+  });
+
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
     updateSelectedSlotDisplay();
@@ -1415,8 +1464,9 @@ async function renderCreateGame() {
     if (!container) return;
     container.innerHTML = selectedInviteIds.map(id => {
       const u = availableById[id];
+      const ch = (u && u.avatar) || (u ? displayUsername(u).charAt(0).toUpperCase() : '?');
       const name = u ? displayUsername(u) : id;
-      return `<span style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+      return `<button type="button" class="invite-av rm-invite-chip" data-id="${id}" title="${esc(name)}">${esc(ch)}</button>`;
     }).join('');
     container.querySelectorAll('.rm-invite-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1511,6 +1561,8 @@ async function renderCreateGame() {
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
+      format: selectedFormat,
+      holes: selectedHoles,
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
