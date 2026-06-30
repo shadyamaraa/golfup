@@ -717,7 +717,7 @@ async function renderHomeSponsor(data) {
     host.innerHTML = `<div class="sponsor-slot">${t('sponsorLabel')}</div>`;
     return;
   }
-  const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" />`;
+  const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" style="object-position:${data.posX ?? 50}% ${data.posY ?? 50}%;" />`;
   host.innerHTML = data.link
     ? `<a href="${esc(data.link)}" target="_blank" rel="noopener" class="sponsor-banner">${img}</a>`
     : `<div class="sponsor-banner">${img}</div>`;
@@ -5294,7 +5294,10 @@ async function renderAdminNewsTab() {
       <h3 style="margin:0 0 10px;">${t('sponsorManage')}</h3>
       <div style="display:flex;flex-direction:column;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
         <input id="sp-image" type="text" placeholder="${t('newsImageUrl')}" value="${esc(sponsor.imageUrl || '')}" style="${inputStyle}" />
-        <img id="sp-image-preview" src="${esc(sponsor.imageUrl || '')}" alt="" style="${sponsor.imageUrl ? '' : 'display:none;'}width:100%;max-height:110px;border-radius:8px;object-fit:cover;" />
+        <div id="sp-preview-wrap" class="sp-preview" style="${sponsor.imageUrl ? '' : 'display:none;'}">
+          <img id="sp-image-preview" src="${esc(sponsor.imageUrl || '')}" alt="" style="object-position:${sponsor.posX ?? 50}% ${sponsor.posY ?? 50}%;" />
+          <span class="sp-drag-hint">${t('sponsorDragHint')}</span>
+        </div>
         <input id="sp-link" type="text" placeholder="${t('newsLink')}" value="${esc(sponsor.link || '')}" style="${inputStyle}" />
         <div style="display:flex;gap:8px;">
           <button id="save-sponsor-btn" class="btn btn-primary btn-sm">${t('save')}</button>
@@ -5385,15 +5388,43 @@ async function renderAdminNewsTab() {
     };
   });
 
-  // Sponsor banner save / clear
+  // Sponsor banner save / clear + drag-to-position
   const spImg = document.getElementById('sp-image');
+  const spWrap = document.getElementById('sp-preview-wrap');
   const spPreview = document.getElementById('sp-image-preview');
+  let spPosX = sponsor.posX ?? 50;
+  let spPosY = sponsor.posY ?? 50;
+  const applySpPos = () => { spPreview.style.objectPosition = `${spPosX}% ${spPosY}%`; };
+  applySpPos();
   spImg.oninput = () => {
     const u = spImg.value.trim();
-    if (u) { spPreview.src = u; spPreview.style.display = 'block'; } else { spPreview.style.display = 'none'; }
+    if (u) { spPreview.src = u; spWrap.style.display = 'block'; } else { spWrap.style.display = 'none'; }
   };
+  // Drag the image to choose which part shows in the banner crop.
+  let dragging = false, lastX = 0, lastY = 0;
+  spWrap.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    spWrap.setPointerCapture(e.pointerId);
+  });
+  spWrap.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const r = spWrap.getBoundingClientRect();
+    spPosX = Math.min(100, Math.max(0, spPosX - (e.clientX - lastX) / r.width * 100));
+    spPosY = Math.min(100, Math.max(0, spPosY - (e.clientY - lastY) / r.height * 100));
+    lastX = e.clientX; lastY = e.clientY;
+    applySpPos();
+  });
+  const endDrag = () => { dragging = false; };
+  spWrap.addEventListener('pointerup', endDrag);
+  spWrap.addEventListener('pointercancel', endDrag);
+
   document.getElementById('save-sponsor-btn').onclick = async () => {
-    await store.saveSponsor({ imageUrl: spImg.value.trim(), link: document.getElementById('sp-link').value.trim() });
+    await store.saveSponsor({
+      imageUrl: spImg.value.trim(),
+      link: document.getElementById('sp-link').value.trim(),
+      posX: Math.round(spPosX),
+      posY: Math.round(spPosY),
+    });
     showToast('✅ Хадгалагдлаа', 'success');
     await renderAdminNewsTab();
   };
