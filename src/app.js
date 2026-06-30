@@ -1133,8 +1133,7 @@ async function renderCreateGame() {
     <div class="create-container fade-in">
       <a href="#/" class="back-link" id="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
       <div class="create-card glass-card">
-        <h2 class="card-title" style="margin-bottom:4px;">${t('createGame')}</h2>
-        <p class="create-sub">${t('createSub')}</p>
+        <h2 class="card-title">${t('createGame')}</h2>
         <form id="create-form" class="create-form">
           <div class="create-section">
             <div class="cs-label">${t('location')}</div>
@@ -1182,9 +1181,9 @@ async function renderCreateGame() {
           <div class="create-section">
             <div class="cs-label">${t('numHoles')}</div>
             <div class="chip-row" id="holes-chips">
-              <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
-              <button type="button" class="seg-chip" data-holes="back9">${t('holesBack9')}</button>
               <button type="button" class="seg-chip active" data-holes="full18">${t('holesFull18')}</button>
+              <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
+              <button type="button" class="seg-chip" data-holes="back9" style="display:none;">${t('holesBack9')}</button>
             </div>
           </div>
 
@@ -1329,6 +1328,7 @@ async function renderCreateGame() {
         document.getElementById('game-minute').value = m;
         const ttVal = document.getElementById('time-teetime-val');
         if (ttVal) ttVal.textContent = slot.time || `${h}:${m}`;
+        updateValue9Visibility();
         updateSelectedSlotDisplay();
         overlay.remove();
       }
@@ -1431,6 +1431,23 @@ async function renderCreateGame() {
       prefetchTeeTimes();
     });
   });
+
+  // "Value9" (back9) is only offered for tee times from 16:00 onward.
+  function updateValue9Visibility() {
+    const hour = parseInt(document.getElementById('game-hour')?.value || '0', 10);
+    const chip = document.querySelector('#holes-chips .seg-chip[data-holes="back9"]');
+    if (!chip) return;
+    const show = hour >= 16;
+    chip.style.display = show ? '' : 'none';
+    if (!show && chip.classList.contains('active')) {
+      document.querySelectorAll('#holes-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      document.querySelector('#holes-chips .seg-chip[data-holes="full18"]')?.classList.add('active');
+      selectedHoles = 'full18';
+      teeHoles = 18;
+    }
+  }
+  document.getElementById('game-hour')?.addEventListener('change', updateValue9Visibility);
+  updateValue9Visibility();
 
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
