@@ -1087,7 +1087,6 @@ async function renderCreateGame() {
   const followedInviteUsers = availableUsers.filter(u => !!currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
-  let selectedFormat = 'stroke';
   let selectedHoles = 'full18';
 
   main().innerHTML = `
@@ -1125,26 +1124,19 @@ async function renderCreateGame() {
               <div class="dt-card" id="time-card">
                 <span class="dt-ic">${icon('time', { size: 19 })}</span>
                 <span class="dt-body"><span class="dt-cap">${t('time')}</span>
-                  <span class="dt-time">
+                  <span class="dt-time" id="time-manual">
                     <select id="game-hour" required class="dt-sel">
                       ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
                     </select><span class="dt-colon">:</span><select id="game-minute" required class="dt-sel">
                       ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
                     </select>
                   </span>
+                  <span class="dt-time" id="time-teetime" style="display:none;"><span id="time-teetime-val">${t('bookSelectSlot')}</span></span>
                 </span>
                 <span class="dt-hint" id="time-hint" style="display:none;">${icon('next', { size: 15 })}</span>
               </div>
             </div>
-          </div>
-
-          <div class="create-section">
-            <div class="cs-label">${t('gameFormat')}</div>
-            <div class="chip-row" id="format-chips">
-              <button type="button" class="seg-chip active" data-format="stroke">${t('fmtStroke')}</button>
-              <button type="button" class="seg-chip" data-format="match">${t('fmtMatch')}</button>
-              <button type="button" class="seg-chip" data-format="scramble">${t('fmtScramble')}</button>
-            </div>
+            <div id="selected-slot-display"></div>
           </div>
 
           <div class="create-section">
@@ -1173,25 +1165,11 @@ async function renderCreateGame() {
             </div>
           </div>
 
-          <div class="input-group" id="mtbogd-section" style="display:none;">
-            <label>⛳ ${t('bookTeetime')}</label>
-            <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" id="holes-9-btn" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
-                  <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
-                </div>
-              </div>
-              <div style="flex:1; min-width:160px; font-size:0.82rem; color:var(--gold-dark); font-weight:600; display:flex; align-items:center; gap:6px;">${icon('time', { size: 15 })} ${t('bookTapTime')}</div>
-            </div>
-            <div id="selected-slot-display"></div>
-          </div>
           <div class="create-section">
             <div class="cs-label">${t('groupSize')}</div>
-            <input type="hidden" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}">
+            <input type="hidden" id="game-group-size" value="4">
             <div class="chip-row" id="size-chips">
-              ${Array.from({ length: APP_CONFIG.maxGroupSize - APP_CONFIG.minGroupSize + 1 }, (_, i) => APP_CONFIG.minGroupSize + i).map(n => `<button type="button" class="seg-chip ${n === APP_CONFIG.defaultGroupSize ? 'active' : ''}" data-size="${n}">${n}</button>`).join('')}
+              ${[1, 2, 3, 4].map(n => `<button type="button" class="seg-chip ${n === 4 ? 'active' : ''}" data-size="${n}">${n}</button>`).join('')}
             </div>
           </div>
           <div class="create-section">
@@ -1218,6 +1196,8 @@ async function renderCreateGame() {
 
   function updateSelectedSlotDisplay() {
     const el = document.getElementById('selected-slot-display');
+    const ttVal = document.getElementById('time-teetime-val');
+    if (ttVal && !selectedTeeSlot) ttVal.textContent = t('bookSelectSlot');
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
@@ -1307,6 +1287,8 @@ async function renderCreateGame() {
         const [h, m] = (slot.time || '08:00').split(':');
         document.getElementById('game-hour').value = h;
         document.getElementById('game-minute').value = m;
+        const ttVal = document.getElementById('time-teetime-val');
+        if (ttVal) ttVal.textContent = slot.time || `${h}:${m}`;
         updateSelectedSlotDisplay();
         overlay.remove();
       }
@@ -1366,9 +1348,13 @@ async function renderCreateGame() {
 
   function updateMtbogdSectionVisibility() {
     const loc = document.getElementById('game-location').value;
-    const section = document.getElementById('mtbogd-section');
     const isMt = loc === MTBOGD_CONFIG.locationName;
-    if (section) section.style.display = isMt ? 'block' : 'none';
+    // MTBogd course → tapping the Time card opens the tee-time picker (hide the
+    // manual hour:min selects). Other courses → manual time selects.
+    const manual = document.getElementById('time-manual');
+    const teetime = document.getElementById('time-teetime');
+    if (manual) manual.style.display = isMt ? 'none' : 'flex';
+    if (teetime) teetime.style.display = isMt ? 'flex' : 'none';
     const hint = document.getElementById('time-hint');
     if (hint) hint.style.display = isMt ? 'flex' : 'none';
     document.getElementById('time-card')?.classList.toggle('tappable', isMt);
@@ -1395,38 +1381,20 @@ async function renderCreateGame() {
   });
   updateMtbogdSectionVisibility();
 
-  // Format / holes segmented chips (additive game fields).
-  document.querySelectorAll('#format-chips .seg-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('#format-chips .seg-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      selectedFormat = chip.dataset.format;
-    });
-  });
+  // Holes chips set both the game's holes field and the tee-time API holes.
   document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('#holes-chips .seg-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       selectedHoles = chip.dataset.holes;
+      teeHoles = selectedHoles === 'full18' ? 18 : 9;
+      prefetchTeeTimes();
     });
   });
 
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
     updateSelectedSlotDisplay();
-    prefetchTeeTimes();
-  });
-
-  document.getElementById('holes-9-btn')?.addEventListener('click', () => {
-    teeHoles = 9;
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
-    prefetchTeeTimes();
-  });
-  document.getElementById('holes-18-btn')?.addEventListener('click', () => {
-    teeHoles = 18;
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
     prefetchTeeTimes();
   });
 
@@ -1562,7 +1530,6 @@ async function renderCreateGame() {
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
-      format: selectedFormat,
       holes: selectedHoles,
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
