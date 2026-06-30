@@ -3,6 +3,20 @@ import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { icon, paintIcons } from './icons.js';
+
+// Sun / moon glyphs for the header theme toggle (not part of the UI icon set).
+const MOON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13.5A8 8 0 1 1 10.5 3.5a6.2 6.2 0 0 0 10 10z"/></svg>';
+const SUN_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2M12 18.8v2M4.6 12h-2M21.4 12h-2M6.5 6.5 5 5M19 19l-1.5-1.5M17.5 6.5 19 5M5 19l1.5-1.5"/></svg>';
+
+function applyTheme(theme) {
+  const d = document.documentElement;
+  d.dataset.theme = theme === 'dark' ? 'dark' : '';
+  localStorage.setItem('ubg-theme', d.dataset.theme);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#08203A' : '#F3EFE4');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = theme === 'dark' ? SUN_SVG : MOON_SVG;
+}
 
 const isKiosk = !!window.__TAURI__;
 // QPay is live everywhere, including production (ubgolf.club). To restrict it to
@@ -223,6 +237,7 @@ export async function router() {
     console.error('Router error:', err);
     main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
   } finally {
+    paintIcons();
     isRouting = false;
   }
 }
@@ -918,23 +933,23 @@ async function renderCreateGame() {
           <div class="input-group">
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
                 <input type="radio" name="visibility" value="public" ${myCommunities.length === 0 ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
                 <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : 'checked'} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
                 <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
                 <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
               </label>
             </div>
           </div>
           <div class="input-group" id="game-communities-wrap" style="display:none;">
             <label>${t('gameCommunity')}</label>
-            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
               ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
@@ -1064,14 +1079,14 @@ async function renderCreateGame() {
               }).join('')
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
-              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'var(--bg-card-hover)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
                 ${time}${tees.length > 1 ? ` <span style="font-size:0.7rem;color:var(--text-secondary);">·${tees.length}</span>` : ''}
               </button>${teeRow}
             </div>`;
           }).join('')
         }</div>` : '';
         return `<div style="margin-bottom:10px;">
-          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:var(--bg-card-hover);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
             <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${times.length})</span></span>
             <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
           </button>${body}
@@ -1171,7 +1186,7 @@ async function renderCreateGame() {
     container.innerHTML = selectedInviteIds.map(id => {
       const u = availableById[id];
       const name = u ? displayUsername(u) : id;
-      return `<span style="background:rgba(255,255,255,0.1);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+      return `<span style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
     }).join('');
     container.querySelectorAll('.rm-invite-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1841,7 +1856,7 @@ async function renderAdminPanel() {
       .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
     const isOpen = openCircles.has(circle.id);
     return `
-    <div style="margin-bottom:16px; background:rgba(255,255,255,0.05); border-radius:10px; padding:14px;">
+    <div style="margin-bottom:16px; background:var(--bg-card-hover); border-radius:10px; padding:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <button type="button" class="circle-toggle-btn" data-circle="${circle.id}" style="flex:1; min-width:140px; display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--text-primary); padding:0; cursor:pointer; text-align:left;">
           <span style="color:var(--text-secondary); font-size:0.85rem;">${isOpen ? '▲' : '▼'}</span>
@@ -1860,7 +1875,7 @@ async function renderAdminPanel() {
         ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Гишүүн байхгүй</p>`
         : `<div style="display:flex; flex-direction:column; gap:5px;">
             ${members.map(u => `
-              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--bg-card-hover); border-radius:6px;">
                 <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
                 <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
@@ -1885,7 +1900,7 @@ async function renderAdminPanel() {
         </div>
 
         <div id="admin-tab-users">
-          <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <div style="background: var(--bg-card-hover); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
             <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
               <h3 style="margin:0;">${t('createUser')}</h3>
               <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
@@ -1894,7 +1909,7 @@ async function renderAdminPanel() {
               <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-              <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
+              <div style="width:100%;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
                 <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
                 ${communityCheckboxes('new-user-communities', [])}
               </div>
@@ -1909,7 +1924,7 @@ async function renderAdminPanel() {
             </div>
             <div style="display:flex; flex-direction: column; gap: 8px;">
               ${users.map(u => `
-                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: var(--bg-card-hover); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
                   <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
@@ -1939,7 +1954,7 @@ async function renderAdminPanel() {
               <p style="margin:0 0 12px; color:var(--text-secondary); font-size:0.85rem;">${noCircle.length} тоглогч ямар ч тойрогт ороогүй байна.</p>
               <div style="display:flex; flex-direction:column; gap:8px;">
                 ${noCircle.map(u => `
-                  <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
+                  <div style="display:flex; align-items:center; gap:8px; background:var(--bg-card-hover); border-radius:8px; padding:10px;">
                     <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                     <div style="flex:1;">
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
@@ -2033,7 +2048,7 @@ async function renderAdminPanel() {
     const renderRow = ({ g, isCreator }, showRestore = false) => {
       const role = isCreator ? '✍️' : '🏌️';
       const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
-      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:8px; flex-wrap:wrap;">
+      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-card-hover); border-radius:8px; flex-wrap:wrap;">
         <span style="font-size:1rem;">${role}</span>
         <div style="flex:1; min-width:140px;">
           <div style="font-size:0.9rem;">${formatDate(g.date)} ${g.time}${deletedLabel}</div>
@@ -2083,7 +2098,7 @@ async function renderAdminPanel() {
       </div>`).join('');
     lookupDropdown.style.display = 'block';
     lookupDropdown.querySelectorAll('.lookup-item').forEach(item => {
-      item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.07)');
+      item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
       item.addEventListener('mouseleave', () => item.style.background = '');
       item.addEventListener('click', () => {
         const u = sortedLookupUsers.find(x => x.id === item.dataset.id);
@@ -2221,7 +2236,7 @@ function showAdminEditUserModal(user, onSaved) {
 
       <div class="input-group">
         <label>Аватар</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:var(--bg-card-hover);padding:10px;border-radius:8px;">
           ${avatars.map(a => `<div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar === a ? 'background:var(--primary-color);' : ''}">${a}</div>`).join('')}
         </div>
       </div>
@@ -2242,7 +2257,7 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>${t('communities')}</label>
-        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
           ${communityCheckboxes('ae-communities', userCommunityIds(user))}
         </div>
       </div>
@@ -2270,7 +2285,7 @@ function showAdminEditUserModal(user, onSaved) {
         </select>
       </div>
 
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);">
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-card);">
         <h4 style="margin-bottom:8px;color:var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
@@ -2599,23 +2614,23 @@ async function renderEditGame(gameId) {
           <div class="input-group">
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
                 <input type="radio" name="edit-visibility" value="public" ${currentVisibility === 'public' ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
                 <input type="radio" name="edit-visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'my-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
                 <input type="radio" name="edit-visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'selected-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
                 <input type="radio" name="edit-visibility" value="private" ${currentVisibility === 'private' ? 'checked' : ''} style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
               </label>
             </div>
           </div>
           <div class="input-group" id="edit-communities-wrap" style="display:${currentVisibility === 'selected-circles' ? 'block' : 'none'};">
             <label>${t('gameCommunity')}</label>
-            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
               ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
@@ -2983,7 +2998,7 @@ async function handleInvite(game) {
       const itemHtml = u =>
         `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`;
       const headerHtml = label =>
-        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:rgba(255,255,255,0.04);">${label}</div>`;
+        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:var(--bg-card-hover);">${label}</div>`;
       resultsEl.innerHTML =
         (followed.length ? headerHtml(t('followedGroup')) + followed.map(itemHtml).join('') : '') +
         (others.length ? headerHtml(t('othersGroup')) + others.map(itemHtml).join('') : '');
@@ -3027,7 +3042,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
 
   function rowHTML(u) {
     const isSel = selected.has(u.id);
-    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:rgba(255,255,255,0.07);' : ''}">
+    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:var(--bg-card-hover);' : ''}">
       <span class="ism-check" style="width:20px;text-align:center;font-size:1.1rem;color:var(--primary-color);">${isSel ? '✓' : ''}</span>
       <span style="font-size:0.95rem;">${displayUsername(u)}</span>
     </div>`;
@@ -3070,7 +3085,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
       } else {
         selected.add(uid);
         row.querySelector('.ism-check').textContent = '✓';
-        row.style.background = 'rgba(255,255,255,0.07)';
+        row.style.background = 'var(--bg-card-hover)';
       }
     });
   });
@@ -3374,6 +3389,12 @@ function initPullToRefresh() {
 }
 
 export function initApp() {
+  // Theme toggle (light default ↔ dark navy), persisted in localStorage.
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : '');
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? '' : 'dark');
+  });
+
   document.getElementById('lang-toggle')?.addEventListener('click', () => {
     const newLang = toggleLang();
     const lbl = document.getElementById('lang-label');
@@ -3531,7 +3552,7 @@ function showProfileModal(user, options = {}) {
       
       <div class="input-group">
         <label>${t('avatar')}</label>
-        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
           ${avatars.map(a => `
             <div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size: 1.5rem; cursor:pointer; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: 50%; ${user.avatar === a ? 'background: var(--primary-color);' : ''}">${a}</div>
           `).join('')}
@@ -3561,7 +3582,7 @@ function showProfileModal(user, options = {}) {
 
       <div class="input-group" style="margin-top: 15px;">
         <label>${t('communities')}</label>
-        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
+        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
           ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
         </div>
       </div>
@@ -3571,7 +3592,7 @@ function showProfileModal(user, options = {}) {
         <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
       </div>
 
-      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
         <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
@@ -3955,7 +3976,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
   const tablesHtml = tables.length > 0 ? `
     <div id="floor-plan-wrap" style="display:none; margin-top:10px;">
       <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">${t('selectTable')}</div>
-      <div style="position:relative;background:rgba(255,255,255,0.05);border-radius:8px;padding:12px;min-height:120px;">
+      <div style="position:relative;background:var(--bg-card-hover);border-radius:8px;padding:12px;min-height:120px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           ${tables.map(tbl => `<button class="table-select-btn btn btn-outline btn-sm" data-tid="${tbl.id}" style="min-width:60px;">${esc(tbl.label)}</button>`).join('')}
         </div>
@@ -4804,10 +4825,10 @@ async function renderAdminMenuTab() {
         <h3 style="margin:0 0 10px;">${t('menuManage')}</h3>
         <div id="admin-menu-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${items.length === 0 ? '<p style="color:var(--text-secondary);">Цэс хоосон байна.</p>' : items.map(item => `
-            <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:10px;background:var(--bg-card-hover);border-radius:8px;padding:10px;flex-wrap:wrap;">
               ${item.imageUrl
                 ? `<img src="${esc(item.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
-                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);">🍽️</div>`}
+                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-card-hover);">🍽️</div>`}
               <div style="flex:1;min-width:140px;">
                 <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
                 <div style="font-size:0.82rem;color:var(--text-secondary);">${item.price ? item.price.toLocaleString() + '₮' : ''} · ${esc(item.category || '')}</div>
@@ -4819,7 +4840,7 @@ async function renderAdminMenuTab() {
             </div>`).join('')}
         </div>
         <button id="show-add-menu-form-btn" class="btn btn-outline btn-sm">${t('addMenuItem')}</button>
-        <div id="add-menu-form" style="display:none;margin-top:12px;background:rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+        <div id="add-menu-form" style="display:none;margin-top:12px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
           <div style="display:flex;flex-direction:column;gap:8px;">
             <input id="mi-name" type="text" placeholder="${t('itemName')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
             <input id="mi-name-en" type="text" placeholder="${t('itemNameEn')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
@@ -4842,7 +4863,7 @@ async function renderAdminMenuTab() {
         <h3 style="margin:0 0 10px;">${t('tableManage')}</h3>
         <div id="admin-table-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${tables.length === 0 ? '<p style="color:var(--text-secondary);">Ширээний жагсаалт хоосон байна.</p>' : tables.map(tbl => `
-            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;">
+            <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:10px;">
               <div style="flex:1;font-weight:600;">🪑 ${esc(tbl.label)}</div>
               <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">🗑️</button>
             </div>`).join('')}

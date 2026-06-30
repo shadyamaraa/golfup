@@ -1,6 +1,18 @@
 import { initStore } from './store.js';
 import { initApp } from './app.js';
 import { t } from './i18n.js';
+import { paintIcons } from './icons.js';
+
+// ---- Restore theme (light default; persisted dark) before first paint ----
+(function restoreTheme() {
+  const saved = localStorage.getItem('ubg-theme');
+  if (saved === 'dark') {
+    document.documentElement.dataset.theme = 'dark';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#08203A');
+  }
+})();
+// Paint the static (bottom-nav) icons as soon as the DOM is ready.
+document.addEventListener('DOMContentLoaded', () => paintIcons());
 
 console.log('⛳ UB Golf Booting...');
 
