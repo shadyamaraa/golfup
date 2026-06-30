@@ -222,6 +222,7 @@ export async function router() {
 
     if (hash === '#/' || hash === '#/home') await renderHome();
     else if (hash === '#/profile') await renderProfile();
+    else if (hash === '#/profile/edit') await renderProfileEdit();
     else if (hash === '#/games') await renderGames();
     else if (hash === '#/services') await renderServices();
     else if (hash === '#/create') await renderCreateGame();
@@ -3857,6 +3858,150 @@ function showEditBankModal(user) {
   };
 }
 
+// Shared profile edit form (used by the edit page and the required-login modal).
+function profileFormInner(user) {
+  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
+  return `
+      <div class="input-group">
+        <label>${t('avatar')}</label>
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
+          ${avatars.map(a => `
+            <div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size: 1.5rem; cursor:pointer; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: 50%; ${user.avatar === a ? 'background: var(--primary-color);' : ''}">${a}</div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>${t('phone')}</label>
+        <input type="text" value="${user.phone || ''}" disabled style="opacity: 0.7; background: rgba(0,0,0,0.1);" />
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>Username *</label>
+        <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
+        <div class="input-group">
+          <label>Овог *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
+        </div>
+        <div class="input-group">
+          <label>Нэр *</label>
+          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>${t('communities')}</label>
+        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
+          ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
+        <label>${t('newPass')}</label>
+        <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
+      </div>
+
+      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
+        <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('editBank')}</h4>
+        <div class="input-group">
+          <label>${t('bankName')}</label>
+          ${bankSelectHTML('profile-bank-name', user.bankName || '')}
+        </div>
+        <div class="input-group" style="margin-top: 10px;">
+          <label>${t('bankAccount')}</label>
+          <input type="text" id="profile-bank-acc" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+        <div class="input-group" style="margin-top: 10px;">
+          <label>IBAN</label>
+          <input type="text" id="profile-bank-iban" value="${user.bankIban || ''}" placeholder="MN..." />
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top: 16px;">
+        <label>${t('notificationSettings')}</label>
+        <label class="toggle-label">
+          <input type="checkbox" id="notify-web-toggle" ${user.notifyWeb !== false ? 'checked' : ''}>
+          <span>${t('notifyWeb')}</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="notify-sms-toggle" ${user.notifySms ? 'checked' : ''}>
+          <span>${t('notifySms')}</span>
+        </label>
+      </div>`;
+}
+
+// Wire avatar selection + save for a profile form inside `scope` (modal or page).
+function wireProfileForm(scope, user, afterSave) {
+  let selectedAvatar = user.avatar || '';
+  scope.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.onclick = () => {
+      scope.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
+      opt.style.background = 'var(--primary-color)';
+      selectedAvatar = opt.dataset.val;
+    };
+  });
+  const saveBtn = scope.querySelector('#profile-modal-save');
+  if (!saveBtn) return;
+  saveBtn.onclick = async () => {
+    const newUsername = document.getElementById('profile-username-input').value.trim();
+    const newLastName = document.getElementById('profile-lastname-input').value.trim();
+    const newFirstName = document.getElementById('profile-firstname-input').value.trim();
+    const newPass = document.getElementById('profile-pass-input').value;
+    if (newUsername.length < 2 || !newLastName || !newFirstName) {
+      showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
+      return;
+    }
+    const allUsers = await store.loadAllUsers();
+    const duplicateUsername = allUsers.some(u =>
+      u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
+    );
+    if (duplicateUsername) { showToast('Энэ username ашиглагдаж байна', 'error'); return; }
+
+    user.username = newUsername;
+    user.lastName = newLastName;
+    user.firstName = newFirstName;
+    user.fullName = newLastName + ' ' + newFirstName;
+    user.name = newUsername;
+    user.avatar = selectedAvatar;
+    if (newPass && newPass.length >= 1) user.password = newPass;
+    user.bankName = document.getElementById('profile-bank-name').value.trim();
+    user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
+    user.bankIban = document.getElementById('profile-bank-iban').value.trim();
+    user.notifyWeb = document.getElementById('notify-web-toggle').checked;
+    user.notifySms = document.getElementById('notify-sms-toggle').checked;
+    if (user.notifyWeb) initFCM(user);
+
+    await store.adminUpdateUser(user);
+    store.saveUser(user);
+    currentUser = user;
+    showToast('✅ ' + t('saved'), 'success');
+    updateHeader();
+    afterSave();
+  };
+}
+
+// ---- Profile edit page (#/profile/edit) ----
+async function renderProfileEdit() {
+  const user = currentUser;
+  if (!user) { location.hash = '#/'; return; }
+  main().innerHTML = `
+    <div class="create-container fade-in">
+      <a href="#/profile" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="create-card glass-card">
+        <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('profile', { size: 20 })} ${t('profile')}</h2>
+        ${profileFormInner(user)}
+        <div class="form-actions" style="margin-top:18px;">
+          <a href="#/profile" class="btn btn-ghost">${t('cancel')}</a>
+          <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
+        </div>
+      </div>
+    </div>`;
+  wireProfileForm(main(), user, () => { location.hash = '#/profile'; });
+}
+
 // ---- Profile page (#/profile) — prototype layout, real data ----
 async function renderProfile() {
   const u = currentUser;
@@ -3930,7 +4075,7 @@ async function renderProfile() {
       </div>
     </div>`;
 
-  const openEdit = () => showProfileModal(currentUser, { onSaved: () => renderProfile() });
+  const openEdit = () => { location.hash = '#/profile/edit'; };
   document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
   document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
 }
@@ -3939,146 +4084,21 @@ function showProfileModal(user, options = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
   const isRequired = !!options.required;
-  const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
-
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width: 450px;">
-      <h3 class="modal-title">👤 ${t('profile')}</h3>
-      
-      <div class="input-group">
-        <label>${t('avatar')}</label>
-        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
-          ${avatars.map(a => `
-            <div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size: 1.5rem; cursor:pointer; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: 50%; ${user.avatar === a ? 'background: var(--primary-color);' : ''}">${a}</div>
-          `).join('')}
-        </div>
-      </div>
-
-      <div class="input-group" style="margin-top: 15px;">
-        <label>${t('phone')}</label>
-        <input type="text" value="${user.phone || ''}" disabled style="opacity: 0.7; background: rgba(0,0,0,0.1);" />
-      </div>
-
-      <div class="input-group" style="margin-top: 15px;">
-        <label>Username *</label>
-        <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
-        <div class="input-group">
-          <label>Овог *</label>
-          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
-        </div>
-        <div class="input-group">
-          <label>Нэр *</label>
-          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
-        </div>
-      </div>
-
-      <div class="input-group" style="margin-top: 15px;">
-        <label>${t('communities')}</label>
-        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
-          ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
-        </div>
-      </div>
-
-      <div class="input-group" style="margin-top: 15px;">
-        <label>${t('newPass')}</label>
-        <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
-      </div>
-
-      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
-        <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('editBank')}</h4>
-        <div class="input-group">
-          <label>${t('bankName')}</label>
-          ${bankSelectHTML('profile-bank-name', user.bankName || '')}
-        </div>
-        <div class="input-group" style="margin-top: 10px;">
-          <label>${t('bankAccount')}</label>
-          <input type="text" id="profile-bank-acc" value="${user.bankAccount || ''}" inputmode="numeric" pattern="[0-9]*" />
-        </div>
-        <div class="input-group" style="margin-top: 10px;">
-          <label>IBAN</label>
-          <input type="text" id="profile-bank-iban" value="${user.bankIban || ''}" placeholder="MN..." />
-        </div>
-      </div>
-
-      <div class="input-group" style="margin-top: 16px;">
-        <label>${t('notificationSettings')}</label>
-        <label class="toggle-label">
-          <input type="checkbox" id="notify-web-toggle" ${user.notifyWeb !== false ? 'checked' : ''}>
-          <span>${t('notifyWeb')}</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="notify-sms-toggle" ${user.notifySms ? 'checked' : ''}>
-          <span>${t('notifySms')}</span>
-        </label>
-      </div>
-
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('profile', { size: 20 })} ${t('profile')}</h3>
+      ${profileFormInner(user)}
       <div class="modal-actions">
         ${isRequired ? '' : `<button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>`}
         <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
-
-  let selectedAvatar = user.avatar || '';
-
-  modal.querySelectorAll('.avatar-option').forEach(opt => {
-    opt.onclick = () => {
-      modal.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
-      opt.style.background = 'var(--primary-color)';
-      selectedAvatar = opt.dataset.val;
-    };
-  });
-
   modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
-  modal.querySelector('#profile-modal-save').onclick = async () => {
-    const newUsername = document.getElementById('profile-username-input').value.trim();
-    const newLastName = document.getElementById('profile-lastname-input').value.trim();
-    const newFirstName = document.getElementById('profile-firstname-input').value.trim();
-    const newPass = document.getElementById('profile-pass-input').value;
-
-    if (newUsername.length < 2 || !newLastName || !newFirstName) {
-      showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
-      return;
-    }
-    const allUsers = await store.loadAllUsers();
-    const duplicateUsername = allUsers.some(u =>
-      u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
-    );
-    if (duplicateUsername) {
-      showToast('Энэ username ашиглагдаж байна', 'error');
-      return;
-    }
-
-    user.username = newUsername;
-    user.lastName = newLastName;
-    user.firstName = newFirstName;
-    user.fullName = newLastName + ' ' + newFirstName;
-    user.name = newUsername;
-    user.avatar = selectedAvatar;
-    if (newPass && newPass.length >= 1) {
-      user.password = newPass;
-    }
-
-    user.bankName = document.getElementById('profile-bank-name').value.trim();
-    user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
-    user.bankIban = document.getElementById('profile-bank-iban').value.trim();
-    user.notifyWeb = document.getElementById('notify-web-toggle').checked;
-    user.notifySms = document.getElementById('notify-sms-toggle').checked;
-
-    if (user.notifyWeb) initFCM(user);
-
-    await store.adminUpdateUser(user);
-    store.saveUser(user);
-    currentUser = user;
-
-    showToast('✅ ' + t('saved'), 'success');
+  wireProfileForm(modal, user, () => {
     modal.remove();
-    updateHeader();
     if (options.onSaved) options.onSaved(); else router();
-  };
+  });
 }
 
 
