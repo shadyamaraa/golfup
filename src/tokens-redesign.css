@@ -261,7 +261,15 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .dt-colon { color: var(--text-primary); font-weight: 700; }
 
+.dt-card.tappable { cursor: pointer; border-color: var(--gold); }
+.dt-card.tappable:hover { background: var(--bg-card-hover); }
+.dt-hint { margin-left: auto; color: var(--gold); display: flex; align-items: center; flex-shrink: 0; }
+
 .chip-row { display: flex; gap: 8px; }
+.chip-row.chip-wrap { flex-wrap: wrap; }
+.chip-row.chip-wrap .seg-chip { flex: 1 1 calc(50% - 4px); min-width: 0; }
+.seg-chip.chip-disabled { opacity: 0.4; cursor: not-allowed; }
+.seg-chip.chip-disabled:hover { border-color: var(--border-card); }
 .seg-chip {
   flex: 1; padding: 13px 8px; border-radius: 14px; cursor: pointer;
   background: var(--bg-card); border: 1px solid var(--border-card);

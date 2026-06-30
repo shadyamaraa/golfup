@@ -1122,7 +1122,7 @@ async function renderCreateGame() {
                   <input type="date" id="game-date" required min="${today}" value="${today}" class="dt-input" />
                 </span>
               </label>
-              <div class="dt-card">
+              <div class="dt-card" id="time-card">
                 <span class="dt-ic">${icon('time', { size: 19 })}</span>
                 <span class="dt-body"><span class="dt-cap">${t('time')}</span>
                   <span class="dt-time">
@@ -1133,6 +1133,7 @@ async function renderCreateGame() {
                     </select>
                   </span>
                 </span>
+                <span class="dt-hint" id="time-hint" style="display:none;">${icon('next', { size: 15 })}</span>
               </div>
             </div>
           </div>
@@ -1155,6 +1156,23 @@ async function renderCreateGame() {
             </div>
           </div>
 
+          <div class="create-section">
+            <div class="cs-label">${t('gameVisibility')}</div>
+            <input type="hidden" id="game-visibility" value="${myCommunities.length === 0 ? 'public' : 'my-circles'}">
+            <div class="chip-row chip-wrap" id="vis-chips">
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'active' : ''}" data-vis="public">${t('gamePublic')}</button>
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'chip-disabled' : 'active'}" data-vis="my-circles">${t('gameMyCircles')}</button>
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'chip-disabled' : ''}" data-vis="selected-circles">${t('gameSelectedCircles')}</button>
+              <button type="button" class="seg-chip" data-vis="private">${t('gamePrivate')}</button>
+            </div>
+          </div>
+          <div class="input-group" id="game-communities-wrap" style="display:none;">
+            <label>${t('gameCommunity')}</label>
+            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+              ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
+            </div>
+          </div>
+
           <div class="input-group" id="mtbogd-section" style="display:none;">
             <label>⛳ ${t('bookTeetime')}</label>
             <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -1165,7 +1183,7 @@ async function renderCreateGame() {
                   <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
                 </div>
               </div>
-              <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
+              <div style="flex:1; min-width:160px; font-size:0.82rem; color:var(--gold-dark); font-weight:600; display:flex; align-items:center; gap:6px;">${icon('time', { size: 15 })} ${t('bookTapTime')}</div>
             </div>
             <div id="selected-slot-display"></div>
           </div>
@@ -1180,29 +1198,6 @@ async function renderCreateGame() {
           <div class="input-group">
             <label for="game-desc">${t('description')}</label>
             <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
-          </div>
-          <div class="input-group">
-            <label>${t('gameVisibility')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" ${myCommunities.length === 0 ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
-                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : 'checked'} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
-                <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
-                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group" id="game-communities-wrap" style="display:none;">
-            <label>${t('gameCommunity')}</label>
-            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
-              ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
-            </div>
           </div>
           <div class="create-section">
             <div class="cs-label">${t('invitePlayers')}</div>
@@ -1373,7 +1368,11 @@ async function renderCreateGame() {
   function updateMtbogdSectionVisibility() {
     const loc = document.getElementById('game-location').value;
     const section = document.getElementById('mtbogd-section');
-    if (section) section.style.display = loc === MTBOGD_CONFIG.locationName ? 'block' : 'none';
+    const isMt = loc === MTBOGD_CONFIG.locationName;
+    if (section) section.style.display = isMt ? 'block' : 'none';
+    const hint = document.getElementById('time-hint');
+    if (hint) hint.style.display = isMt ? 'flex' : 'none';
+    document.getElementById('time-card')?.classList.toggle('tappable', isMt);
     if (loc !== MTBOGD_CONFIG.locationName) {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
@@ -1432,7 +1431,13 @@ async function renderCreateGame() {
     prefetchTeeTimes();
   });
 
-  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', openTeeTimePopup);
+  // Tapping the Time card opens the tee-time slot picker (only for MTBogd course).
+  document.getElementById('time-card')?.addEventListener('click', (e) => {
+    if (e.target.closest('select')) return; // let the manual time selects work
+    if (document.getElementById('game-location').value === MTBOGD_CONFIG.locationName) {
+      openTeeTimePopup();
+    }
+  });
 
   const sizeInput = document.getElementById('game-group-size');
   document.getElementById('size-minus').addEventListener('click', () => {
@@ -1443,21 +1448,17 @@ async function renderCreateGame() {
     sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
     prefetchTeeTimes();
   });
-  document.querySelectorAll('input[name="visibility"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const visibility = document.querySelector('input[name="visibility"]:checked').value;
-      document.getElementById('vis-public-label').style.borderColor = visibility === 'public' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-my-circles-label').style.borderColor = visibility === 'my-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-selected-circles-label').style.borderColor = visibility === 'selected-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-private-label').style.borderColor = visibility === 'private' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
+  // Visibility segmented chips → hidden #game-visibility value.
+  const visInput = document.getElementById('game-visibility');
+  document.querySelectorAll('#vis-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (chip.classList.contains('chip-disabled')) return;
+      document.querySelectorAll('#vis-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      visInput.value = chip.dataset.vis;
+      document.getElementById('game-communities-wrap').style.display = chip.dataset.vis === 'selected-circles' ? 'block' : 'none';
     });
   });
-  if (myCommunities.length > 0) {
-    document.getElementById('vis-my-circles-label').style.borderColor = 'var(--emerald)';
-  } else {
-    document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
-  }
 
   function refreshInviteChips() {
     const container = document.getElementById('invite-chips-container');
@@ -1507,7 +1508,7 @@ async function renderCreateGame() {
 
     const groupSize = +document.getElementById('game-group-size').value;
     const invitedIds = [...selectedInviteIds];
-    const visibility = document.querySelector('input[name="visibility"]:checked').value;
+    const visibility = document.getElementById('game-visibility').value;
     const isPrivate = visibility === 'private';
     const targetCommunities = visibility === 'my-circles'
       ? userCommunityIds(currentUser)
