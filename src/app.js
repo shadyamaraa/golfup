@@ -772,6 +772,7 @@ function renderHomeUpcoming(games) {
         <div class="tile-icon">${icon('play', { size: 20 })}</div>
         <div class="lr-body">
           <div class="lr-title">${esc(g.location || '-')}</div>
+          ${g.creatorName ? `<div class="lr-sub" style="display:flex;align-items:center;gap:5px;">${icon('profile', { size: 12 })} ${esc(g.creatorName)}</div>` : ''}
           <div class="lr-sub">${formatDate(g.date)} · ${g.time}</div>
         </div>
         <span class="pill-soft">${countAllPlayers(g)}/${slots}</span>
