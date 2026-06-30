@@ -1095,6 +1095,7 @@ function renderGamesCards(games, isPast = false) {
             <div class="gc-meta">
               ${icon('time', { size: 13 })}<span>${dateStr} · ${g.time}</span>
             </div>
+            ${g.creatorName ? `<div class="gc-meta">${icon('profile', { size: 13 })}<span>${esc(g.creatorName)}</span></div>` : ''}
             ${gameCommunities.length > 0 ? `<div class="gc-audience"><span class="pill-soft" title="${esc(communityAudienceLabel(gameCommunities))}">${esc(communityAudienceLabel(gameCommunities))}</span></div>` : ''}
           </div>
           <div class="gc-top-right">
@@ -1884,12 +1885,11 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
       const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
       const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
-      const orgTag = pid === game.createdBy ? ` <span class="tag-organizer">${t('organizer')}</span>` : '';
       slots.push(`
         <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
           <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</span>
-          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${orgTag}${tag}</span>
+          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${tag}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
