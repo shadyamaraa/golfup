@@ -1,5 +1,29 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (home dashboard)
+
+### Home rebuilt as the prototype dashboard
+
+Home is now a dashboard (the full games browser lives on `#/games`):
+greeting → news carousel → enriched next-game card → sponsor slot → 3 stat
+tiles → "Upcoming" list. Presentation only.
+
+- News carousel: branded welcome card (no announcements backend yet — a single
+  honest placeholder, carousel-ready for real news later).
+- Next-game card enriched: group-size + slots chips and a player avatar stack
+  with `+N` overflow (real players), gold "details" CTA.
+- Sponsor slot: neutral placeholder banner (replaceable with a real sponsor).
+- 3 stat tiles from REAL data — games joined/created, following, followers
+  (the prototype's handicap/ranking aren't in the app's data model, so real
+  social stats are used instead of fabricated numbers).
+- "Upcoming" list: nearest games as surface list rows + "All" → `#/games`.
+- New i18n keys (upcoming/viewAllShort/news/sponsor/stat*, MN/EN/KR); CSS for
+  carousel, sponsor slot, stat row, next-game chips + avatar stack.
+
+### Risk
+Low. Markup/CSS only; verified the dashboard renders (forced-localStorage build,
+reverted). Games browser/history/archive intact on `#/games`.
+
 ## 2026-06-30 (structure)
 
 ### Prototype information architecture — 5-tab nav, Games + Services routes, course picker

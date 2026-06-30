@@ -606,10 +606,8 @@ function wireGamesBrowser() {
   });
 }
 
-// ---- Home View ----
+// ---- Home View (dashboard: news · next game · stats · upcoming) ----
 async function renderHome() {
-  const hasCircles = userCommunityIds(currentUser).length > 0;
-  homeFilter = hasCircles ? 'community' : 'mine';
   const initial = (displayUsername(currentUser) || '?').charAt(0).toUpperCase();
   main().innerHTML = `
     <div class="home-container fade-in">
@@ -623,15 +621,23 @@ async function renderHome() {
           <button class="hg-avatar" id="home-avatar">${esc(currentUser.avatar || initial)}</button>
         </div>
       </div>
+      <div id="home-news"></div>
       <div id="next-game-feature"></div>
+      <div id="home-sponsor"></div>
+      <div id="home-stats"></div>
       <div id="notifications-section"></div>
-      ${gamesBrowserHTML(homeFilter)}
+      <div class="section-head" style="margin-top:24px;">
+        <h2>${t('upcoming')}</h2>
+        <a href="#/games" class="view-all">${t('viewAllShort')}</a>
+      </div>
+      <div id="home-upcoming" class="games-list"></div>
     </div>`;
 
   const [notifs, games] = await Promise.all([
     currentUser ? store.loadNotifications(currentUser.id) : Promise.resolve([]),
     store.loadAllGames()
   ]);
+  homeGamesCache = games;
   if (currentUser) {
     renderNotifications(notifs);
     if (store.isUsingFirebase()) {
@@ -639,8 +645,11 @@ async function renderHome() {
       if (unsub) activeUnsubs.push(unsub);
     }
   }
+  renderHomeNews();
+  renderHomeSponsor();
   renderNextGameFeature(games);
-  renderGamesHome(games);
+  renderHomeStats(games);
+  renderHomeUpcoming(games);
 
   document.getElementById('home-avatar')?.addEventListener('click', () => showProfileModal(currentUser));
   document.getElementById('home-bell')?.addEventListener('click', () => {
@@ -648,8 +657,85 @@ async function renderHome() {
     if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
-  wireGamesBrowser();
+  if (store.isUsingFirebase()) {
+    const unsub = store.onAllGamesChanged((gs) => {
+      homeGamesCache = gs;
+      renderNextGameFeature(gs);
+      renderHomeStats(gs);
+      renderHomeUpcoming(gs);
+    });
+    if (unsub) activeUnsubs.push(unsub);
+  }
+
   maybeShowOnboarding();
+}
+
+// Home news carousel. No announcements backend yet → a single branded welcome
+// card so the layout matches the prototype; replaceable with real news later.
+function renderHomeNews() {
+  const host = document.getElementById('home-news');
+  if (!host) return;
+  const items = [{ tag: t('newsTag'), title: t('newsWelcomeTitle') }];
+  host.innerHTML = `
+    <div class="news-carousel">
+      ${items.map(n => `
+        <div class="feature-card news-card">
+          <span class="pill-soft news-pill">${esc(n.tag)}</span>
+          <div class="news-title">${esc(n.title)}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+// Sponsor slot — placeholder until a sponsor image/link is configured.
+function renderHomeSponsor() {
+  const host = document.getElementById('home-sponsor');
+  if (!host) return;
+  host.innerHTML = `<div class="sponsor-slot">${t('sponsorLabel')}</div>`;
+}
+
+// 3 stat tiles from real data (games joined/created, following, followers).
+function renderHomeStats(games) {
+  const host = document.getElementById('home-stats');
+  if (!host) return;
+  const myCount = (games || []).filter(isMyGame).length;
+  const following = Object.keys(currentUserFollows || {}).length;
+  const followers = currentUserFollowers?.size || 0;
+  host.innerHTML = `
+    <div class="stat-row">
+      <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myCount}</div></div>
+      <div class="stat-tile"><div class="st-label">${t('statFollowing')}</div><div class="st-value">${following}</div></div>
+      <a href="#/users" class="stat-tile" style="text-decoration:none;"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></a>
+    </div>`;
+}
+
+// Upcoming games (nearest first) as surface list rows.
+function renderHomeUpcoming(games) {
+  const host = document.getElementById('home-upcoming');
+  if (!host) return;
+  const now = Date.now();
+  const up = (games || [])
+    .filter(g => g.date && g.time)
+    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
+    .filter(x => !isNaN(x.ms) && x.ms >= now)
+    .sort((a, b) => a.ms - b.ms)
+    .slice(0, 5)
+    .map(x => x.g);
+  if (up.length === 0) {
+    host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${icon('play', { size: 36 })}</p><p>${t('noGames')}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;gap:8px;">${icon('create', { size: 16 })} ${t('createGame')}</a></div>`;
+    return;
+  }
+  host.innerHTML = up.map(g => {
+    const slots = g.groupSize * ensureGroups(g.groups).length;
+    return `
+      <a href="#/game/${g.id}" class="list-row">
+        <div class="tile-icon">${icon('play', { size: 20 })}</div>
+        <div class="lr-body">
+          <div class="lr-title">${esc(g.location || '-')}</div>
+          <div class="lr-sub">${formatDate(g.date)} · ${g.time}</div>
+        </div>
+        <span class="pill-soft">${countAllPlayers(g)}/${slots}</span>
+      </a>`;
+  }).join('');
 }
 
 // ---- Games View (#/games) — the full games browser with a title + FAB ----
@@ -813,6 +899,14 @@ function renderNextGameFeature(games) {
   const groups = ensureGroups(g.groups);
   const totalPlayers = countAllPlayers(g);
   const totalSlots = g.groupSize * groups.length;
+  const players = groups.flatMap(grp => ensureArray(grp)).filter(p => p?.id || p?.name);
+  const shown = players.slice(0, 4);
+  const more = Math.max(0, totalPlayers - shown.length);
+  const avStack = shown.map(p => {
+    const u = allUsersMap[p.id];
+    const ch = (u && u.avatar) || (p.name || '?').charAt(0).toUpperCase();
+    return `<span class="fc-av">${esc(ch)}</span>`;
+  }).join('') + (more > 0 ? `<span class="fc-av fc-av-more">+${more}</span>` : '');
   return host.innerHTML = `
     <a href="#/game/${g.id}" class="feature-card" style="display:block; text-decoration:none;">
       <div style="display:flex; align-items:center; justify-content:space-between;">
@@ -823,8 +917,12 @@ function renderNextGameFeature(games) {
       <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.82rem; color:rgba(243,239,228,0.72);">
         ${icon('location', { size: 14 })}<span>${esc(g.creatorName || '')}</span>
       </div>
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px;">
-        <div class="player-dots fc-dots">${renderPlayerDots(g)}</div>
+      <div class="fc-chips">
+        <span class="fc-chip">${icon('members', { size: 13 })} ${g.groupSize} ${t('perGroupUnit')}</span>
+        <span class="fc-chip">${totalPlayers} / ${totalSlots} ${t('players')}</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px;">
+        <div class="fc-avs">${avStack}</div>
         <span class="fc-cta">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
       </div>
     </a>`;

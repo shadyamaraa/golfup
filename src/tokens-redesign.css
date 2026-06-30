@@ -443,12 +443,54 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 /* ---- Next-game feature card extras ---- */
 .feature-card .fc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
 .feature-card .fc-title { font-size: 1.5rem; }
-.feature-card .fc-dots .player-dot { border: 2px solid #0C3051; margin-right: -8px; }
 .feature-card .fc-cta {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 15px; border-radius: 12px; background: var(--gold); color: #0C3051;
   font-weight: 800; font-size: 0.8rem;
 }
+.feature-card .fc-chips { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.feature-card .fc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 10px; background: rgba(243,239,228,0.10);
+  font-size: 0.75rem; font-weight: 600; color: #F3EFE4;
+}
+.feature-card .fc-avs { display: flex; align-items: center; }
+.feature-card .fc-av {
+  width: 34px; height: 34px; border-radius: 50%; margin-right: -9px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, var(--gold-dark), var(--gold)); color: #0C3051;
+  font-size: 0.7rem; font-weight: 800; border: 2px solid #0C3051;
+}
+.feature-card .fc-av-more { background: rgba(243,239,228,0.14); color: #F3EFE4; }
+
+/* ---- Home news carousel ---- */
+.news-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin-bottom: 14px; }
+.news-carousel::-webkit-scrollbar { display: none; }
+.news-card {
+  min-width: 100%; scroll-snap-align: start; min-height: 150px;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.news-card .news-pill { position: absolute; top: 16px; left: 16px; }
+.news-card .news-title {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.25rem;
+  color: #F3EFE4; line-height: 1.18; letter-spacing: -0.01em;
+}
+
+/* ---- Sponsor slot (placeholder) ---- */
+.sponsor-slot {
+  margin-bottom: 14px; height: 76px; border-radius: 18px;
+  background: linear-gradient(135deg, #0A1A2E, #0E2B49);
+  border: 1px solid var(--border-card);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
+
+/* ---- Home stat row (3 tiles) ---- */
+.stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.stat-row .stat-tile { padding: 14px; }
+.stat-row .st-value { font-size: 1.5rem; }
+.stat-tile.navy .st-value { color: var(--gold); }
 
 /* ---- Segmented filter tabs (home) ---- */
 .game-filter-tabs.seg-tabs { padding: 4px; border-radius: 14px; gap: 4px; margin-bottom: 20px; }
