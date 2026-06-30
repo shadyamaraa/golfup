@@ -512,6 +512,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 
 /* ---- Next-game feature card extras ---- */
+#next-game-feature .feature-card { margin-bottom: 14px; }
 .feature-card .fc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
 .feature-card .fc-title { font-size: 1.5rem; }
 .feature-card .fc-cta {
