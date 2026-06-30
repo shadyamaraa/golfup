@@ -557,6 +557,8 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   color: var(--text-muted); font-size: 0.72rem; font-weight: 700;
   letter-spacing: 0.16em; text-transform: uppercase;
 }
+.global-sponsor { max-width: 600px; margin: 0 auto; padding: 12px 20px 0; }
+.global-sponsor .sponsor-banner { margin-bottom: 0; }
 .sponsor-banner {
   display: block; margin-bottom: 14px; border-radius: 18px; overflow: hidden;
   box-shadow: var(--shadow-card); background: #0A1A2E;

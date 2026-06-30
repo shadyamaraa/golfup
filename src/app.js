@@ -212,6 +212,7 @@ export async function router() {
     }
     updateHeader();
     updateBottomNav(hash);
+    updateGlobalSponsorVisibility(hash);
     clearActiveListeners();
 
     if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
@@ -623,7 +624,6 @@ async function renderHome() {
       </div>
       <div id="home-news"></div>
       <div id="next-game-feature"></div>
-      <div id="home-sponsor"></div>
       <div id="home-stats"></div>
       <div id="notifications-section"></div>
       <div class="section-head" style="margin-top:24px;">
@@ -646,7 +646,6 @@ async function renderHome() {
     }
   }
   renderHomeNews();
-  renderHomeSponsor();
   renderNextGameFeature(games);
   renderHomeStats(games);
   renderHomeUpcoming(games);
@@ -667,8 +666,6 @@ async function renderHome() {
     if (unsub) activeUnsubs.push(unsub);
     const unsubNews = store.onNewsChanged((items) => renderHomeNews(items));
     if (unsubNews) activeUnsubs.push(unsubNews);
-    const unsubSponsor = store.onSponsorChanged((data) => renderHomeSponsor(data));
-    if (unsubSponsor) activeUnsubs.push(unsubSponsor);
   }
 
   maybeShowOnboarding();
@@ -706,21 +703,32 @@ async function renderHomeNews(items) {
     </div>`;
 }
 
-// Sponsor banner — admin-managed image (+ optional link). Placeholder when unset.
-async function renderHomeSponsor(data) {
-  const host = document.getElementById('home-sponsor');
+// Global sponsor banner — admin-managed image (+ optional link), shown on every
+// user-facing page (hidden on auth/kitchen and when unset).
+async function renderGlobalSponsor(data) {
+  const host = document.getElementById('global-sponsor');
   if (!host) return;
   if (data === undefined) {
     try { data = await store.loadSponsor(); } catch (_) { data = null; }
   }
   if (!data || !data.imageUrl) {
-    host.innerHTML = `<div class="sponsor-slot">${t('sponsorLabel')}</div>`;
-    return;
+    host.innerHTML = '';
+    host.dataset.has = '0';
+  } else {
+    const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" style="object-position:${data.posX ?? 50}% ${data.posY ?? 50}%;" />`;
+    host.innerHTML = data.link
+      ? `<a href="${esc(data.link)}" target="_blank" rel="noopener" class="sponsor-banner">${img}</a>`
+      : `<div class="sponsor-banner">${img}</div>`;
+    host.dataset.has = '1';
   }
-  const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" style="object-position:${data.posX ?? 50}% ${data.posY ?? 50}%;" />`;
-  host.innerHTML = data.link
-    ? `<a href="${esc(data.link)}" target="_blank" rel="noopener" class="sponsor-banner">${img}</a>`
-    : `<div class="sponsor-banner">${img}</div>`;
+  updateGlobalSponsorVisibility(location.hash || '#/');
+}
+
+function updateGlobalSponsorVisibility(hash) {
+  const host = document.getElementById('global-sponsor');
+  if (!host) return;
+  const hide = isKiosk || !currentUser || hash === '#/kitchen' || host.dataset.has !== '1';
+  host.classList.toggle('hidden', hide);
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).
@@ -3696,6 +3704,12 @@ export function initApp() {
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? '' : 'dark');
   });
+
+  // Global sponsor banner (all pages) — render once + live-update.
+  renderGlobalSponsor();
+  if (store.isUsingFirebase()) {
+    store.onSponsorChanged((data) => renderGlobalSponsor(data));
+  }
 
   document.getElementById('lang-toggle')?.addEventListener('click', () => {
     const newLang = toggleLang();
