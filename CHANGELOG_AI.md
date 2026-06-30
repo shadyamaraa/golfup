@@ -1,5 +1,31 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30
+
+### Visual redesign — navy · gold · cream (append-only token override)
+
+Re-skins the whole app by re-pointing the design tokens `style.css` already
+exposes (the documented "a redesign re-points these, the whole app follows"
+playbook). Forest-green ➜ navy, antique gold ➜ brighter brand gold, Inter ➜
+Manrope (body) + Merriweather (display headings). No JS changes — the app's
+existing white-alpha surfaces read correctly on navy.
+
+- `src/redesign.css` (new): append-only override loaded after `style.css`.
+  Re-points `--bg-*`, `--gold*`, `--text-*`, `--emerald*` (reused as the navy
+  feature tone) and `--font`; semantic `--color-*` follow. Switches active/
+  primary states (primary button, active filter tab, date badge, order tracker,
+  nav) to gold. Also defines `--primary-color`, `--border-color`, `--bg-color`,
+  `--danger-color`, `--primary-rgb` — referenced in code but never defined, so
+  the notif badge, order tracker and food cart pill were silently colorless;
+  now they render.
+- `index.html`: load `redesign.css` after `style.css`; `theme-color` → `#08203A`.
+- Preview on `#/styleguide`. A light-cream variant is possible but needs ~5
+  find/replace in `app.js` for inline white-alpha surfaces, so the safe drop-in
+  is the navy theme.
+
+### Risk
+Low. Additive CSS override + two `index.html` lines; no JS or data changes.
+
 ## 2026-07-02
 
 ### Tee-time QPay moves to MTBogd (MTBogd owns the QPay lifecycle)
