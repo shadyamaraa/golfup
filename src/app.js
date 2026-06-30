@@ -665,24 +665,42 @@ async function renderHome() {
       renderHomeUpcoming(gs);
     });
     if (unsub) activeUnsubs.push(unsub);
+    const unsubNews = store.onNewsChanged((items) => renderHomeNews(items));
+    if (unsubNews) activeUnsubs.push(unsubNews);
   }
 
   maybeShowOnboarding();
 }
 
-// Home news carousel. No announcements backend yet → a single branded welcome
-// card so the layout matches the prototype; replaceable with real news later.
-function renderHomeNews() {
+// Home news carousel — driven by admin-managed news (image · title · link).
+// Falls back to a branded welcome card when there are no items.
+async function renderHomeNews(items) {
   const host = document.getElementById('home-news');
   if (!host) return;
-  const items = [{ tag: t('newsTag'), title: t('newsWelcomeTitle') }];
+  if (items === undefined) {
+    try { items = await store.loadNews(); } catch (_) { items = []; }
+  }
+  if (!items || items.length === 0) {
+    host.innerHTML = `
+      <div class="news-carousel">
+        <div class="feature-card news-card">
+          <span class="pill-soft news-pill">${t('newsTag')}</span>
+          <div class="news-title">${t('newsWelcomeTitle')}</div>
+        </div>
+      </div>`;
+    return;
+  }
   host.innerHTML = `
     <div class="news-carousel">
-      ${items.map(n => `
-        <div class="feature-card news-card">
-          <span class="pill-soft news-pill">${esc(n.tag)}</span>
-          <div class="news-title">${esc(n.title)}</div>
-        </div>`).join('')}
+      ${items.map(n => {
+        const bg = n.imageUrl
+          ? `style="background-image:linear-gradient(to top, rgba(6,18,35,0.93) 0%, rgba(6,18,35,0.35) 55%, rgba(6,18,35,0.12) 100%), url('${esc(n.imageUrl)}'); background-size:cover; background-position:center;"`
+          : '';
+        const inner = `<span class="pill-soft news-pill">${t('newsTag')}</span><div class="news-title">${esc(n.title || '')}</div>`;
+        return n.link
+          ? `<a class="feature-card news-card has-img" href="${esc(n.link)}" target="_blank" rel="noopener" ${bg}>${inner}</a>`
+          : `<div class="feature-card news-card ${n.imageUrl ? 'has-img' : ''}" ${bg}>${inner}</div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -2154,6 +2172,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">Тойроггүй</button>
           <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm" style="gap:5px;">${icon('search', { size: 14 })} Хэрэглэгч</button>
           <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm" style="gap:5px;">${icon('dining', { size: 14 })} ${t('menuManage')}</button>
+          <button id="admin-tab-btn-news" class="btn btn-outline btn-sm" style="gap:5px;">${icon('alerts', { size: 14 })} ${t('newsManage')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -2236,6 +2255,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-menu" style="display:none;">
           <div id="admin-menu-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-news" style="display:none;">
+          <div id="admin-news-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -2246,13 +2269,15 @@ async function renderAdminPanel() {
   const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
   const tabLookup = document.getElementById('admin-tab-btn-lookup');
   const tabMenu = document.getElementById('admin-tab-btn-menu');
+  const tabNews = document.getElementById('admin-tab-btn-news');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
   const sectionLookup = document.getElementById('admin-tab-lookup');
   const sectionMenu = document.getElementById('admin-tab-menu');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu];
+  const sectionNews = document.getElementById('admin-tab-news');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -2266,6 +2291,10 @@ async function renderAdminPanel() {
   tabMenu.addEventListener('click', async () => {
     switchTab(tabMenu, sectionMenu);
     await renderAdminMenuTab();
+  });
+  tabNews.addEventListener('click', async () => {
+    switchTab(tabNews, sectionNews);
+    await renderAdminNewsTab();
   });
 
   // No-circle tab: open edit modal
@@ -5233,6 +5262,101 @@ async function renderAdminMenuTab() {
       await store.deleteTable(btn.dataset.id);
       showToast('Устгагдлаа', 'info');
       await renderAdminMenuTab();
+    };
+  });
+}
+
+// Admin: News management tab content (home carousel items: image · title · link)
+async function renderAdminNewsTab() {
+  const el = document.getElementById('admin-news-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+  let items;
+  try { items = await store.loadNews(); }
+  catch (err) { el.innerHTML = `<p style="color:var(--danger-color);">⚠️ ${esc(err.message)}</p>`; return; }
+
+  const inputStyle = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);';
+  el.innerHTML = `
+    <div>
+      <h3 style="margin:0 0 10px;">${t('newsManage')}</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        ${items.length === 0 ? `<p style="color:var(--text-secondary);">${t('newsEmpty')}</p>` : items.map(n => `
+          <div style="display:flex;align-items:center;gap:10px;background:var(--bg-card-hover);border-radius:8px;padding:10px;flex-wrap:wrap;">
+            ${n.imageUrl
+              ? `<img src="${esc(n.imageUrl)}" alt="" style="width:56px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
+              : `<div style="width:56px;height:40px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-color);color:var(--text-muted);">${icon('alerts', { size: 18 })}</div>`}
+            <div style="flex:1;min-width:140px;">
+              <div style="font-weight:600;">${esc(n.title || '')}</div>
+              ${n.link ? `<div style="font-size:0.76rem;color:var(--text-secondary);word-break:break-all;">${esc(n.link)}</div>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm btn-outline edit-news-btn" data-id="${n.id}">✏️</button>
+              <button class="btn btn-sm btn-danger del-news-btn" data-id="${n.id}">🗑️</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <button id="show-add-news-btn" class="btn btn-outline btn-sm">${t('newsAdd')}</button>
+      <div id="add-news-form" style="display:none;margin-top:12px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <input id="news-title" type="text" placeholder="${t('newsTitle')}" style="${inputStyle}" />
+          <input id="news-image" type="text" placeholder="${t('newsImageUrl')}" style="${inputStyle}" />
+          <img id="news-image-preview" src="" alt="" style="display:none;width:100%;max-height:130px;border-radius:8px;object-fit:cover;" />
+          <input id="news-link" type="text" placeholder="${t('newsLink')}" style="${inputStyle}" />
+          <div style="display:flex;gap:8px;">
+            <button id="save-news-btn" class="btn btn-primary btn-sm">${t('save')}</button>
+            <button id="cancel-news-btn" class="btn btn-ghost btn-sm">${t('cancel')}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  let editing = null;
+  const form = document.getElementById('add-news-form');
+  const imgInput = document.getElementById('news-image');
+  const imgPreview = document.getElementById('news-image-preview');
+  const updatePreview = () => {
+    const u = imgInput.value.trim();
+    if (u) { imgPreview.src = u; imgPreview.style.display = 'block'; } else { imgPreview.style.display = 'none'; }
+  };
+  imgInput.oninput = updatePreview;
+
+  const openForm = (n) => {
+    editing = n || null;
+    document.getElementById('news-title').value = n?.title || '';
+    imgInput.value = n?.imageUrl || '';
+    document.getElementById('news-link').value = n?.link || '';
+    updatePreview();
+    form.style.display = 'block';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  document.getElementById('show-add-news-btn').onclick = () => openForm(null);
+  document.getElementById('cancel-news-btn').onclick = () => { editing = null; form.style.display = 'none'; };
+  document.querySelectorAll('.edit-news-btn').forEach(btn => {
+    btn.onclick = () => { const n = items.find(x => x.id === btn.dataset.id); if (n) openForm(n); };
+  });
+
+  document.getElementById('save-news-btn').onclick = async () => {
+    const title = document.getElementById('news-title').value.trim();
+    if (!title) { showToast(t('newsTitleRequired'), 'error'); return; }
+    const item = {
+      ...(editing || {}),
+      title,
+      imageUrl: imgInput.value.trim(),
+      link: document.getElementById('news-link').value.trim(),
+    };
+    await store.saveNewsItem(item);
+    showToast(editing ? '✅ Шинэчлэгдлээ' : '✅ Нэмэгдлээ', 'success');
+    editing = null;
+    await renderAdminNewsTab();
+  };
+
+  document.querySelectorAll('.del-news-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Устгах уу?')) return;
+      await store.deleteNewsItem(btn.dataset.id);
+      showToast('Устгагдлаа', 'info');
+      await renderAdminNewsTab();
     };
   });
 }

@@ -9,6 +9,7 @@
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },
     "menu": { ".read": true, ".write": true },
+    "news": { ".read": true, ".write": true },
     "tables": { ".read": true, ".write": true },
     "orders": { ".read": true, ".write": true }
   }

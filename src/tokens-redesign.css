@@ -541,6 +541,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   min-width: 100%; scroll-snap-align: start; min-height: 150px;
   display: flex; flex-direction: column; justify-content: flex-end;
 }
+.news-card.has-img::after { display: none; }
 .news-card .news-pill { position: absolute; top: 16px; left: 16px; }
 .news-card .news-title {
   font-family: var(--font-display); font-weight: 700; font-size: 1.25rem;
