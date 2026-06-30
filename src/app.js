@@ -1187,17 +1187,12 @@ async function renderCreateGame() {
             </div>
             <div id="selected-slot-display"></div>
           </div>
-          <div class="input-group">
-            <label for="game-group-size">${t('groupSize')}</label>
-            <div class="stepper">
-              <button type="button" class="stepper-btn" id="size-minus">−</button>
-              <input type="number" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}" min="${APP_CONFIG.minGroupSize}" max="${APP_CONFIG.maxGroupSize}" readonly />
-              <button type="button" class="stepper-btn" id="size-plus">+</button>
+          <div class="create-section">
+            <div class="cs-label">${t('groupSize')}</div>
+            <input type="hidden" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}">
+            <div class="chip-row" id="size-chips">
+              ${Array.from({ length: APP_CONFIG.maxGroupSize - APP_CONFIG.minGroupSize + 1 }, (_, i) => APP_CONFIG.minGroupSize + i).map(n => `<button type="button" class="seg-chip ${n === APP_CONFIG.defaultGroupSize ? 'active' : ''}" data-size="${n}">${n}</button>`).join('')}
             </div>
-          </div>
-          <div class="input-group">
-            <label for="game-desc">${t('description')}</label>
-            <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
           </div>
           <div class="create-section">
             <div class="cs-label">${t('invitePlayers')}</div>
@@ -1206,8 +1201,12 @@ async function renderCreateGame() {
               ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="invite-add" title="${t('inviteSelectBtn')}">${icon('create', { size: 16 })}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);margin:0;">${t('noUsersFound')}</p>`}
             </div>
           </div>
+          <div class="input-group">
+            <label for="game-desc">${t('description')}</label>
+            <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
+          </div>
           <div class="create-cta-wrap">
-            <button type="submit" class="btn btn-primary create-cta" id="create-submit-btn">${icon('play', { size: 18 })} ${t('publishGame')}</button>
+            <button type="submit" class="btn btn-primary create-cta" id="create-submit-btn">${icon('play', { size: 18 })} ${t('createGame')}</button>
             <a href="#/" class="btn btn-ghost" style="width:100%;">${t('cancel')}</a>
           </div>
         </form>
@@ -1439,14 +1438,15 @@ async function renderCreateGame() {
     }
   });
 
+  // Group-size segmented chips → hidden #game-group-size value.
   const sizeInput = document.getElementById('game-group-size');
-  document.getElementById('size-minus').addEventListener('click', () => {
-    sizeInput.value = Math.max(APP_CONFIG.minGroupSize, +sizeInput.value - 1);
-    prefetchTeeTimes();
-  });
-  document.getElementById('size-plus').addEventListener('click', () => {
-    sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
-    prefetchTeeTimes();
+  document.querySelectorAll('#size-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#size-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      sizeInput.value = chip.dataset.size;
+      prefetchTeeTimes();
+    });
   });
   // Visibility segmented chips → hidden #game-visibility value.
   const visInput = document.getElementById('game-visibility');
