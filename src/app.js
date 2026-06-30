@@ -1,4 +1,4 @@
-import { t, getLang, toggleLang } from './i18n.js';
+import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
@@ -252,12 +252,14 @@ function updateHeader() {
   const userInfo = document.getElementById('user-info');
   const nameDisplay = document.getElementById('user-name-display');
   const avatar = document.getElementById('user-avatar');
+  const headerAvatar = document.getElementById('header-avatar');
   if (langBtn) langBtn.textContent = getLang().toUpperCase();
   const adminLink = document.getElementById('admin-link');
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
     if (nameDisplay) nameDisplay.textContent = displayUsername(currentUser);
     if (avatar) avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (headerAvatar) headerAvatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
     if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
@@ -619,10 +621,6 @@ async function renderHome() {
           <div class="home-greet-hi">${t('greetingHi')}</div>
           <div class="home-greet-name">${esc(displayUsername(currentUser))}</div>
         </div>
-        <div class="home-greet-actions">
-          <button class="hg-btn" id="home-bell" title="${t('notifications')}">${icon('alerts', { size: 20 })}<span id="home-bell-badge" class="hg-badge hidden"></span></button>
-          <button class="hg-avatar" id="home-avatar">${esc(currentUser.avatar || initial)}</button>
-        </div>
       </div>
       <div id="home-news"></div>
       <div id="next-game-feature"></div>
@@ -651,12 +649,6 @@ async function renderHome() {
   renderNextGameFeature(games);
   renderHomeStats(games);
   renderHomeUpcoming(games);
-
-  document.getElementById('home-avatar')?.addEventListener('click', () => { location.hash = '#/profile'; });
-  document.getElementById('home-bell')?.addEventListener('click', () => {
-    const sec = document.getElementById('notifications-section');
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
 
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged((gs) => {
@@ -3718,11 +3710,8 @@ function initPullToRefresh() {
 }
 
 export function initApp() {
-  // Theme toggle (light default ↔ dark navy), persisted in localStorage.
+  // Apply saved theme on boot (toggle now lives in profile settings).
   applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : '');
-  document.getElementById('theme-toggle')?.addEventListener('click', () => {
-    applyTheme(document.documentElement.dataset.theme === 'dark' ? '' : 'dark');
-  });
 
   // Global sponsor banner (all pages) — render once + live-update.
   renderGlobalSponsor();
@@ -3730,12 +3719,9 @@ export function initApp() {
     store.onSponsorChanged((data) => renderGlobalSponsor(data));
   }
 
-  document.getElementById('lang-toggle')?.addEventListener('click', () => {
-    const newLang = toggleLang();
-    const lbl = document.getElementById('lang-label');
-    if (lbl) lbl.textContent = newLang.toUpperCase();
-    router();
-  });
+  // Header: bell → home (notifications), avatar → profile.
+  document.getElementById('header-bell')?.addEventListener('click', () => { location.hash = '#/'; });
+  document.getElementById('header-avatar')?.addEventListener('click', () => { location.hash = '#/profile'; });
 
   document.getElementById('logout-btn')?.addEventListener('click', () => {
     if (confirm(t('confirmLogout'))) {
@@ -4009,6 +3995,24 @@ async function renderProfileEdit() {
       <a href="#/profile" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
       <div class="create-card glass-card">
         <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('profile', { size: 20 })} ${t('profile')}</h2>
+
+        <div class="create-section" style="margin-top:8px;">
+          <div class="cs-label">${t('appearance')}</div>
+          <div class="chip-row" id="theme-chips">
+            <button type="button" class="seg-chip" data-theme="">${t('themeLight')}</button>
+            <button type="button" class="seg-chip" data-theme="dark">${t('themeDark')}</button>
+          </div>
+        </div>
+        <div class="create-section">
+          <div class="cs-label">${t('language')}</div>
+          <div class="chip-row" id="lang-chips">
+            <button type="button" class="seg-chip" data-lang="mn">МН</button>
+            <button type="button" class="seg-chip" data-lang="en">EN</button>
+            <button type="button" class="seg-chip" data-lang="kr">한국</button>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border-card); margin:6px 0 18px;"></div>
+
         ${profileFormInner(user)}
         <div class="form-actions" style="margin-top:18px;">
           <a href="#/profile" class="btn btn-ghost">${t('cancel')}</a>
@@ -4016,6 +4020,27 @@ async function renderProfileEdit() {
         </div>
       </div>
     </div>`;
+
+  // Theme chips
+  const curTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : '';
+  document.querySelectorAll('#theme-chips .seg-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.theme === curTheme);
+    c.addEventListener('click', () => {
+      applyTheme(c.dataset.theme === 'dark' ? 'dark' : '');
+      document.querySelectorAll('#theme-chips .seg-chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+    });
+  });
+  // Language chips (re-render the page in the new language)
+  document.querySelectorAll('#lang-chips .seg-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.lang === getLang());
+    c.addEventListener('click', () => {
+      if (c.dataset.lang === getLang()) return;
+      setLang(c.dataset.lang);
+      router();
+    });
+  });
+
   wireProfileForm(main(), user, () => { location.hash = '#/profile'; });
 }
 

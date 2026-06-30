@@ -29,13 +29,11 @@
           <div class="logo-img" role="img" aria-label="UB Golf"></div>
         </a>
         <nav class="header-nav">
-          <button id="theme-toggle" class="btn-icon btn-theme-toggle" title="Theme" aria-label="Toggle theme"></button>
-          <button id="lang-toggle" class="btn-icon" title="Language">
-            <span id="lang-label">MN</span>
-          </button>
-          <div id="user-info" class="user-info hidden" style="display:flex; align-items:center;">
-            <a href="#/users" id="users-link" class="btn-icon" title="Хэрэглэгчид" style="margin-right: 8px; text-decoration:none; display:flex; align-items:center;"><span data-icon="members" data-size="18"></span></a>
-            <a href="#/admin" id="admin-link" class="btn-icon hidden" title="Admin панель" style="margin-right: 8px; text-decoration:none; display:flex; align-items:center;"><span data-icon="settings" data-size="18"></span></a>
+          <div id="user-info" class="user-info hidden" style="display:flex; align-items:center; gap:8px;">
+            <a href="#/users" id="users-link" class="btn-icon" title="Хэрэглэгчид" style="text-decoration:none; display:flex; align-items:center;"><span data-icon="members" data-size="18"></span></a>
+            <a href="#/admin" id="admin-link" class="btn-icon hidden" title="Admin панель" style="text-decoration:none; display:flex; align-items:center;"><span data-icon="settings" data-size="18"></span></a>
+            <button id="header-bell" class="btn-icon hg-bell" title="Мэдэгдэл"><span data-icon="alerts" data-size="18"></span><span id="header-bell-badge" class="hg-badge hidden"></span></button>
+            <button id="header-avatar" class="user-avatar" title="Профайл"></button>
             <button id="logout-btn" class="btn-icon btn-logout-icon" title="Гарах"></button>
           </div>
         </nav>

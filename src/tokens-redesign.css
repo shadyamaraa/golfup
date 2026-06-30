@@ -517,6 +517,10 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   border: 1px solid rgba(221,137,16,0.18);
 }
 
+/* ---- Header bell + avatar (moved up from the home greeting) ---- */
+.hg-bell { position: relative; display: flex; align-items: center; justify-content: center; }
+#header-avatar.user-avatar { border: none; padding: 0; cursor: pointer; flex-shrink: 0; }
+
 /* ---- Home greeting header ---- */
 .home-container { padding-top: 8px; }
 .hero-section { display: none; }
