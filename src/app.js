@@ -1052,7 +1052,7 @@ function renderGamesHome(games) {
         </div>
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>${icon('play', { size: 40 })}</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
   }
 
   if (pastContainer && historyOpen) {
@@ -1269,14 +1269,14 @@ async function renderCreateGame() {
       <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
       <div style="display:flex; gap:10px;">
         <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
+          <input type="radio" name="create-payment" value="clubhouse" checked> ${icon('ball-tee', { size: 15 })} ${t('payClubhouse')}
         </label>
         ${QPAY_ENABLED
           ? `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); cursor:pointer; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay"> 📱 ${t('payQpay')}
+          <input type="radio" name="create-payment" value="qpay"> ${icon('phone', { size: 15 })} ${t('payQpay')}
         </label>`
           : `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
+          <input type="radio" name="create-payment" value="qpay" disabled> ${icon('phone', { size: 15 })} ${t('payQpay')}
           <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
         </label>`
         }
@@ -1316,7 +1316,7 @@ async function renderCreateGame() {
     modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;">⛳ ${t('bookViewSlots')}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookViewSlots')}</h3>
         <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
       <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
@@ -1687,7 +1687,7 @@ async function renderGameDetail(gameId) {
     const game = await Promise.race([loadDataPromise, timeoutPromise]);
 
     if (!game) {
-      main().innerHTML = `<div class="empty-state"><p>❌</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
+      main().innerHTML = `<div class="empty-state"><p>${icon('alerts', { size: 40 })}</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
       return;
     }
 
@@ -1775,16 +1775,16 @@ function renderGameView(game) {
             : '';
         })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">${icon('scorecard', { size: 13 })} Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">🏌️ ${t('bookCode')}</span>
+            <span class="desc-label">${icon('ball-tee', { size: 13 })} ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
             ${game.bookingId ? `<span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">ID:${game.bookingId}</span>` : ''}
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">✉️ ${t('manageInvites')} (${game.invitedIds.length})</span>
+            <span class="desc-label">${icon('members', { size: 13 })} ${t('manageInvites')} (${game.invitedIds.length})</span>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
               ${game.invitedIds.map(uid => {
                 const u = allUsersMap[uid];
@@ -1800,7 +1800,7 @@ function renderGameView(game) {
 
       ${waitingList.length > 0 ? `
         <div class="group-card glass-card waiting-card">
-          <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
+          <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 16 })} ${t('waitingList')} (${waitingList.length})</h3>
           <div class="player-list">
             ${waitingList.map((p, idx) => {
     const isFollowing = !!currentUserFollows[p.id];
@@ -1813,7 +1813,7 @@ function renderGameView(game) {
                 <span class="player-order">${idx + 1}</span>
                 <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</span>
                 <span class="player-name">${displayUsername(allUsersMap[p.id] || p)}${tag}</span>
-                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
+                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>
               </div>`;
   }).join('')}
           </div>
@@ -1894,8 +1894,8 @@ function renderGroupCard(players, groupIndex, game, isPast) {
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
-            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
-            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">${icon('card', { size: 17 })}</button>` : ''}
+            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
           </div>
         </div>`);
     } else {
@@ -1913,7 +1913,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
-        <h3 class="group-title">🏌️ ${t('group')} ${groupIndex + 1}</h3>
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('play', { size: 16 })} ${t('group')} ${groupIndex + 1}</h3>
         <div style="display:flex;align-items:center;gap:8px;">
           ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ Нэмэх</button>` : ''}
           <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
@@ -1940,7 +1940,7 @@ function showJoinConfirmModal(game) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:420px;">
-      <h3 class="modal-title">📋 Тайлбар</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('scorecard', { size: 18 })} Тайлбар</h3>
       <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${esc(game.description)}</p>
       <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
         <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
@@ -2206,7 +2206,7 @@ async function renderAdminPanel() {
               <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--bg-card-hover); border-radius:6px;">
                 <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
-                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
+                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">${icon('close', { size: 14 })}</button>
               </div>`).join('')}
           </div>`}
       </div>
@@ -2267,7 +2267,7 @@ async function renderAdminPanel() {
                     <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
                   </div>
                   <div style="margin-left: auto; display: flex; gap: 8px;">
-                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
+                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}" style="gap:5px;">${icon('edit', { size: 14 })} Засах</button>
                     ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
                   </div>
                 </div>
@@ -2296,7 +2296,7 @@ async function renderAdminPanel() {
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
                       <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
                     </div>
-                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}">✏️ Засах</button>
+                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}" style="gap:5px;">${icon('edit', { size: 14 })} Засах</button>
                   </div>`).join('')}
               </div>`;
           })()}
@@ -2392,13 +2392,13 @@ async function renderAdminPanel() {
     deleted.sort((a,b) => b.gMs - a.gMs);
 
     const renderRow = ({ g, isCreator }, showRestore = false) => {
-      const role = isCreator ? '✍️' : '🏌️';
+      const role = isCreator ? icon('edit', { size: 13 }) : icon('play', { size: 13 });
       const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
       return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-card-hover); border-radius:8px; flex-wrap:wrap;">
         <span style="font-size:1rem;">${role}</span>
         <div style="flex:1; min-width:140px;">
           <div style="font-size:0.9rem;">${formatDate(g.date)} ${g.time}${deletedLabel}</div>
-          <div style="font-size:0.8rem; color:var(--text-secondary);">📍 ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
+          <div style="font-size:0.8rem; color:var(--text-secondary);display:flex;align-items:center;gap:4px;">${icon('location', { size: 12 })} ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
         </div>
         <a href="#/game/${g.id}" class="btn btn-sm btn-outline" style="font-size:0.8rem;">Харах</a>
         ${showRestore ? `<button class="btn btn-sm btn-primary restore-game-btn" data-id="${g.id}" style="font-size:0.8rem;">↩ Сэргээх</button>` : ''}
@@ -2578,7 +2578,7 @@ function showAdminEditUserModal(user, onSaved) {
   const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:480px;">
-      <h3 class="modal-title">✏️ ${user.name} засах</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('edit', { size: 18 })} ${user.name} засах</h3>
 
       <div class="input-group">
         <label>Аватар</label>
@@ -2727,7 +2727,7 @@ async function renderUsersList() {
           <span class="player-name">${displayUsername(u)}${tag}</span>
           <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(u.bankName) || t('unknownBank'))}</span>
         </button>
-        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
+        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="cursor:pointer;display:inline-flex;align-items:center;">${icon('card', { size: 18 })}</button>` : ''}
       </div>`;
   }
 
@@ -2923,9 +2923,9 @@ async function renderEditGame(gameId) {
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/game/${game.id}" class="back-link">← ${t('back')}</a>
-      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px; gap:5px;">${icon('settings', { size: 15 })} Admin панель</a>` : ''}
       <div class="create-card glass-card">
-        <h2 class="card-title">✏️ Edit Game</h2>
+        <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('edit', { size: 20 })} Edit Game</h2>
         <form id="edit-form" class="create-form">
           <div class="input-group">
             <label for="edit-date">${t('date')}</label>
@@ -2994,14 +2994,14 @@ async function renderEditGame(gameId) {
         ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
         ${waitingList.length > 0 ? `
           <div class="group-card glass-card waiting-card">
-            <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
+            <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 16 })} ${t('waitingList')} (${waitingList.length})</h3>
             <div class="player-list">
               ${waitingList.map((p, idx) => `
                 <div class="player-row waiting">
                   <span class="player-order">${idx + 1}</span>
                   <span class="player-avatar-sm">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
                   <span class="player-name">${p.name}</span>
-                  ${!isPast ? `<button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+                  ${!isPast ? `<button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -3194,7 +3194,7 @@ async function handleBookTeeTime(game) {
   function renderModal() {
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;">⛳ ${t('bookTeeTimeBtn')}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookTeeTimeBtn')}</h3>
         <button id="bt-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
@@ -3405,7 +3405,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
       <h3 style="margin:0 0 12px;">${t('invitePlayers')}</h3>
       <div style="flex:1;overflow-y:auto;margin:0 -4px;padding:0 4px;">
         ${followedUsers.length > 0 ? `
-          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">⭐ ${t('followedGroup')}</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;display:flex;align-items:center;gap:5px;">${icon('star', { size: 12 })} ${t('followedGroup')}</div>
           ${followedUsers.map(u => rowHTML(u)).join('')}
           ${otherUsers.length > 0 ? '<div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>' : ''}
         ` : ''}
@@ -3851,7 +3851,7 @@ function showEditBankModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card">
-      <h3 class="modal-title">💳 ${t('editBank')}</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('card', { size: 18 })} ${t('editBank')}</h3>
       <div class="input-group">
         <label>${t('bankName')}</label>
         ${bankSelectHTML('bank-name-input', user.bankName || '')}
@@ -4179,7 +4179,7 @@ function showBankDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">💳 ${displayUsername(user)}-н данс</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('card', { size: 18 })} ${displayUsername(user)}-н данс</h3>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
         <span class="value">${esc(user.bankName) || '-'}</span>
@@ -4264,7 +4264,7 @@ async function renderFoodOrder(gameId) {
   });
   const categories = Object.keys(catMinOrder).sort((a, b) => catMinOrder[a] - catMinOrder[b]);
 
-  const CAT_LABELS = { "Golfer's Favorite": "🏌️ Golfer's Fav" };
+  const CAT_LABELS = { "Golfer's Favorite": "Golfer's Fav" };
   const catLabel = c => CAT_LABELS[c] || c;
 
   let selectedCategory = categories[0] || 'all';
@@ -4302,10 +4302,10 @@ async function renderFoodOrder(gameId) {
         ? (item.descriptionEn || item.description || '')
         : (item.description || '');
     const img = item.imageUrl
-      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
-      : `<div class="food-card-img-ph">🍽️</div>`;
+      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'></div>'" />`
+      : `<div class="food-card-img-ph">${icon('dining', { size: 26 })}</div>`;
     const stepper = blocked
-      ? `<span class="food-weekday-note">📅 ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
+      ? `<span class="food-weekday-note">${icon('bookings', { size: 12 })} ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
       : `<div class="food-stepper">
               ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
               <span class="food-qty">${qty}</span>` : ''}
@@ -4315,7 +4315,7 @@ async function renderFoodOrder(gameId) {
       <div class="food-card${blocked ? ' food-card-blocked' : ''}" data-id="${item.id}">
         ${img}
         <div class="food-card-body">
-          <div class="food-card-name">${esc(primaryName)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
+          <div class="food-card-name">${esc(primaryName)} ${item.popular ? `<span class="food-pop-badge">${icon('star', { size: 11 })}</span>` : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
           ${desc ? `<div class="food-card-desc">${esc(desc)}</div>` : ''}
           <div class="food-card-foot">
             <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
@@ -4345,7 +4345,7 @@ async function renderFoodOrder(gameId) {
 
     const itemsHtml = filtered.length
       ? filtered.map(renderItem).join('')
-      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? '🔍 Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
+      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? 'Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
 
     document.getElementById('food-menu-col').innerHTML = itemsHtml;
 
@@ -4354,7 +4354,7 @@ async function renderFoodOrder(gameId) {
     if (pill) {
       if (count > 0) {
         pill.style.display = 'flex';
-        document.getElementById('cart-pill-label').textContent = `🛒 ${count} · ${total.toLocaleString()}₮`;
+        document.getElementById('cart-pill-label').innerHTML = `${icon('order', { size: 14 })} ${count} · ${total.toLocaleString()}₮`;
       } else {
         pill.style.display = 'none';
       }
@@ -4389,7 +4389,7 @@ async function renderFoodOrder(gameId) {
 
   const catRailHtml = `
     <nav class="food-cat-rail">
-      <button class="food-cat-btn" data-cat="all">⭐ Бүгд</button>
+      <button class="food-cat-btn" data-cat="all">${icon('filter', { size: 13 })} Бүгд</button>
       ${categories.map(c => `<button class="food-cat-btn" data-cat="${esc(c)}">${esc(catLabel(c))}</button>`).join('')}
     </nav>`;
 
@@ -4398,7 +4398,7 @@ async function renderFoodOrder(gameId) {
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
       ${(!gameId && myUpcomingGames.length) ? `
         <div class="glass-card" id="game-context-picker" style="margin-bottom:12px;padding:12px 14px;">
-          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">🍽️ ${t('chooseGameForOrder')}</div>
+          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;">${icon('dining', { size: 15 })} ${t('chooseGameForOrder')}</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${myUpcomingGames.slice(0, 6).map(g => `<a href="#/order/${g.id}" class="btn btn-outline btn-sm" style="text-decoration:none;">${formatDate(g.date)} · ${g.time} · ${esc(g.location || '')}</a>`).join('')}
             <button type="button" id="order-no-game" class="btn btn-ghost btn-sm">${t('orderNoGame')}</button>
@@ -4407,13 +4407,13 @@ async function renderFoodOrder(gameId) {
       <div class="glass-card">
         <div class="food-sticky-head">
           <div class="food-top-bar">
-            <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
+            <h2 class="card-title" style="margin-bottom:0;display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('foodMenu')}</h2>
             <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
               <span id="cart-pill-label"></span>
               <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
             </div>
           </div>
-          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />` : ''}
+          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="Хоол хайх…" autocomplete="off" />` : ''}
         </div>
         ${available.length === 0 ? `<p style="color:var(--text-secondary);padding:0 0 12px;">Цэс байхгүй байна.</p>` : `
         <div class="food-page-layout">
@@ -4523,10 +4523,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
 
         <div style="display:flex;flex-direction:column;gap:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> 🏌️ ${t('payClubhouse')}</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> ${icon('ball-tee', { size: 15 })} ${t('payClubhouse')}</label>
           ${QPAY_ENABLED
-            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> 📱 ${t('payQpay')}</label>`
-            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
+            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> ${icon('phone', { size: 15 })} ${t('payQpay')}</label>`
+            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> ${icon('phone', { size: 15 })} ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
           }
         </div>
 
@@ -4652,7 +4652,7 @@ async function showQpayModal(orderId, total, opts = {}) {
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal-box" style="max-width:360px;text-align:center;">
-      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:6px;">${icon('phone', { size: 18 })} ${t('payQpay')}</h3>
       <p id="qpay-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
       <div id="qpay-qr-wrap" style="display:none;">
         <img id="qpay-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
@@ -4661,7 +4661,7 @@ async function showQpayModal(orderId, total, opts = {}) {
         <div id="qpay-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
       </div>
       <div id="qpay-success-wrap" style="display:none;">
-        <div style="font-size:2.5rem;">✅</div>
+        <div style="color:var(--primary-color);display:flex;justify-content:center;">${icon('confirm', { size: 44 })}</div>
         <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
@@ -4781,7 +4781,7 @@ async function showMtbogdQpayModal(bookingId, gameId) {
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal-box" style="max-width:360px;text-align:center;">
-      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:6px;">${icon('phone', { size: 18 })} ${t('payQpay')}</h3>
       <p id="mq-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
       <div id="mq-qr-wrap" style="display:none;">
         <img id="mq-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
@@ -4790,7 +4790,7 @@ async function showMtbogdQpayModal(bookingId, gameId) {
         <div id="mq-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
       </div>
       <div id="mq-success" style="display:none;">
-        <div style="font-size:2.5rem;">✅</div>
+        <div style="color:var(--primary-color);display:flex;justify-content:center;">${icon('confirm', { size: 44 })}</div>
         <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
@@ -4862,9 +4862,9 @@ async function showMtbogdQpayModal(bookingId, gameId) {
 }
 
 function orderStatusChip(status) {
-  if (status === 'completed') return `<span class="order-chip done">✅ ${t('orderStatusCompleted')}</span>`;
-  if (status === 'paid') return `<span class="order-chip paid">👨‍🍳 ${t('orderStatusPaid')}</span>`;
-  return `<span class="order-chip pending">⏳ ${t('orderStatusPending')}</span>`;
+  if (status === 'completed') return `<span class="order-chip done">${icon('confirm', { size: 13 })} ${t('orderStatusCompleted')}</span>`;
+  if (status === 'paid') return `<span class="order-chip paid">${icon('order', { size: 13 })} ${t('orderStatusPaid')}</span>`;
+  return `<span class="order-chip pending">${icon('time', { size: 13 })} ${t('orderStatusPending')}</span>`;
 }
 
 async function renderMyOrders() {
@@ -4948,10 +4948,10 @@ async function renderOrderDetail(orderId) {
       </div>`;
 
     const banner = done
-      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
+      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);display:flex;align-items:center;justify-content:center;gap:6px;">${icon('confirm', { size: 17 })} ${t('orderStatusCompleted')}</div>`
       : paid
-      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`
-      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;">⏳ ${t('orderStatusPending')}</div>`;
+      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('order', { size: 16 })} ${t('orderStatusPaid')}…</div>`
+      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('time', { size: 16 })} ${t('orderStatusPending')}</div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
@@ -4992,7 +4992,7 @@ async function renderKitchenDisplay() {
     main().innerHTML = `
       <div class="detail-container fade-in">
         <div class="glass-card" style="max-width:340px;margin:60px auto;">
-          <h2 class="card-title">👨‍🍳 ${t('kitchenTitle')}</h2>
+          <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('kitchenTitle')}</h2>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <input id="kitchen-pass" type="password" placeholder="${t('kitchenCode')}"
               style="padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
@@ -5026,7 +5026,7 @@ async function renderKitchenDisplay() {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <h2 style="margin:0;">👨‍🍳 ${t('kitchenTitle')}</h2>
+        <h2 style="margin:0;display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('kitchenTitle')}</h2>
         <button id="kitchen-logout-btn" class="btn btn-ghost btn-sm">Гарах</button>
       </div>
       <div class="kitchen-tabs">
@@ -5101,7 +5101,7 @@ async function renderKitchenDisplay() {
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#16a34a;color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
     banner.innerHTML = `
       <div>
-        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">🔔 Шинэ захиалга!</div>
+        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">${icon('alerts', { size: 18 })} Шинэ захиалга!</div>
         <div style="font-weight:700;">${esc(order.customerName || '')} ${order.customerPhone ? '· ' + esc(order.customerPhone) : ''}</div>
         <div style="opacity:0.9;font-size:0.9rem;">${items}</div>
       </div>
@@ -5132,9 +5132,9 @@ async function renderKitchenDisplay() {
   const isScheduled = (o) => o.status === 'paid' && !scheduledDue(o);
 
   const deliveryBadgeHtml = (order) => order.deliveryLocation === 'course'
-    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;">📍 Талбай</span>`
+    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;">${icon('location', { size: 12 })} Талбай</span>`
     : order.deliveryLocation === 'table'
-    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🪑 Ширээ ${esc(order.tableId || '')}</span>`
+    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;display:inline-flex;align-items:center;gap:4px;">${icon('table', { size: 12 })} Ширээ ${esc(order.tableId || '')}</span>`
     : `<span style="background:#22c55e;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🌿 Гадаа</span>`;
 
   const elapsedHtml = (createdAt) => {
@@ -5319,14 +5319,14 @@ async function renderAdminMenuTab() {
             <div style="display:flex;align-items:center;gap:10px;background:var(--bg-card-hover);border-radius:8px;padding:10px;flex-wrap:wrap;">
               ${item.imageUrl
                 ? `<img src="${esc(item.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
-                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-card-hover);">🍽️</div>`}
+                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-card-hover);">${icon('dining', { size: 18 })}</div>`}
               <div style="flex:1;min-width:140px;">
-                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
+                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? `<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">${icon('star', { size: 11 })}</span>` : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
                 <div style="font-size:0.82rem;color:var(--text-secondary);">${item.price ? item.price.toLocaleString() + '₮' : ''} · ${esc(item.category || '')}</div>
               </div>
               <div style="display:flex;gap:6px;">
-                <button class="btn btn-sm btn-outline edit-menu-item-btn" data-id="${item.id}">✏️</button>
-                <button class="btn btn-sm btn-danger del-menu-item-btn" data-id="${item.id}">🗑️</button>
+                <button class="btn btn-sm btn-outline edit-menu-item-btn" data-id="${item.id}">${icon('edit', { size: 15 })}</button>
+                <button class="btn btn-sm btn-danger del-menu-item-btn" data-id="${item.id}">${icon('trash', { size: 15 })}</button>
               </div>
             </div>`).join('')}
         </div>
@@ -5355,8 +5355,8 @@ async function renderAdminMenuTab() {
         <div id="admin-table-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${tables.length === 0 ? '<p style="color:var(--text-secondary);">Ширээний жагсаалт хоосон байна.</p>' : tables.map(tbl => `
             <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:10px;">
-              <div style="flex:1;font-weight:600;">🪑 ${esc(tbl.label)}</div>
-              <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">🗑️</button>
+              <div style="flex:1;font-weight:600;display:flex;align-items:center;gap:6px;">${icon('table', { size: 15 })} ${esc(tbl.label)}</div>
+              <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">${icon('trash', { size: 15 })}</button>
             </div>`).join('')}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -5502,8 +5502,8 @@ async function renderAdminNewsTab() {
               ${n.link ? `<div style="font-size:0.76rem;color:var(--text-secondary);word-break:break-all;">${esc(n.link)}</div>` : ''}
             </div>
             <div style="display:flex;gap:6px;">
-              <button class="btn btn-sm btn-outline edit-news-btn" data-id="${n.id}">✏️</button>
-              <button class="btn btn-sm btn-danger del-news-btn" data-id="${n.id}">🗑️</button>
+              <button class="btn btn-sm btn-outline edit-news-btn" data-id="${n.id}">${icon('edit', { size: 15 })}</button>
+              <button class="btn btn-sm btn-danger del-news-btn" data-id="${n.id}">${icon('trash', { size: 15 })}</button>
             </div>
           </div>`).join('')}
       </div>

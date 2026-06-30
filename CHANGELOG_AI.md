@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (icon sweep)
+
+### Replaced remaining emoji glyphs with the line-icon set
+
+Swept the app for leftover emoji used as UI icons and replaced them with the
+inline SVG line icons from `src/icons.js` so the interface is visually
+consistent everywhere (no old emoji in chrome).
+
+- Added icons: `star`, `card`, `phone`, `table`, `trash`, `close`.
+- Food/menu: title, category filter, popular-item badge, image placeholder,
+  search field, admin menu list (placeholder, popular badge, edit/delete).
+- Orders: status chips/banners, cart pill, checkout pay options, kitchen
+  table/area badges, kitchen title.
+- Game detail/admin: remove-player and copy-bank buttons, edit-game/edit-user
+  titles, Admin link, news/table delete, waiting-list & group headers,
+  followed-group label, success checkmarks, empty states, users-list role.
+- Left in place intentionally: avatar-picker emoji, onboarding illustrations,
+  transient toast/share-text glyphs, and the dev styleguide preview.
+
 ## 2026-06-30 (home dashboard)
 
 ### Home rebuilt as the prototype dashboard
