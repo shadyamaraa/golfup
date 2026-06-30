@@ -34,6 +34,7 @@ let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
+let bellSubFor = null;
 let openCircles = new Set();
 let pendingAuthRedirect = null;
 
@@ -213,6 +214,14 @@ export async function router() {
     updateHeader();
     updateBottomNav(hash);
     updateGlobalSponsorVisibility(hash);
+    // Header bell unread badge — subscribe once per user (persists across routes).
+    if (currentUser && bellSubFor !== currentUser.id) {
+      bellSubFor = currentUser.id;
+      store.loadNotifications(currentUser.id).then(ns => updateBellBadge(activeNotifCount(ns))).catch(() => {});
+      if (store.isUsingFirebase()) {
+        store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns)));
+      }
+    }
     clearActiveListeners();
 
     if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
@@ -829,6 +838,24 @@ async function renderServices() {
   });
 }
 
+// Count notifications that haven't expired (game start passed).
+function activeNotifCount(notifs) {
+  if (!notifs) return 0;
+  const now = Date.now();
+  return notifs.filter(n => {
+    if (!n.gameDate || !n.gameTime) return true;
+    return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() >= now;
+  }).length;
+}
+
+// Unread badge on the header bell (shown on every page).
+function updateBellBadge(count) {
+  const b = document.getElementById('header-bell-badge');
+  if (!b) return;
+  if (count > 0) { b.textContent = count > 99 ? '99+' : String(count); b.classList.remove('hidden'); }
+  else { b.classList.add('hidden'); }
+}
+
 function renderNotifications(notifs) {
   const container = document.getElementById('notifications-section');
   if (!container) return;
@@ -848,13 +875,13 @@ function renderNotifications(notifs) {
   container.innerHTML = `
     <div class="section">
       <button id="notif-toggle-btn" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;padding:0;margin-bottom:${isOpen ? '10px' : '0'};">
-        <h2 class="section-title" style="margin:0;">🔔 ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
+        <h2 class="section-title" style="margin:0;display:flex;align-items:center;gap:8px;">${icon('alerts', { size: 18 })} ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
         <span style="color:var(--text-secondary);font-size:0.9rem;">${isOpen ? '▲' : '▼'}</span>
       </button>
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
-            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
+            const icName = n.type === 'invite' ? 'play' : n.type === 'player_joined' ? 'members' : n.type === 'player_left' ? 'members' : n.type === 'game_updated' ? 'edit' : n.type === 'game_deleted' ? 'alerts' : 'play';
             const title = n.type === 'invite' ? t('inviteNotif')
               : n.type === 'new_game' ? t('newGameNotif')
               : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
@@ -871,7 +898,7 @@ function renderNotifications(notifs) {
             return `
             <div class="notif-item glass-card">
               <div class="notif-content">
-                <span class="notif-icon">${icon}</span>
+                <span class="notif-icon">${icon(icName, { size: 18 })}</span>
                 <div>
                   <div class="notif-title">${title}</div>
                   <div class="notif-sub">${sub}</div>
