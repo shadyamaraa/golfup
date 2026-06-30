@@ -254,8 +254,8 @@ function updateHeader() {
   const adminLink = document.getElementById('admin-link');
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
-    nameDisplay.textContent = displayUsername(currentUser);
-    avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (nameDisplay) nameDisplay.textContent = displayUsername(currentUser);
+    if (avatar) avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
     if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
