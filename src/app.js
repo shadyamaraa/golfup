@@ -429,7 +429,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
+        <img src="/logo-v-navy.svg" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
         <form id="auth-form" class="auth-form">
           <div class="input-group">
             <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
@@ -922,7 +922,7 @@ async function renderCreateGame() {
 
   main().innerHTML = `
     <div class="create-container fade-in">
-      <a href="#/" class="back-link" id="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link" id="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
       <div class="create-card glass-card">
         <h2 class="card-title">${t('createGame')}</h2>
         <form id="create-form" class="create-form">
@@ -1000,7 +1000,7 @@ async function renderCreateGame() {
           <div class="input-group">
             <label>${t('invitePlayers')}</label>
             <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%;">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
+            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%; gap:8px;">${icon('members', { size: 17 })} ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
           </div>
           <div class="form-actions">
             <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
@@ -1459,30 +1459,30 @@ function renderGameView(game) {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
-      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
-      
+      <a href="#/" class="back-link" id="back-link-detail">${icon('back', { size: 16 })} ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px; gap:5px;">${icon('settings', { size: 15 })} Admin</a>` : ''}
+
       <div class="detail-header glass-card">
         <div class="detail-header-top">
           <span class="game-date-badge large">${dateStr}</span>
           <div style="display:flex; gap: 8px;">
-            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">✏️ Edit</a>` : ''}
+            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('edit', { size: 14 })} Edit</a>` : ''}
             ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
+        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''}</h2>
         <div class="detail-meta">
-          <span>🕐 ${game.time}</span>
-          <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;">${icon('time', { size: 15 })} ${game.time}</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;">${icon('profile', { size: 15 })} ${t('createdBy')}: ${esc(game.creatorName || '-')}</span>
         </div>
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
-          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
-          <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
-          <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
-          <a href="#/order/${game.id}" class="btn btn-outline">🍽️ ${t('orderFood')}</a>
+          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn" style="gap:6px;">${icon('members', { size: 16 })} ${t('inviteBtn')}</button>` : ''}
+          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
+          <button class="btn btn-outline" id="share-viber-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('shareViber')}</button>
+          <button class="btn btn-outline" id="copy-link-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('copyLink')}</button>
+          <a href="#/order/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('dining', { size: 16 })} ${t('orderFood')}</a>
         </div>
         ${(() => {
           const wIdx = waitingList.findIndex(p => p?.id === currentUser?.id);
@@ -1931,16 +1931,23 @@ async function renderAdminPanel() {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="page-head" style="margin-top:12px;">
+        <h2 class="page-title">${t('adminTitle')}</h2>
+      </div>
+      <div class="stat-grid" style="margin-bottom:18px;">
+        <div class="stat-tile navy"><div class="st-label">${t('users')}</div><div class="st-value">${nonAdminUsers.length}</div></div>
+        <div class="stat-tile"><div class="st-label">${t('community')}</div><div class="st-value">${COMMUNITY_OPTIONS.length}</div></div>
+        <div class="stat-tile"><div class="st-label">Admin / Marshal</div><div class="st-value">${users.filter(u => u.role === 'admin' || u.role === 'marshal').length}</div></div>
+        <div class="stat-tile"><div class="st-label">Hold</div><div class="st-value">${users.filter(u => u.status === 'hold').length}</div></div>
+      </div>
       <div class="glass-card" style="margin-bottom: 20px;">
-        <h2 class="card-title">🛡️ Admin Panel</h2>
-
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
-          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
-          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
-          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
-          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
-          <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm">🍽️ ${t('menuManage')}</button>
+          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm" style="gap:5px;">${icon('profile', { size: 14 })} Тоглогчид</button>
+          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm" style="gap:5px;">${icon('members', { size: 14 })} Тойрог</button>
+          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">Тойроггүй</button>
+          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm" style="gap:5px;">${icon('search', { size: 14 })} Хэрэглэгч</button>
+          <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm" style="gap:5px;">${icon('dining', { size: 14 })} ${t('menuManage')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -2446,14 +2453,18 @@ async function renderUsersList() {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <div class="hero-section" style="padding: 20px 0 30px;">
-        <h2 class="hero-title">👥 ${t('usersListTitle')}</h2>
-        <p class="hero-subtitle">${t('usersListSub')}</p>
+      <div class="page-head">
+        <div>
+          <h2 class="page-title">${t('usersListTitle')}</h2>
+          <p class="page-sub">${t('usersListSub')}</p>
+        </div>
+        <span class="pill-soft">${sortedUsers.length}</span>
       </div>
 
       <!-- Search -->
-      <div class="glass-card" style="padding:10px;margin-bottom:16px;">
-        <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
+      <div class="search-field">
+        ${icon('search', { size: 18 })}
+        <input type="search" id="user-search-input" placeholder="${t('usersListTitle')}…" autocomplete="off" />
       </div>
 
       <!-- Search results (hidden unless searching) -->
@@ -2487,7 +2498,7 @@ async function renderUsersList() {
       </div>
 
       <div style="margin-top:20px;text-align:center;">
-        <a href="#/" class="btn btn-ghost">← ${t('back')}</a>
+        <a href="#/" class="btn btn-ghost" style="gap:6px;">${icon('back', { size: 16 })} ${t('back')}</a>
       </div>
     </div>`;
 
@@ -4438,21 +4449,26 @@ async function renderMyOrders() {
           const ts = o.createdAt ? new Date(o.createdAt).toLocaleString('mn-MN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const items = (o.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(', ');
           return `
-            <a href="#/orders/${o.id}" class="glass-card" style="display:block;margin-bottom:10px;text-decoration:none;color:inherit;">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
-                ${orderStatusChip(o.status)}
-                <span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>
+            <a href="#/orders/${o.id}" class="list-row" style="margin-bottom:10px; align-items:flex-start;">
+              <div class="tile-icon">${icon('order', { size: 20 })}</div>
+              <div class="lr-body">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  ${orderStatusChip(o.status)}
+                  <span style="font-size:0.76rem;color:var(--text-secondary);">${ts}</span>
+                </div>
+                <div class="lr-sub" style="margin-top:6px;">${items}</div>
+                <div style="text-align:right;font-weight:800;margin-top:4px;color:var(--gold-dark);">${(o.total || 0).toLocaleString()}₮</div>
               </div>
-              <div style="font-size:0.9rem;color:var(--text-secondary);">${items}</div>
-              <div style="text-align:right;font-weight:700;margin-top:4px;">${(o.total || 0).toLocaleString()}₮</div>
             </a>`;
         }).join('')
-      : `<div class="empty-state"><p>📦</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px;">🍽️ ${t('orderFood')}</a></div>`;
+      : `<div class="empty-state"><p>${icon('order', { size: 40 })}</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px; gap:8px;">${icon('dining', { size: 17 })} ${t('orderFood')}</a></div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
-        <a href="#/" class="back-link">← ${t('back')}</a>
-        <h2 class="card-title" style="margin:12px 0;">📦 ${t('myOrders')}</h2>
+        <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+        <div class="page-head" style="margin-top:12px;">
+          <h2 class="page-title">${t('myOrders')}</h2>
+        </div>
         ${list}
       </div>`;
   };
@@ -4508,9 +4524,9 @@ async function renderOrderDetail(orderId) {
 
     main().innerHTML = `
       <div class="detail-container fade-in">
-        <a href="#/" class="back-link">← ${t('back')}</a>
+        <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
         <div class="glass-card">
-          <h2 class="card-title">🍽️ ${t('orderSummary')}</h2>
+          <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('order', { size: 20 })} ${t('orderSummary')}</h2>
           ${banner}
           ${tracker}
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">

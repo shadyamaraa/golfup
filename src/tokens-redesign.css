@@ -315,6 +315,43 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .section-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; color: var(--text-primary); }
 .section-head .view-all { font-size: 0.82rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; }
 
+/* ---- Stat grid (admin overview / profile) ---- */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ---- Reusable page header + search field ---- */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 4px 0 18px; }
+.page-title { font-family: var(--font-display); font-weight: 700; font-size: 1.75rem; color: var(--text-primary); letter-spacing: -0.01em; line-height: 1.1; }
+.page-sub { font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px; }
+.page-head .pill-soft { font-size: 0.85rem; padding: 6px 14px; }
+.search-field {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  border-radius: 14px; padding: 11px 14px; box-shadow: var(--shadow-card);
+  color: var(--text-muted);
+}
+.search-field input {
+  flex: 1; border: none; background: transparent; outline: none;
+  color: var(--text-primary); font-size: 0.95rem; font-family: var(--font);
+}
+.search-field input::placeholder { color: var(--text-muted); }
+
+/* ---- Auth / login splash (navy field, gold rings, cream card) ---- */
+.auth-container {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(221,137,16,0.10), transparent 45%),
+    linear-gradient(168deg, #0C3051 0%, #0A2742 52%, #06182B 100%);
+}
+.auth-card {
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  box-shadow: 0 30px 70px rgba(0,0,0,0.45); border-radius: 26px;
+}
+[data-theme="dark"] .auth-logo-img { content: url('/logo-v-cream.svg'); }
+.auth-logo-img { width: 116px; height: auto; }
+.golf-ball {
+  background: radial-gradient(circle at 35% 35%, rgba(221,137,16,0.22), transparent 70%);
+  border: 1px solid rgba(221,137,16,0.18);
+}
+
 /* ---- Home greeting header ---- */
 .home-container { padding-top: 8px; }
 .hero-section { display: none; }

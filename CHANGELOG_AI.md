@@ -1,5 +1,35 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (later)
+
+### Full prototype redesign — page markup to the approved design
+
+Building on the token foundation, the page markup was rebuilt to match the
+approved prototype layout (design handoff), not just the palette. Presentation
+only — no data flow, routing, handlers, or i18n logic changed.
+
+- Home: greeting header (name + bell + avatar) instead of the hero block; navy
+  "next game" feature card computed from the user's nearest upcoming game;
+  segmented gold filter tabs; line-icon section headers.
+- Games card: surface card with a navy leading tile, serif course title, clock
+  meta, status pill, lock icon, footer dots + slot progress + chevron.
+- Auth: navy splash with gold rings + cream card + vertical crest logo.
+- Members: prototype page header (serif title + count pill) + icon search field.
+- Orders: order rows as surface list-rows with an order tile; icon headers.
+- Game detail: line icons for location/time/actions; community pill.
+- Admin: 2×2 stat overview tiles + icon section tabs.
+- Create: line-icon back link + invite button.
+- Reusable component classes added to `tokens-redesign.css` (feature card,
+  surface card, segmented tabs, list row + tile icon, stat tile/grid, page
+  head, search field, soft-gold pill) plus prototype→app var aliases so the
+  handoff markup ports faithfully and stays theme-aware.
+- New i18n keys (greetingHi/nextGame/viewDetails/notifications/adminTitle,
+  MN/EN/KR).
+
+### Risk
+Low–moderate. Markup/CSS only; all ids, `data-*`, event bindings, routes and
+`t()` keys preserved. Verified build + auth/styleguide render with no JS errors.
+
 ## 2026-06-30
 
 ### Visual redesign — navy · gold · cream (append-only token override)

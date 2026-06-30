@@ -2,7 +2,7 @@ const T = {
   mn: {
     appName: 'UB Golf', tagline: 'Хамтдаа тоглоё!',
     home: 'Нүүр', createGame: 'Тоглолт үүсгэх', activeGames: 'Идэвхтэй тоглолтууд',
-    greetingHi: 'Сайн байна уу,', nextGame: 'Дараагийн тоглолт', viewDetails: 'Дэлгэрэнгүй', notifications: 'Мэдэгдэл',
+    greetingHi: 'Сайн байна уу,', nextGame: 'Дараагийн тоглолт', viewDetails: 'Дэлгэрэнгүй', notifications: 'Мэдэгдэл', adminTitle: 'Удирдлага',
     tabAll: 'Бүх тоглолт', tabMine: 'Миний тоглолт', tabCommunity: 'Миний тойрог', tabRecommended: 'Санал болгох', tabJoined: 'Уригдсан', tabFollowing: 'Дагаж байгаа',
     noGamesInFilter: 'Энэ ангилалд тоглолт байхгүй байна',
     noGames: 'Одоогоор тоглолт алга. Шинэ тоглолт үүсгэнэ үү!',
@@ -113,7 +113,7 @@ const T = {
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
     home: 'Home', createGame: 'Create Game', activeGames: 'Active Games',
-    greetingHi: 'Hello,', nextGame: 'Next game', viewDetails: 'Details', notifications: 'Notifications',
+    greetingHi: 'Hello,', nextGame: 'Next game', viewDetails: 'Details', notifications: 'Notifications', adminTitle: 'Admin',
     tabAll: 'All', tabMine: 'My Games', tabCommunity: 'My Circle', tabRecommended: 'Recommended', tabJoined: 'Invited', tabFollowing: 'Following',
     noGamesInFilter: 'No games in this category',
     noGames: 'No games yet. Create a new one!',
@@ -224,7 +224,7 @@ const T = {
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
     home: '홈', createGame: '게임 만들기', activeGames: '진행 중인 게임',
-    greetingHi: '안녕하세요,', nextGame: '다음 게임', viewDetails: '상세', notifications: '알림',
+    greetingHi: '안녕하세요,', nextGame: '다음 게임', viewDetails: '상세', notifications: '알림', adminTitle: '관리',
     tabAll: '전체', tabMine: '내 게임', tabCommunity: '내 서클', tabRecommended: '추천', tabJoined: '초대받음', tabFollowing: '팔로잉',
     noGamesInFilter: '이 카테고리에 게임이 없습니다',
     noGames: '아직 게임이 없습니다. 새 게임을 만드세요!',
