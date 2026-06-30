@@ -3964,7 +3964,7 @@ function showProfileModal(user, options = {}) {
         <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
         <div class="input-group">
           <label>Овог *</label>
           <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
