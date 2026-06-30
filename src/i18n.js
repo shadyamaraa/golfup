@@ -107,7 +107,10 @@ const T = {
     onboardStep1Title: 'Тоглолт олж нэгдээрэй', onboardStep1Body: 'Нүүр хуудаснаас идэвхтэй тоглолтуудыг хараад нэг товшилтоор нэгдэнэ.',
     onboardStep2Title: 'Өөрөө тоглолт зохион байгуул', onboardStep2Body: 'Огноо, цаг, талбайгаа сонгоод найзуудаа урь. Tee time мөн захиалж болно.',
     onboardStep3Title: 'Хоол захиал', onboardStep3Body: 'Тоглолтын үеэр талбай эсвэл ширээ рүүгээ хоол захиалаарай.',
-    chooseGameForOrder: 'Аль тоглолтод зориулах вэ?', orderNoGame: 'Тоглолтгүй захиалах'
+    chooseGameForOrder: 'Аль тоглолтод зориулах вэ?', orderNoGame: 'Тоглолтгүй захиалах',
+    newsSection: 'Мэдээ', newsManage: 'Мэдээ удирдах', addNews: '+ Мэдээ нэмэх', editNews: 'Засах',
+    newsTitle: 'Гарчиг', newsImageUrl: 'Зургийн URL', newsLink: 'Холбоос (заавал биш)',
+    newsLinkPh: 'https://... эсвэл #/game/...', newsEmpty: 'Мэдээ алга', newsSaved: 'Мэдээ хадгалагдлаа'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -217,7 +220,10 @@ const T = {
     onboardStep1Title: 'Find & join games', onboardStep1Body: 'Browse active games on the home feed and join with one tap.',
     onboardStep2Title: 'Organize your own', onboardStep2Body: 'Pick a date, time and course, then invite friends. You can book a tee time too.',
     onboardStep3Title: 'Order food', onboardStep3Body: 'Order food to the course or your table during a game.',
-    chooseGameForOrder: 'Which game is this for?', orderNoGame: 'Order without a game'
+    chooseGameForOrder: 'Which game is this for?', orderNoGame: 'Order without a game',
+    newsSection: 'News', newsManage: 'Manage News', addNews: '+ Add News', editNews: 'Edit',
+    newsTitle: 'Title', newsImageUrl: 'Image URL', newsLink: 'Link (optional)',
+    newsLinkPh: 'https://... or #/game/...', newsEmpty: 'No news', newsSaved: 'News saved'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -327,7 +333,10 @@ const T = {
     onboardStep1Title: '게임 찾기 & 참가', onboardStep1Body: '홈에서 진행 중인 게임을 보고 한 번에 참가하세요.',
     onboardStep2Title: '직접 게임 만들기', onboardStep2Body: '날짜, 시간, 코스를 정하고 친구를 초대하세요. 티 타임도 예약할 수 있습니다.',
     onboardStep3Title: '음식 주문', onboardStep3Body: '게임 중 코스나 테이블로 음식을 주문하세요.',
-    chooseGameForOrder: '어느 게임을 위한 주문인가요?', orderNoGame: '게임 없이 주문'
+    chooseGameForOrder: '어느 게임을 위한 주문인가요?', orderNoGame: '게임 없이 주문',
+    newsSection: '뉴스', newsManage: '뉴스 관리', addNews: '+ 뉴스 추가', editNews: '수정',
+    newsTitle: '제목', newsImageUrl: '이미지 URL', newsLink: '링크 (선택)',
+    newsLinkPh: 'https://... 또는 #/game/...', newsEmpty: '뉴스 없음', newsSaved: '뉴스 저장됨'
   }
 };
 

@@ -325,6 +325,39 @@ export async function deleteMenuItem(id) {
   await remove(ref(db, 'menu/' + id));
 }
 
+// ---- News / announcements (RTDB) ----
+export async function loadNews() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'news'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val())
+    .filter(n => n && n.id)
+    .sort((a, b) => (a.order || 0) - (b.order || 0) || (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+export async function saveNewsItem(item) {
+  if (!useFirebase || !db) return;
+  if (!item.id) item.id = 'nws_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  if (!item.createdAt) item.createdAt = Date.now();
+  await set(ref(db, 'news/' + item.id), item);
+  return item.id;
+}
+
+export async function deleteNewsItem(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'news/' + id));
+}
+
+export function onNewsChanged(cb) {
+  if (!useFirebase || !db) return () => {};
+  const r = ref(db, 'news');
+  onValue(r, (snap) => {
+    const data = snap.val();
+    cb(data ? Object.values(data).filter(n => n && n.id).sort((a, b) => (a.order || 0) - (b.order || 0) || (b.createdAt || 0) - (a.createdAt || 0)) : []);
+  });
+  return () => off(r);
+}
+
 // ---- Tables (RTDB) ----
 export async function loadTables() {
   if (!useFirebase || !db) return [];

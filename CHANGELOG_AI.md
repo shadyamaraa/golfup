@@ -1,5 +1,19 @@
 # CHANGELOG_AI.md
 
+## 2026-07-02 (2)
+
+### Home news / announcements (admin-managed)
+
+- `src/store.js`: `loadNews` / `saveNewsItem` / `deleteNewsItem` / `onNewsChanged`
+  (RTDB `news/{id}` = `{title, imageUrl, link, order, createdAt}`).
+- `src/app.js`: `renderHomeNews` shows a news card (image bg + title + "Мэдээ"
+  badge) on the home page; clicking opens the link (external → new tab,
+  `#/...` → in-app route). Live via `onNewsChanged`. Multiple items → carousel.
+- Admin panel: new "📰 Мэдээ" tab (`renderAdminNewsTab`) to add/edit/delete news
+  (title, image URL, link) with image preview.
+- `src/style.css`: `.news-card/.news-badge/.news-title/.news-carousel`.
+- `database.rules.json`: `news` node. i18n keys (mn/en/kr).
+
 ## 2026-07-02
 
 ### Tee-time QPay moves to MTBogd (MTBogd owns the QPay lifecycle)

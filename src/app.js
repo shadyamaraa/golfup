@@ -546,6 +546,7 @@ async function renderHome() {
           </a>
         </div>
       </div>
+      <div id="home-news" class="news-section"></div>
       <div id="notifications-section"></div>
       <div class="section">
         <div class="game-filter-tabs" id="home-filter-tabs">
@@ -589,6 +590,12 @@ async function renderHome() {
 
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged(renderGamesHome);
+    if (unsub) activeUnsubs.push(unsub);
+  }
+
+  renderHomeNews(await store.loadNews());
+  if (store.isUsingFirebase()) {
+    const unsub = store.onNewsChanged(renderHomeNews);
     if (unsub) activeUnsubs.push(unsub);
   }
 
@@ -775,6 +782,30 @@ function renderGamesHome(games) {
   if (archiveContainer && archiveOpen) {
     archiveContainer.innerHTML = archivedGames.length > 0 ? renderGamesCards(archivedGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noArchive')}</p>`;
   }
+}
+
+function renderHomeNews(news) {
+  const el = document.getElementById('home-news');
+  if (!el) return;
+  const items = (news || []).filter(n => n && (n.title || n.imageUrl));
+  if (items.length === 0) { el.innerHTML = ''; return; }
+
+  const card = (n) => {
+    const clickable = !!n.link;
+    const tag = clickable ? 'a' : 'div';
+    const href = clickable ? ` href="${esc(n.link)}"${/^https?:/i.test(n.link) ? ' target="_blank" rel="noopener"' : ''}` : '';
+    const bg = n.imageUrl
+      ? `background-image:linear-gradient(180deg, rgba(10,26,15,0.15), rgba(10,26,15,0.85)), url('${esc(n.imageUrl)}');`
+      : 'background:linear-gradient(135deg, var(--emerald-dark), var(--bg-secondary));';
+    return `<${tag} class="news-card"${href} style="${bg}">
+      <span class="news-badge">${t('newsSection')}</span>
+      ${n.title ? `<div class="news-title">${esc(n.title)}</div>` : ''}
+    </${tag}>`;
+  };
+
+  el.innerHTML = items.length === 1
+    ? card(items[0])
+    : `<div class="news-carousel">${items.map(card).join('')}</div>`;
 }
 
 function skeletonCards(n = 3) {
@@ -1882,6 +1913,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
           <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
           <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm">🍽️ ${t('menuManage')}</button>
+          <button id="admin-tab-btn-news" class="btn btn-outline btn-sm">📰 ${t('newsManage')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -1964,6 +1996,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-menu" style="display:none;">
           <div id="admin-menu-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-news" style="display:none;">
+          <div id="admin-news-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -1974,13 +2010,15 @@ async function renderAdminPanel() {
   const tabNoCircle = document.getElementById('admin-tab-btn-nocircle');
   const tabLookup = document.getElementById('admin-tab-btn-lookup');
   const tabMenu = document.getElementById('admin-tab-btn-menu');
+  const tabNews = document.getElementById('admin-tab-btn-news');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
   const sectionLookup = document.getElementById('admin-tab-lookup');
   const sectionMenu = document.getElementById('admin-tab-menu');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu];
+  const sectionNews = document.getElementById('admin-tab-news');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -1994,6 +2032,10 @@ async function renderAdminPanel() {
   tabMenu.addEventListener('click', async () => {
     switchTab(tabMenu, sectionMenu);
     await renderAdminMenuTab();
+  });
+  tabNews.addEventListener('click', async () => {
+    switchTab(tabNews, sectionNews);
+    await renderAdminNewsTab();
   });
 
   // No-circle tab: open edit modal
@@ -4784,6 +4826,66 @@ async function renderKitchenDisplay() {
 }
 
 // Admin: Menu management tab content
+async function renderAdminNewsTab(editItem = null) {
+  const el = document.getElementById('admin-news-content');
+  if (!el) return;
+  const inputStyle = 'padding:10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);width:100%;box-sizing:border-box;';
+  const news = await store.loadNews();
+  const ed = editItem || {};
+
+  el.innerHTML = `
+    <div style="background:rgba(255,255,255,0.05);border-radius:8px;padding:15px;margin-bottom:20px;">
+      <h3 style="margin:0 0 12px;">${ed.id ? t('editNews') : t('addNews')}</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input id="news-title" placeholder="${t('newsTitle')}" value="${esc(ed.title || '')}" style="${inputStyle}" />
+        <input id="news-image" placeholder="${t('newsImageUrl')}" value="${esc(ed.imageUrl || '')}" style="${inputStyle}" />
+        <input id="news-link" placeholder="${t('newsLink')} — ${t('newsLinkPh')}" value="${esc(ed.link || '')}" style="${inputStyle}" />
+        ${ed.imageUrl ? `<img src="${esc(ed.imageUrl)}" style="max-height:120px;border-radius:8px;object-fit:cover;" onerror="this.style.display='none'" />` : ''}
+        <div style="display:flex;gap:8px;">
+          <button id="news-save" class="btn btn-primary">${t('save')}</button>
+          ${ed.id ? `<button id="news-cancel" class="btn btn-ghost">${t('cancel')}</button>` : ''}
+        </div>
+      </div>
+    </div>
+    <h3 style="margin-bottom:10px;">${t('newsSection')} (${news.length})</h3>
+    ${news.length === 0 ? `<p style="color:var(--text-secondary);">${t('newsEmpty')}</p>` : `<div style="display:flex;flex-direction:column;gap:8px;">${news.map(n => `
+      <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;">
+        ${n.imageUrl ? `<img src="${esc(n.imageUrl)}" style="width:54px;height:54px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div style=\\'width:54px;height:54px;border-radius:6px;background:var(--emerald-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;\\'>📰</div>'" />` : '<div style="width:54px;height:54px;border-radius:6px;background:var(--emerald-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;">📰</div>'}
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(n.title || '—')}</div>
+          ${n.link ? `<div style="font-size:0.75rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${esc(n.link)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-sm btn-outline news-edit-btn" data-id="${n.id}">✏️</button>
+          <button class="btn btn-sm btn-danger news-del-btn" data-id="${n.id}">🗑️</button>
+        </div>
+      </div>`).join('')}</div>`}
+  `;
+
+  document.getElementById('news-save').onclick = async () => {
+    const title = document.getElementById('news-title').value.trim();
+    const imageUrl = document.getElementById('news-image').value.trim();
+    const link = document.getElementById('news-link').value.trim();
+    if (!title && !imageUrl) { showToast(t('newsTitle') + '/' + t('newsImageUrl'), 'error'); return; }
+    await store.saveNewsItem({
+      ...(ed.id ? { id: ed.id, createdAt: ed.createdAt, order: ed.order || 0 } : {}),
+      title, imageUrl, link,
+    });
+    showToast(t('newsSaved'), 'success');
+    await renderAdminNewsTab();
+  };
+  document.getElementById('news-cancel')?.addEventListener('click', () => renderAdminNewsTab());
+  document.querySelectorAll('.news-edit-btn').forEach(b => b.onclick = () => {
+    const item = news.find(n => n.id === b.dataset.id);
+    if (item) renderAdminNewsTab(item);
+  });
+  document.querySelectorAll('.news-del-btn').forEach(b => b.onclick = async () => {
+    if (!confirm(t('confirmDelete'))) return;
+    await store.deleteNewsItem(b.dataset.id);
+    await renderAdminNewsTab();
+  });
+}
+
 async function renderAdminMenuTab() {
   const el = document.getElementById('admin-menu-content');
   if (!el) return;
