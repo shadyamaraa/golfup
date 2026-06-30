@@ -221,6 +221,7 @@ export async function router() {
     }
 
     if (hash === '#/' || hash === '#/home') await renderHome();
+    else if (hash === '#/profile') await renderProfile();
     else if (hash === '#/games') await renderGames();
     else if (hash === '#/services') await renderServices();
     else if (hash === '#/create') await renderCreateGame();
@@ -650,7 +651,7 @@ async function renderHome() {
   renderHomeStats(games);
   renderHomeUpcoming(games);
 
-  document.getElementById('home-avatar')?.addEventListener('click', () => showProfileModal(currentUser));
+  document.getElementById('home-avatar')?.addEventListener('click', () => { location.hash = '#/profile'; });
   document.getElementById('home-bell')?.addEventListener('click', () => {
     const sec = document.getElementById('notifications-section');
     if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3856,6 +3857,84 @@ function showEditBankModal(user) {
   };
 }
 
+// ---- Profile page (#/profile) — prototype layout, real data ----
+async function renderProfile() {
+  const u = currentUser;
+  if (!u) { location.hash = '#/'; return; }
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  let games = [];
+  try { games = await store.loadAllGames(); } catch (_) {}
+  const myGames = games.filter(isMyGame);
+  const created = games.filter(g => g.createdBy === u.id).length;
+  const invited = games.filter(g => Array.isArray(g.invitedIds) && g.invitedIds.includes(u.id)).length;
+  const following = Object.keys(currentUserFollows || {}).length;
+  const followers = currentUserFollowers?.size || 0;
+  const communities = userCommunityIds(u).length;
+  const initial = (displayUsername(u) || '?').charAt(0).toUpperCase();
+  const year = u.createdAt ? new Date(u.createdAt).getFullYear() : '';
+
+  const recent = myGames
+    .map(g => ({ g, ms: new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime() }))
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 6)
+    .map(x => x.g);
+
+  main().innerHTML = `
+    <div class="fade-in profile-page">
+      <div class="profile-banner">
+        <div class="pb-actions">
+          <a href="#/users" class="pb-btn" title="${t('usersListTitle')}">${icon('members', { size: 18 })}</a>
+          <button class="pb-btn" id="profile-edit-btn" title="${t('profile')}">${icon('edit', { size: 17 })}</button>
+        </div>
+      </div>
+      <div class="profile-body">
+        <div class="profile-head">
+          <div class="profile-avatar">${esc(u.avatar || initial)}</div>
+          <div class="profile-id">
+            <div class="profile-name">${esc(displayFullName(u) || displayUsername(u))}</div>
+            <div class="profile-since">${t('pfSince')} ${year}</div>
+          </div>
+        </div>
+
+        <div class="profile-summary">
+          <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myGames.length}</div></div>
+          <div class="stat-tile"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="st-value">${created}</div><div class="st-label">${t('pfCreated')}</div></div>
+          <div class="stat-tile"><div class="st-value">${following}</div><div class="st-label">${t('statFollowing')}</div></div>
+          <div class="stat-tile"><div class="st-value">${communities}</div><div class="st-label">${t('pfCircles')}</div></div>
+          <div class="stat-tile"><div class="st-value">${invited}</div><div class="st-label">${t('pfInvited')}</div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:22px;"><h2>${t('pfMyGames')}</h2></div>
+        <div class="games-list">
+          ${recent.length === 0
+            ? `<div class="empty-state" style="padding:24px;"><p>${t('noGames')}</p></div>`
+            : recent.map(g => `
+              <a href="#/game/${g.id}" class="list-row">
+                <div class="tile-icon">${icon('play', { size: 20 })}</div>
+                <div class="lr-body">
+                  <div class="lr-title">${esc(g.location || '-')}</div>
+                  <div class="lr-sub">${formatDate(g.date)} · ${g.time}</div>
+                </div>
+                <span class="lr-chev">${icon('next', { size: 18 })}</span>
+              </a>`).join('')}
+        </div>
+
+        <div style="margin-top:18px;">
+          <button class="btn btn-outline" id="profile-edit-btn2" style="width:100%; gap:8px;">${icon('edit', { size: 16 })} ${t('profile')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const openEdit = () => showProfileModal(currentUser, { onSaved: () => renderProfile() });
+  document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
+  document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
+}
+
 function showProfileModal(user, options = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
@@ -3998,7 +4077,7 @@ function showProfileModal(user, options = {}) {
     showToast('✅ ' + t('saved'), 'success');
     modal.remove();
     updateHeader();
-    router();
+    if (options.onSaved) options.onSaved(); else router();
   };
 }
 
