@@ -544,45 +544,42 @@ function renderAuth() {
 async function renderHome() {
   const hasCircles = userCommunityIds(currentUser).length > 0;
   homeFilter = hasCircles ? 'community' : 'mine';
+  const initial = (displayUsername(currentUser) || '?').charAt(0).toUpperCase();
   main().innerHTML = `
     <div class="home-container fade-in">
-      <div class="hero-section">
-        <h1 class="hero-title">${t('appName')}</h1>
-        <p class="hero-subtitle">${t('tagline')}</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-          <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
-            <span class="btn-icon-left">+</span> ${t('createGame')}
-          </a>
-          <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
-            🍽️ ${t('foodMenu')}
-          </a>
-          <a href="#/orders" class="btn btn-outline btn-lg" id="home-orders-btn">
-            📦 ${t('myOrders')}
-          </a>
+      <div class="home-greet">
+        <div>
+          <div class="home-greet-hi">${t('greetingHi')}</div>
+          <div class="home-greet-name">${esc(displayUsername(currentUser))}</div>
+        </div>
+        <div class="home-greet-actions">
+          <button class="hg-btn" id="home-bell" title="${t('notifications')}">${icon('alerts', { size: 20 })}<span id="home-bell-badge" class="hg-badge hidden"></span></button>
+          <button class="hg-avatar" id="home-avatar">${esc(currentUser.avatar || initial)}</button>
         </div>
       </div>
+      <div id="next-game-feature"></div>
       <div id="notifications-section"></div>
       <div class="section">
-        <div class="game-filter-tabs" id="home-filter-tabs">
-          <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
-          <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
-          <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
-          <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
+        <div class="game-filter-tabs seg-tabs" id="home-filter-tabs">
+          <button class="filter-tab" data-tab="all">${icon('filter', { size: 15 })} ${t('tabAll')}</button>
+          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">${icon('play', { size: 15 })} ${t('tabMine')}</button>
+          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">${icon('members', { size: 15 })} ${t('tabCommunity')}</button>
+          <button class="filter-tab" data-tab="recommended">${icon('leaderboard', { size: 15 })} ${t('tabRecommended')}</button>
+          <button class="filter-tab" data-tab="joined">${icon('confirm', { size: 15 })} ${t('tabJoined')}</button>
+          <button class="filter-tab" data-tab="following">${icon('members', { size: 15 })} ${t('tabFollowing')}</button>
         </div>
         <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
       </div>
       <div class="section past-section" style="margin-top: 40px;">
         <div class="history-toggle-header" id="history-toggle">
-          <h2 class="section-title" style="margin:0;">🕒 ${t('gameHistory')}</h2>
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('time', { size: 18 })} ${t('gameHistory')}</h2>
           <span class="history-chevron" id="history-chevron">${historyOpen ? '▲' : '▼'}</span>
         </div>
         <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
       </div>
       <div class="section past-section" style="margin-top: 24px;">
         <div class="history-toggle-header" id="archive-toggle">
-          <h2 class="section-title" style="margin:0;">📦 ${t('gameArchive')}</h2>
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('bookings', { size: 18 })} ${t('gameArchive')}</h2>
           <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
         </div>
         <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
@@ -600,7 +597,14 @@ async function renderHome() {
       if (unsub) activeUnsubs.push(unsub);
     }
   }
+  renderNextGameFeature(games);
   renderGamesHome(games);
+
+  document.getElementById('home-avatar')?.addEventListener('click', () => showProfileModal(currentUser));
+  document.getElementById('home-bell')?.addEventListener('click', () => {
+    const sec = document.getElementById('notifications-section');
+    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged(renderGamesHome);
@@ -716,6 +720,46 @@ function renderNotifications(notifs) {
   });
 }
 
+function isMyGame(g) {
+  if (!currentUser) return false;
+  if (g.createdBy === currentUser.id) return true;
+  const inGroups = ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).some(p => p?.id === currentUser.id);
+  if (inGroups) return true;
+  return ensureArray(g.waitingList).some(p => p?.id === currentUser.id);
+}
+
+// Prototype "next game" hero — the user's nearest upcoming game they're part of.
+function renderNextGameFeature(games) {
+  const host = document.getElementById('next-game-feature');
+  if (!host) return;
+  const now = Date.now();
+  const mine = (games || [])
+    .filter(g => isMyGame(g) && g.date && g.time)
+    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
+    .filter(x => x.ms >= now)
+    .sort((a, b) => a.ms - b.ms);
+  if (mine.length === 0) { host.innerHTML = ''; return; }
+  const g = mine[0].g;
+  const groups = ensureGroups(g.groups);
+  const totalPlayers = countAllPlayers(g);
+  const totalSlots = g.groupSize * groups.length;
+  return host.innerHTML = `
+    <a href="#/game/${g.id}" class="feature-card" style="display:block; text-decoration:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>${t('nextGame')}</span>
+        <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">${formatDate(g.date)} · ${g.time}</span>
+      </div>
+      <div class="fc-title">${esc(g.location || '-')}</div>
+      <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.82rem; color:rgba(243,239,228,0.72);">
+        ${icon('location', { size: 14 })}<span>${esc(g.creatorName || '')}</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px;">
+        <div class="player-dots fc-dots">${renderPlayerDots(g)}</div>
+        <span class="fc-cta">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </div>
+    </a>`;
+}
+
 function renderGamesHome(games) {
   const activeContainer = document.getElementById('active-games-list');
   const pastContainer = document.getElementById('past-games-list');
@@ -817,31 +861,31 @@ function renderGamesCards(games, isPast = false) {
       .filter(p => p?.id && p.id !== currentUser?.id && currentUserFollows[p.id]).length;
     return `
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
-        <div class="game-card-header">
-          <span class="game-date-badge">${dateStr}</span>
-          <div style="display:flex; gap:6px; align-items:center;">
-            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
-            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityAudienceLabel(gameCommunities)}</span>` : ''}
+        <div class="gc-top">
+          <div class="tile-icon">${icon('play', { size: 21 })}</div>
+          <div class="gc-headline">
+            <div class="game-location">${esc(g.location || '-')}</div>
+            <div class="gc-meta">
+              ${icon('time', { size: 13 })}<span>${dateStr} · ${g.time}</span>
+            </div>
+          </div>
+          <div class="gc-top-right">
+            ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
+            ${gameCommunities.length > 0 ? `<span class="pill-soft" title="${t('community')}">${esc(communityAudienceLabel(gameCommunities))}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
-        <div class="game-card-body">
-          <div class="game-location">📍 ${g.location || '-'}</div>
-          <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
-            <span>🕐 ${g.time}</span>
-            <span>👤 ${g.creatorName || '-'}</span>
-          </div>
-        </div>
-        <div class="game-card-footer">
+        <div class="gc-foot">
           <div class="game-players-info">
             <div class="player-dots">${renderPlayerDots(g)}</div>
             <span>${totalPlayers} / ${totalSlots} ${t('players')}</span>
           </div>
-          <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
-            <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
-          </div>
-          ${followedCount > 0 ? `<div class="game-card-social">👤 ${followedCount} ${t('followingHere')}</div>` : ''}
+          <span class="gc-chev">${icon('next', { size: 18 })}</span>
         </div>
+        <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
+          <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
+        </div>
+        ${followedCount > 0 ? `<div class="game-card-social">${icon('members', { size: 13 })} ${followedCount} ${t('followingHere')}</div>` : ''}
       </a>`;
   }).join('');
 }

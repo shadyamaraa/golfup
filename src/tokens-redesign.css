@@ -62,6 +62,23 @@
   --danger-color:  var(--red);
   --primary-color: var(--gold);
   --primary-rgb:   221,137,16;
+
+  /* Prototype var names → app tokens, so the design-handoff markup can be
+     ported faithfully and stay theme-aware. */
+  --surface:  var(--bg-card);
+  --surface2: var(--bg-card-hover);
+  --line:     var(--border-card);
+  --line2:    #F0E9DA;
+  --text:     var(--text-primary);
+  --muted:    var(--text-secondary);
+  --faint:    var(--text-muted);
+  --accent:   var(--gold);
+  --accent2:  var(--gold-dark);
+  --bg:       var(--bg-primary);
+  --shadow:   var(--shadow-card);
+  --shadow-lg: 0 30px 70px rgba(12,48,81,0.22);
+  --navy-grad: linear-gradient(150deg, #0C3051, #0A2742);
+  --tile-grad: linear-gradient(145deg, #0C3051, #15406A);
 }
 
 /* ---------- DARK (navy · optional <html data-theme="dark">) ----------
@@ -94,6 +111,8 @@
   --shadow-card: 0 10px 30px rgba(0,0,0,0.40), 0 2px 6px rgba(0,0,0,0.30);
   --accent-soft: #1C3A57;
   --primary-rgb: 232,154,34;
+  --line2: #1A3656;
+  --shadow-lg: 0 30px 70px rgba(0,0,0,0.55);
 }
 
 /* ---------- Cross-theme essentials ---------- */
@@ -295,6 +314,82 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .section-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; color: var(--text-primary); }
 .section-head .view-all { font-size: 0.82rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; }
+
+/* ---- Home greeting header ---- */
+.home-container { padding-top: 8px; }
+.hero-section { display: none; }
+.home-greet { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.home-greet-hi { font-size: 0.82rem; color: var(--text-secondary); font-weight: 600; }
+.home-greet-name {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.6rem;
+  color: var(--text-primary); line-height: 1.1; margin-top: 2px; letter-spacing: -0.01em;
+}
+.home-greet-actions { display: flex; align-items: center; gap: 10px; }
+.hg-btn {
+  position: relative; width: 42px; height: 42px; border-radius: 13px;
+  background: var(--bg-card); border: 1px solid var(--border-card); box-shadow: var(--shadow-card);
+  color: var(--text-primary); display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.hg-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--red); color: #fff; font-size: 0.66rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.hg-avatar {
+  width: 42px; height: 42px; border-radius: 50%; background: #0C3051; color: #F4EEE2;
+  border: 0; font-weight: 800; font-size: 0.9rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---- Next-game feature card extras ---- */
+.feature-card .fc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+.feature-card .fc-title { font-size: 1.5rem; }
+.feature-card .fc-dots .player-dot { border: 2px solid #0C3051; margin-right: -8px; }
+.feature-card .fc-cta {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 15px; border-radius: 12px; background: var(--gold); color: #0C3051;
+  font-weight: 800; font-size: 0.8rem;
+}
+
+/* ---- Segmented filter tabs (home) ---- */
+.game-filter-tabs.seg-tabs { padding: 4px; border-radius: 14px; gap: 4px; margin-bottom: 20px; }
+.seg-tabs .filter-tab {
+  background: transparent; border: none; box-shadow: none; border-radius: 11px;
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; flex-shrink: 0;
+}
+.seg-tabs .filter-tab svg { flex-shrink: 0; }
+.seg-tabs .filter-tab.active { background: var(--gold); color: #0C3051; box-shadow: none; }
+.seg-tabs .filter-tab.active svg { color: #0C3051; }
+
+/* ---- Game card (prototype surface-card layout) ---- */
+.game-card {
+  padding: 16px; border-radius: 18px;
+  display: flex; flex-direction: column; gap: 0;
+}
+.game-card .gc-top { display: flex; align-items: center; gap: 13px; }
+.game-card .gc-headline { flex: 1; min-width: 0; }
+.game-card .game-location {
+  font-family: var(--font-display); font-weight: 700; font-size: 1rem;
+  letter-spacing: -0.01em; color: var(--text-primary);
+  margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.game-card .gc-meta {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px;
+  font-size: 0.78rem; color: var(--text-secondary);
+}
+.game-card .gc-meta svg { flex-shrink: 0; }
+.game-card .gc-top-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.game-card .gc-lock { color: var(--text-muted); display: flex; }
+.game-card .game-status { font-size: 0.7rem; font-weight: 700; padding: 5px 10px; border-radius: 9px; white-space: nowrap; }
+.game-card .gc-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line2);
+}
+.game-card .game-players-info { font-size: 0.78rem; color: var(--text-secondary); }
+.game-card .gc-chev { color: var(--text-muted); display: flex; }
+.game-card .player-dot { width: 26px; height: 26px; margin-right: -6px; border: 2px solid var(--bg-card); }
+.game-card .slot-progress { margin-top: 12px; }
+.game-card .game-card-social { display: flex; align-items: center; gap: 5px; }
 
 /* Gold FAB (Games page create button) */
 .fab-gold {
