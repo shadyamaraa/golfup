@@ -667,6 +667,8 @@ async function renderHome() {
     if (unsub) activeUnsubs.push(unsub);
     const unsubNews = store.onNewsChanged((items) => renderHomeNews(items));
     if (unsubNews) activeUnsubs.push(unsubNews);
+    const unsubSponsor = store.onSponsorChanged((data) => renderHomeSponsor(data));
+    if (unsubSponsor) activeUnsubs.push(unsubSponsor);
   }
 
   maybeShowOnboarding();
@@ -704,11 +706,21 @@ async function renderHomeNews(items) {
     </div>`;
 }
 
-// Sponsor slot — placeholder until a sponsor image/link is configured.
-function renderHomeSponsor() {
+// Sponsor banner — admin-managed image (+ optional link). Placeholder when unset.
+async function renderHomeSponsor(data) {
   const host = document.getElementById('home-sponsor');
   if (!host) return;
-  host.innerHTML = `<div class="sponsor-slot">${t('sponsorLabel')}</div>`;
+  if (data === undefined) {
+    try { data = await store.loadSponsor(); } catch (_) { data = null; }
+  }
+  if (!data || !data.imageUrl) {
+    host.innerHTML = `<div class="sponsor-slot">${t('sponsorLabel')}</div>`;
+    return;
+  }
+  const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" />`;
+  host.innerHTML = data.link
+    ? `<a href="${esc(data.link)}" target="_blank" rel="noopener" class="sponsor-banner">${img}</a>`
+    : `<div class="sponsor-banner">${img}</div>`;
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).
@@ -5271,12 +5283,25 @@ async function renderAdminNewsTab() {
   const el = document.getElementById('admin-news-content');
   if (!el) return;
   el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
-  let items;
-  try { items = await store.loadNews(); }
+  let items, sponsor;
+  try { [items, sponsor] = await Promise.all([store.loadNews(), store.loadSponsor()]); }
   catch (err) { el.innerHTML = `<p style="color:var(--danger-color);">⚠️ ${esc(err.message)}</p>`; return; }
+  sponsor = sponsor || {};
 
   const inputStyle = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);';
   el.innerHTML = `
+    <div style="margin-bottom:22px;">
+      <h3 style="margin:0 0 10px;">${t('sponsorManage')}</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
+        <input id="sp-image" type="text" placeholder="${t('newsImageUrl')}" value="${esc(sponsor.imageUrl || '')}" style="${inputStyle}" />
+        <img id="sp-image-preview" src="${esc(sponsor.imageUrl || '')}" alt="" style="${sponsor.imageUrl ? '' : 'display:none;'}width:100%;max-height:110px;border-radius:8px;object-fit:cover;" />
+        <input id="sp-link" type="text" placeholder="${t('newsLink')}" value="${esc(sponsor.link || '')}" style="${inputStyle}" />
+        <div style="display:flex;gap:8px;">
+          <button id="save-sponsor-btn" class="btn btn-primary btn-sm">${t('save')}</button>
+          <button id="clear-sponsor-btn" class="btn btn-ghost btn-sm">${t('sponsorClear')}</button>
+        </div>
+      </div>
+    </div>
     <div>
       <h3 style="margin:0 0 10px;">${t('newsManage')}</h3>
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
@@ -5359,4 +5384,23 @@ async function renderAdminNewsTab() {
       await renderAdminNewsTab();
     };
   });
+
+  // Sponsor banner save / clear
+  const spImg = document.getElementById('sp-image');
+  const spPreview = document.getElementById('sp-image-preview');
+  spImg.oninput = () => {
+    const u = spImg.value.trim();
+    if (u) { spPreview.src = u; spPreview.style.display = 'block'; } else { spPreview.style.display = 'none'; }
+  };
+  document.getElementById('save-sponsor-btn').onclick = async () => {
+    await store.saveSponsor({ imageUrl: spImg.value.trim(), link: document.getElementById('sp-link').value.trim() });
+    showToast('✅ Хадгалагдлаа', 'success');
+    await renderAdminNewsTab();
+  };
+  document.getElementById('clear-sponsor-btn').onclick = async () => {
+    if (!confirm('Устгах уу?')) return;
+    await store.saveSponsor({});
+    showToast('Устгагдлаа', 'info');
+    await renderAdminNewsTab();
+  };
 }

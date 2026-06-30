@@ -548,7 +548,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   color: #F3EFE4; line-height: 1.18; letter-spacing: -0.01em;
 }
 
-/* ---- Sponsor slot (placeholder) ---- */
+/* ---- Sponsor slot / banner ---- */
 .sponsor-slot {
   margin-bottom: 14px; height: 76px; border-radius: 18px;
   background: linear-gradient(135deg, #0A1A2E, #0E2B49);
@@ -557,6 +557,11 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   color: var(--text-muted); font-size: 0.72rem; font-weight: 700;
   letter-spacing: 0.16em; text-transform: uppercase;
 }
+.sponsor-banner {
+  display: block; margin-bottom: 14px; border-radius: 18px; overflow: hidden;
+  box-shadow: var(--shadow-card); background: #0A1A2E;
+}
+.sponsor-img { display: block; width: 100%; height: 84px; object-fit: cover; }
 
 /* ---- Home stat row (3 tiles) ---- */
 .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }

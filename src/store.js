@@ -359,6 +359,25 @@ export function onNewsChanged(callback) {
   return () => off(r, 'value', handler);
 }
 
+// ---- Sponsor banner (RTDB, single object: { imageUrl, link }) ----
+export async function loadSponsor() {
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'sponsor'));
+  return snap.exists() ? snap.val() : null;
+}
+
+export async function saveSponsor(obj) {
+  if (!useFirebase || !db) return;
+  await set(ref(db, 'sponsor'), obj || {});
+}
+
+export function onSponsorChanged(callback) {
+  if (!useFirebase || !db) return null;
+  const r = ref(db, 'sponsor');
+  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
+  return () => off(r, 'value', handler);
+}
+
 // ---- Tables (RTDB) ----
 export async function loadTables() {
   if (!useFirebase || !db) return [];
