@@ -220,6 +220,8 @@ export async function router() {
     }
 
     if (hash === '#/' || hash === '#/home') await renderHome();
+    else if (hash === '#/games') await renderGames();
+    else if (hash === '#/services') await renderServices();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
@@ -268,12 +270,14 @@ function updateBottomNav(hash) {
   nav.classList.toggle('hidden', hide);
   if (hide) return;
 
-  const labels = { 'bn-home': 'navHome', 'bn-create': 'navCreate', 'bn-food': 'navFood', 'bn-profile': 'navProfile' };
+  const labels = { 'bn-home': 'navHome', 'bn-games': 'navGames', 'bn-services': 'navServices', 'bn-orders': 'navOrders' };
   Object.entries(labels).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t(key); });
 
   const active = (hash === '#/' || hash === '#/home') ? 'home'
+    : hash === '#/games' ? 'games'
     : hash === '#/create' ? 'create'
-    : (hash === '#/menu' || hash.startsWith('#/order/')) ? 'food'
+    : (hash === '#/services' || hash === '#/menu' || hash.startsWith('#/order/')) ? 'services'
+    : (hash === '#/orders' || hash.startsWith('#/orders/')) ? 'orders'
     : '';
   nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
 }
@@ -540,6 +544,68 @@ function renderAuth() {
   });
 }
 
+// ---- Shared games browser (used by Home and Games) ----
+function gamesBrowserHTML(activeTab) {
+  const on = (tab) => activeTab === tab ? 'active' : '';
+  return `
+      <div class="section">
+        <div class="game-filter-tabs seg-tabs" id="home-filter-tabs">
+          <button class="filter-tab ${on('all')}" data-tab="all">${icon('filter', { size: 15 })} ${t('tabAll')}</button>
+          <button class="filter-tab ${on('mine')}" data-tab="mine">${icon('play', { size: 15 })} ${t('tabMine')}</button>
+          <button class="filter-tab ${on('community')}" data-tab="community">${icon('members', { size: 15 })} ${t('tabCommunity')}</button>
+          <button class="filter-tab ${on('recommended')}" data-tab="recommended">${icon('leaderboard', { size: 15 })} ${t('tabRecommended')}</button>
+          <button class="filter-tab ${on('joined')}" data-tab="joined">${icon('confirm', { size: 15 })} ${t('tabJoined')}</button>
+          <button class="filter-tab ${on('following')}" data-tab="following">${icon('members', { size: 15 })} ${t('tabFollowing')}</button>
+        </div>
+        <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
+      </div>
+      <div class="section past-section" style="margin-top: 40px;">
+        <div class="history-toggle-header" id="history-toggle">
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('time', { size: 18 })} ${t('gameHistory')}</h2>
+          <span class="history-chevron" id="history-chevron">${historyOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
+      </div>
+      <div class="section past-section" style="margin-top: 24px;">
+        <div class="history-toggle-header" id="archive-toggle">
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('bookings', { size: 18 })} ${t('gameArchive')}</h2>
+          <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
+      </div>`;
+}
+
+function wireGamesBrowser() {
+  if (store.isUsingFirebase()) {
+    const unsub = store.onAllGamesChanged(renderGamesHome);
+    if (unsub) activeUnsubs.push(unsub);
+  }
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      homeFilter = btn.dataset.tab;
+      renderGamesHome(homeGamesCache);
+    });
+  });
+  document.getElementById('history-toggle')?.addEventListener('click', () => {
+    historyOpen = !historyOpen;
+    const list = document.getElementById('past-games-list');
+    const chevron = document.getElementById('history-chevron');
+    if (list) list.style.display = historyOpen ? 'block' : 'none';
+    if (chevron) chevron.textContent = historyOpen ? '▲' : '▼';
+    if (historyOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
+  });
+  document.getElementById('archive-toggle')?.addEventListener('click', () => {
+    archiveOpen = !archiveOpen;
+    const list = document.getElementById('archive-games-list');
+    const chevron = document.getElementById('archive-chevron');
+    if (list) list.style.display = archiveOpen ? 'block' : 'none';
+    if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
+    if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
+  });
+}
+
 // ---- Home View ----
 async function renderHome() {
   const hasCircles = userCommunityIds(currentUser).length > 0;
@@ -559,31 +625,7 @@ async function renderHome() {
       </div>
       <div id="next-game-feature"></div>
       <div id="notifications-section"></div>
-      <div class="section">
-        <div class="game-filter-tabs seg-tabs" id="home-filter-tabs">
-          <button class="filter-tab" data-tab="all">${icon('filter', { size: 15 })} ${t('tabAll')}</button>
-          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">${icon('play', { size: 15 })} ${t('tabMine')}</button>
-          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">${icon('members', { size: 15 })} ${t('tabCommunity')}</button>
-          <button class="filter-tab" data-tab="recommended">${icon('leaderboard', { size: 15 })} ${t('tabRecommended')}</button>
-          <button class="filter-tab" data-tab="joined">${icon('confirm', { size: 15 })} ${t('tabJoined')}</button>
-          <button class="filter-tab" data-tab="following">${icon('members', { size: 15 })} ${t('tabFollowing')}</button>
-        </div>
-        <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
-      </div>
-      <div class="section past-section" style="margin-top: 40px;">
-        <div class="history-toggle-header" id="history-toggle">
-          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('time', { size: 18 })} ${t('gameHistory')}</h2>
-          <span class="history-chevron" id="history-chevron">${historyOpen ? '▲' : '▼'}</span>
-        </div>
-        <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
-      </div>
-      <div class="section past-section" style="margin-top: 24px;">
-        <div class="history-toggle-header" id="archive-toggle">
-          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('bookings', { size: 18 })} ${t('gameArchive')}</h2>
-          <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
-        </div>
-        <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
-      </div>
+      ${gamesBrowserHTML(homeFilter)}
     </div>`;
 
   const [notifs, games] = await Promise.all([
@@ -606,39 +648,67 @@ async function renderHome() {
     if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
-  if (store.isUsingFirebase()) {
-    const unsub = store.onAllGamesChanged(renderGamesHome);
-    if (unsub) activeUnsubs.push(unsub);
-  }
-
-  document.querySelectorAll('.filter-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      homeFilter = btn.dataset.tab;
-      renderGamesHome(homeGamesCache);
-    });
-  });
-
-  document.getElementById('history-toggle')?.addEventListener('click', () => {
-    historyOpen = !historyOpen;
-    const list = document.getElementById('past-games-list');
-    const chevron = document.getElementById('history-chevron');
-    if (list) list.style.display = historyOpen ? 'block' : 'none';
-    if (chevron) chevron.textContent = historyOpen ? '▲' : '▼';
-    if (historyOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
-  });
-
-  document.getElementById('archive-toggle')?.addEventListener('click', () => {
-    archiveOpen = !archiveOpen;
-    const list = document.getElementById('archive-games-list');
-    const chevron = document.getElementById('archive-chevron');
-    if (list) list.style.display = archiveOpen ? 'block' : 'none';
-    if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
-    if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
-  });
-
+  wireGamesBrowser();
   maybeShowOnboarding();
+}
+
+// ---- Games View (#/games) — the full games browser with a title + FAB ----
+async function renderGames() {
+  homeFilter = 'all';
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="page-head" style="align-items:center;">
+        <h2 class="page-title">${t('gamesTitle')}</h2>
+        <a href="#/create" class="fab-gold" title="${t('createGame')}">${icon('create', { size: 22 })}</a>
+      </div>
+      ${gamesBrowserHTML('all')}
+    </div>`;
+  const games = await store.loadAllGames();
+  renderGamesHome(games);
+  wireGamesBrowser();
+}
+
+// ---- Services hub (#/services) ----
+async function renderServices() {
+  const svc = (iconName, title, desc) => `
+    <div class="svc-tile">
+      <div class="svc-ic">${icon(iconName, { size: 21 })}</div>
+      <div class="svc-name">${title}</div>
+      <div class="svc-desc">${desc}</div>
+    </div>`;
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="page-head"><div>
+        <h2 class="page-title">${t('svTitle')}</h2>
+        <p class="page-sub">${t('svSub')}</p>
+      </div></div>
+      <a href="#/menu" class="feature-card svc-food" style="display:block; text-decoration:none;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>${t('navServices')}</span>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:14px;">
+          <div style="flex:1; min-width:0;">
+            <div class="fc-title">${t('svFood')}</div>
+            <div class="fc-sub" style="margin-top:6px;">${t('svFoodDesc')}</div>
+          </div>
+          <div class="svc-food-ic">${icon('dining', { size: 30 })}</div>
+        </div>
+        <span class="fc-cta" style="margin-top:16px;">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </a>
+      <div class="svc-grid">
+        ${svc('time', t('svTee'), t('svTeeDesc'))}
+        ${svc('ball-tee', t('svRent'), t('svRentDesc'))}
+        ${svc('handicap', t('svCoach'), t('svCoachDesc'))}
+        ${svc('pro-shop', t('svShop'), t('svShopDesc'))}
+        <div class="list-row svc-event">
+          <div class="svc-ic">${icon('bookings', { size: 21 })}</div>
+          <div class="lr-body"><div class="lr-title">${t('svEvent')}</div><div class="lr-sub">${t('svEventDesc')}</div></div>
+          <span class="lr-chev">${icon('next', { size: 18 })}</span>
+        </div>
+      </div>
+    </div>`;
+  // The non-food services aren't built yet — hint instead of dead-ending.
+  document.querySelectorAll('.svc-tile, .svc-event').forEach(el => {
+    el.addEventListener('click', () => showToast(t('comingSoon'), 'info'));
+  });
 }
 
 function renderNotifications(notifs) {
@@ -942,11 +1012,19 @@ async function renderCreateGame() {
             </div>
           </div>
           <div class="input-group">
-            <label for="game-location">${t('location')}</label>
-            <select id="game-location" required style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
+            <label>${t('location')}</label>
+            <select id="game-location" required style="display:none;">
               <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
               <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
             </select>
+            <div class="course-picker" id="course-picker">
+              ${[['Sky Resort Golf Club', 'Sky Resort'], ['Chinggis Khaan Golf Course', 'Chinggis Khaan']].map(([name, sub], i) => `
+                <button type="button" class="course-row ${i === 0 ? 'selected' : ''}" data-value="${esc(name)}">
+                  <div class="tile-icon">${icon('play', { size: 18 })}</div>
+                  <div class="lr-body"><div class="lr-title">${esc(name)}</div><div class="lr-sub">${esc(sub)}</div></div>
+                  <span class="course-check">${icon('confirm', { size: 15 })}</span>
+                </button>`).join('')}
+            </div>
           </div>
           <div class="input-group" id="mtbogd-section" style="display:none;">
             <label>⛳ ${t('bookTeetime')}</label>
@@ -1175,6 +1253,16 @@ async function renderCreateGame() {
 
   document.getElementById('game-location').addEventListener('change', () => {
     updateMtbogdSectionVisibility();
+  });
+  // Course picker rows drive the hidden <select>.
+  document.querySelectorAll('#course-picker .course-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('#course-picker .course-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+      const sel = document.getElementById('game-location');
+      sel.value = row.dataset.value;
+      sel.dispatchEvent(new Event('change'));
+    });
   });
   updateMtbogdSectionVisibility();
 

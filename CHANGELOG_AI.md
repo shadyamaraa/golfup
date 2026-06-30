@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (structure)
+
+### Prototype information architecture — 5-tab nav, Games + Services routes, course picker
+
+Follow-up to the markup pass: matched the prototype's structure, not just the
+look. Presentation/navigation only — no data model, store, or business logic
+changed.
+
+- Bottom nav rebuilt to the prototype's 5-tab layout with a center gold FAB:
+  Нүүр (home) · Тоглолт (`#/games`) · ➕ (create) · Үйлчилгээ (`#/services`) ·
+  Захиалга (`#/orders`). Profile moved to the home avatar (as in the prototype).
+- New `#/games` route: the full games browser (segmented tabs + day carousel)
+  with a serif title + create FAB. Extracted shared `gamesBrowserHTML()` /
+  `wireGamesBrowser()` so Home and Games reuse one implementation.
+- New `#/services` hub: navy feature card (Food → `#/menu`) + 2×2 service grid
+  (tee time, equipment, coaching, pro shop) + events row; non-built services
+  show a "coming soon" toast.
+- Create: course `<select>` replaced with selectable rows (navy flag tile +
+  gold check). A hidden `<select id="game-location">` preserves every existing
+  `.value` read and the `change` listener (mtbogd tee-time section intact).
+- New i18n keys (nav + services + gamesTitle + comingSoon, MN/EN/KR).
+- New CSS: 5-tab nav + FAB, services hub, course picker.
+
+### Risk
+Low–moderate. Verified locally (forced-localStorage build) that Home, Games,
+Services and Create render correctly with the new nav; reverted the temp patch.
+All ids/handlers/routes-to-existing-views preserved; `#/menu` still works.
+
 ## 2026-06-30 (later)
 
 ### Full prototype redesign — page markup to the approved design
