@@ -807,7 +807,7 @@ async function renderServices() {
         <p class="page-sub">${t('svSub')}</p>
       </div></div>
       <a href="#/menu" class="feature-card svc-food" style="display:block; text-decoration:none;">
-        <span class="fc-eyebrow"><span class="fc-dot"></span>${t('navServices')}</span>
+        <span class="fc-eyebrow"><span class="fc-dot"></span>Mt. Bogd restaurant</span>
         <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:14px;">
           <div style="flex:1; min-width:0;">
             <div class="fc-title">${t('svFood')}</div>
