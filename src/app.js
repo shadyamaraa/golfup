@@ -1095,10 +1095,10 @@ function renderGamesCards(games, isPast = false) {
             <div class="gc-meta">
               ${icon('time', { size: 13 })}<span>${dateStr} · ${g.time}</span>
             </div>
+            ${gameCommunities.length > 0 ? `<div class="gc-audience"><span class="pill-soft" title="${esc(communityAudienceLabel(gameCommunities))}">${esc(communityAudienceLabel(gameCommunities))}</span></div>` : ''}
           </div>
           <div class="gc-top-right">
             ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
-            ${gameCommunities.length > 0 ? `<span class="pill-soft" title="${t('community')}">${esc(communityAudienceLabel(gameCommunities))}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
@@ -1884,11 +1884,12 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       const rowClass = isFollowing ? ' followed-player' : isFollower ? ' follower-player' : '';
       const avatarClass = isFollowing ? ' followed-avatar' : isFollower ? ' follower-avatar' : '';
       const tag = isFollower ? ' <span class="tag-follower">★</span>' : '';
+      const orgTag = pid === game.createdBy ? ` <span class="tag-organizer">${t('organizer')}</span>` : '';
       slots.push(`
         <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
           <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</span>
-          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${tag}</span>
+          <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${orgTag}${tag}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
@@ -4033,7 +4034,7 @@ async function renderProfileEdit() {
         <div class="create-section">
           <div class="cs-label">${t('language')}</div>
           <div class="chip-row" id="lang-chips">
-            <button type="button" class="seg-chip" data-lang="mn">МН</button>
+            <button type="button" class="seg-chip" data-lang="mn">MN</button>
             <button type="button" class="seg-chip" data-lang="en">EN</button>
             <button type="button" class="seg-chip" data-lang="kr">한국</button>
           </div>
