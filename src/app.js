@@ -1267,21 +1267,21 @@ async function renderCreateGame() {
     </div>
     <div style="margin-top:8px;">
       <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
-      <div style="display:flex; gap:10px;">
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="clubhouse" checked> ${icon('ball-tee', { size: 15 })} ${t('payClubhouse')}
-        </label>
+      <div class="chip-row" id="create-payment-chips">
+        <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
         ${QPAY_ENABLED
-          ? `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); cursor:pointer; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay"> ${icon('phone', { size: 15 })} ${t('payQpay')}
-        </label>`
-          : `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay" disabled> ${icon('phone', { size: 15 })} ${t('payQpay')}
-          <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-        </label>`
+          ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
+          : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem; opacity:0.85;">(${t('payComingSoon')})</span></button>`
         }
       </div>
     </div>`;
+    document.querySelectorAll('#create-payment-chips .seg-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (chip.classList.contains('chip-disabled')) return;
+        document.querySelectorAll('#create-payment-chips .seg-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+      });
+    });
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
@@ -1569,7 +1569,7 @@ async function renderCreateGame() {
     }
 
     // Payment method (only meaningful when a tee slot is selected).
-    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
+    const teePayMethod = document.querySelector('#create-payment-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
     const useQpayTee = QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
 
     let bookingCode = null;

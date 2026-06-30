@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (payment method chips)
+
+### Tee-time "Төлбөрийн арга" switched from radio buttons to chips
+
+The payment-method selector shown after picking a tee-time slot used boxed
+radio buttons; converted it to the same `seg-chip`/`chip-row` pattern used for
+holes/size/visibility in the create form, for visual consistency.
+
+- Clubhouse / QPay are now `seg-chip` toggle buttons (gold active state);
+  disabled QPay uses `chip-disabled`.
+- Selected value now read from `#create-payment-chips .seg-chip.active`
+  (`data-pay`) instead of a checked radio input.
+
 ## 2026-06-30 (favicon + app icons)
 
 ### Favicon and push-notification icons switched to the new brand mark
