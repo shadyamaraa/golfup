@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-06-30 (favicon + app icons)
+
+### Favicon and push-notification icons switched to the new brand mark
+
+The browser favicon and FCM push icons still used the old green "UB" logo
+while the home-screen/app icons were already the navy/gold golfer-shield. Made
+them consistent with the new brand.
+
+- Generated `favicon.ico` (16/32/48) + `favicon-16/32/48/64.png` from
+  `icon-512.png` and pointed the `index.html` `<link rel="icon">` set at them.
+- Push notifications (`public/firebase-messaging-sw.js`) now use
+  `/icon-192.png` (icon) and `/favicon-48.png` (badge) instead of the old
+  `/icon.svg`.
+- Removed the stale old-brand assets `public/UBGolf_web_favicon.png` and
+  `public/icon.svg` (no longer referenced anywhere).
+- App icons (`icon-192/512`, `apple-touch-icon`) and the manifest were already
+  on the new mark and are unchanged.
+
 ## 2026-06-30 (icon sweep)
 
 ### Replaced remaining emoji glyphs with the line-icon set
