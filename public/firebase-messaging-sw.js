@@ -17,8 +17,8 @@ messaging.onBackgroundMessage((payload) => {
   const { title, body, gameId } = payload.data || {};
   self.registration.showNotification(title || 'UB Golf', {
     body: body || '',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    icon: '/icon-192.png',
+    badge: '/favicon-48.png',
     data: { gameId }
   });
 });

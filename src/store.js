@@ -325,19 +325,19 @@ export async function deleteMenuItem(id) {
   await remove(ref(db, 'menu/' + id));
 }
 
-// ---- News / announcements (RTDB) ----
+// ---- News / announcements (RTDB) — shown in the home carousel ----
 export async function loadNews() {
   if (!useFirebase || !db) return [];
   const snap = await get(ref(db, 'news'));
   if (!snap.exists()) return [];
   return Object.values(snap.val())
     .filter(n => n && n.id)
-    .sort((a, b) => (a.order || 0) - (b.order || 0) || (b.createdAt || 0) - (a.createdAt || 0));
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 export async function saveNewsItem(item) {
   if (!useFirebase || !db) return;
-  if (!item.id) item.id = 'nws_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  if (!item.id) item.id = 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   if (!item.createdAt) item.createdAt = Date.now();
   await set(ref(db, 'news/' + item.id), item);
   return item.id;
@@ -348,14 +348,34 @@ export async function deleteNewsItem(id) {
   await remove(ref(db, 'news/' + id));
 }
 
-export function onNewsChanged(cb) {
-  if (!useFirebase || !db) return () => {};
+export function onNewsChanged(callback) {
+  if (!useFirebase || !db) return null;
   const r = ref(db, 'news');
-  onValue(r, (snap) => {
-    const data = snap.val();
-    cb(data ? Object.values(data).filter(n => n && n.id).sort((a, b) => (a.order || 0) - (b.order || 0) || (b.createdAt || 0) - (a.createdAt || 0)) : []);
+  const handler = onValue(r, (snap) => {
+    const val = snap.exists() ? Object.values(snap.val()).filter(n => n && n.id) : [];
+    val.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    callback(val);
   });
-  return () => off(r);
+  return () => off(r, 'value', handler);
+}
+
+// ---- Sponsor banner (RTDB, single object: { imageUrl, link }) ----
+export async function loadSponsor() {
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'sponsor'));
+  return snap.exists() ? snap.val() : null;
+}
+
+export async function saveSponsor(obj) {
+  if (!useFirebase || !db) return;
+  await set(ref(db, 'sponsor'), obj || {});
+}
+
+export function onSponsorChanged(callback) {
+  if (!useFirebase || !db) return null;
+  const r = ref(db, 'sponsor');
+  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
+  return () => off(r, 'value', handler);
 }
 
 // ---- Tables (RTDB) ----

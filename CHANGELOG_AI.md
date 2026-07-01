@@ -1,18 +1,162 @@
 # CHANGELOG_AI.md
 
-## 2026-07-02 (2)
+## 2026-06-30 (payment method chips)
 
-### Home news / announcements (admin-managed)
+### Tee-time "Төлбөрийн арга" switched from radio buttons to chips
 
-- `src/store.js`: `loadNews` / `saveNewsItem` / `deleteNewsItem` / `onNewsChanged`
-  (RTDB `news/{id}` = `{title, imageUrl, link, order, createdAt}`).
-- `src/app.js`: `renderHomeNews` shows a news card (image bg + title + "Мэдээ"
-  badge) on the home page; clicking opens the link (external → new tab,
-  `#/...` → in-app route). Live via `onNewsChanged`. Multiple items → carousel.
-- Admin panel: new "📰 Мэдээ" tab (`renderAdminNewsTab`) to add/edit/delete news
-  (title, image URL, link) with image preview.
-- `src/style.css`: `.news-card/.news-badge/.news-title/.news-carousel`.
-- `database.rules.json`: `news` node. i18n keys (mn/en/kr).
+The payment-method selector shown after picking a tee-time slot used boxed
+radio buttons; converted it to the same `seg-chip`/`chip-row` pattern used for
+holes/size/visibility in the create form, for visual consistency.
+
+- Clubhouse / QPay are now `seg-chip` toggle buttons (gold active state);
+  disabled QPay uses `chip-disabled`.
+- Selected value now read from `#create-payment-chips .seg-chip.active`
+  (`data-pay`) instead of a checked radio input.
+
+## 2026-06-30 (favicon + app icons)
+
+### Favicon and push-notification icons switched to the new brand mark
+
+The browser favicon and FCM push icons still used the old green "UB" logo
+while the home-screen/app icons were already the navy/gold golfer-shield. Made
+them consistent with the new brand.
+
+- Generated `favicon.ico` (16/32/48) + `favicon-16/32/48/64.png` from
+  `icon-512.png` and pointed the `index.html` `<link rel="icon">` set at them.
+- Push notifications (`public/firebase-messaging-sw.js`) now use
+  `/icon-192.png` (icon) and `/favicon-48.png` (badge) instead of the old
+  `/icon.svg`.
+- Removed the stale old-brand assets `public/UBGolf_web_favicon.png` and
+  `public/icon.svg` (no longer referenced anywhere).
+- App icons (`icon-192/512`, `apple-touch-icon`) and the manifest were already
+  on the new mark and are unchanged.
+
+## 2026-06-30 (icon sweep)
+
+### Replaced remaining emoji glyphs with the line-icon set
+
+Swept the app for leftover emoji used as UI icons and replaced them with the
+inline SVG line icons from `src/icons.js` so the interface is visually
+consistent everywhere (no old emoji in chrome).
+
+- Added icons: `star`, `card`, `phone`, `table`, `trash`, `close`.
+- Food/menu: title, category filter, popular-item badge, image placeholder,
+  search field, admin menu list (placeholder, popular badge, edit/delete).
+- Orders: status chips/banners, cart pill, checkout pay options, kitchen
+  table/area badges, kitchen title.
+- Game detail/admin: remove-player and copy-bank buttons, edit-game/edit-user
+  titles, Admin link, news/table delete, waiting-list & group headers,
+  followed-group label, success checkmarks, empty states, users-list role.
+- Left in place intentionally: avatar-picker emoji, onboarding illustrations,
+  transient toast/share-text glyphs, and the dev styleguide preview.
+
+## 2026-06-30 (home dashboard)
+
+### Home rebuilt as the prototype dashboard
+
+Home is now a dashboard (the full games browser lives on `#/games`):
+greeting → news carousel → enriched next-game card → sponsor slot → 3 stat
+tiles → "Upcoming" list. Presentation only.
+
+- News carousel: branded welcome card (no announcements backend yet — a single
+  honest placeholder, carousel-ready for real news later).
+- Next-game card enriched: group-size + slots chips and a player avatar stack
+  with `+N` overflow (real players), gold "details" CTA.
+- Sponsor slot: neutral placeholder banner (replaceable with a real sponsor).
+- 3 stat tiles from REAL data — games joined/created, following, followers
+  (the prototype's handicap/ranking aren't in the app's data model, so real
+  social stats are used instead of fabricated numbers).
+- "Upcoming" list: nearest games as surface list rows + "All" → `#/games`.
+- New i18n keys (upcoming/viewAllShort/news/sponsor/stat*, MN/EN/KR); CSS for
+  carousel, sponsor slot, stat row, next-game chips + avatar stack.
+
+### Risk
+Low. Markup/CSS only; verified the dashboard renders (forced-localStorage build,
+reverted). Games browser/history/archive intact on `#/games`.
+
+## 2026-06-30 (structure)
+
+### Prototype information architecture — 5-tab nav, Games + Services routes, course picker
+
+Follow-up to the markup pass: matched the prototype's structure, not just the
+look. Presentation/navigation only — no data model, store, or business logic
+changed.
+
+- Bottom nav rebuilt to the prototype's 5-tab layout with a center gold FAB:
+  Нүүр (home) · Тоглолт (`#/games`) · ➕ (create) · Үйлчилгээ (`#/services`) ·
+  Захиалга (`#/orders`). Profile moved to the home avatar (as in the prototype).
+- New `#/games` route: the full games browser (segmented tabs + day carousel)
+  with a serif title + create FAB. Extracted shared `gamesBrowserHTML()` /
+  `wireGamesBrowser()` so Home and Games reuse one implementation.
+- New `#/services` hub: navy feature card (Food → `#/menu`) + 2×2 service grid
+  (tee time, equipment, coaching, pro shop) + events row; non-built services
+  show a "coming soon" toast.
+- Create: course `<select>` replaced with selectable rows (navy flag tile +
+  gold check). A hidden `<select id="game-location">` preserves every existing
+  `.value` read and the `change` listener (mtbogd tee-time section intact).
+- New i18n keys (nav + services + gamesTitle + comingSoon, MN/EN/KR).
+- New CSS: 5-tab nav + FAB, services hub, course picker.
+
+### Risk
+Low–moderate. Verified locally (forced-localStorage build) that Home, Games,
+Services and Create render correctly with the new nav; reverted the temp patch.
+All ids/handlers/routes-to-existing-views preserved; `#/menu` still works.
+
+## 2026-06-30 (later)
+
+### Full prototype redesign — page markup to the approved design
+
+Building on the token foundation, the page markup was rebuilt to match the
+approved prototype layout (design handoff), not just the palette. Presentation
+only — no data flow, routing, handlers, or i18n logic changed.
+
+- Home: greeting header (name + bell + avatar) instead of the hero block; navy
+  "next game" feature card computed from the user's nearest upcoming game;
+  segmented gold filter tabs; line-icon section headers.
+- Games card: surface card with a navy leading tile, serif course title, clock
+  meta, status pill, lock icon, footer dots + slot progress + chevron.
+- Auth: navy splash with gold rings + cream card + vertical crest logo.
+- Members: prototype page header (serif title + count pill) + icon search field.
+- Orders: order rows as surface list-rows with an order tile; icon headers.
+- Game detail: line icons for location/time/actions; community pill.
+- Admin: 2×2 stat overview tiles + icon section tabs.
+- Create: line-icon back link + invite button.
+- Reusable component classes added to `tokens-redesign.css` (feature card,
+  surface card, segmented tabs, list row + tile icon, stat tile/grid, page
+  head, search field, soft-gold pill) plus prototype→app var aliases so the
+  handoff markup ports faithfully and stays theme-aware.
+- New i18n keys (greetingHi/nextGame/viewDetails/notifications/adminTitle,
+  MN/EN/KR).
+
+### Risk
+Low–moderate. Markup/CSS only; all ids, `data-*`, event bindings, routes and
+`t()` keys preserved. Verified build + auth/styleguide render with no JS errors.
+
+## 2026-06-30
+
+### Visual redesign — navy · gold · cream (append-only token override)
+
+Re-skins the whole app by re-pointing the design tokens `style.css` already
+exposes (the documented "a redesign re-points these, the whole app follows"
+playbook). Forest-green ➜ navy, antique gold ➜ brighter brand gold, Inter ➜
+Manrope (body) + Merriweather (display headings). No JS changes — the app's
+existing white-alpha surfaces read correctly on navy.
+
+- `src/redesign.css` (new): append-only override loaded after `style.css`.
+  Re-points `--bg-*`, `--gold*`, `--text-*`, `--emerald*` (reused as the navy
+  feature tone) and `--font`; semantic `--color-*` follow. Switches active/
+  primary states (primary button, active filter tab, date badge, order tracker,
+  nav) to gold. Also defines `--primary-color`, `--border-color`, `--bg-color`,
+  `--danger-color`, `--primary-rgb` — referenced in code but never defined, so
+  the notif badge, order tracker and food cart pill were silently colorless;
+  now they render.
+- `index.html`: load `redesign.css` after `style.css`; `theme-color` → `#08203A`.
+- Preview on `#/styleguide`. A light-cream variant is possible but needs ~5
+  find/replace in `app.js` for inline white-alpha surfaces, so the safe drop-in
+  is the navy theme.
+
+### Risk
+Low. Additive CSS override + two `index.html` lines; no JS or data changes.
 
 ## 2026-07-02
 

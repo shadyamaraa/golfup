@@ -1,13 +1,28 @@
-import { t, getLang, toggleLang } from './i18n.js';
+import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { icon, paintIcons } from './icons.js';
+
+// Sun / moon glyphs for the header theme toggle (not part of the UI icon set).
+const MOON_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13.5A8 8 0 1 1 10.5 3.5a6.2 6.2 0 0 0 10 10z"/></svg>';
+const SUN_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 3.2v2M12 18.8v2M4.6 12h-2M21.4 12h-2M6.5 6.5 5 5M19 19l-1.5-1.5M17.5 6.5 19 5M5 19l1.5-1.5"/></svg>';
+
+function applyTheme(theme) {
+  const d = document.documentElement;
+  d.dataset.theme = theme === 'dark' ? 'dark' : '';
+  localStorage.setItem('ubg-theme', d.dataset.theme);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#08203A' : '#F3EFE4');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = theme === 'dark' ? SUN_SVG : MOON_SVG;
+}
 
 const isKiosk = !!window.__TAURI__;
-// QPay is live everywhere, including production (ubgolf.club). To restrict it to
-// preview/localhost again, use: /--|localhost|127\.0\.0\.1/.test(location.hostname)
-const QPAY_ENABLED = true;
+// QPay is currently disabled everywhere (tee-time booking + restaurant
+// checkout) — the QPay option shows as "coming soon" and only Clubhouse
+// payment is selectable. To re-enable, set this back to true.
+const QPAY_ENABLED = false;
 
 let currentUser = null;
 let allUsersMap = {};
@@ -20,6 +35,7 @@ let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
+let bellSubFor = null;
 let openCircles = new Set();
 let pendingAuthRedirect = null;
 
@@ -198,6 +214,15 @@ export async function router() {
     }
     updateHeader();
     updateBottomNav(hash);
+    updateGlobalSponsorVisibility(hash);
+    // Header bell unread badge — subscribe once per user (persists across routes).
+    if (currentUser && bellSubFor !== currentUser.id) {
+      bellSubFor = currentUser.id;
+      store.loadNotifications(currentUser.id).then(ns => updateBellBadge(activeNotifCount(ns))).catch(() => {});
+      if (store.isUsingFirebase()) {
+        store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns)));
+      }
+    }
     clearActiveListeners();
 
     if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
@@ -206,6 +231,10 @@ export async function router() {
     }
 
     if (hash === '#/' || hash === '#/home') await renderHome();
+    else if (hash === '#/profile') await renderProfile();
+    else if (hash === '#/profile/edit') await renderProfileEdit();
+    else if (hash === '#/games') await renderGames();
+    else if (hash === '#/services') await renderServices();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
@@ -223,6 +252,7 @@ export async function router() {
     console.error('Router error:', err);
     main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">⚠️ Алдаа: ${esc(err.message)}</p><a href="#/" class="btn btn-outline" style="margin-top:10px;">← Буцах</a></div></div>`;
   } finally {
+    paintIcons();
     isRouting = false;
   }
 }
@@ -232,12 +262,14 @@ function updateHeader() {
   const userInfo = document.getElementById('user-info');
   const nameDisplay = document.getElementById('user-name-display');
   const avatar = document.getElementById('user-avatar');
+  const headerAvatar = document.getElementById('header-avatar');
   if (langBtn) langBtn.textContent = getLang().toUpperCase();
   const adminLink = document.getElementById('admin-link');
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
-    nameDisplay.textContent = displayUsername(currentUser);
-    avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (nameDisplay) nameDisplay.textContent = displayUsername(currentUser);
+    if (avatar) avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (headerAvatar) headerAvatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
     if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
@@ -253,12 +285,14 @@ function updateBottomNav(hash) {
   nav.classList.toggle('hidden', hide);
   if (hide) return;
 
-  const labels = { 'bn-home': 'navHome', 'bn-create': 'navCreate', 'bn-food': 'navFood', 'bn-profile': 'navProfile' };
+  const labels = { 'bn-home': 'navHome', 'bn-games': 'navGames', 'bn-services': 'navServices', 'bn-orders': 'navOrders' };
   Object.entries(labels).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t(key); });
 
   const active = (hash === '#/' || hash === '#/home') ? 'home'
+    : hash === '#/games' ? 'games'
     : hash === '#/create' ? 'create'
-    : (hash === '#/menu' || hash.startsWith('#/order/')) ? 'food'
+    : (hash === '#/services' || hash === '#/menu' || hash.startsWith('#/order/')) ? 'services'
+    : (hash === '#/orders' || hash.startsWith('#/orders/')) ? 'orders'
     : '';
   nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
 }
@@ -414,7 +448,7 @@ function renderAuth() {
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
-        <img src="/UBGolf_main_logo.png" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
+        <img src="/logo-v-navy.svg" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
         <form id="auth-form" class="auth-form">
           <div class="input-group">
             <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
@@ -525,80 +559,42 @@ function renderAuth() {
   });
 }
 
-// ---- Home View ----
-async function renderHome() {
-  const hasCircles = userCommunityIds(currentUser).length > 0;
-  homeFilter = hasCircles ? 'community' : 'mine';
-  main().innerHTML = `
-    <div class="home-container fade-in">
-      <div class="hero-section">
-        <h1 class="hero-title">${t('appName')}</h1>
-        <p class="hero-subtitle">${t('tagline')}</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-          <a href="#/create" class="btn btn-primary btn-lg" id="create-game-btn">
-            <span class="btn-icon-left">+</span> ${t('createGame')}
-          </a>
-          <a href="#/menu" class="btn btn-outline btn-lg" id="home-food-btn">
-            🍽️ ${t('foodMenu')}
-          </a>
-          <a href="#/orders" class="btn btn-outline btn-lg" id="home-orders-btn">
-            📦 ${t('myOrders')}
-          </a>
-        </div>
-      </div>
-      <div id="home-news" class="news-section"></div>
-      <div id="notifications-section"></div>
+// ---- Shared games browser (used by Home and Games) ----
+function gamesBrowserHTML(activeTab) {
+  const on = (tab) => activeTab === tab ? 'active' : '';
+  return `
       <div class="section">
-        <div class="game-filter-tabs" id="home-filter-tabs">
-          <button class="filter-tab" data-tab="all">🌍 ${t('tabAll')}</button>
-          <button class="filter-tab ${!hasCircles ? 'active' : ''}" data-tab="mine">🏌️ ${t('tabMine')}</button>
-          <button class="filter-tab ${hasCircles ? 'active' : ''}" data-tab="community">◎ ${t('tabCommunity')}</button>
-          <button class="filter-tab" data-tab="recommended">✨ ${t('tabRecommended')}</button>
-          <button class="filter-tab" data-tab="joined">🤝 ${t('tabJoined')}</button>
-          <button class="filter-tab" data-tab="following">⭐ ${t('tabFollowing')}</button>
+        <div class="game-filter-tabs seg-tabs" id="home-filter-tabs">
+          <button class="filter-tab ${on('all')}" data-tab="all">${icon('filter', { size: 15 })} ${t('tabAll')}</button>
+          <button class="filter-tab ${on('mine')}" data-tab="mine">${icon('play', { size: 15 })} ${t('tabMine')}</button>
+          <button class="filter-tab ${on('community')}" data-tab="community">${icon('members', { size: 15 })} ${t('tabCommunity')}</button>
+          <button class="filter-tab ${on('recommended')}" data-tab="recommended">${icon('leaderboard', { size: 15 })} ${t('tabRecommended')}</button>
+          <button class="filter-tab ${on('joined')}" data-tab="joined">${icon('confirm', { size: 15 })} ${t('tabJoined')}</button>
+          <button class="filter-tab ${on('following')}" data-tab="following">${icon('members', { size: 15 })} ${t('tabFollowing')}</button>
         </div>
         <div id="active-games-list" class="games-list">${skeletonCards(3)}</div>
       </div>
       <div class="section past-section" style="margin-top: 40px;">
         <div class="history-toggle-header" id="history-toggle">
-          <h2 class="section-title" style="margin:0;">🕒 ${t('gameHistory')}</h2>
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('time', { size: 18 })} ${t('gameHistory')}</h2>
           <span class="history-chevron" id="history-chevron">${historyOpen ? '▲' : '▼'}</span>
         </div>
         <div id="past-games-list" class="games-list" style="display:${historyOpen ? 'block' : 'none'};"></div>
       </div>
       <div class="section past-section" style="margin-top: 24px;">
         <div class="history-toggle-header" id="archive-toggle">
-          <h2 class="section-title" style="margin:0;">📦 ${t('gameArchive')}</h2>
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('bookings', { size: 18 })} ${t('gameArchive')}</h2>
           <span class="history-chevron" id="archive-chevron">${archiveOpen ? '▲' : '▼'}</span>
         </div>
         <div id="archive-games-list" class="games-list" style="display:${archiveOpen ? 'block' : 'none'};"></div>
-      </div>
-    </div>`;
+      </div>`;
+}
 
-  const [notifs, games] = await Promise.all([
-    currentUser ? store.loadNotifications(currentUser.id) : Promise.resolve([]),
-    store.loadAllGames()
-  ]);
-  if (currentUser) {
-    renderNotifications(notifs);
-    if (store.isUsingFirebase()) {
-      const unsub = store.onNotificationsChanged(currentUser.id, renderNotifications);
-      if (unsub) activeUnsubs.push(unsub);
-    }
-  }
-  renderGamesHome(games);
-
+function wireGamesBrowser() {
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged(renderGamesHome);
     if (unsub) activeUnsubs.push(unsub);
   }
-
-  renderHomeNews(await store.loadNews());
-  if (store.isUsingFirebase()) {
-    const unsub = store.onNewsChanged(renderHomeNews);
-    if (unsub) activeUnsubs.push(unsub);
-  }
-
   document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
@@ -607,7 +603,6 @@ async function renderHome() {
       renderGamesHome(homeGamesCache);
     });
   });
-
   document.getElementById('history-toggle')?.addEventListener('click', () => {
     historyOpen = !historyOpen;
     const list = document.getElementById('past-games-list');
@@ -616,7 +611,6 @@ async function renderHome() {
     if (chevron) chevron.textContent = historyOpen ? '▲' : '▼';
     if (historyOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
-
   document.getElementById('archive-toggle')?.addEventListener('click', () => {
     archiveOpen = !archiveOpen;
     const list = document.getElementById('archive-games-list');
@@ -625,8 +619,243 @@ async function renderHome() {
     if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
     if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
+}
+
+// ---- Home View (dashboard: news · next game · stats · upcoming) ----
+async function renderHome() {
+  const initial = (displayUsername(currentUser) || '?').charAt(0).toUpperCase();
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="home-greet">
+        <div>
+          <div class="home-greet-hi">${t('greetingHi')}</div>
+          <div class="home-greet-name">${esc(displayUsername(currentUser))}</div>
+        </div>
+      </div>
+      <div id="home-news"></div>
+      <div id="next-game-feature"></div>
+      <div id="home-stats"></div>
+      <div id="notifications-section"></div>
+      <div class="section-head" style="margin-top:24px;">
+        <h2>${t('upcoming')}</h2>
+        <a href="#/games" class="view-all">${t('viewAllShort')}</a>
+      </div>
+      <div id="home-upcoming" class="games-list"></div>
+    </div>`;
+
+  const [notifs, games] = await Promise.all([
+    currentUser ? store.loadNotifications(currentUser.id) : Promise.resolve([]),
+    store.loadAllGames()
+  ]);
+  homeGamesCache = games;
+  if (currentUser) {
+    renderNotifications(notifs);
+    if (store.isUsingFirebase()) {
+      const unsub = store.onNotificationsChanged(currentUser.id, renderNotifications);
+      if (unsub) activeUnsubs.push(unsub);
+    }
+  }
+  renderHomeNews();
+  renderNextGameFeature(games);
+  renderHomeStats(games);
+  renderHomeUpcoming(games);
+
+  if (store.isUsingFirebase()) {
+    const unsub = store.onAllGamesChanged((gs) => {
+      homeGamesCache = gs;
+      renderNextGameFeature(gs);
+      renderHomeStats(gs);
+      renderHomeUpcoming(gs);
+    });
+    if (unsub) activeUnsubs.push(unsub);
+    const unsubNews = store.onNewsChanged((items) => renderHomeNews(items));
+    if (unsubNews) activeUnsubs.push(unsubNews);
+  }
 
   maybeShowOnboarding();
+}
+
+// Home news carousel — driven by admin-managed news (image · title · link).
+// Falls back to a branded welcome card when there are no items.
+async function renderHomeNews(items) {
+  const host = document.getElementById('home-news');
+  if (!host) return;
+  if (items === undefined) {
+    try { items = await store.loadNews(); } catch (_) { items = []; }
+  }
+  if (!items || items.length === 0) {
+    host.innerHTML = `
+      <div class="news-carousel">
+        <div class="feature-card news-card">
+          <span class="pill-soft news-pill">${t('newsTag')}</span>
+          <div class="news-title">${t('newsWelcomeTitle')}</div>
+        </div>
+      </div>`;
+    return;
+  }
+  host.innerHTML = `
+    <div class="news-carousel">
+      ${items.map(n => {
+        const bg = n.imageUrl
+          ? `style="background-image:linear-gradient(to top, rgba(6,18,35,0.93) 0%, rgba(6,18,35,0.35) 55%, rgba(6,18,35,0.12) 100%), url('${esc(n.imageUrl)}'); background-size:cover; background-position:center;"`
+          : '';
+        const inner = `<span class="pill-soft news-pill">${t('newsTag')}</span><div class="news-title">${esc(n.title || '')}</div>`;
+        return n.link
+          ? `<a class="feature-card news-card has-img" href="${esc(n.link)}" target="_blank" rel="noopener" ${bg}>${inner}</a>`
+          : `<div class="feature-card news-card ${n.imageUrl ? 'has-img' : ''}" ${bg}>${inner}</div>`;
+      }).join('')}
+    </div>`;
+}
+
+// Global sponsor banner — admin-managed image (+ optional link), shown on every
+// user-facing page (hidden on auth/kitchen and when unset).
+async function renderGlobalSponsor(data) {
+  const host = document.getElementById('global-sponsor');
+  if (!host) return;
+  if (data === undefined) {
+    try { data = await store.loadSponsor(); } catch (_) { data = null; }
+  }
+  if (!data || !data.imageUrl) {
+    host.innerHTML = '';
+    host.dataset.has = '0';
+  } else {
+    const img = `<img src="${esc(data.imageUrl)}" alt="${t('sponsorLabel')}" class="sponsor-img" style="object-position:${data.posX ?? 50}% ${data.posY ?? 50}%;" />`;
+    host.innerHTML = data.link
+      ? `<a href="${esc(data.link)}" target="_blank" rel="noopener" class="sponsor-banner">${img}</a>`
+      : `<div class="sponsor-banner">${img}</div>`;
+    host.dataset.has = '1';
+  }
+  updateGlobalSponsorVisibility(location.hash || '#/');
+}
+
+function updateGlobalSponsorVisibility(hash) {
+  const host = document.getElementById('global-sponsor');
+  if (!host) return;
+  const hide = isKiosk || !currentUser || hash === '#/kitchen' || host.dataset.has !== '1';
+  host.classList.toggle('hidden', hide);
+}
+
+// 3 stat tiles from real data (games joined/created, following, followers).
+function renderHomeStats(games) {
+  const host = document.getElementById('home-stats');
+  if (!host) return;
+  const myCount = (games || []).filter(isMyGame).length;
+  const following = Object.keys(currentUserFollows || {}).length;
+  const followers = currentUserFollowers?.size || 0;
+  host.innerHTML = `
+    <div class="stat-row">
+      <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myCount}</div></div>
+      <div class="stat-tile"><div class="st-label">${t('statFollowing')}</div><div class="st-value">${following}</div></div>
+      <a href="#/users" class="stat-tile" style="text-decoration:none;"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></a>
+    </div>`;
+}
+
+// Upcoming games (nearest first) as surface list rows.
+function renderHomeUpcoming(games) {
+  const host = document.getElementById('home-upcoming');
+  if (!host) return;
+  const now = Date.now();
+  const up = (games || [])
+    .filter(g => g.date && g.time)
+    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
+    .filter(x => !isNaN(x.ms) && x.ms >= now)
+    .sort((a, b) => a.ms - b.ms)
+    .slice(0, 5)
+    .map(x => x.g);
+  if (up.length === 0) {
+    host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${icon('play', { size: 36 })}</p><p>${t('noGames')}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;gap:8px;">${icon('create', { size: 16 })} ${t('createGame')}</a></div>`;
+    return;
+  }
+  host.innerHTML = up.map(g => {
+    const slots = g.groupSize * ensureGroups(g.groups).length;
+    return `
+      <a href="#/game/${g.id}" class="list-row">
+        <div class="tile-icon">${icon('play', { size: 20 })}</div>
+        <div class="lr-body">
+          <div class="lr-title">${esc(g.location || '-')}</div>
+          ${g.creatorName ? `<div class="lr-sub" style="display:flex;align-items:center;gap:5px;">${icon('profile', { size: 12 })} ${esc(g.creatorName)}</div>` : ''}
+          <div class="lr-sub">${formatDate(g.date)} · ${g.time}</div>
+        </div>
+        <span class="pill-soft">${countAllPlayers(g)}/${slots}</span>
+      </a>`;
+  }).join('');
+}
+
+// ---- Games View (#/games) — the full games browser with a title + FAB ----
+async function renderGames() {
+  homeFilter = 'all';
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="page-head" style="align-items:center;">
+        <h2 class="page-title">${t('gamesTitle')}</h2>
+        <a href="#/create" class="fab-gold" title="${t('createGame')}">${icon('create', { size: 22 })}</a>
+      </div>
+      ${gamesBrowserHTML('all')}
+    </div>`;
+  const games = await store.loadAllGames();
+  renderGamesHome(games);
+  wireGamesBrowser();
+}
+
+// ---- Services hub (#/services) ----
+async function renderServices() {
+  const svc = (iconName, title, desc) => `
+    <div class="svc-tile">
+      <div class="svc-ic">${icon(iconName, { size: 21 })}</div>
+      <div class="svc-name">${title}</div>
+      <div class="svc-desc">${desc}</div>
+    </div>`;
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="page-head"><div>
+        <h2 class="page-title">${t('svTitle')}</h2>
+        <p class="page-sub">${t('svSub')}</p>
+      </div></div>
+      <a href="#/menu" class="feature-card svc-food" style="display:block; text-decoration:none;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>Mt. Bogd restaurant</span>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:14px;">
+          <div style="flex:1; min-width:0;">
+            <div class="fc-title">${t('svFood')}</div>
+            <div class="fc-sub" style="margin-top:6px;">${t('svFoodDesc')}</div>
+          </div>
+          <div class="svc-food-ic">${icon('dining', { size: 30 })}</div>
+        </div>
+        <span class="fc-cta" style="margin-top:16px;">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </a>
+      <div class="svc-grid">
+        ${svc('time', t('svTee'), t('svTeeDesc'))}
+        ${svc('ball-tee', t('svRent'), t('svRentDesc'))}
+        ${svc('handicap', t('svCoach'), t('svCoachDesc'))}
+        ${svc('pro-shop', t('svShop'), t('svShopDesc'))}
+        <div class="list-row svc-event">
+          <div class="svc-ic">${icon('bookings', { size: 21 })}</div>
+          <div class="lr-body"><div class="lr-title">${t('svEvent')}</div><div class="lr-sub">${t('svEventDesc')}</div></div>
+          <span class="lr-chev">${icon('next', { size: 18 })}</span>
+        </div>
+      </div>
+    </div>`;
+  // The non-food services aren't built yet — hint instead of dead-ending.
+  document.querySelectorAll('.svc-tile, .svc-event').forEach(el => {
+    el.addEventListener('click', () => showToast(t('comingSoon'), 'info'));
+  });
+}
+
+// Count notifications that haven't expired (game start passed).
+function activeNotifCount(notifs) {
+  if (!notifs) return 0;
+  const now = Date.now();
+  return notifs.filter(n => {
+    if (!n.gameDate || !n.gameTime) return true;
+    return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() >= now;
+  }).length;
+}
+
+// Unread badge on the header bell (shown on every page).
+function updateBellBadge(count) {
+  const b = document.getElementById('header-bell-badge');
+  if (!b) return;
+  if (count > 0) { b.textContent = count > 99 ? '99+' : String(count); b.classList.remove('hidden'); }
+  else { b.classList.add('hidden'); }
 }
 
 function renderNotifications(notifs) {
@@ -648,13 +877,13 @@ function renderNotifications(notifs) {
   container.innerHTML = `
     <div class="section">
       <button id="notif-toggle-btn" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;padding:0;margin-bottom:${isOpen ? '10px' : '0'};">
-        <h2 class="section-title" style="margin:0;">🔔 ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
+        <h2 class="section-title" style="margin:0;display:flex;align-items:center;gap:8px;">${icon('alerts', { size: 18 })} ${t('pendingNotifications')} <span class="notif-badge">${active.length}</span></h2>
         <span style="color:var(--text-secondary);font-size:0.9rem;">${isOpen ? '▲' : '▼'}</span>
       </button>
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
-            const icon = n.type === 'invite' ? '🏌️' : n.type === 'player_joined' ? '👤' : n.type === 'player_left' ? '👋' : n.type === 'game_updated' ? '✏️' : n.type === 'game_deleted' ? '🗑️' : '⛳';
+            const icName = n.type === 'invite' ? 'play' : n.type === 'player_joined' ? 'members' : n.type === 'player_left' ? 'members' : n.type === 'game_updated' ? 'edit' : n.type === 'game_deleted' ? 'alerts' : 'play';
             const title = n.type === 'invite' ? t('inviteNotif')
               : n.type === 'new_game' ? t('newGameNotif')
               : n.type === 'player_joined' ? `${n.from} ${t('playerJoined')}`
@@ -671,7 +900,7 @@ function renderNotifications(notifs) {
             return `
             <div class="notif-item glass-card">
               <div class="notif-content">
-                <span class="notif-icon">${icon}</span>
+                <span class="notif-icon">${icon(icName, { size: 18 })}</span>
                 <div>
                   <div class="notif-title">${title}</div>
                   <div class="notif-sub">${sub}</div>
@@ -706,6 +935,58 @@ function renderNotifications(notifs) {
       await store.deleteNotification(currentUser.id, btn.dataset.id);
     });
   });
+}
+
+function isMyGame(g) {
+  if (!currentUser) return false;
+  if (g.createdBy === currentUser.id) return true;
+  const inGroups = ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).some(p => p?.id === currentUser.id);
+  if (inGroups) return true;
+  return ensureArray(g.waitingList).some(p => p?.id === currentUser.id);
+}
+
+// Prototype "next game" hero — the user's nearest upcoming game they're part of.
+function renderNextGameFeature(games) {
+  const host = document.getElementById('next-game-feature');
+  if (!host) return;
+  const now = Date.now();
+  const mine = (games || [])
+    .filter(g => isMyGame(g) && g.date && g.time)
+    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
+    .filter(x => x.ms >= now)
+    .sort((a, b) => a.ms - b.ms);
+  if (mine.length === 0) { host.innerHTML = ''; return; }
+  const g = mine[0].g;
+  const groups = ensureGroups(g.groups);
+  const totalPlayers = countAllPlayers(g);
+  const totalSlots = g.groupSize * groups.length;
+  const players = groups.flatMap(grp => ensureArray(grp)).filter(p => p?.id || p?.name);
+  const shown = players.slice(0, 4);
+  const more = Math.max(0, totalPlayers - shown.length);
+  const avStack = shown.map(p => {
+    const u = allUsersMap[p.id];
+    const ch = (u && u.avatar) || (p.name || '?').charAt(0).toUpperCase();
+    return `<span class="fc-av">${esc(ch)}</span>`;
+  }).join('') + (more > 0 ? `<span class="fc-av fc-av-more">+${more}</span>` : '');
+  return host.innerHTML = `
+    <a href="#/game/${g.id}" class="feature-card" style="display:block; text-decoration:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>${t('nextGame')}</span>
+        <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">${formatDate(g.date)} · ${g.time}</span>
+      </div>
+      <div class="fc-title">${esc(g.location || '-')}</div>
+      <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.82rem; color:rgba(243,239,228,0.72);">
+        ${icon('location', { size: 14 })}<span>${esc(g.creatorName || '')}</span>
+      </div>
+      <div class="fc-chips">
+        <span class="fc-chip">${icon('members', { size: 13 })} ${g.groupSize} ${t('perGroupUnit')}</span>
+        <span class="fc-chip">${totalPlayers} / ${totalSlots} ${t('players')}</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px;">
+        <div class="fc-avs">${avStack}</div>
+        <span class="fc-cta">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </div>
+    </a>`;
 }
 
 function renderGamesHome(games) {
@@ -772,7 +1053,7 @@ function renderGamesHome(games) {
         </div>
       </div>`).join('');
   } else {
-    activeContainer.innerHTML = `<div class="empty-state"><p>🏌️</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
+    activeContainer.innerHTML = `<div class="empty-state"><p>${icon('play', { size: 40 })}</p><p>${emptyMsg}</p><a href="#/create" class="btn btn-primary" style="margin-top:12px;"><span class="btn-icon-left">+</span> ${t('createFirstGame')}</a></div>`;
   }
 
   if (pastContainer && historyOpen) {
@@ -782,30 +1063,6 @@ function renderGamesHome(games) {
   if (archiveContainer && archiveOpen) {
     archiveContainer.innerHTML = archivedGames.length > 0 ? renderGamesCards(archivedGames, true) : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t('noArchive')}</p>`;
   }
-}
-
-function renderHomeNews(news) {
-  const el = document.getElementById('home-news');
-  if (!el) return;
-  const items = (news || []).filter(n => n && (n.title || n.imageUrl));
-  if (items.length === 0) { el.innerHTML = ''; return; }
-
-  const card = (n) => {
-    const clickable = !!n.link;
-    const tag = clickable ? 'a' : 'div';
-    const href = clickable ? ` href="${esc(n.link)}"${/^https?:/i.test(n.link) ? ' target="_blank" rel="noopener"' : ''}` : '';
-    const bg = n.imageUrl
-      ? `background-image:linear-gradient(180deg, rgba(10,26,15,0.15), rgba(10,26,15,0.85)), url('${esc(n.imageUrl)}');`
-      : 'background:linear-gradient(135deg, var(--emerald-dark), var(--bg-secondary));';
-    return `<${tag} class="news-card"${href} style="${bg}">
-      <span class="news-badge">${t('newsSection')}</span>
-      ${n.title ? `<div class="news-title">${esc(n.title)}</div>` : ''}
-    </${tag}>`;
-  };
-
-  el.innerHTML = items.length === 1
-    ? card(items[0])
-    : `<div class="news-carousel">${items.map(card).join('')}</div>`;
 }
 
 function skeletonCards(n = 3) {
@@ -833,31 +1090,32 @@ function renderGamesCards(games, isPast = false) {
       .filter(p => p?.id && p.id !== currentUser?.id && currentUserFollows[p.id]).length;
     return `
       <a href="#/game/${g.id}" class="game-card glass-card ${isPast ? 'past-game-card' : ''}" id="game-card-${g.id}">
-        <div class="game-card-header">
-          <span class="game-date-badge">${dateStr}</span>
-          <div style="display:flex; gap:6px; align-items:center;">
-            ${g.isPrivate ? `<span style="font-size:0.8rem; opacity:0.7;" title="${t('gamePrivate')}">🔒</span>` : ''}
-            ${gameCommunities.length > 0 ? `<span style="font-size:0.72rem; opacity:0.78;" title="${t('community')}">${communityAudienceLabel(gameCommunities)}</span>` : ''}
+        <div class="gc-top">
+          <div class="tile-icon">${icon('play', { size: 21 })}</div>
+          <div class="gc-headline">
+            <div class="game-location">${esc(g.location || '-')}</div>
+            <div class="gc-meta">
+              ${icon('time', { size: 13 })}<span>${dateStr} · ${g.time}</span>
+            </div>
+            ${g.creatorName ? `<div class="gc-meta">${icon('profile', { size: 13 })}<span>${esc(g.creatorName)}</span></div>` : ''}
+            ${gameCommunities.length > 0 ? `<div class="gc-audience"><span class="pill-soft" title="${esc(communityAudienceLabel(gameCommunities))}">${esc(communityAudienceLabel(gameCommunities))}</span></div>` : ''}
+          </div>
+          <div class="gc-top-right">
+            ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
             <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
           </div>
         </div>
-        <div class="game-card-body">
-          <div class="game-location">📍 ${g.location || '-'}</div>
-          <div style="display: flex; gap: 12px; font-size: 0.9rem; color: var(--text-secondary);">
-            <span>🕐 ${g.time}</span>
-            <span>👤 ${g.creatorName || '-'}</span>
-          </div>
-        </div>
-        <div class="game-card-footer">
+        <div class="gc-foot">
           <div class="game-players-info">
             <div class="player-dots">${renderPlayerDots(g)}</div>
             <span>${totalPlayers} / ${totalSlots} ${t('players')}</span>
           </div>
-          <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
-            <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
-          </div>
-          ${followedCount > 0 ? `<div class="game-card-social">👤 ${followedCount} ${t('followingHere')}</div>` : ''}
+          <span class="gc-chev">${icon('next', { size: 18 })}</span>
         </div>
+        <div class="slot-progress" title="${totalPlayers}/${totalSlots}">
+          <div class="slot-progress-fill ${isFull ? 'full' : ''}" style="width:${fillPct}%;"></div>
+        </div>
+        ${followedCount > 0 ? `<div class="game-card-social">${icon('members', { size: 13 })} ${followedCount} ${t('followingHere')}</div>` : ''}
       </a>`;
   }).join('');
 }
@@ -891,92 +1149,104 @@ async function renderCreateGame() {
   const followedInviteUsers = availableUsers.filter(u => !!currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
+  let selectedHoles = 'full18';
 
   main().innerHTML = `
     <div class="create-container fade-in">
-      <a href="#/" class="back-link" id="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link" id="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
       <div class="create-card glass-card">
         <h2 class="card-title">${t('createGame')}</h2>
         <form id="create-form" class="create-form">
-          <div class="input-group">
-            <label for="game-date">${t('date')}</label>
-            <input type="date" id="game-date" required min="${today}" value="${today}" />
-          </div>
-          <div class="input-group">
-            <label for="game-time">${t('time')}</label>
-            <div style="display: flex; gap: 10px;">
-              <select id="game-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-              <select id="game-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="input-group">
-            <label for="game-location">${t('location')}</label>
-            <select id="game-location" required style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
+          <div class="create-section">
+            <div class="cs-label">${t('location')}</div>
+            <select id="game-location" required style="display:none;">
               <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
               <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
             </select>
+            <div class="course-picker" id="course-picker">
+              ${[['Sky Resort Golf Club', 'Sky Resort'], ['Chinggis Khaan Golf Course', 'Chinggis Khaan']].map(([name, sub], i) => `
+                <button type="button" class="course-row ${i === 0 ? 'selected' : ''}" data-value="${esc(name)}">
+                  <div class="tile-icon">${icon('play', { size: 18 })}</div>
+                  <div class="lr-body"><div class="lr-title">${esc(name)}</div><div class="lr-sub">${esc(sub)}</div></div>
+                  <span class="course-check">${icon('confirm', { size: 15 })}</span>
+                </button>`).join('')}
+            </div>
           </div>
-          <div class="input-group" id="mtbogd-section" style="display:none;">
-            <label>⛳ ${t('bookTeetime')}</label>
-            <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div>
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">${t('bookHoles')}</div>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" id="holes-9-btn" class="btn btn-sm btn-outline" style="min-width:44px;">9</button>
-                  <button type="button" id="holes-18-btn" class="btn btn-sm btn-primary" style="min-width:44px;">18</button>
-                </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('dateTime')}</div>
+            <div class="dt-row">
+              <label class="dt-card" for="game-date">
+                <span class="dt-ic">${icon('bookings', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('date')}</span>
+                  <input type="date" id="game-date" required min="${today}" value="${today}" class="dt-input" />
+                </span>
+              </label>
+              <div class="dt-card" id="time-card">
+                <span class="dt-ic">${icon('time', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('time')}</span>
+                  <span class="dt-time" id="time-manual">
+                    <select id="game-hour" required class="dt-sel">
+                      ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i === 8 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                    </select><span class="dt-colon">:</span><select id="game-minute" required class="dt-sel">
+                      ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}">${m.toString().padStart(2, '0')}</option>`).join('')}
+                    </select>
+                  </span>
+                  <span class="dt-time" id="time-teetime" style="display:none;"><span id="time-teetime-val">${t('bookSelectSlot')}</span></span>
+                </span>
+                <span class="dt-hint" id="time-hint" style="display:none;">${icon('next', { size: 15 })}</span>
               </div>
-              <button type="button" id="fetch-teetimes-btn" class="btn btn-outline" style="flex:1; min-width:160px;">${t('bookViewSlots')}</button>
             </div>
             <div id="selected-slot-display"></div>
           </div>
-          <div class="input-group">
-            <label for="game-group-size">${t('groupSize')}</label>
-            <div class="stepper">
-              <button type="button" class="stepper-btn" id="size-minus">−</button>
-              <input type="number" id="game-group-size" value="${APP_CONFIG.defaultGroupSize}" min="${APP_CONFIG.minGroupSize}" max="${APP_CONFIG.maxGroupSize}" readonly />
-              <button type="button" class="stepper-btn" id="size-plus">+</button>
+
+          <div class="create-section">
+            <div class="cs-label">${t('numHoles')}</div>
+            <div class="chip-row" id="holes-chips">
+              <button type="button" class="seg-chip active" data-holes="full18">${t('holesFull18')}</button>
+              <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
+              <button type="button" class="seg-chip" data-holes="back9" style="display:none;">${t('holesBack9')}</button>
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('gameVisibility')}</div>
+            <input type="hidden" id="game-visibility" value="${myCommunities.length === 0 ? 'public' : 'my-circles'}">
+            <div class="chip-row chip-wrap" id="vis-chips">
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'active' : ''}" data-vis="public">${t('gamePublic')}</button>
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'chip-disabled' : 'active'}" data-vis="my-circles">${t('gameMyCircles')}</button>
+              <button type="button" class="seg-chip ${myCommunities.length === 0 ? 'chip-disabled' : ''}" data-vis="selected-circles">${t('gameSelectedCircles')}</button>
+              <button type="button" class="seg-chip" data-vis="private">${t('gamePrivate')}</button>
+            </div>
+          </div>
+          <div class="input-group" id="game-communities-wrap" style="display:none;">
+            <label>${t('gameCommunity')}</label>
+            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+              ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('groupSize')}</div>
+            <input type="hidden" id="game-group-size" value="4">
+            <div class="chip-row" id="size-chips">
+              ${[1, 2, 3, 4].map(n => `<button type="button" class="seg-chip ${n === 4 ? 'active' : ''}" data-size="${n}">${n}</button>`).join('')}
+            </div>
+          </div>
+          <div class="create-section">
+            <div class="cs-label">${t('invitePlayers')}</div>
+            <div class="invite-wrap">
+              <div id="invite-chips-container" class="invite-avatars"></div>
+              ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="invite-add" title="${t('inviteSelectBtn')}">${icon('create', { size: 16 })}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);margin:0;">${t('noUsersFound')}</p>`}
             </div>
           </div>
           <div class="input-group">
             <label for="game-desc">${t('description')}</label>
             <textarea id="game-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;"></textarea>
           </div>
-          <div class="input-group">
-            <label>${t('gameVisibility')}</label>
-            <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-public-label">
-                <input type="radio" name="visibility" value="public" ${myCommunities.length === 0 ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-my-circles-label">
-                <input type="radio" name="visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : 'checked'} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-selected-circles-label">
-                <input type="radio" name="visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
-              </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="vis-private-label">
-                <input type="radio" name="visibility" value="private" style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
-              </label>
-            </div>
-          </div>
-          <div class="input-group" id="game-communities-wrap" style="display:none;">
-            <label>${t('gameCommunity')}</label>
-            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
-              ${myCommunities.length > 0 ? communityCheckboxes('game-communities', myCommunities, { ids: myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
-            </div>
-          </div>
-          <div class="input-group">
-            <label>${t('invitePlayers')}</label>
-            <div id="invite-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-            ${availableUsers.length > 0 ? `<button type="button" id="open-invite-modal-btn" class="btn btn-outline" style="width:100%;">👥 ${t('inviteSelectBtn')}</button>` : `<p style="font-size:0.8rem; color:var(--text-secondary);">${t('noUsersFound')}</p>`}
-          </div>
-          <div class="form-actions">
-            <a href="#/" class="btn btn-ghost">${t('cancel')}</a>
-            <button type="submit" class="btn btn-primary" id="create-submit-btn">${t('create')}</button>
+          <div class="create-cta-wrap">
+            <button type="submit" class="btn btn-primary create-cta" id="create-submit-btn">${icon('play', { size: 18 })} ${t('createGame')}</button>
+            <a href="#/" class="btn btn-ghost" style="width:100%;">${t('cancel')}</a>
           </div>
         </form>
       </div>
@@ -987,6 +1257,8 @@ async function renderCreateGame() {
 
   function updateSelectedSlotDisplay() {
     const el = document.getElementById('selected-slot-display');
+    const ttVal = document.getElementById('time-teetime-val');
+    if (ttVal && !selectedTeeSlot) ttVal.textContent = t('bookSelectSlot');
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
@@ -996,21 +1268,21 @@ async function renderCreateGame() {
     </div>
     <div style="margin-top:8px;">
       <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
-      <div style="display:flex; gap:10px;">
-        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--emerald); cursor:pointer; background:rgba(76,175,80,0.08); font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="clubhouse" checked> 🏌️ ${t('payClubhouse')}
-        </label>
+      <div class="chip-row" id="create-payment-chips">
+        <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
         ${QPAY_ENABLED
-          ? `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); cursor:pointer; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay"> 📱 ${t('payQpay')}
-        </label>`
-          : `<label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; border:2px solid var(--border-color); opacity:0.45; cursor:not-allowed; pointer-events:none; font-size:0.9rem;">
-          <input type="radio" name="create-payment" value="qpay" disabled> 📱 ${t('payQpay')}
-          <span style="margin-left:auto; font-size:0.7rem; background:rgba(255,165,0,0.2); color:orange; padding:2px 6px; border-radius:10px;">${t('payComingSoon')}</span>
-        </label>`
+          ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
+          : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem; opacity:0.85;">(${t('payComingSoon')})</span></button>`
         }
       </div>
     </div>`;
+    document.querySelectorAll('#create-payment-chips .seg-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (chip.classList.contains('chip-disabled')) return;
+        document.querySelectorAll('#create-payment-chips .seg-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+      });
+    });
     document.getElementById('clear-slot-btn')?.addEventListener('click', () => {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
@@ -1045,7 +1317,7 @@ async function renderCreateGame() {
     modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;">⛳ ${t('bookViewSlots')}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookViewSlots')}</h3>
         <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
       <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
@@ -1076,6 +1348,9 @@ async function renderCreateGame() {
         const [h, m] = (slot.time || '08:00').split(':');
         document.getElementById('game-hour').value = h;
         document.getElementById('game-minute').value = m;
+        const ttVal = document.getElementById('time-teetime-val');
+        if (ttVal) ttVal.textContent = slot.time || `${h}:${m}`;
+        updateValue9Visibility();
         updateSelectedSlotDisplay();
         overlay.remove();
       }
@@ -1095,14 +1370,14 @@ async function renderCreateGame() {
               }).join('')
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
-              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'rgba(255,255,255,0.1)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+              <button type="button" class="ttp-time" data-key="${key}" data-time="${time}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'var(--bg-card-hover)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
                 ${time}${tees.length > 1 ? ` <span style="font-size:0.7rem;color:var(--text-secondary);">·${tees.length}</span>` : ''}
               </button>${teeRow}
             </div>`;
           }).join('')
         }</div>` : '';
         return `<div style="margin-bottom:10px;">
-          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+          <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:var(--bg-card-hover);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
             <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${times.length})</span></span>
             <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
           </button>${body}
@@ -1135,8 +1410,16 @@ async function renderCreateGame() {
 
   function updateMtbogdSectionVisibility() {
     const loc = document.getElementById('game-location').value;
-    const section = document.getElementById('mtbogd-section');
-    if (section) section.style.display = loc === MTBOGD_CONFIG.locationName ? 'block' : 'none';
+    const isMt = loc === MTBOGD_CONFIG.locationName;
+    // MTBogd course → tapping the Time card opens the tee-time picker (hide the
+    // manual hour:min selects). Other courses → manual time selects.
+    const manual = document.getElementById('time-manual');
+    const teetime = document.getElementById('time-teetime');
+    if (manual) manual.style.display = isMt ? 'none' : 'flex';
+    if (teetime) teetime.style.display = isMt ? 'flex' : 'none';
+    const hint = document.getElementById('time-hint');
+    if (hint) hint.style.display = isMt ? 'flex' : 'none';
+    document.getElementById('time-card')?.classList.toggle('tappable', isMt);
     if (loc !== MTBOGD_CONFIG.locationName) {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
@@ -1148,7 +1431,45 @@ async function renderCreateGame() {
   document.getElementById('game-location').addEventListener('change', () => {
     updateMtbogdSectionVisibility();
   });
+  // Course picker rows drive the hidden <select>.
+  document.querySelectorAll('#course-picker .course-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('#course-picker .course-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+      const sel = document.getElementById('game-location');
+      sel.value = row.dataset.value;
+      sel.dispatchEvent(new Event('change'));
+    });
+  });
   updateMtbogdSectionVisibility();
+
+  // Holes chips set both the game's holes field and the tee-time API holes.
+  document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#holes-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedHoles = chip.dataset.holes;
+      teeHoles = selectedHoles === 'full18' ? 18 : 9;
+      prefetchTeeTimes();
+    });
+  });
+
+  // "Value9" (back9) is only offered for tee times from 16:00 onward.
+  function updateValue9Visibility() {
+    const hour = parseInt(document.getElementById('game-hour')?.value || '0', 10);
+    const chip = document.querySelector('#holes-chips .seg-chip[data-holes="back9"]');
+    if (!chip) return;
+    const show = hour >= 16;
+    chip.style.display = show ? '' : 'none';
+    if (!show && chip.classList.contains('active')) {
+      document.querySelectorAll('#holes-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      document.querySelector('#holes-chips .seg-chip[data-holes="full18"]')?.classList.add('active');
+      selectedHoles = 'full18';
+      teeHoles = 18;
+    }
+  }
+  document.getElementById('game-hour')?.addEventListener('change', updateValue9Visibility);
+  updateValue9Visibility();
 
   document.getElementById('game-date').addEventListener('change', () => {
     selectedTeeSlot = null;
@@ -1156,53 +1477,44 @@ async function renderCreateGame() {
     prefetchTeeTimes();
   });
 
-  document.getElementById('holes-9-btn')?.addEventListener('click', () => {
-    teeHoles = 9;
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-outline';
-    prefetchTeeTimes();
-  });
-  document.getElementById('holes-18-btn')?.addEventListener('click', () => {
-    teeHoles = 18;
-    document.getElementById('holes-18-btn').className = 'btn btn-sm btn-primary';
-    document.getElementById('holes-9-btn').className = 'btn btn-sm btn-outline';
-    prefetchTeeTimes();
+  // Tapping the Time card opens the tee-time slot picker (only for MTBogd course).
+  document.getElementById('time-card')?.addEventListener('click', (e) => {
+    if (e.target.closest('select')) return; // let the manual time selects work
+    if (document.getElementById('game-location').value === MTBOGD_CONFIG.locationName) {
+      openTeeTimePopup();
+    }
   });
 
-  document.getElementById('fetch-teetimes-btn')?.addEventListener('click', openTeeTimePopup);
-
+  // Group-size segmented chips → hidden #game-group-size value.
   const sizeInput = document.getElementById('game-group-size');
-  document.getElementById('size-minus').addEventListener('click', () => {
-    sizeInput.value = Math.max(APP_CONFIG.minGroupSize, +sizeInput.value - 1);
-    prefetchTeeTimes();
-  });
-  document.getElementById('size-plus').addEventListener('click', () => {
-    sizeInput.value = Math.min(APP_CONFIG.maxGroupSize, +sizeInput.value + 1);
-    prefetchTeeTimes();
-  });
-  document.querySelectorAll('input[name="visibility"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const visibility = document.querySelector('input[name="visibility"]:checked').value;
-      document.getElementById('vis-public-label').style.borderColor = visibility === 'public' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-my-circles-label').style.borderColor = visibility === 'my-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-selected-circles-label').style.borderColor = visibility === 'selected-circles' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('vis-private-label').style.borderColor = visibility === 'private' ? 'var(--emerald)' : 'transparent';
-      document.getElementById('game-communities-wrap').style.display = visibility === 'selected-circles' ? 'block' : 'none';
+  document.querySelectorAll('#size-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#size-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      sizeInput.value = chip.dataset.size;
+      prefetchTeeTimes();
     });
   });
-  if (myCommunities.length > 0) {
-    document.getElementById('vis-my-circles-label').style.borderColor = 'var(--emerald)';
-  } else {
-    document.getElementById('vis-public-label').style.borderColor = 'var(--emerald)';
-  }
+  // Visibility segmented chips → hidden #game-visibility value.
+  const visInput = document.getElementById('game-visibility');
+  document.querySelectorAll('#vis-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (chip.classList.contains('chip-disabled')) return;
+      document.querySelectorAll('#vis-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      visInput.value = chip.dataset.vis;
+      document.getElementById('game-communities-wrap').style.display = chip.dataset.vis === 'selected-circles' ? 'block' : 'none';
+    });
+  });
 
   function refreshInviteChips() {
     const container = document.getElementById('invite-chips-container');
     if (!container) return;
     container.innerHTML = selectedInviteIds.map(id => {
       const u = availableById[id];
+      const ch = (u && u.avatar) || (u ? displayUsername(u).charAt(0).toUpperCase() : '?');
       const name = u ? displayUsername(u) : id;
-      return `<span style="background:rgba(255,255,255,0.1);border:1px solid var(--border-color);border-radius:16px;padding:4px 10px;font-size:0.85rem;display:inline-flex;align-items:center;gap:4px;">${name}<button type="button" class="rm-invite-chip" data-id="${id}" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;line-height:1;padding:0 2px;">×</button></span>`;
+      return `<button type="button" class="invite-av rm-invite-chip" data-id="${id}" title="${esc(name)}">${esc(ch)}</button>`;
     }).join('');
     container.querySelectorAll('.rm-invite-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1243,7 +1555,7 @@ async function renderCreateGame() {
 
     const groupSize = +document.getElementById('game-group-size').value;
     const invitedIds = [...selectedInviteIds];
-    const visibility = document.querySelector('input[name="visibility"]:checked').value;
+    const visibility = document.getElementById('game-visibility').value;
     const isPrivate = visibility === 'private';
     const targetCommunities = visibility === 'my-circles'
       ? userCommunityIds(currentUser)
@@ -1258,7 +1570,7 @@ async function renderCreateGame() {
     }
 
     // Payment method (only meaningful when a tee slot is selected).
-    const teePayMethod = document.querySelector('input[name="create-payment"]:checked')?.value || 'clubhouse';
+    const teePayMethod = document.querySelector('#create-payment-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
     const useQpayTee = QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
 
     let bookingCode = null;
@@ -1297,6 +1609,7 @@ async function renderCreateGame() {
       location: document.getElementById('game-location').value.trim(),
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
+      holes: selectedHoles,
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
@@ -1375,7 +1688,7 @@ async function renderGameDetail(gameId) {
     const game = await Promise.race([loadDataPromise, timeoutPromise]);
 
     if (!game) {
-      main().innerHTML = `<div class="empty-state"><p>❌</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
+      main().innerHTML = `<div class="empty-state"><p>${icon('alerts', { size: 40 })}</p><p>${t('gameDeleted')}</p><a href="#/" class="btn btn-primary">${t('back')}</a></div>`;
       return;
     }
 
@@ -1431,30 +1744,30 @@ function renderGameView(game) {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link" id="back-link-detail">← ${t('back')}</a>
-      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
-      
+      <a href="#/" class="back-link" id="back-link-detail">${icon('back', { size: 16 })} ${t('back')}</a>
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px; gap:5px;">${icon('settings', { size: 15 })} Admin</a>` : ''}
+
       <div class="detail-header glass-card">
         <div class="detail-header-top">
           <span class="game-date-badge large">${dateStr}</span>
           <div style="display:flex; gap: 8px;">
-            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm">✏️ Edit</a>` : ''}
+            ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('edit', { size: 14 })} Edit</a>` : ''}
             ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title">📍 ${game.location} ${game.isPrivate ? '<span style="font-size:1rem; opacity:0.8;" title="' + t('gamePrivate') + '">🔒</span>' : ''} ${gameCommunities.length > 0 ? '<span style="font-size:0.9rem; opacity:0.8;">◎ ' + communityAudienceLabel(gameCommunities) + '</span>' : ''}</h2>
+        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''}</h2>
         <div class="detail-meta">
-          <span>🕐 ${game.time}</span>
-          <span>👤 ${t('createdBy')}: ${game.creatorName || '-'}</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;">${icon('time', { size: 15 })} ${game.time}</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;">${icon('profile', { size: 15 })} ${t('createdBy')}: ${esc(game.creatorName || '-')}</span>
         </div>
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
-          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn">✉️ ${t('inviteBtn')}</button>` : ''}
-          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn">⛳ ${t('bookTeeTimeBtn')}</button>` : ''}
-          <button class="btn btn-outline" id="share-viber-btn">📱 ${t('shareViber')}</button>
-          <button class="btn btn-outline" id="copy-link-btn">🔗 ${t('copyLink')}</button>
-          <a href="#/order/${game.id}" class="btn btn-outline">🍽️ ${t('orderFood')}</a>
+          ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn" style="gap:6px;">${icon('members', { size: 16 })} ${t('inviteBtn')}</button>` : ''}
+          ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
+          <button class="btn btn-outline" id="share-viber-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('shareViber')}</button>
+          <button class="btn btn-outline" id="copy-link-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('copyLink')}</button>
+          <a href="#/order/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('dining', { size: 16 })} ${t('orderFood')}</a>
         </div>
         ${(() => {
           const wIdx = waitingList.findIndex(p => p?.id === currentUser?.id);
@@ -1463,16 +1776,16 @@ function renderGameView(game) {
             : '';
         })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
-        ${game.description ? `<div class="game-description"><span class="desc-label">📋 Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
+        ${game.description ? `<div class="game-description"><span class="desc-label">${icon('scorecard', { size: 13 })} Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">🏌️ ${t('bookCode')}</span>
+            <span class="desc-label">${icon('ball-tee', { size: 13 })} ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
             ${game.bookingId ? `<span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">ID:${game.bookingId}</span>` : ''}
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
-            <span class="desc-label">✉️ ${t('manageInvites')} (${game.invitedIds.length})</span>
+            <span class="desc-label">${icon('members', { size: 13 })} ${t('manageInvites')} (${game.invitedIds.length})</span>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
               ${game.invitedIds.map(uid => {
                 const u = allUsersMap[uid];
@@ -1488,7 +1801,7 @@ function renderGameView(game) {
 
       ${waitingList.length > 0 ? `
         <div class="group-card glass-card waiting-card">
-          <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
+          <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 16 })} ${t('waitingList')} (${waitingList.length})</h3>
           <div class="player-list">
             ${waitingList.map((p, idx) => {
     const isFollowing = !!currentUserFollows[p.id];
@@ -1501,7 +1814,7 @@ function renderGameView(game) {
                 <span class="player-order">${idx + 1}</span>
                 <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</span>
                 <span class="player-name">${displayUsername(allUsersMap[p.id] || p)}${tag}</span>
-                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>
+                <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>
               </div>`;
   }).join('')}
           </div>
@@ -1582,8 +1895,8 @@ function renderGroupCard(players, groupIndex, game, isPast) {
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
-            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💳</button>` : ''}
-            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+            ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">${icon('card', { size: 17 })}</button>` : ''}
+            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
           </div>
         </div>`);
     } else {
@@ -1601,7 +1914,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
-        <h3 class="group-title">🏌️ ${t('group')} ${groupIndex + 1}</h3>
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('play', { size: 16 })} ${t('group')} ${groupIndex + 1}</h3>
         <div style="display:flex;align-items:center;gap:8px;">
           ${canDirectAdd ? `<button class="add-to-group-btn" data-group="${groupIndex}" style="background:none;border:1px solid var(--accent-color);color:var(--accent-color);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.82rem;">+ Нэмэх</button>` : ''}
           <span class="group-count ${isFull ? 'count-full' : ''}">${filledCount}/${groupSize}</span>
@@ -1628,7 +1941,7 @@ function showJoinConfirmModal(game) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:420px;">
-      <h3 class="modal-title">📋 Тайлбар</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('scorecard', { size: 18 })} Тайлбар</h3>
       <p style="margin:12px 0 16px; line-height:1.6; color:var(--text-primary);">${esc(game.description)}</p>
       <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:20px; color:var(--text-primary);">
         <input type="checkbox" id="join-agree-check" style="width:18px; height:18px; cursor:pointer;" />
@@ -1872,7 +2185,7 @@ async function renderAdminPanel() {
       .sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
     const isOpen = openCircles.has(circle.id);
     return `
-    <div style="margin-bottom:16px; background:rgba(255,255,255,0.05); border-radius:10px; padding:14px;">
+    <div style="margin-bottom:16px; background:var(--bg-card-hover); border-radius:10px; padding:14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
         <button type="button" class="circle-toggle-btn" data-circle="${circle.id}" style="flex:1; min-width:140px; display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--text-primary); padding:0; cursor:pointer; text-align:left;">
           <span style="color:var(--text-secondary); font-size:0.85rem;">${isOpen ? '▲' : '▼'}</span>
@@ -1891,10 +2204,10 @@ async function renderAdminPanel() {
         ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Гишүүн байхгүй</p>`
         : `<div style="display:flex; flex-direction:column; gap:5px;">
             ${members.map(u => `
-              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:6px;">
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--bg-card-hover); border-radius:6px;">
                 <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
-                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">❌</button>
+                <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">${icon('close', { size: 14 })}</button>
               </div>`).join('')}
           </div>`}
       </div>
@@ -1903,21 +2216,28 @@ async function renderAdminPanel() {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <a href="#/" class="back-link">← ${t('back')}</a>
+      <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="page-head" style="margin-top:12px;">
+        <h2 class="page-title">${t('adminTitle')}</h2>
+      </div>
+      <div class="stat-grid" style="margin-bottom:18px;">
+        <div class="stat-tile navy"><div class="st-label">${t('users')}</div><div class="st-value">${nonAdminUsers.length}</div></div>
+        <div class="stat-tile"><div class="st-label">${t('community')}</div><div class="st-value">${COMMUNITY_OPTIONS.length}</div></div>
+        <div class="stat-tile"><div class="st-label">Admin / Marshal</div><div class="st-value">${users.filter(u => u.role === 'admin' || u.role === 'marshal').length}</div></div>
+        <div class="stat-tile"><div class="st-label">Hold</div><div class="st-value">${users.filter(u => u.status === 'hold').length}</div></div>
+      </div>
       <div class="glass-card" style="margin-bottom: 20px;">
-        <h2 class="card-title">🛡️ Admin Panel</h2>
-
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
-          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm">👤 Тоглогчид</button>
-          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm">◎ Тойрог</button>
-          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">🚫 Тойроггүй</button>
-          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm">🔍 Хэрэглэгч</button>
-          <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm">🍽️ ${t('menuManage')}</button>
-          <button id="admin-tab-btn-news" class="btn btn-outline btn-sm">📰 ${t('newsManage')}</button>
+          <button id="admin-tab-btn-users" class="btn btn-primary btn-sm" style="gap:5px;">${icon('profile', { size: 14 })} Тоглогчид</button>
+          <button id="admin-tab-btn-circles" class="btn btn-outline btn-sm" style="gap:5px;">${icon('members', { size: 14 })} Тойрог</button>
+          <button id="admin-tab-btn-nocircle" class="btn btn-outline btn-sm">Тойроггүй</button>
+          <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm" style="gap:5px;">${icon('search', { size: 14 })} Хэрэглэгч</button>
+          <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm" style="gap:5px;">${icon('dining', { size: 14 })} ${t('menuManage')}</button>
+          <button id="admin-tab-btn-news" class="btn btn-outline btn-sm" style="gap:5px;">${icon('alerts', { size: 14 })} ${t('newsManage')}</button>
         </div>
 
         <div id="admin-tab-users">
-          <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <div style="background: var(--bg-card-hover); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
             <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
               <h3 style="margin:0;">${t('createUser')}</h3>
               <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
@@ -1926,7 +2246,7 @@ async function renderAdminPanel() {
               <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-              <div style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
+              <div style="width:100%;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
                 <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
                 ${communityCheckboxes('new-user-communities', [])}
               </div>
@@ -1941,14 +2261,14 @@ async function renderAdminPanel() {
             </div>
             <div style="display:flex; flex-direction: column; gap: 8px;">
               ${users.map(u => `
-                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: var(--bg-card-hover); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
                   <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
                     <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
                   </div>
                   <div style="margin-left: auto; display: flex; gap: 8px;">
-                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}">✏️ Засах</button>
+                    <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}" style="gap:5px;">${icon('edit', { size: 14 })} Засах</button>
                     ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
                   </div>
                 </div>
@@ -1971,13 +2291,13 @@ async function renderAdminPanel() {
               <p style="margin:0 0 12px; color:var(--text-secondary); font-size:0.85rem;">${noCircle.length} тоглогч ямар ч тойрогт ороогүй байна.</p>
               <div style="display:flex; flex-direction:column; gap:8px;">
                 ${noCircle.map(u => `
-                  <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:8px; padding:10px;">
+                  <div style="display:flex; align-items:center; gap:8px; background:var(--bg-card-hover); border-radius:8px; padding:10px;">
                     <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
                     <div style="flex:1;">
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
                       <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
                     </div>
-                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}">✏️ Засах</button>
+                    <button class="btn btn-sm btn-outline edit-user-btn-nc" data-id="${u.id}" style="gap:5px;">${icon('edit', { size: 14 })} Засах</button>
                   </div>`).join('')}
               </div>`;
           })()}
@@ -2073,13 +2393,13 @@ async function renderAdminPanel() {
     deleted.sort((a,b) => b.gMs - a.gMs);
 
     const renderRow = ({ g, isCreator }, showRestore = false) => {
-      const role = isCreator ? '✍️' : '🏌️';
+      const role = isCreator ? icon('edit', { size: 13 }) : icon('play', { size: 13 });
       const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
-      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:rgba(255,255,255,0.05); border-radius:8px; flex-wrap:wrap;">
+      return `<div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-card-hover); border-radius:8px; flex-wrap:wrap;">
         <span style="font-size:1rem;">${role}</span>
         <div style="flex:1; min-width:140px;">
           <div style="font-size:0.9rem;">${formatDate(g.date)} ${g.time}${deletedLabel}</div>
-          <div style="font-size:0.8rem; color:var(--text-secondary);">📍 ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
+          <div style="font-size:0.8rem; color:var(--text-secondary);display:flex;align-items:center;gap:4px;">${icon('location', { size: 12 })} ${g.location || '—'} · ${g.creatorName || '—'} үүсгэсэн</div>
         </div>
         <a href="#/game/${g.id}" class="btn btn-sm btn-outline" style="font-size:0.8rem;">Харах</a>
         ${showRestore ? `<button class="btn btn-sm btn-primary restore-game-btn" data-id="${g.id}" style="font-size:0.8rem;">↩ Сэргээх</button>` : ''}
@@ -2125,7 +2445,7 @@ async function renderAdminPanel() {
       </div>`).join('');
     lookupDropdown.style.display = 'block';
     lookupDropdown.querySelectorAll('.lookup-item').forEach(item => {
-      item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.07)');
+      item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-card-hover)');
       item.addEventListener('mouseleave', () => item.style.background = '');
       item.addEventListener('click', () => {
         const u = sortedLookupUsers.find(x => x.id === item.dataset.id);
@@ -2259,11 +2579,11 @@ function showAdminEditUserModal(user, onSaved) {
   const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:480px;">
-      <h3 class="modal-title">✏️ ${user.name} засах</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('edit', { size: 18 })} ${user.name} засах</h3>
 
       <div class="input-group">
         <label>Аватар</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;background:var(--bg-card-hover);padding:10px;border-radius:8px;">
           ${avatars.map(a => `<div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size:1.4rem;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;${user.avatar === a ? 'background:var(--primary-color);' : ''}">${a}</div>`).join('')}
         </div>
       </div>
@@ -2284,7 +2604,7 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>${t('communities')}</label>
-        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
           ${communityCheckboxes('ae-communities', userCommunityIds(user))}
         </div>
       </div>
@@ -2312,7 +2632,7 @@ function showAdminEditUserModal(user, onSaved) {
         </select>
       </div>
 
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);">
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-card);">
         <h4 style="margin-bottom:8px;color:var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
@@ -2408,7 +2728,7 @@ async function renderUsersList() {
           <span class="player-name">${displayUsername(u)}${tag}</span>
           <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(u.bankName) || t('unknownBank'))}</span>
         </button>
-        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="font-size:1.2rem;cursor:pointer;">💳</button>` : ''}
+        ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="cursor:pointer;display:inline-flex;align-items:center;">${icon('card', { size: 18 })}</button>` : ''}
       </div>`;
   }
 
@@ -2429,14 +2749,18 @@ async function renderUsersList() {
 
   main().innerHTML = `
     <div class="detail-container fade-in">
-      <div class="hero-section" style="padding: 20px 0 30px;">
-        <h2 class="hero-title">👥 ${t('usersListTitle')}</h2>
-        <p class="hero-subtitle">${t('usersListSub')}</p>
+      <div class="page-head">
+        <div>
+          <h2 class="page-title">${t('usersListTitle')}</h2>
+          <p class="page-sub">${t('usersListSub')}</p>
+        </div>
+        <span class="pill-soft">${sortedUsers.length}</span>
       </div>
 
       <!-- Search -->
-      <div class="glass-card" style="padding:10px;margin-bottom:16px;">
-        <input type="search" id="user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
+      <div class="search-field">
+        ${icon('search', { size: 18 })}
+        <input type="search" id="user-search-input" placeholder="${t('usersListTitle')}…" autocomplete="off" />
       </div>
 
       <!-- Search results (hidden unless searching) -->
@@ -2470,7 +2794,7 @@ async function renderUsersList() {
       </div>
 
       <div style="margin-top:20px;text-align:center;">
-        <a href="#/" class="btn btn-ghost">← ${t('back')}</a>
+        <a href="#/" class="btn btn-ghost" style="gap:6px;">${icon('back', { size: 16 })} ${t('back')}</a>
       </div>
     </div>`;
 
@@ -2600,9 +2924,9 @@ async function renderEditGame(gameId) {
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/game/${game.id}" class="back-link">← ${t('back')}</a>
-      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px;">⚙️ Admin панель</a>` : ''}
+      ${currentUser?.role === 'admin' ? `<a href="#/admin" class="back-link" style="margin-left:12px; gap:5px;">${icon('settings', { size: 15 })} Admin панель</a>` : ''}
       <div class="create-card glass-card">
-        <h2 class="card-title">✏️ Edit Game</h2>
+        <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('edit', { size: 20 })} Edit Game</h2>
         <form id="edit-form" class="create-form">
           <div class="input-group">
             <label for="edit-date">${t('date')}</label>
@@ -2641,23 +2965,23 @@ async function renderEditGame(gameId) {
           <div class="input-group">
             <label>${t('gameVisibility')}</label>
             <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-public-label">
                 <input type="radio" name="edit-visibility" value="public" ${currentVisibility === 'public' ? 'checked' : ''} style="width:16px; height:16px;"> 🌐 ${t('gamePublic')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-my-circles-label">
                 <input type="radio" name="edit-visibility" value="my-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'my-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◎ ${t('gameMyCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-selected-circles-label">
                 <input type="radio" name="edit-visibility" value="selected-circles" ${myCommunities.length === 0 ? 'disabled' : ''} ${currentVisibility === 'selected-circles' ? 'checked' : ''} style="width:16px; height:16px;"> ◉ ${t('gameSelectedCircles')}
               </label>
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:rgba(255,255,255,0.05); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; background:var(--bg-card-hover); padding:10px 16px; border-radius:8px; flex:1; min-width:120px; border:2px solid transparent;" id="edit-vis-private-label">
                 <input type="radio" name="edit-visibility" value="private" ${currentVisibility === 'private' ? 'checked' : ''} style="width:16px; height:16px;"> 🔒 ${t('gamePrivate')}
               </label>
             </div>
           </div>
           <div class="input-group" id="edit-communities-wrap" style="display:${currentVisibility === 'selected-circles' ? 'block' : 'none'};">
             <label>${t('gameCommunity')}</label>
-            <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
+            <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
               ${myCommunities.length > 0 ? communityCheckboxes('edit-communities', myCommunities, { ids: savedTargetCommunities.length > 0 ? savedTargetCommunities : myCommunities }) : `<p style="margin:0;color:var(--text-secondary);font-size:0.85rem;">${t('noCommunitiesAssigned')}</p>`}
             </div>
           </div>
@@ -2671,14 +2995,14 @@ async function renderEditGame(gameId) {
         ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
         ${waitingList.length > 0 ? `
           <div class="group-card glass-card waiting-card">
-            <h3 class="group-title">⏳ ${t('waitingList')} (${waitingList.length})</h3>
+            <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 16 })} ${t('waitingList')} (${waitingList.length})</h3>
             <div class="player-list">
               ${waitingList.map((p, idx) => `
                 <div class="player-row waiting">
                   <span class="player-order">${idx + 1}</span>
                   <span class="player-avatar-sm">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
                   <span class="player-name">${p.name}</span>
-                  ${!isPast ? `<button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">❌</button>` : ''}
+                  ${!isPast ? `<button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -2871,7 +3195,7 @@ async function handleBookTeeTime(game) {
   function renderModal() {
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;">⛳ ${t('bookTeeTimeBtn')}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookTeeTimeBtn')}</h3>
         <button id="bt-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
@@ -3025,7 +3349,7 @@ async function handleInvite(game) {
       const itemHtml = u =>
         `<div class="ps-item" data-id="${u.id}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.95rem;">${displayUsername(u)}</div>`;
       const headerHtml = label =>
-        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:rgba(255,255,255,0.04);">${label}</div>`;
+        `<div style="padding:7px 14px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;background:var(--bg-card-hover);">${label}</div>`;
       resultsEl.innerHTML =
         (followed.length ? headerHtml(t('followedGroup')) + followed.map(itemHtml).join('') : '') +
         (others.length ? headerHtml(t('othersGroup')) + others.map(itemHtml).join('') : '');
@@ -3069,7 +3393,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
 
   function rowHTML(u) {
     const isSel = selected.has(u.id);
-    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:rgba(255,255,255,0.07);' : ''}">
+    return `<div class="ism-row" data-id="${u.id}" style="display:flex;align-items:center;gap:12px;padding:11px 8px;cursor:pointer;border-bottom:1px solid var(--border-color);border-radius:6px;${isSel ? 'background:var(--bg-card-hover);' : ''}">
       <span class="ism-check" style="width:20px;text-align:center;font-size:1.1rem;color:var(--primary-color);">${isSel ? '✓' : ''}</span>
       <span style="font-size:0.95rem;">${displayUsername(u)}</span>
     </div>`;
@@ -3082,7 +3406,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
       <h3 style="margin:0 0 12px;">${t('invitePlayers')}</h3>
       <div style="flex:1;overflow-y:auto;margin:0 -4px;padding:0 4px;">
         ${followedUsers.length > 0 ? `
-          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;">⭐ ${t('followedGroup')}</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding:6px 8px 2px;font-weight:600;display:flex;align-items:center;gap:5px;">${icon('star', { size: 12 })} ${t('followedGroup')}</div>
           ${followedUsers.map(u => rowHTML(u)).join('')}
           ${otherUsers.length > 0 ? '<div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>' : ''}
         ` : ''}
@@ -3112,7 +3436,7 @@ function openInviteSelectModal(followedUsers, otherUsers, currentSelected, onCon
       } else {
         selected.add(uid);
         row.querySelector('.ism-check').textContent = '✓';
-        row.style.background = 'rgba(255,255,255,0.07)';
+        row.style.background = 'var(--bg-card-hover)';
       }
     });
   });
@@ -3416,12 +3740,18 @@ function initPullToRefresh() {
 }
 
 export function initApp() {
-  document.getElementById('lang-toggle')?.addEventListener('click', () => {
-    const newLang = toggleLang();
-    const lbl = document.getElementById('lang-label');
-    if (lbl) lbl.textContent = newLang.toUpperCase();
-    router();
-  });
+  // Apply saved theme on boot (toggle now lives in profile settings).
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : '');
+
+  // Global sponsor banner (all pages) — render once + live-update.
+  renderGlobalSponsor();
+  if (store.isUsingFirebase()) {
+    store.onSponsorChanged((data) => renderGlobalSponsor(data));
+  }
+
+  // Header: bell → home (notifications), avatar → profile.
+  document.getElementById('header-bell')?.addEventListener('click', () => { location.hash = '#/'; });
+  document.getElementById('header-avatar')?.addEventListener('click', () => { location.hash = '#/profile'; });
 
   document.getElementById('logout-btn')?.addEventListener('click', () => {
     if (confirm(t('confirmLogout'))) {
@@ -3522,7 +3852,7 @@ function showEditBankModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card">
-      <h3 class="modal-title">💳 ${t('editBank')}</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('card', { size: 18 })} ${t('editBank')}</h3>
       <div class="input-group">
         <label>${t('bankName')}</label>
         ${bankSelectHTML('bank-name-input', user.bankName || '')}
@@ -3561,19 +3891,13 @@ function showEditBankModal(user) {
   };
 }
 
-function showProfileModal(user, options = {}) {
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay fade-in';
-  const isRequired = !!options.required;
+// Shared profile edit form (used by the edit page and the required-login modal).
+function profileFormInner(user) {
   const avatars = ['⛳', '🏌️', '🏌️‍♀️', '🔥', '⭐', '🏆', '🧢', '🕶️', '💎', '🦁', '🦊', '🐻', '🐼', '🐯', '🦸', '🥷'];
-
-  modal.innerHTML = `
-    <div class="modal-content glass-card" style="max-width: 450px;">
-      <h3 class="modal-title">👤 ${t('profile')}</h3>
-      
+  return `
       <div class="input-group">
         <label>${t('avatar')}</label>
-        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
           ${avatars.map(a => `
             <div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size: 1.5rem; cursor:pointer; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: 50%; ${user.avatar === a ? 'background: var(--primary-color);' : ''}">${a}</div>
           `).join('')}
@@ -3590,7 +3914,7 @@ function showProfileModal(user, options = {}) {
         <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
         <div class="input-group">
           <label>Овог *</label>
           <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
@@ -3603,7 +3927,7 @@ function showProfileModal(user, options = {}) {
 
       <div class="input-group" style="margin-top: 15px;">
         <label>${t('communities')}</label>
-        <div style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
+        <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
           ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
         </div>
       </div>
@@ -3613,7 +3937,7 @@ function showProfileModal(user, options = {}) {
         <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
       </div>
 
-      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
         <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('editBank')}</h4>
         <div class="input-group">
           <label>${t('bankName')}</label>
@@ -3639,32 +3963,26 @@ function showProfileModal(user, options = {}) {
           <input type="checkbox" id="notify-sms-toggle" ${user.notifySms ? 'checked' : ''}>
           <span>${t('notifySms')}</span>
         </label>
-      </div>
+      </div>`;
+}
 
-      <div class="modal-actions">
-        ${isRequired ? '' : `<button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>`}
-        <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-
+// Wire avatar selection + save for a profile form inside `scope` (modal or page).
+function wireProfileForm(scope, user, afterSave) {
   let selectedAvatar = user.avatar || '';
-
-  modal.querySelectorAll('.avatar-option').forEach(opt => {
+  scope.querySelectorAll('.avatar-option').forEach(opt => {
     opt.onclick = () => {
-      modal.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
+      scope.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
       opt.style.background = 'var(--primary-color)';
       selectedAvatar = opt.dataset.val;
     };
   });
-
-  modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
-  modal.querySelector('#profile-modal-save').onclick = async () => {
+  const saveBtn = scope.querySelector('#profile-modal-save');
+  if (!saveBtn) return;
+  saveBtn.onclick = async () => {
     const newUsername = document.getElementById('profile-username-input').value.trim();
     const newLastName = document.getElementById('profile-lastname-input').value.trim();
     const newFirstName = document.getElementById('profile-firstname-input').value.trim();
     const newPass = document.getElementById('profile-pass-input').value;
-
     if (newUsername.length < 2 || !newLastName || !newFirstName) {
       showToast('Username, Овог, Нэрээ бүрэн оруулна уу', 'error');
       return;
@@ -3673,10 +3991,7 @@ function showProfileModal(user, options = {}) {
     const duplicateUsername = allUsers.some(u =>
       u.id !== user.id && (u.username || u.name || '').toLowerCase() === newUsername.toLowerCase()
     );
-    if (duplicateUsername) {
-      showToast('Энэ username ашиглагдаж байна', 'error');
-      return;
-    }
+    if (duplicateUsername) { showToast('Энэ username ашиглагдаж байна', 'error'); return; }
 
     user.username = newUsername;
     user.lastName = newLastName;
@@ -3684,27 +3999,178 @@ function showProfileModal(user, options = {}) {
     user.fullName = newLastName + ' ' + newFirstName;
     user.name = newUsername;
     user.avatar = selectedAvatar;
-    if (newPass && newPass.length >= 1) {
-      user.password = newPass;
-    }
-
+    if (newPass && newPass.length >= 1) user.password = newPass;
     user.bankName = document.getElementById('profile-bank-name').value.trim();
     user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
-
     if (user.notifyWeb) initFCM(user);
 
     await store.adminUpdateUser(user);
     store.saveUser(user);
     currentUser = user;
-
     showToast('✅ ' + t('saved'), 'success');
-    modal.remove();
     updateHeader();
-    router();
+    afterSave();
   };
+}
+
+// ---- Profile edit page (#/profile/edit) ----
+async function renderProfileEdit() {
+  const user = currentUser;
+  if (!user) { location.hash = '#/'; return; }
+  main().innerHTML = `
+    <div class="create-container fade-in">
+      <a href="#/profile" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="create-card glass-card">
+        <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('profile', { size: 20 })} ${t('profile')}</h2>
+
+        <div class="create-section" style="margin-top:8px;">
+          <div class="cs-label">${t('appearance')}</div>
+          <div class="chip-row" id="theme-chips">
+            <button type="button" class="seg-chip" data-theme="">${t('themeLight')}</button>
+            <button type="button" class="seg-chip" data-theme="dark">${t('themeDark')}</button>
+          </div>
+        </div>
+        <div class="create-section">
+          <div class="cs-label">${t('language')}</div>
+          <div class="chip-row" id="lang-chips">
+            <button type="button" class="seg-chip" data-lang="mn">MN</button>
+            <button type="button" class="seg-chip" data-lang="en">EN</button>
+            <button type="button" class="seg-chip" data-lang="kr">한국</button>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border-card); margin:6px 0 18px;"></div>
+
+        ${profileFormInner(user)}
+        <div class="form-actions" style="margin-top:18px;">
+          <a href="#/profile" class="btn btn-ghost">${t('cancel')}</a>
+          <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Theme chips
+  const curTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : '';
+  document.querySelectorAll('#theme-chips .seg-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.theme === curTheme);
+    c.addEventListener('click', () => {
+      applyTheme(c.dataset.theme === 'dark' ? 'dark' : '');
+      document.querySelectorAll('#theme-chips .seg-chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+    });
+  });
+  // Language chips (re-render the page in the new language)
+  document.querySelectorAll('#lang-chips .seg-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.lang === getLang());
+    c.addEventListener('click', () => {
+      if (c.dataset.lang === getLang()) return;
+      setLang(c.dataset.lang);
+      router();
+    });
+  });
+
+  wireProfileForm(main(), user, () => { location.hash = '#/profile'; });
+}
+
+// ---- Profile page (#/profile) — prototype layout, real data ----
+async function renderProfile() {
+  const u = currentUser;
+  if (!u) { location.hash = '#/'; return; }
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  let games = [];
+  try { games = await store.loadAllGames(); } catch (_) {}
+  const myGames = games.filter(isMyGame);
+  const created = games.filter(g => g.createdBy === u.id).length;
+  const invited = games.filter(g => Array.isArray(g.invitedIds) && g.invitedIds.includes(u.id)).length;
+  const following = Object.keys(currentUserFollows || {}).length;
+  const followers = currentUserFollowers?.size || 0;
+  const communities = userCommunityIds(u).length;
+  const initial = (displayUsername(u) || '?').charAt(0).toUpperCase();
+  const year = u.createdAt ? new Date(u.createdAt).getFullYear() : '';
+
+  const recent = myGames
+    .map(g => ({ g, ms: new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime() }))
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 6)
+    .map(x => x.g);
+
+  main().innerHTML = `
+    <div class="fade-in profile-page">
+      <div class="profile-banner">
+        <div class="pb-actions">
+          <a href="#/users" class="pb-btn" title="${t('usersListTitle')}">${icon('members', { size: 18 })}</a>
+          <button class="pb-btn" id="profile-edit-btn" title="${t('profile')}">${icon('edit', { size: 17 })}</button>
+        </div>
+      </div>
+      <div class="profile-body">
+        <div class="profile-head">
+          <div class="profile-avatar">${esc(u.avatar || initial)}</div>
+          <div class="profile-id">
+            <div class="profile-name">${esc(displayFullName(u) || displayUsername(u))}</div>
+            <div class="profile-since">${t('pfSince')} ${year}</div>
+          </div>
+        </div>
+
+        <div class="profile-summary">
+          <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myGames.length}</div></div>
+          <div class="stat-tile"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="st-value">${created}</div><div class="st-label">${t('pfCreated')}</div></div>
+          <div class="stat-tile"><div class="st-value">${following}</div><div class="st-label">${t('statFollowing')}</div></div>
+          <div class="stat-tile"><div class="st-value">${communities}</div><div class="st-label">${t('pfCircles')}</div></div>
+          <div class="stat-tile"><div class="st-value">${invited}</div><div class="st-label">${t('pfInvited')}</div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:22px;"><h2>${t('pfMyGames')}</h2></div>
+        <div class="games-list">
+          ${recent.length === 0
+            ? `<div class="empty-state" style="padding:24px;"><p>${t('noGames')}</p></div>`
+            : recent.map(g => `
+              <a href="#/game/${g.id}" class="list-row">
+                <div class="tile-icon">${icon('play', { size: 20 })}</div>
+                <div class="lr-body">
+                  <div class="lr-title">${esc(g.location || '-')}</div>
+                  <div class="lr-sub">${formatDate(g.date)} · ${g.time}</div>
+                </div>
+                <span class="lr-chev">${icon('next', { size: 18 })}</span>
+              </a>`).join('')}
+        </div>
+
+        <div style="margin-top:18px;">
+          <button class="btn btn-outline" id="profile-edit-btn2" style="width:100%; gap:8px;">${icon('edit', { size: 16 })} ${t('profile')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const openEdit = () => { location.hash = '#/profile/edit'; };
+  document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
+  document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
+}
+
+function showProfileModal(user, options = {}) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  const isRequired = !!options.required;
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width: 450px;">
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('profile', { size: 20 })} ${t('profile')}</h3>
+      ${profileFormInner(user)}
+      <div class="modal-actions">
+        ${isRequired ? '' : `<button class="btn btn-ghost" id="profile-modal-cancel">${t('cancel')}</button>`}
+        <button class="btn btn-primary" id="profile-modal-save">${t('save')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#profile-modal-cancel')?.addEventListener('click', () => modal.remove());
+  wireProfileForm(modal, user, () => {
+    modal.remove();
+    if (options.onSaved) options.onSaved(); else router();
+  });
 }
 
 
@@ -3714,7 +4180,7 @@ function showBankDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">💳 ${displayUsername(user)}-н данс</h3>
+      <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('card', { size: 18 })} ${displayUsername(user)}-н данс</h3>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
         <span class="value">${esc(user.bankName) || '-'}</span>
@@ -3799,7 +4265,7 @@ async function renderFoodOrder(gameId) {
   });
   const categories = Object.keys(catMinOrder).sort((a, b) => catMinOrder[a] - catMinOrder[b]);
 
-  const CAT_LABELS = { "Golfer's Favorite": "🏌️ Golfer's Fav" };
+  const CAT_LABELS = { "Golfer's Favorite": "Golfer's Fav" };
   const catLabel = c => CAT_LABELS[c] || c;
 
   let selectedCategory = categories[0] || 'all';
@@ -3837,10 +4303,10 @@ async function renderFoodOrder(gameId) {
         ? (item.descriptionEn || item.description || '')
         : (item.description || '');
     const img = item.imageUrl
-      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'>🍽️</div>'" />`
-      : `<div class="food-card-img-ph">🍽️</div>`;
+      ? `<img class="food-card-img" src="${esc(item.imageUrl)}" alt="${esc(primaryName)}" loading="lazy" onerror="this.outerHTML='<div class=\\'food-card-img-ph\\'></div>'" />`
+      : `<div class="food-card-img-ph">${icon('dining', { size: 26 })}</div>`;
     const stepper = blocked
-      ? `<span class="food-weekday-note">📅 ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
+      ? `<span class="food-weekday-note">${icon('bookings', { size: 12 })} ${lang === 'en' ? 'Weekdays only' : lang === 'kr' ? '평일만 제공' : 'Зөвхөн ажлын өдөр'}</span>`
       : `<div class="food-stepper">
               ${qty > 0 ? `<button class="food-dec btn btn-outline food-step-btn" data-id="${item.id}">−</button>
               <span class="food-qty">${qty}</span>` : ''}
@@ -3850,7 +4316,7 @@ async function renderFoodOrder(gameId) {
       <div class="food-card${blocked ? ' food-card-blocked' : ''}" data-id="${item.id}">
         ${img}
         <div class="food-card-body">
-          <div class="food-card-name">${esc(primaryName)} ${item.popular ? '<span class="food-pop-badge">⭐</span>' : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
+          <div class="food-card-name">${esc(primaryName)} ${item.popular ? `<span class="food-pop-badge">${icon('star', { size: 11 })}</span>` : ''}${secondaryName ? ` <span class="food-card-name-en">${esc(secondaryName)}</span>` : ''}</div>
           ${desc ? `<div class="food-card-desc">${esc(desc)}</div>` : ''}
           <div class="food-card-foot">
             <span class="food-card-price">${item.price ? item.price.toLocaleString() + '₮' : ''}</span>
@@ -3880,7 +4346,7 @@ async function renderFoodOrder(gameId) {
 
     const itemsHtml = filtered.length
       ? filtered.map(renderItem).join('')
-      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? '🔍 Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
+      : `<p style="color:var(--text-secondary);text-align:center;padding:20px 0;">${q ? 'Хайлтын үр дүн олдсонгүй.' : 'Энэ ангилалд хоол байхгүй.'}</p>`;
 
     document.getElementById('food-menu-col').innerHTML = itemsHtml;
 
@@ -3889,7 +4355,7 @@ async function renderFoodOrder(gameId) {
     if (pill) {
       if (count > 0) {
         pill.style.display = 'flex';
-        document.getElementById('cart-pill-label').textContent = `🛒 ${count} · ${total.toLocaleString()}₮`;
+        document.getElementById('cart-pill-label').innerHTML = `${icon('order', { size: 14 })} ${count} · ${total.toLocaleString()}₮`;
       } else {
         pill.style.display = 'none';
       }
@@ -3924,7 +4390,7 @@ async function renderFoodOrder(gameId) {
 
   const catRailHtml = `
     <nav class="food-cat-rail">
-      <button class="food-cat-btn" data-cat="all">⭐ Бүгд</button>
+      <button class="food-cat-btn" data-cat="all">${icon('filter', { size: 13 })} Бүгд</button>
       ${categories.map(c => `<button class="food-cat-btn" data-cat="${esc(c)}">${esc(catLabel(c))}</button>`).join('')}
     </nav>`;
 
@@ -3933,7 +4399,7 @@ async function renderFoodOrder(gameId) {
       <a href="${gameId ? '#/game/' + gameId : '#/'}" class="back-link">← ${t('back')}</a>
       ${(!gameId && myUpcomingGames.length) ? `
         <div class="glass-card" id="game-context-picker" style="margin-bottom:12px;padding:12px 14px;">
-          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">🍽️ ${t('chooseGameForOrder')}</div>
+          <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;">${icon('dining', { size: 15 })} ${t('chooseGameForOrder')}</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${myUpcomingGames.slice(0, 6).map(g => `<a href="#/order/${g.id}" class="btn btn-outline btn-sm" style="text-decoration:none;">${formatDate(g.date)} · ${g.time} · ${esc(g.location || '')}</a>`).join('')}
             <button type="button" id="order-no-game" class="btn btn-ghost btn-sm">${t('orderNoGame')}</button>
@@ -3942,13 +4408,13 @@ async function renderFoodOrder(gameId) {
       <div class="glass-card">
         <div class="food-sticky-head">
           <div class="food-top-bar">
-            <h2 class="card-title" style="margin-bottom:0;">🍽️ ${t('foodMenu')}</h2>
+            <h2 class="card-title" style="margin-bottom:0;display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('foodMenu')}</h2>
             <div id="food-cart-pill" class="food-cart-pill" style="display:none;">
               <span id="cart-pill-label"></span>
               <button id="cart-pill-btn" class="btn btn-primary btn-sm">${t('placeOrder')} →</button>
             </div>
           </div>
-          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="🔍 Хоол хайх…" autocomplete="off" />` : ''}
+          ${available.length > 0 ? `<input id="food-search" type="search" class="food-search" placeholder="Хоол хайх…" autocomplete="off" />` : ''}
         </div>
         ${available.length === 0 ? `<p style="color:var(--text-secondary);padding:0 0 12px;">Цэс байхгүй байна.</p>` : `
         <div class="food-page-layout">
@@ -3997,7 +4463,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
   const tablesHtml = tables.length > 0 ? `
     <div id="floor-plan-wrap" style="display:none; margin-top:10px;">
       <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">${t('selectTable')}</div>
-      <div style="position:relative;background:rgba(255,255,255,0.05);border-radius:8px;padding:12px;min-height:120px;">
+      <div style="position:relative;background:var(--bg-card-hover);border-radius:8px;padding:12px;min-height:120px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           ${tables.map(tbl => `<button class="table-select-btn btn btn-outline btn-sm" data-tid="${tbl.id}" style="min-width:60px;">${esc(tbl.label)}</button>`).join('')}
         </div>
@@ -4058,10 +4524,10 @@ function showCheckoutModal(menuItems, tables, gameId) {
 
         <div style="display:flex;flex-direction:column;gap:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> 🏌️ ${t('payClubhouse')}</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> ${icon('ball-tee', { size: 15 })} ${t('payClubhouse')}</label>
           ${QPAY_ENABLED
-            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> 📱 ${t('payQpay')}</label>`
-            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> 📱 ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
+            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> ${icon('phone', { size: 15 })} ${t('payQpay')}</label>`
+            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> ${icon('phone', { size: 15 })} ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
           }
         </div>
 
@@ -4187,7 +4653,7 @@ async function showQpayModal(orderId, total, opts = {}) {
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal-box" style="max-width:360px;text-align:center;">
-      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:6px;">${icon('phone', { size: 18 })} ${t('payQpay')}</h3>
       <p id="qpay-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
       <div id="qpay-qr-wrap" style="display:none;">
         <img id="qpay-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
@@ -4196,7 +4662,7 @@ async function showQpayModal(orderId, total, opts = {}) {
         <div id="qpay-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
       </div>
       <div id="qpay-success-wrap" style="display:none;">
-        <div style="font-size:2.5rem;">✅</div>
+        <div style="color:var(--primary-color);display:flex;justify-content:center;">${icon('confirm', { size: 44 })}</div>
         <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
@@ -4316,7 +4782,7 @@ async function showMtbogdQpayModal(bookingId, gameId) {
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal-box" style="max-width:360px;text-align:center;">
-      <h3 style="margin:0 0 12px;">📱 ${t('payQpay')}</h3>
+      <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:6px;">${icon('phone', { size: 18 })} ${t('payQpay')}</h3>
       <p id="mq-status" style="color:var(--text-secondary);margin:0 0 16px;">${t('qpayCreating')}</p>
       <div id="mq-qr-wrap" style="display:none;">
         <img id="mq-qr-img" src="" alt="QR" style="width:200px;height:200px;border-radius:8px;border:1px solid var(--border-color);" />
@@ -4325,7 +4791,7 @@ async function showMtbogdQpayModal(bookingId, gameId) {
         <div id="mq-bank-links" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0 0;"></div>
       </div>
       <div id="mq-success" style="display:none;">
-        <div style="font-size:2.5rem;">✅</div>
+        <div style="color:var(--primary-color);display:flex;justify-content:center;">${icon('confirm', { size: 44 })}</div>
         <p style="font-weight:700;color:var(--primary-color);">${t('qpaySuccess')}</p>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center;">
@@ -4397,9 +4863,9 @@ async function showMtbogdQpayModal(bookingId, gameId) {
 }
 
 function orderStatusChip(status) {
-  if (status === 'completed') return `<span class="order-chip done">✅ ${t('orderStatusCompleted')}</span>`;
-  if (status === 'paid') return `<span class="order-chip paid">👨‍🍳 ${t('orderStatusPaid')}</span>`;
-  return `<span class="order-chip pending">⏳ ${t('orderStatusPending')}</span>`;
+  if (status === 'completed') return `<span class="order-chip done">${icon('confirm', { size: 13 })} ${t('orderStatusCompleted')}</span>`;
+  if (status === 'paid') return `<span class="order-chip paid">${icon('order', { size: 13 })} ${t('orderStatusPaid')}</span>`;
+  return `<span class="order-chip pending">${icon('time', { size: 13 })} ${t('orderStatusPending')}</span>`;
 }
 
 async function renderMyOrders() {
@@ -4415,21 +4881,26 @@ async function renderMyOrders() {
           const ts = o.createdAt ? new Date(o.createdAt).toLocaleString('mn-MN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const items = (o.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(', ');
           return `
-            <a href="#/orders/${o.id}" class="glass-card" style="display:block;margin-bottom:10px;text-decoration:none;color:inherit;">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
-                ${orderStatusChip(o.status)}
-                <span style="font-size:0.78rem;color:var(--text-secondary);">${ts}</span>
+            <a href="#/orders/${o.id}" class="list-row" style="margin-bottom:10px; align-items:flex-start;">
+              <div class="tile-icon">${icon('order', { size: 20 })}</div>
+              <div class="lr-body">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  ${orderStatusChip(o.status)}
+                  <span style="font-size:0.76rem;color:var(--text-secondary);">${ts}</span>
+                </div>
+                <div class="lr-sub" style="margin-top:6px;">${items}</div>
+                <div style="text-align:right;font-weight:800;margin-top:4px;color:var(--gold-dark);">${(o.total || 0).toLocaleString()}₮</div>
               </div>
-              <div style="font-size:0.9rem;color:var(--text-secondary);">${items}</div>
-              <div style="text-align:right;font-weight:700;margin-top:4px;">${(o.total || 0).toLocaleString()}₮</div>
             </a>`;
         }).join('')
-      : `<div class="empty-state"><p>📦</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px;">🍽️ ${t('orderFood')}</a></div>`;
+      : `<div class="empty-state"><p>${icon('order', { size: 40 })}</p><p>${t('noOrdersYet')}</p><a href="#/menu" class="btn btn-primary" style="margin-top:12px; gap:8px;">${icon('dining', { size: 17 })} ${t('orderFood')}</a></div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
-        <a href="#/" class="back-link">← ${t('back')}</a>
-        <h2 class="card-title" style="margin:12px 0;">📦 ${t('myOrders')}</h2>
+        <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+        <div class="page-head" style="margin-top:12px;">
+          <h2 class="page-title">${t('myOrders')}</h2>
+        </div>
         ${list}
       </div>`;
   };
@@ -4478,16 +4949,16 @@ async function renderOrderDetail(orderId) {
       </div>`;
 
     const banner = done
-      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);">✅ ${t('orderStatusCompleted')}</div>`
+      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);display:flex;align-items:center;justify-content:center;gap:6px;">${icon('confirm', { size: 17 })} ${t('orderStatusCompleted')}</div>`
       : paid
-      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;">👨‍🍳 ${t('orderStatusPaid')}…</div>`
-      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;">⏳ ${t('orderStatusPending')}</div>`;
+      ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('order', { size: 16 })} ${t('orderStatusPaid')}…</div>`
+      : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('time', { size: 16 })} ${t('orderStatusPending')}</div>`;
 
     main().innerHTML = `
       <div class="detail-container fade-in">
-        <a href="#/" class="back-link">← ${t('back')}</a>
+        <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
         <div class="glass-card">
-          <h2 class="card-title">🍽️ ${t('orderSummary')}</h2>
+          <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('order', { size: 20 })} ${t('orderSummary')}</h2>
           ${banner}
           ${tracker}
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
@@ -4522,7 +4993,7 @@ async function renderKitchenDisplay() {
     main().innerHTML = `
       <div class="detail-container fade-in">
         <div class="glass-card" style="max-width:340px;margin:60px auto;">
-          <h2 class="card-title">👨‍🍳 ${t('kitchenTitle')}</h2>
+          <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('kitchenTitle')}</h2>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <input id="kitchen-pass" type="password" placeholder="${t('kitchenCode')}"
               style="padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:1rem;" />
@@ -4556,7 +5027,7 @@ async function renderKitchenDisplay() {
   main().innerHTML = `
     <div class="detail-container fade-in">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <h2 style="margin:0;">👨‍🍳 ${t('kitchenTitle')}</h2>
+        <h2 style="margin:0;display:flex;align-items:center;gap:8px;">${icon('dining', { size: 20 })} ${t('kitchenTitle')}</h2>
         <button id="kitchen-logout-btn" class="btn btn-ghost btn-sm">Гарах</button>
       </div>
       <div class="kitchen-tabs">
@@ -4631,7 +5102,7 @@ async function renderKitchenDisplay() {
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#16a34a;color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
     banner.innerHTML = `
       <div>
-        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">🔔 Шинэ захиалга!</div>
+        <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">${icon('alerts', { size: 18 })} Шинэ захиалга!</div>
         <div style="font-weight:700;">${esc(order.customerName || '')} ${order.customerPhone ? '· ' + esc(order.customerPhone) : ''}</div>
         <div style="opacity:0.9;font-size:0.9rem;">${items}</div>
       </div>
@@ -4662,9 +5133,9 @@ async function renderKitchenDisplay() {
   const isScheduled = (o) => o.status === 'paid' && !scheduledDue(o);
 
   const deliveryBadgeHtml = (order) => order.deliveryLocation === 'course'
-    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;">📍 Талбай</span>`
+    ? `<span style="background:#f59e0b;color:#000;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;">${icon('location', { size: 12 })} Талбай</span>`
     : order.deliveryLocation === 'table'
-    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🪑 Ширээ ${esc(order.tableId || '')}</span>`
+    ? `<span style="background:#6366f1;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;display:inline-flex;align-items:center;gap:4px;">${icon('table', { size: 12 })} Ширээ ${esc(order.tableId || '')}</span>`
     : `<span style="background:#22c55e;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.78rem;">🌿 Гадаа</span>`;
 
   const elapsedHtml = (createdAt) => {
@@ -4826,66 +5297,6 @@ async function renderKitchenDisplay() {
 }
 
 // Admin: Menu management tab content
-async function renderAdminNewsTab(editItem = null) {
-  const el = document.getElementById('admin-news-content');
-  if (!el) return;
-  const inputStyle = 'padding:10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);width:100%;box-sizing:border-box;';
-  const news = await store.loadNews();
-  const ed = editItem || {};
-
-  el.innerHTML = `
-    <div style="background:rgba(255,255,255,0.05);border-radius:8px;padding:15px;margin-bottom:20px;">
-      <h3 style="margin:0 0 12px;">${ed.id ? t('editNews') : t('addNews')}</h3>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <input id="news-title" placeholder="${t('newsTitle')}" value="${esc(ed.title || '')}" style="${inputStyle}" />
-        <input id="news-image" placeholder="${t('newsImageUrl')}" value="${esc(ed.imageUrl || '')}" style="${inputStyle}" />
-        <input id="news-link" placeholder="${t('newsLink')} — ${t('newsLinkPh')}" value="${esc(ed.link || '')}" style="${inputStyle}" />
-        ${ed.imageUrl ? `<img src="${esc(ed.imageUrl)}" style="max-height:120px;border-radius:8px;object-fit:cover;" onerror="this.style.display='none'" />` : ''}
-        <div style="display:flex;gap:8px;">
-          <button id="news-save" class="btn btn-primary">${t('save')}</button>
-          ${ed.id ? `<button id="news-cancel" class="btn btn-ghost">${t('cancel')}</button>` : ''}
-        </div>
-      </div>
-    </div>
-    <h3 style="margin-bottom:10px;">${t('newsSection')} (${news.length})</h3>
-    ${news.length === 0 ? `<p style="color:var(--text-secondary);">${t('newsEmpty')}</p>` : `<div style="display:flex;flex-direction:column;gap:8px;">${news.map(n => `
-      <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;">
-        ${n.imageUrl ? `<img src="${esc(n.imageUrl)}" style="width:54px;height:54px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.outerHTML='<div style=\\'width:54px;height:54px;border-radius:6px;background:var(--emerald-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;\\'>📰</div>'" />` : '<div style="width:54px;height:54px;border-radius:6px;background:var(--emerald-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;">📰</div>'}
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(n.title || '—')}</div>
-          ${n.link ? `<div style="font-size:0.75rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${esc(n.link)}</div>` : ''}
-        </div>
-        <div style="display:flex;gap:6px;flex-shrink:0;">
-          <button class="btn btn-sm btn-outline news-edit-btn" data-id="${n.id}">✏️</button>
-          <button class="btn btn-sm btn-danger news-del-btn" data-id="${n.id}">🗑️</button>
-        </div>
-      </div>`).join('')}</div>`}
-  `;
-
-  document.getElementById('news-save').onclick = async () => {
-    const title = document.getElementById('news-title').value.trim();
-    const imageUrl = document.getElementById('news-image').value.trim();
-    const link = document.getElementById('news-link').value.trim();
-    if (!title && !imageUrl) { showToast(t('newsTitle') + '/' + t('newsImageUrl'), 'error'); return; }
-    await store.saveNewsItem({
-      ...(ed.id ? { id: ed.id, createdAt: ed.createdAt, order: ed.order || 0 } : {}),
-      title, imageUrl, link,
-    });
-    showToast(t('newsSaved'), 'success');
-    await renderAdminNewsTab();
-  };
-  document.getElementById('news-cancel')?.addEventListener('click', () => renderAdminNewsTab());
-  document.querySelectorAll('.news-edit-btn').forEach(b => b.onclick = () => {
-    const item = news.find(n => n.id === b.dataset.id);
-    if (item) renderAdminNewsTab(item);
-  });
-  document.querySelectorAll('.news-del-btn').forEach(b => b.onclick = async () => {
-    if (!confirm(t('confirmDelete'))) return;
-    await store.deleteNewsItem(b.dataset.id);
-    await renderAdminNewsTab();
-  });
-}
-
 async function renderAdminMenuTab() {
   const el = document.getElementById('admin-menu-content');
   if (!el) return;
@@ -4906,22 +5317,22 @@ async function renderAdminMenuTab() {
         <h3 style="margin:0 0 10px;">${t('menuManage')}</h3>
         <div id="admin-menu-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${items.length === 0 ? '<p style="color:var(--text-secondary);">Цэс хоосон байна.</p>' : items.map(item => `
-            <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:10px;background:var(--bg-card-hover);border-radius:8px;padding:10px;flex-wrap:wrap;">
               ${item.imageUrl
                 ? `<img src="${esc(item.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
-                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);">🍽️</div>`}
+                : `<div style="width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-card-hover);">${icon('dining', { size: 18 })}</div>`}
               <div style="flex:1;min-width:140px;">
-                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? '<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">⭐</span>' : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
+                <div style="font-weight:600;">${esc(item.name)} ${item.popular ? `<span style="font-size:0.72rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">${icon('star', { size: 11 })}</span>` : ''}${item.available === false ? ' <span style="font-size:0.72rem;color:var(--danger-color);">(идэвхгүй)</span>' : ''}</div>
                 <div style="font-size:0.82rem;color:var(--text-secondary);">${item.price ? item.price.toLocaleString() + '₮' : ''} · ${esc(item.category || '')}</div>
               </div>
               <div style="display:flex;gap:6px;">
-                <button class="btn btn-sm btn-outline edit-menu-item-btn" data-id="${item.id}">✏️</button>
-                <button class="btn btn-sm btn-danger del-menu-item-btn" data-id="${item.id}">🗑️</button>
+                <button class="btn btn-sm btn-outline edit-menu-item-btn" data-id="${item.id}">${icon('edit', { size: 15 })}</button>
+                <button class="btn btn-sm btn-danger del-menu-item-btn" data-id="${item.id}">${icon('trash', { size: 15 })}</button>
               </div>
             </div>`).join('')}
         </div>
         <button id="show-add-menu-form-btn" class="btn btn-outline btn-sm">${t('addMenuItem')}</button>
-        <div id="add-menu-form" style="display:none;margin-top:12px;background:rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+        <div id="add-menu-form" style="display:none;margin-top:12px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
           <div style="display:flex;flex-direction:column;gap:8px;">
             <input id="mi-name" type="text" placeholder="${t('itemName')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
             <input id="mi-name-en" type="text" placeholder="${t('itemNameEn')}" style="padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
@@ -4944,9 +5355,9 @@ async function renderAdminMenuTab() {
         <h3 style="margin:0 0 10px;">${t('tableManage')}</h3>
         <div id="admin-table-items" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           ${tables.length === 0 ? '<p style="color:var(--text-secondary);">Ширээний жагсаалт хоосон байна.</p>' : tables.map(tbl => `
-            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border-radius:8px;padding:10px;">
-              <div style="flex:1;font-weight:600;">🪑 ${esc(tbl.label)}</div>
-              <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">🗑️</button>
+            <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:10px;">
+              <div style="flex:1;font-weight:600;display:flex;align-items:center;gap:6px;">${icon('table', { size: 15 })} ${esc(tbl.label)}</div>
+              <button class="btn btn-sm btn-danger del-table-btn" data-id="${tbl.id}">${icon('trash', { size: 15 })}</button>
             </div>`).join('')}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -5050,4 +5461,162 @@ async function renderAdminMenuTab() {
       await renderAdminMenuTab();
     };
   });
+}
+
+// Admin: News management tab content (home carousel items: image · title · link)
+async function renderAdminNewsTab() {
+  const el = document.getElementById('admin-news-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+  let items, sponsor;
+  try { [items, sponsor] = await Promise.all([store.loadNews(), store.loadSponsor()]); }
+  catch (err) { el.innerHTML = `<p style="color:var(--danger-color);">⚠️ ${esc(err.message)}</p>`; return; }
+  sponsor = sponsor || {};
+
+  const inputStyle = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);';
+  el.innerHTML = `
+    <div style="margin-bottom:22px;">
+      <h3 style="margin:0 0 10px;">${t('sponsorManage')}</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
+        <input id="sp-image" type="text" placeholder="${t('newsImageUrl')}" value="${esc(sponsor.imageUrl || '')}" style="${inputStyle}" />
+        <div id="sp-preview-wrap" class="sp-preview" style="${sponsor.imageUrl ? '' : 'display:none;'}">
+          <img id="sp-image-preview" src="${esc(sponsor.imageUrl || '')}" alt="" style="object-position:${sponsor.posX ?? 50}% ${sponsor.posY ?? 50}%;" />
+          <span class="sp-drag-hint">${t('sponsorDragHint')}</span>
+        </div>
+        <input id="sp-link" type="text" placeholder="${t('newsLink')}" value="${esc(sponsor.link || '')}" style="${inputStyle}" />
+        <div style="display:flex;gap:8px;">
+          <button id="save-sponsor-btn" class="btn btn-primary btn-sm">${t('save')}</button>
+          <button id="clear-sponsor-btn" class="btn btn-ghost btn-sm">${t('sponsorClear')}</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 style="margin:0 0 10px;">${t('newsManage')}</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        ${items.length === 0 ? `<p style="color:var(--text-secondary);">${t('newsEmpty')}</p>` : items.map(n => `
+          <div style="display:flex;align-items:center;gap:10px;background:var(--bg-card-hover);border-radius:8px;padding:10px;flex-wrap:wrap;">
+            ${n.imageUrl
+              ? `<img src="${esc(n.imageUrl)}" alt="" style="width:56px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'" />`
+              : `<div style="width:56px;height:40px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-color);color:var(--text-muted);">${icon('alerts', { size: 18 })}</div>`}
+            <div style="flex:1;min-width:140px;">
+              <div style="font-weight:600;">${esc(n.title || '')}</div>
+              ${n.link ? `<div style="font-size:0.76rem;color:var(--text-secondary);word-break:break-all;">${esc(n.link)}</div>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm btn-outline edit-news-btn" data-id="${n.id}">${icon('edit', { size: 15 })}</button>
+              <button class="btn btn-sm btn-danger del-news-btn" data-id="${n.id}">${icon('trash', { size: 15 })}</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <button id="show-add-news-btn" class="btn btn-outline btn-sm">${t('newsAdd')}</button>
+      <div id="add-news-form" style="display:none;margin-top:12px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <input id="news-title" type="text" placeholder="${t('newsTitle')}" style="${inputStyle}" />
+          <input id="news-image" type="text" placeholder="${t('newsImageUrl')}" style="${inputStyle}" />
+          <img id="news-image-preview" src="" alt="" style="display:none;width:100%;max-height:130px;border-radius:8px;object-fit:cover;" />
+          <input id="news-link" type="text" placeholder="${t('newsLink')}" style="${inputStyle}" />
+          <div style="display:flex;gap:8px;">
+            <button id="save-news-btn" class="btn btn-primary btn-sm">${t('save')}</button>
+            <button id="cancel-news-btn" class="btn btn-ghost btn-sm">${t('cancel')}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  let editing = null;
+  const form = document.getElementById('add-news-form');
+  const imgInput = document.getElementById('news-image');
+  const imgPreview = document.getElementById('news-image-preview');
+  const updatePreview = () => {
+    const u = imgInput.value.trim();
+    if (u) { imgPreview.src = u; imgPreview.style.display = 'block'; } else { imgPreview.style.display = 'none'; }
+  };
+  imgInput.oninput = updatePreview;
+
+  const openForm = (n) => {
+    editing = n || null;
+    document.getElementById('news-title').value = n?.title || '';
+    imgInput.value = n?.imageUrl || '';
+    document.getElementById('news-link').value = n?.link || '';
+    updatePreview();
+    form.style.display = 'block';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  document.getElementById('show-add-news-btn').onclick = () => openForm(null);
+  document.getElementById('cancel-news-btn').onclick = () => { editing = null; form.style.display = 'none'; };
+  document.querySelectorAll('.edit-news-btn').forEach(btn => {
+    btn.onclick = () => { const n = items.find(x => x.id === btn.dataset.id); if (n) openForm(n); };
+  });
+
+  document.getElementById('save-news-btn').onclick = async () => {
+    const title = document.getElementById('news-title').value.trim();
+    if (!title) { showToast(t('newsTitleRequired'), 'error'); return; }
+    const item = {
+      ...(editing || {}),
+      title,
+      imageUrl: imgInput.value.trim(),
+      link: document.getElementById('news-link').value.trim(),
+    };
+    await store.saveNewsItem(item);
+    showToast(editing ? '✅ Шинэчлэгдлээ' : '✅ Нэмэгдлээ', 'success');
+    editing = null;
+    await renderAdminNewsTab();
+  };
+
+  document.querySelectorAll('.del-news-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Устгах уу?')) return;
+      await store.deleteNewsItem(btn.dataset.id);
+      showToast('Устгагдлаа', 'info');
+      await renderAdminNewsTab();
+    };
+  });
+
+  // Sponsor banner save / clear + drag-to-position
+  const spImg = document.getElementById('sp-image');
+  const spWrap = document.getElementById('sp-preview-wrap');
+  const spPreview = document.getElementById('sp-image-preview');
+  let spPosX = sponsor.posX ?? 50;
+  let spPosY = sponsor.posY ?? 50;
+  const applySpPos = () => { spPreview.style.objectPosition = `${spPosX}% ${spPosY}%`; };
+  applySpPos();
+  spImg.oninput = () => {
+    const u = spImg.value.trim();
+    if (u) { spPreview.src = u; spWrap.style.display = 'block'; } else { spWrap.style.display = 'none'; }
+  };
+  // Drag the image to choose which part shows in the banner crop.
+  let dragging = false, lastX = 0, lastY = 0;
+  spWrap.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    spWrap.setPointerCapture(e.pointerId);
+  });
+  spWrap.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const r = spWrap.getBoundingClientRect();
+    spPosX = Math.min(100, Math.max(0, spPosX - (e.clientX - lastX) / r.width * 100));
+    spPosY = Math.min(100, Math.max(0, spPosY - (e.clientY - lastY) / r.height * 100));
+    lastX = e.clientX; lastY = e.clientY;
+    applySpPos();
+  });
+  const endDrag = () => { dragging = false; };
+  spWrap.addEventListener('pointerup', endDrag);
+  spWrap.addEventListener('pointercancel', endDrag);
+
+  document.getElementById('save-sponsor-btn').onclick = async () => {
+    await store.saveSponsor({
+      imageUrl: spImg.value.trim(),
+      link: document.getElementById('sp-link').value.trim(),
+      posX: Math.round(spPosX),
+      posY: Math.round(spPosY),
+    });
+    showToast('✅ Хадгалагдлаа', 'success');
+    await renderAdminNewsTab();
+  };
+  document.getElementById('clear-sponsor-btn').onclick = async () => {
+    if (!confirm('Устгах уу?')) return;
+    await store.saveSponsor({});
+    showToast('Устгагдлаа', 'info');
+    await renderAdminNewsTab();
+  };
 }
