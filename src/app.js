@@ -242,6 +242,8 @@ export async function router() {
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
     else if (hash === '#/admin') await renderAdminPanel();
     else if (hash === '#/menu') await renderFoodOrder(null);
+    else if (hash === '#/checkout') await renderCheckout(null);
+    else if (hash.startsWith('#/checkout/')) await renderCheckout(hash.split('#/checkout/')[1]);
     else if (hash.startsWith('#/order/')) await renderFoodOrder(hash.split('#/order/')[1]);
     else if (hash === '#/orders') await renderMyOrders();
     else if (hash.startsWith('#/orders/')) await renderOrderDetail(hash.split('#/orders/')[1]);
@@ -4228,6 +4230,7 @@ function showBankDetailsModal(user) {
 // ---- Food Ordering ----
 
 let foodCart = {}; // { itemId: qty }
+let preserveCartOnce = false; // keep the cart when returning to the menu from checkout
 
 async function renderFoodOrder(gameId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
@@ -4239,7 +4242,7 @@ async function renderFoodOrder(gameId) {
     return;
   }
   const available = menuItems.filter(i => i.available !== false);
-  foodCart = {};
+  if (preserveCartOnce) { preserveCartOnce = false; } else { foodCart = {}; }
 
   // #/menu has no game context → offer to attach the order to one of the user's
   // upcoming games so it isn't an "orphan" order.
@@ -4384,7 +4387,7 @@ async function renderFoodOrder(gameId) {
       };
     });
     document.getElementById('cart-pill-btn')?.addEventListener('click', () => {
-      showCheckoutModal(available, tables, gameId);
+      location.hash = gameId ? '#/checkout/' + gameId : '#/checkout';
     });
   }
 
@@ -4449,16 +4452,27 @@ async function renderFoodOrder(gameId) {
   }
 }
 
-function showCheckoutModal(menuItems, tables, gameId) {
-  if (document.getElementById('co-submit')) return; // modal already open
+async function renderCheckout(gameId) {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+
   const cartEntries = Object.entries(foodCart).filter(([, qty]) => qty > 0);
-  if (cartEntries.length === 0) return;
+  if (cartEntries.length === 0) { location.hash = gameId ? '#/order/' + gameId : '#/menu'; return; }
+
+  let menuItems, tables;
+  try {
+    [menuItems, tables] = await Promise.all([store.loadMenu(), store.loadTables()]);
+  } catch (err) {
+    main().innerHTML = `<div class="detail-container fade-in"><div class="glass-card"><p style="color:var(--danger-color);">${esc(err.message)}</p><a href="#/menu" class="btn btn-outline" style="margin-top:10px;">← ${t('back')}</a></div></div>`;
+    return;
+  }
 
   const user = currentUser;
   const total = cartEntries.reduce((sum, [id, qty]) => {
     const item = menuItems.find(i => i.id === id);
     return sum + (item ? item.price * qty : 0);
   }, 0);
+
+  const backHash = gameId ? '#/order/' + gameId : '#/menu';
 
   const tablesHtml = tables.length > 0 ? `
     <div id="floor-plan-wrap" style="display:none; margin-top:10px;">
@@ -4471,130 +4485,142 @@ function showCheckoutModal(menuItems, tables, gameId) {
       <div id="selected-table-label" style="font-size:0.85rem;margin-top:6px;color:var(--text-secondary);"></div>
     </div>` : '';
 
-  const modal = document.createElement('div');
-  modal.className = 'popup-overlay fade-in';
-  modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); z-index:9999; display:flex; align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto; -webkit-overflow-scrolling:touch;';
-  modal.innerHTML = `
-    <div class="popup-box glass-card" style="max-width:400px;width:100%;margin:auto;max-height:90vh;overflow-y:auto;">
-      <h3 style="margin:0 0 14px;">${t('orderSummary')}</h3>
+  main().innerHTML = `
+    <div class="detail-container fade-in" style="max-width:480px;">
+      <a href="${backHash}" class="back-link" id="co-back">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="glass-card">
+        <h3 style="margin:0 0 14px;">${t('orderSummary')}</h3>
 
-      <div style="margin-bottom:12px;font-size:0.9rem;">
-        ${cartEntries.map(([id, qty]) => {
-          const item = menuItems.find(i => i.id === id);
-          return item ? `<div style="display:flex;justify-content:space-between;padding:4px 0;">
-            <span>${esc(item.name)} × ${qty}</span>
-            <span>${(item.price * qty).toLocaleString()}₮</span>
-          </div>` : '';
-        }).join('')}
-        <div style="border-top:1px solid var(--border-color);margin-top:8px;padding-top:8px;font-weight:700;display:flex;justify-content:space-between;">
-          <span>${t('orderTotal')}</span><span>${total.toLocaleString()}₮</span>
-        </div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <div>
-          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerName')}</label>
-          <input id="co-name" type="text" value="${user ? esc(user.firstName || user.name || '') : ''}" placeholder="${t('customerName')}"
-            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
-        </div>
-        <div>
-          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerPhone')}</label>
-          <input id="co-phone" type="tel" value="${user ? esc(user.phone || '') : ''}" placeholder="${t('customerPhone')}"
-            style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
-        </div>
-
-        <div>
-          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('deliveryLocation')}</label>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="table" /> ${t('deliveryTable')}</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="outdoor" checked /> ${t('deliveryOutdoor')}</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-delivery" value="course" /> ${t('deliveryCourse')}</label>
+        <div style="margin-bottom:12px;font-size:0.9rem;">
+          ${cartEntries.map(([id, qty]) => {
+            const item = menuItems.find(i => i.id === id);
+            return item ? `<div style="display:flex;justify-content:space-between;padding:4px 0;">
+              <span>${esc(item.name)} × ${qty}</span>
+              <span>${(item.price * qty).toLocaleString()}₮</span>
+            </div>` : '';
+          }).join('')}
+          <div style="border-top:1px solid var(--border-color);margin-top:8px;padding-top:8px;font-weight:700;display:flex;justify-content:space-between;">
+            <span>${t('orderTotal')}</span><span>${total.toLocaleString()}₮</span>
           </div>
-          ${tablesHtml}
         </div>
 
-        <div>
-          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('pickupTime')}</label>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pickup" value="asap" checked /> ${t('pickupAsap')}</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pickup" value="scheduled" /> ${t('pickupScheduled')}</label>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerName')}</label>
+            <input id="co-name" type="text" value="${user ? esc(user.firstName || user.name || '') : ''}" placeholder="${t('customerName')}"
+              style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
           </div>
-          <input id="co-pickup-time" type="datetime-local" style="display:none;width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
-        </div>
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);">${t('customerPhone')}</label>
+            <input id="co-phone" type="tel" value="${user ? esc(user.phone || '') : ''}" placeholder="${t('customerPhone')}"
+              style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);margin-top:4px;" />
+          </div>
 
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85rem;color:var(--text-secondary);">Төлбөр</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="clubhouse" checked /> ${icon('ball-tee', { size: 15 })} ${t('payClubhouse')}</label>
-          ${QPAY_ENABLED
-            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="radio" name="co-pay" value="qpay" /> ${icon('phone', { size: 15 })} ${t('payQpay')}</label>`
-            : `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;opacity:0.5;"><input type="radio" name="co-pay" value="qpay" disabled /> ${icon('phone', { size: 15 })} ${t('payQpay')} <span style="font-size:0.75rem;">(${t('payComingSoon')})</span></label>`
-          }
-        </div>
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('deliveryLocation')}</label>
+            <div class="chip-row chip-wrap" id="co-delivery-chips">
+              <button type="button" class="seg-chip" data-del="table">${t('deliveryTable')}</button>
+              <button type="button" class="seg-chip active" data-del="outdoor">${t('deliveryOutdoor')}</button>
+              <button type="button" class="seg-chip" data-del="course">${t('deliveryCourse')}</button>
+            </div>
+            ${tablesHtml}
+          </div>
 
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-size:0.85rem;color:var(--text-secondary);">${t('orderNotes')}</label>
-          <textarea id="co-notes" rows="2" placeholder="Нэмэлт хүсэлт, тайлбар..." style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);resize:vertical;font-family:inherit;font-size:0.95rem;"></textarea>
-        </div>
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">${t('pickupTime')}</label>
+            <div class="chip-row" id="co-pickup-chips">
+              <button type="button" class="seg-chip active" data-pick="asap">${t('pickupAsap')}</button>
+              <button type="button" class="seg-chip" data-pick="scheduled">${t('pickupScheduled')}</button>
+            </div>
+            <input id="co-pickup-time" type="datetime-local" style="display:none;width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);" />
+          </div>
 
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button id="co-submit" class="btn btn-primary" style="flex:1;">${t('placeOrder')}</button>
-          <button id="co-cancel" class="btn btn-ghost">Болих</button>
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">Төлбөр</label>
+            <div class="chip-row" id="co-pay-chips">
+              <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
+              ${QPAY_ENABLED
+                ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
+                : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem;opacity:0.85;">(${t('payComingSoon')})</span></button>`
+              }
+            </div>
+          </div>
+
+          <div>
+            <label style="font-size:0.85rem;color:var(--text-secondary);">${t('orderNotes')}</label>
+            <textarea id="co-notes" rows="2" placeholder="Нэмэлт хүсэлт, тайлбар..." style="width:100%;box-sizing:border-box;margin-top:4px;padding:9px 12px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);resize:vertical;font-family:inherit;font-size:0.95rem;"></textarea>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <button id="co-submit" class="btn btn-primary" style="flex:1;">${t('placeOrder')}</button>
+            <button id="co-cancel" class="btn btn-ghost">Болих</button>
+          </div>
         </div>
       </div>
     </div>`;
-  document.body.appendChild(modal);
 
+  const root = main();
   let selectedTableId = null;
 
-  modal.querySelectorAll('input[name="co-delivery"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const floorWrap = modal.querySelector('#floor-plan-wrap');
-      if (floorWrap) floorWrap.style.display = radio.value === 'table' ? 'block' : 'none';
-      if (radio.value !== 'table') selectedTableId = null;
+  function wireChipGroup(sel, onChange) {
+    root.querySelectorAll(`${sel} .seg-chip`).forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (chip.classList.contains('chip-disabled')) return;
+        root.querySelectorAll(`${sel} .seg-chip`).forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        if (onChange) onChange(chip);
+      });
     });
+  }
+
+  wireChipGroup('#co-delivery-chips', (chip) => {
+    const floorWrap = root.querySelector('#floor-plan-wrap');
+    if (floorWrap) floorWrap.style.display = chip.dataset.del === 'table' ? 'block' : 'none';
+    if (chip.dataset.del !== 'table') selectedTableId = null;
   });
 
-  modal.querySelectorAll('.table-select-btn').forEach(btn => {
+  wireChipGroup('#co-pickup-chips', (chip) => {
+    const dtInput = root.querySelector('#co-pickup-time');
+    if (dtInput) dtInput.style.display = chip.dataset.pick === 'scheduled' ? 'block' : 'none';
+  });
+
+  wireChipGroup('#co-pay-chips');
+
+  root.querySelectorAll('.table-select-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      modal.querySelectorAll('.table-select-btn').forEach(b => b.classList.remove('btn-primary'));
+      root.querySelectorAll('.table-select-btn').forEach(b => b.classList.remove('btn-primary'));
       btn.classList.add('btn-primary');
       selectedTableId = btn.dataset.tid;
       const lbl = tables.find(t => t.id === selectedTableId);
-      const el = modal.querySelector('#selected-table-label');
+      const el = root.querySelector('#selected-table-label');
       if (el) el.textContent = lbl ? '✓ ' + lbl.label : '';
     });
   });
 
-  modal.querySelectorAll('input[name="co-pickup"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const dtInput = modal.querySelector('#co-pickup-time');
-      dtInput.style.display = radio.value === 'scheduled' ? 'block' : 'none';
-    });
-  });
-
-  modal.querySelector('#co-cancel').onclick = () => modal.remove();
+  root.querySelector('#co-back').addEventListener('click', () => { preserveCartOnce = true; });
+  root.querySelector('#co-cancel').onclick = () => { preserveCartOnce = true; location.hash = backHash; };
 
   let submitting = false;
-  modal.querySelector('#co-submit').onclick = async () => {
+  root.querySelector('#co-submit').onclick = async () => {
     if (submitting) return;
-    const name = modal.querySelector('#co-name').value.trim();
-    const phone = modal.querySelector('#co-phone').value.trim();
-    const notes = modal.querySelector('#co-notes').value.trim();
-    const delivery = modal.querySelector('input[name="co-delivery"]:checked')?.value || 'outdoor';
-    const pickupRadio = modal.querySelector('input[name="co-pickup"]:checked')?.value || 'asap';
-    const pickupTimeVal = modal.querySelector('#co-pickup-time').value;
+    const name = root.querySelector('#co-name').value.trim();
+    const phone = root.querySelector('#co-phone').value.trim();
+    const notes = root.querySelector('#co-notes').value.trim();
+    const delivery = root.querySelector('#co-delivery-chips .seg-chip.active')?.dataset.del || 'outdoor';
+    const pickupSel = root.querySelector('#co-pickup-chips .seg-chip.active')?.dataset.pick || 'asap';
+    const pickupTimeVal = root.querySelector('#co-pickup-time').value;
 
     if (!name) { showToast('Нэрээ оруулна уу', 'error'); return; }
     if (!phone) { showToast('Утасны дугаараа оруулна уу', 'error'); return; }
     if (delivery === 'table' && !selectedTableId) { showToast('Ширээгээ сонгоно уу', 'error'); return; }
-    if (pickupRadio === 'scheduled' && !pickupTimeVal) { showToast('Цагаа оруулна уу', 'error'); return; }
+    if (pickupSel === 'scheduled' && !pickupTimeVal) { showToast('Цагаа оруулна уу', 'error'); return; }
 
     const items = cartEntries.map(([id, qty]) => {
       const item = menuItems.find(i => i.id === id);
       return { itemId: id, name: item?.name || id, price: item?.price || 0, qty };
     });
 
-    const payMethod = modal.querySelector('input[name="co-pay"]:checked')?.value || 'clubhouse';
+    const payMethod = root.querySelector('#co-pay-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
 
     const order = {
       customerName: name,
@@ -4605,7 +4631,7 @@ function showCheckoutModal(menuItems, tables, gameId) {
       total,
       deliveryLocation: delivery,
       tableId: delivery === 'table' ? selectedTableId : null,
-      pickupTime: pickupRadio === 'asap' ? 'asap' : pickupTimeVal,
+      pickupTime: pickupSel === 'asap' ? 'asap' : pickupTimeVal,
       orderNotes: notes || '',
       paymentMethod: payMethod,
       status: payMethod === 'qpay' ? 'pending' : 'paid',
@@ -4614,21 +4640,19 @@ function showCheckoutModal(menuItems, tables, gameId) {
     };
 
     submitting = true;
-    const btn = modal.querySelector('#co-submit');
+    const btn = root.querySelector('#co-submit');
     btn.disabled = true;
     btn.textContent = '...';
     try {
       const orderId = await store.createOrder(order);
 
       if (payMethod === 'qpay') {
-        modal.remove();
         foodCart = {};
         await showQpayModal(orderId, total, {
           doneHash: gameId ? '#/game/' + gameId : '#/orders/' + orderId,
           cancelHash: gameId ? '#/game/' + gameId : '#/',
         });
       } else {
-        modal.remove();
         foodCart = {};
         showToast('✅ ' + t('orderPlaced'), 'success');
         location.hash = gameId ? '#/game/' + gameId : '#/';
