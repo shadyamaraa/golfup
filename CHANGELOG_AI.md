@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (MTBogd member match for later joiners)
+
+### Send joining players' phone numbers to MTBogd so they can be matched to club membership
+
+MTBogd's member-match only ever ran once, against the original booker's
+phone at booking creation. Players who joined a game afterwards via
+UBGolf's "Нэгдэх" flow were synced to MTBogd (`PATCH .../bookings/:id/players`)
+by name only — no phone was ever sent, so they could never be matched to
+a club membership (always stayed "guest"). MTBogd has now added optional
+per-player `phone` support to that endpoint (backward-compatible with the
+old name-only array).
+
+- `syncBookingPlayers(game)` now includes each player's phone (from
+  `allUsersMap`) when known: `{ name, phone }`; players with no phone on
+  file keep the old `{ name }` shape (per MTBogd's spec, not an empty
+  string). No change needed to `functions/index.js` — the Cloud Function
+  proxy already forwards the `players` array as-is.
+
 ## 2026-07-01 (sponsor banner upload)
 
 ### Admin sponsor banner can now be uploaded, not just linked by URL
