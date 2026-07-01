@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (join payment page fix)
+
+### Drop the invented per-player price estimate on the join-pay page
+
+MTBogd bills a flat rate per booked slot — it isn't split per player — so
+dividing the total by `groupSize` and labeling it an "estimate" was made-up
+math, not a real number from MTBogd. The join-pay page (`#/join-pay/:gameId`)
+now shows only `Нийт дүн` (the real total from `mtbogd.getQpayStatus`);
+removed the per-player row and the now-unused `joinPayPerPlayer` i18n key.
+
 ## 2026-07-01 (join payment page)
 
 ### Joining a paid tee-time game now shows a payment step first
