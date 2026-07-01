@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (sponsor banner upload)
+
+### Admin sponsor banner can now be uploaded, not just linked by URL
+
+Mirrors the profile avatar upload added earlier: an "Зураг оруулах" button +
+file input next to the sponsor image URL field in the admin news/sponsor
+tab. Reuses the existing URL field, preview, drag-to-position and save flow
+unchanged — the uploaded file just becomes the value of that field.
+
+- New `fileToWideImageDataURL(file, maxWidth=1200)` helper — scales an image
+  down to fit `maxWidth` (aspect ratio preserved, no cropping, unlike the
+  square avatar helper) and returns a JPEG data-URL.
+- On upload, `sp-image`'s value is set to the data-URL, drag position resets
+  to center, and the existing preview/drag-to-position code picks it up
+  exactly as if a URL had been pasted in.
+
 ## 2026-07-01 (join payment page fix)
 
 ### Drop the invented per-player price estimate on the join-pay page
