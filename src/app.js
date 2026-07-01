@@ -100,6 +100,31 @@ function fileToAvatarDataURL(file, size = 256) {
   });
 }
 
+// Read an image File → a JPEG data-URL scaled down to fit within `maxWidth`
+// (aspect ratio preserved, no cropping) — for wide banner/news images where
+// square-cropping would distort the source.
+function fileToWideImageDataURL(file, maxWidth = 1200) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) { reject(new Error('image required')); return; }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode failed'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const MN_BANKS = [
   'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвескор банк', 'Капитрон банк',
   'М банк', 'Төрийн банк', 'Хаан банк', 'Хас банк', 'Худалдаа Хөгжилийн Банк',
@@ -5680,6 +5705,10 @@ async function renderAdminNewsTab() {
       <h3 style="margin:0 0 10px;">${t('sponsorManage')}</h3>
       <div style="display:flex;flex-direction:column;gap:8px;background:var(--bg-card-hover);border-radius:8px;padding:14px;">
         <input id="sp-image" type="text" placeholder="${t('newsImageUrl')}" value="${esc(sponsor.imageUrl || '')}" style="${inputStyle}" />
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" id="sp-upload-btn" class="btn btn-outline btn-sm" style="gap:6px;">${icon('edit', { size: 14 })} ${t('avatarUpload')}</button>
+          <input type="file" id="sp-file-input" accept="image/*" style="display:none;" />
+        </div>
         <div id="sp-preview-wrap" class="sp-preview" style="${sponsor.imageUrl ? '' : 'display:none;'}">
           <img id="sp-image-preview" src="${esc(sponsor.imageUrl || '')}" alt="" style="object-position:${sponsor.posX ?? 50}% ${sponsor.posY ?? 50}%;" />
           <span class="sp-drag-hint">${t('sponsorDragHint')}</span>
@@ -5782,9 +5811,28 @@ async function renderAdminNewsTab() {
   let spPosY = sponsor.posY ?? 50;
   const applySpPos = () => { spPreview.style.objectPosition = `${spPosX}% ${spPosY}%`; };
   applySpPos();
-  spImg.oninput = () => {
+  const refreshSpPreview = () => {
     const u = spImg.value.trim();
     if (u) { spPreview.src = u; spWrap.style.display = 'block'; } else { spWrap.style.display = 'none'; }
+  };
+  spImg.oninput = refreshSpPreview;
+
+  // Upload own image → resized (not cropped) JPEG data-URL, same as pasting a URL.
+  const spFileInput = document.getElementById('sp-file-input');
+  const spUploadBtn = document.getElementById('sp-upload-btn');
+  spUploadBtn.onclick = () => spFileInput.click();
+  spFileInput.onchange = async () => {
+    const file = spFileInput.files && spFileInput.files[0];
+    if (!file) return;
+    try {
+      spImg.value = await fileToWideImageDataURL(file);
+      spPosX = 50; spPosY = 50;
+      applySpPos();
+      refreshSpPreview();
+    } catch (_) {
+      showToast(t('avatarUploadFail'), 'error');
+    }
+    spFileInput.value = '';
   };
   // Drag the image to choose which part shows in the banner crop.
   let dragging = false, lastX = 0, lastY = 0;
