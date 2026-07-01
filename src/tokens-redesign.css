@@ -157,6 +157,16 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   background: linear-gradient(145deg, var(--emerald-dark), var(--emerald-light));
   color: var(--text-primary); color: #F3EFE4;
 }
+/* Uploaded photo avatars: an <img> that fills its circular container. */
+.player-avatar-sm, .user-avatar, .profile-avatar, #header-avatar,
+.fc-av, .player-dot, .invite-av, .avatar-preview, .ava-inline { overflow: hidden; }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.ava-inline { display: inline-flex; width: 1.4em; height: 1.4em; border-radius: 50%; vertical-align: -0.28em; }
+.avatar-preview {
+  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: #0C3051; color: #F4EEE2; display: flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: 1.3rem;
+}
 
 /* ---- White-alpha rule fixes from style.css (invisible on cream) ---- */
 .input-group input, .input-group select,
