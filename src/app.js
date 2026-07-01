@@ -276,6 +276,7 @@ export async function router() {
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
+    else if (hash.startsWith('#/join-pay/')) await renderJoinPay(hash.split('#/join-pay/')[1]);
     else if (hash === '#/admin') await renderAdminPanel();
     else if (hash === '#/menu') await renderFoodOrder(null);
     else if (hash === '#/checkout') await renderCheckout(null);
@@ -1912,9 +1913,12 @@ function renderGameView(game) {
       .catch(() => {});
   }
 
-  // One-click join — the description is already shown on this page, so no extra
-  // confirmation modal is needed (reduces friction, matches Meetup/Eventbrite).
-  document.getElementById('join-btn')?.addEventListener('click', () => handleJoin(game));
+  // One-click join for casual games; games with a paid tee-time booking route
+  // through a payment page first so the joiner sees the fee + payment method.
+  document.getElementById('join-btn')?.addEventListener('click', () => {
+    if (game.bookingId) location.hash = '#/join-pay/' + game.id;
+    else handleJoin(game);
+  });
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
@@ -2015,6 +2019,72 @@ async function renderJoinGame(gameId) {
   location.hash = '#/game/' + gameId;
 }
 
+// Payment step shown before joining a game that has a paid MTBogd tee-time
+// booking. The total is read live from MTBogd (qpay-status `amount`) rather
+// than stored on the game, so it stays accurate even for older bookings.
+async function renderJoinPay(gameId) {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  const game = await store.loadGame(gameId);
+  if (!game) { location.hash = '#/'; return; }
+  if (isPlayerInGame(game, currentUser.id)) { location.hash = '#/game/' + gameId; return; }
+
+  let amount = null;
+  if (game.bookingId) {
+    try {
+      const status = await mtbogd.getQpayStatus(game.bookingId);
+      amount = status && status.amount ? status.amount : null;
+    } catch (_) { /* fall back to no price shown */ }
+  }
+  const perPlayer = amount ? Math.round(amount / (game.groupSize || 1)) : null;
+
+  main().innerHTML = `
+    <div class="detail-container fade-in" style="max-width:480px;">
+      <a href="#/game/${gameId}" class="back-link" id="jp-back">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="glass-card">
+        <h3 style="margin:0 0 14px;">${t('joinPayTitle')}</h3>
+        <div style="font-size:0.9rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
+          <span style="display:flex;align-items:center;gap:6px;">${icon('location', { size: 14 })} ${esc(game.location)}</span>
+          <span style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 14 })} ${formatDate(game.date)} ${game.time}</span>
+        </div>
+        ${amount ? `
+        <div style="border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin:10px 0;padding:10px 0;font-size:0.9rem;">
+          <div style="display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${amount.toLocaleString()}₮</span></div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-weight:700;"><span>${t('joinPayPerPlayer')}</span><span>~${perPlayer.toLocaleString()}₮</span></div>
+        </div>` : ''}
+        <div style="margin-top:6px;">
+          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">Төлбөр</label>
+          <div class="chip-row" id="jp-pay-chips">
+            <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
+            ${QPAY_ENABLED
+              ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
+              : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem;opacity:0.85;">(${t('payComingSoon')})</span></button>`
+            }
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:18px;">
+          <button id="jp-join-btn" class="btn btn-primary" style="flex:1;">${t('join')}</button>
+          <button id="jp-cancel-btn" class="btn btn-ghost">${t('cancel')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('#jp-pay-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (chip.classList.contains('chip-disabled')) return;
+      document.querySelectorAll('#jp-pay-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
+  document.getElementById('jp-cancel-btn').onclick = () => { location.hash = '#/game/' + gameId; };
+  let submitting = false;
+  document.getElementById('jp-join-btn').onclick = async () => {
+    if (submitting) return;
+    submitting = true;
+    const method = document.querySelector('#jp-pay-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
+    await handleJoin(game, method);
+  };
+}
+
 // ---- Game Actions ----
 function showJoinConfirmModal(game) {
   const modal = document.createElement('div');
@@ -2043,7 +2113,7 @@ function showJoinConfirmModal(game) {
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
-async function handleJoin(game) {
+async function handleJoin(game, paymentMethod = null) {
   if (!currentUser) return;
   if (isPlayerInGame(game, currentUser.id)) { showToast('Та аль хэдийн нэгдсэн байна', 'warning'); return; }
 
@@ -2053,7 +2123,7 @@ async function handleJoin(game) {
     return;
   }
 
-  const player = { id: currentUser.id, name: displayFullName(currentUser), joinedAt: Date.now() };
+  const player = { id: currentUser.id, name: displayFullName(currentUser), joinedAt: Date.now(), ...(paymentMethod && { paymentMethod }) };
   const groups = game.groups || [[]];
   const waitingList = game.waitingList || [];
 

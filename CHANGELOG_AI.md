@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (join payment page)
+
+### Joining a paid tee-time game now shows a payment step first
+
+Previously "Нэгдэх" (join) added the player immediately for every game.
+Games booked with MTBogd (have a `bookingId`) now route through a payment
+page first; casual games with no booking still join with one click
+(unchanged).
+
+- New `#/join-pay/:gameId` page (`renderJoinPay`): shows the game's
+  location/time, the live total + estimated per-player price (fetched via
+  `mtbogd.getQpayStatus(bookingId).amount` — not stored on the game, so it
+  stays accurate for older bookings too), and a Clubhouse/QPay `seg-chip`
+  payment-method choice (QPay shows "Удахгүй" while `QPAY_ENABLED` is false).
+  If the price can't be fetched, the price block is simply omitted.
+- `join-btn` now branches: `game.bookingId` → `#/join-pay/:id`; otherwise the
+  existing one-click join.
+- `handleJoin(game, paymentMethod)` gained an optional second param; the
+  chosen method is tagged onto the player record (`paymentMethod`) for the
+  creator/marshal's reference. No tag when joining without this page.
+- New i18n keys (joinPayTitle, joinPayPerPlayer, MN/EN/KR).
+
 ## 2026-07-01 (avatar photo upload)
 
 ### Profile avatar can now be an uploaded photo (not just an emoji)
