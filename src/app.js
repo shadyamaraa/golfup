@@ -1888,6 +1888,11 @@ function renderGameView(game) {
             <span class="desc-label">${icon('ball-tee', { size: 13 })} ${t('bookCode')}</span>
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
             ${game.bookingId ? `<span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">ID:${game.bookingId}</span>` : ''}
+            <div id="booking-price-check" style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
+              ${game.bookingPaid && game.paidAmount
+                ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.paidAmount.toLocaleString()}₮</strong>`
+                : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
+            </div>
           </div>` : ''}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
@@ -1931,10 +1936,22 @@ function renderGameView(game) {
   // Nudge MTBogd to re-verify QPay payment for a booking still pending in our
   // records. Calling qpay-status makes MTBogd re-check QPay and flip to paid —
   // covers the case where the user paid after closing the QPay modal (or QPay's
-  // own callback to MTBogd never fired).
+  // own callback to MTBogd never fired). Also the only way to learn the real
+  // price MTBogd will charge: the tee-time list shown while picking a slot has
+  // no member/guest context, so it can be wrong — this call happens *after*
+  // confirmBooking already sent the creator's phone, so its `amount` reflects
+  // whatever rate MTBogd actually matched (member or guest).
   if (game.bookingId && !game.bookingPaid) {
     mtbogd.getQpayStatus(game.bookingId)
-      .then(s => { if (s && s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount); })
+      .then(s => {
+        if (!s) return;
+        if (s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount);
+        const priceEl = document.getElementById('booking-price-check');
+        if (priceEl && s.amount) {
+          const rateLabel = s.customerType === 'member' ? ` (${t('bookPriceMember')})` : s.customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
+          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${rateLabel}`;
+        }
+      })
       .catch(() => {});
   }
 
