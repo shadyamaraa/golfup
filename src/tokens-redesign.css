@@ -603,6 +603,12 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   font-family: var(--font-display); font-weight: 700; font-size: 1.25rem;
   color: #F3EFE4; line-height: 1.18; letter-spacing: -0.01em;
 }
+.news-dots { display: flex; justify-content: center; gap: 6px; margin: -6px 0 14px; }
+.news-dot {
+  width: 7px; height: 7px; padding: 0; border: none; border-radius: 50%;
+  background: var(--border-card); cursor: pointer; transition: var(--transition);
+}
+.news-dot.active { background: var(--gold); width: 18px; border-radius: 4px; }
 
 /* ---- Sponsor slot / banner ---- */
 .sponsor-slot {

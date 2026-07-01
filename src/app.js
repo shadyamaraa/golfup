@@ -678,10 +678,13 @@ async function renderHome() {
 }
 
 // Home news carousel — driven by admin-managed news (image · title · link).
-// Falls back to a branded welcome card when there are no items.
+// Falls back to a branded welcome card when there are no items. With multiple
+// items it becomes a swipeable/auto-advancing side-scroll carousel with dots.
+let newsAutoTimer = null;
 async function renderHomeNews(items) {
   const host = document.getElementById('home-news');
   if (!host) return;
+  if (newsAutoTimer) { clearInterval(newsAutoTimer); newsAutoTimer = null; }
   if (items === undefined) {
     try { items = await store.loadNews(); } catch (_) { items = []; }
   }
@@ -695,6 +698,9 @@ async function renderHomeNews(items) {
       </div>`;
     return;
   }
+  const dots = items.length > 1
+    ? `<div class="news-dots">${items.map((_, i) => `<button type="button" class="news-dot ${i === 0 ? 'active' : ''}" data-i="${i}" aria-label="${i + 1}"></button>`).join('')}</div>`
+    : '';
   host.innerHTML = `
     <div class="news-carousel">
       ${items.map(n => {
@@ -706,7 +712,43 @@ async function renderHomeNews(items) {
           ? `<a class="feature-card news-card has-img" href="${esc(n.link)}" target="_blank" rel="noopener" ${bg}>${inner}</a>`
           : `<div class="feature-card news-card ${n.imageUrl ? 'has-img' : ''}" ${bg}>${inner}</div>`;
       }).join('')}
-    </div>`;
+    </div>
+    ${dots}`;
+  if (items.length > 1) wireNewsCarousel(host, items.length);
+}
+
+// Wire dot indicators, scroll sync and auto-advance for the news carousel.
+function wireNewsCarousel(host, count) {
+  const track = host.querySelector('.news-carousel');
+  if (!track) return;
+  const cards = Array.from(track.children);
+  const dots = Array.from(host.querySelectorAll('.news-dot'));
+  let current = 0;
+  const setActive = (i) => { current = i; dots.forEach((d, k) => d.classList.toggle('active', k === i)); };
+  const scrollTo = (i) => {
+    const target = cards[i].getBoundingClientRect().left - track.getBoundingClientRect().left + track.scrollLeft;
+    track.scrollTo({ left: target, behavior: 'smooth' });
+  };
+  const advance = () => { const next = (current + 1) % count; scrollTo(next); setActive(next); };
+  const start = () => { if (newsAutoTimer) clearInterval(newsAutoTimer); newsAutoTimer = setInterval(advance, 5000); };
+  const stop = () => { if (newsAutoTimer) { clearInterval(newsAutoTimer); newsAutoTimer = null; } };
+
+  let scrollRaf = null;
+  track.addEventListener('scroll', () => {
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = null;
+      const i = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / track.clientWidth)));
+      if (i !== current) setActive(i);
+    });
+  });
+  dots.forEach((d, i) => d.addEventListener('click', () => { scrollTo(i); setActive(i); start(); }));
+  // pause auto-advance while the user interacts, resume afterwards
+  track.addEventListener('pointerdown', stop);
+  track.addEventListener('pointerup', start);
+  track.addEventListener('mouseenter', stop);
+  track.addEventListener('mouseleave', start);
+  start();
 }
 
 // Global sponsor banner — admin-managed image (+ optional link), shown on every

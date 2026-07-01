@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (news carousel)
+
+### Home news becomes a real side-scrolling carousel with multiple items
+
+When more than one admin news item exists, the home news block now behaves as
+a proper swipeable carousel instead of a silent scroll area.
+
+- Added dot indicators under the cards; the active dot elongates (gold).
+- Auto-advances every 5s, looping; pauses while the user hovers/touches and
+  resumes after. Tapping a dot scrolls to that card; manual swipe updates the
+  active dot (snap scroll retained).
+- Single-item / welcome-fallback behaviour unchanged (no dots, no timer).
+
 ## 2026-07-01 (checkout as a page + chips)
 
 ### Restaurant checkout converted from popup modal to a full page
