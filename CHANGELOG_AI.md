@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (checkout as a page + chips)
+
+### Restaurant checkout converted from popup modal to a full page
+
+The food-order checkout ("Захиалгын мэдээлэл") was a body-appended overlay
+modal; it's now a proper routed page at `#/checkout` (and `#/checkout/:gameId`)
+with the app header/nav, so it behaves like every other screen.
+
+- New `renderCheckout(gameId)` renders into `main()` with a back link;
+  `showCheckoutModal` removed. Cart-pill navigates to `#/checkout` instead of
+  opening a modal. A `preserveCartOnce` flag keeps the cart if the user backs
+  out of checkout to the menu.
+- The three radio groups are now `seg-chip`/`chip-row` chips (matching the rest
+  of the app): delivery location (Хаана авах вэ?), pickup time (Хэзээ авах вэ?),
+  and payment (Төлбөр). Selecting "table" still reveals the floor plan and
+  "scheduled" still reveals the datetime input; values read from the active
+  chip's `data-*` attribute.
+
 ## 2026-06-30 (payment method chips)
 
 ### Tee-time "Төлбөрийн арга" switched from radio buttons to chips
