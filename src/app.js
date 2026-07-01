@@ -3750,7 +3750,14 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
 async function syncBookingPlayers(game) {
   if (!game.bookingId) return;
   try {
-    const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => ({ name: displayFullName(allUsersMap[p.id] || p) }));
+    // Include each player's phone when known — MTBogd matches players joining
+    // after booking creation to their club membership by phone (name-only
+    // sync leaves later joiners permanently unmatched as guests).
+    const allPlayers = ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).map(p => {
+      const u = allUsersMap[p.id] || p;
+      const phone = u.phone ? String(u.phone).trim() : '';
+      return { name: displayFullName(u), ...(phone && { phone }) };
+    });
     await mtbogd.updateBookingPlayers(game.id, allPlayers);
   } catch (err) {
     showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
