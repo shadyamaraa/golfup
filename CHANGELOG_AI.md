@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (avatar photo upload)
+
+### Profile avatar can now be an uploaded photo (not just an emoji)
+
+The profile edit form gained a photo upload alongside the emoji picker, and
+every avatar slot in the app now renders an image when the avatar is a photo.
+
+- `fileToAvatarDataURL()` reads the chosen image and produces a small square
+  JPEG data-URL (cover-cropped, max 256px, ~15-30KB) stored in `user.avatar`.
+- New avatar preview circle + "Зураг оруулах" button + file input in
+  `profileFormInner`; `wireProfileForm` handles upload → preview → save.
+- `isImageAvatar()` / `avatarInner()` helpers make every avatar slot (header,
+  profile, player rows/dots, invite chips, feature-card avatars, modal titles,
+  follow list) show an `<img>` for photo avatars and the emoji/initial
+  otherwise. `.avatar-img` fills the circular container (containers clip).
+- New i18n keys (avatarUpload / avatarUploadHint / avatarUploadFail, MN/EN/KR);
+  the "Аватар" label no longer says "(Emoji)".
+
 ## 2026-07-01 (news carousel)
 
 ### Home news becomes a real side-scrolling carousel with multiple items

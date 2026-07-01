@@ -64,6 +64,42 @@ function needsProfileCompletion(user) {
   return !!user && (!user.username || (!user.firstName && !user.fullName));
 }
 
+// An avatar value is either an emoji/initial (text) or an uploaded photo
+// (data-URL or http URL). These helpers let every avatar slot render either.
+function isImageAvatar(v) {
+  return typeof v === 'string' && (v.startsWith('data:image') || /^https?:\/\//i.test(v));
+}
+// Returns the inner HTML for a circular avatar container: an <img> for image
+// avatars, otherwise the escaped emoji/char (falling back to `fallback`).
+function avatarInner(avatar, fallback) {
+  if (isImageAvatar(avatar)) return `<img class="avatar-img" src="${esc(avatar)}" alt="" />`;
+  return esc(avatar) || esc(fallback);
+}
+// Read an image File → a small square JPEG data-URL for use as an avatar
+// (cover-cropped, max `size` px). Keeps the stored payload tiny (~15-30KB).
+function fileToAvatarDataURL(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) { reject(new Error('image required')); return; }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode failed'));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const MN_BANKS = [
   'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвескор банк', 'Капитрон банк',
   'М банк', 'Төрийн банк', 'Хаан банк', 'Хас банк', 'Худалдаа Хөгжилийн Банк',
@@ -270,8 +306,8 @@ function updateHeader() {
   if (currentUser && userInfo) {
     userInfo.classList.remove('hidden');
     if (nameDisplay) nameDisplay.textContent = displayUsername(currentUser);
-    if (avatar) avatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
-    if (headerAvatar) headerAvatar.textContent = currentUser.avatar || displayUsername(currentUser).charAt(0).toUpperCase();
+    if (avatar) avatar.innerHTML = avatarInner(currentUser.avatar, displayUsername(currentUser).charAt(0).toUpperCase());
+    if (headerAvatar) headerAvatar.innerHTML = avatarInner(currentUser.avatar, displayUsername(currentUser).charAt(0).toUpperCase());
     if (adminLink) adminLink.classList.toggle('hidden', currentUser.role !== 'admin');
   } else if (userInfo) {
     userInfo.classList.add('hidden');
@@ -1009,8 +1045,8 @@ function renderNextGameFeature(games) {
   const more = Math.max(0, totalPlayers - shown.length);
   const avStack = shown.map(p => {
     const u = allUsersMap[p.id];
-    const ch = (u && u.avatar) || (p.name || '?').charAt(0).toUpperCase();
-    return `<span class="fc-av">${esc(ch)}</span>`;
+    const ch = avatarInner(u && u.avatar, (p.name || '?').charAt(0).toUpperCase());
+    return `<span class="fc-av">${ch}</span>`;
   }).join('') + (more > 0 ? `<span class="fc-av fc-av-more">+${more}</span>` : '');
   return host.innerHTML = `
     <a href="#/game/${g.id}" class="feature-card" style="display:block; text-decoration:none;">
@@ -1171,7 +1207,7 @@ function renderPlayerDots(game) {
   for (let i = 0; i < game.groupSize; i++) {
     if (players[i]) {
       const user = allUsersMap[players[i].id];
-      const displayChar = (user && user.avatar) ? user.avatar : players[i].name.charAt(0).toUpperCase();
+      const displayChar = avatarInner(user && user.avatar, players[i].name.charAt(0).toUpperCase());
       dots += `<span class="player-dot filled" title="${players[i].name}">${displayChar}</span>`;
     } else {
       dots += `<span class="player-dot empty"></span>`;
@@ -1556,9 +1592,9 @@ async function renderCreateGame() {
     if (!container) return;
     container.innerHTML = selectedInviteIds.map(id => {
       const u = availableById[id];
-      const ch = (u && u.avatar) || (u ? displayUsername(u).charAt(0).toUpperCase() : '?');
+      const ch = avatarInner(u && u.avatar, u ? displayUsername(u).charAt(0).toUpperCase() : '?');
       const name = u ? displayUsername(u) : id;
-      return `<button type="button" class="invite-av rm-invite-chip" data-id="${id}" title="${esc(name)}">${esc(ch)}</button>`;
+      return `<button type="button" class="invite-av rm-invite-chip" data-id="${id}" title="${esc(name)}">${ch}</button>`;
     }).join('');
     container.querySelectorAll('.rm-invite-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1856,7 +1892,7 @@ function renderGameView(game) {
     return `
               <div class="player-row waiting${rowClass}">
                 <span class="player-order">${idx + 1}</span>
-                <span class="player-avatar-sm${avatarClass}">${allUsersMap[p.id]?.avatar || displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase()}</span>
+                <span class="player-avatar-sm${avatarClass}">${avatarInner(allUsersMap[p.id]?.avatar, displayUsername(allUsersMap[p.id] || p).charAt(0).toUpperCase())}</span>
                 <span class="player-name">${displayUsername(allUsersMap[p.id] || p)}${tag}</span>
                 <button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>
               </div>`;
@@ -1934,7 +1970,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       slots.push(`
         <div class="player-row filled${rowClass}">
           <span class="player-order">${i + 1}</span>
-          <span class="player-avatar-sm${avatarClass}">${allUsersMap[pid]?.avatar || displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase()}</span>
+          <span class="player-avatar-sm${avatarClass}">${avatarInner(allUsersMap[pid]?.avatar, displayUsername(allUsersMap[pid] || players[i]).charAt(0).toUpperCase())}</span>
           <span class="player-name">${displayUsername(allUsersMap[pid] || players[i])}${tag}</span>
           <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
@@ -2249,7 +2285,7 @@ async function renderAdminPanel() {
         : `<div style="display:flex; flex-direction:column; gap:5px;">
             ${members.map(u => `
               <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--bg-card-hover); border-radius:6px;">
-                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+                <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
                 <span style="flex:1; font-size:0.9rem; ${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</span>
                 <button class="btn btn-sm btn-danger circle-remove-btn" data-circle="${circle.id}" data-user="${u.id}" style="padding:3px 8px; font-size:0.8rem;">${icon('close', { size: 14 })}</button>
               </div>`).join('')}
@@ -2306,7 +2342,7 @@ async function renderAdminPanel() {
             <div style="display:flex; flex-direction: column; gap: 8px;">
               ${users.map(u => `
                 <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: var(--bg-card-hover); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
-                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+                  <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
                     <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
@@ -2336,7 +2372,7 @@ async function renderAdminPanel() {
               <div style="display:flex; flex-direction:column; gap:8px;">
                 ${noCircle.map(u => `
                   <div style="display:flex; align-items:center; gap:8px; background:var(--bg-card-hover); border-radius:8px; padding:10px;">
-                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+                    <span class="player-avatar-sm" style="background:${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}; flex-shrink:0;">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
                     <div style="flex:1;">
                       <div style="${u.status === 'hold' ? 'text-decoration:line-through; color:var(--text-secondary);' : ''}">${displayUsername(u)}</div>
                       <div style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</div>
@@ -2483,7 +2519,7 @@ async function renderAdminPanel() {
     if (!matches.length) { lookupDropdown.style.display = 'none'; return; }
     lookupDropdown.innerHTML = matches.map(u => `
       <div class="lookup-item" data-id="${u.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); font-size:0.95rem; display:flex; gap:8px; align-items:center;">
-        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+        <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
         <span style="flex:1;">${displayUsername(u)}</span>
         <span style="font-size:0.8rem; color:var(--text-secondary);">${u.phone || ''}</span>
       </div>`).join('');
@@ -2765,7 +2801,7 @@ async function renderUsersList() {
     return `
       <div class="player-row ${rowClass} user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)}`.toLowerCase()}" style="margin-bottom:6px;padding:12px 16px;">
         <div class="avatar-follow-wrap" style="position:relative;display:inline-flex;flex-shrink:0;">
-          <span class="player-avatar-sm ${avatarClass}">${esc(u.avatar) || displayUsername(u).charAt(0).toUpperCase()}</span>
+          <span class="player-avatar-sm ${avatarClass}">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
           ${followBtn(u.id)}
         </div>
         <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
@@ -2901,7 +2937,7 @@ function showUserDetailsModal(user) {
   modal.className = 'modal-overlay fade-in';
   modal.innerHTML = `
     <div class="modal-content glass-card bank-details-modal">
-      <h3 class="modal-title">${user.avatar || '👤'} ${displayUsername(user)}</h3>
+      <h3 class="modal-title"><span class="ava-inline">${avatarInner(user.avatar, '👤')}</span> ${displayUsername(user)}</h3>
       <div class="bank-info-row">
         <span class="label">Овог нэр:</span>
         <span class="value">${displayFullName(user)}</span>
@@ -3044,7 +3080,7 @@ async function renderEditGame(gameId) {
               ${waitingList.map((p, idx) => `
                 <div class="player-row waiting">
                   <span class="player-order">${idx + 1}</span>
-                  <span class="player-avatar-sm">${allUsersMap[p.id]?.avatar || p.name.charAt(0).toUpperCase()}</span>
+                  <span class="player-avatar-sm">${avatarInner(allUsersMap[p.id]?.avatar, p.name.charAt(0).toUpperCase())}</span>
                   <span class="player-name">${p.name}</span>
                   ${!isPast ? `<button class="remove-player-btn" data-id="${p.id}" style="margin-left:auto; background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
                 </div>
@@ -3941,7 +3977,15 @@ function profileFormInner(user) {
   return `
       <div class="input-group">
         <label>${t('avatar')}</label>
-        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+          <div class="avatar-preview" id="avatar-preview">${avatarInner(user.avatar, displayUsername(user).charAt(0).toUpperCase())}</div>
+          <div style="min-width:0;">
+            <button type="button" id="avatar-upload-btn" class="btn btn-outline btn-sm" style="gap:6px;">${icon('edit', { size: 14 })} ${t('avatarUpload')}</button>
+            <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" />
+            <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('avatarUploadHint')}</div>
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; background: var(--bg-card-hover); padding: 10px; border-radius: 8px;">
           ${avatars.map(a => `
             <div class="avatar-option ${user.avatar === a ? 'selected' : ''}" data-val="${a}" style="font-size: 1.5rem; cursor:pointer; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; border-radius: 50%; ${user.avatar === a ? 'background: var(--primary-color);' : ''}">${a}</div>
           `).join('')}
@@ -4013,13 +4057,34 @@ function profileFormInner(user) {
 // Wire avatar selection + save for a profile form inside `scope` (modal or page).
 function wireProfileForm(scope, user, afterSave) {
   let selectedAvatar = user.avatar || '';
+  const preview = scope.querySelector('#avatar-preview');
+  const refreshPreview = () => { if (preview) preview.innerHTML = avatarInner(selectedAvatar, displayUsername(user).charAt(0).toUpperCase()); };
   scope.querySelectorAll('.avatar-option').forEach(opt => {
     opt.onclick = () => {
       scope.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
       opt.style.background = 'var(--primary-color)';
       selectedAvatar = opt.dataset.val;
+      refreshPreview();
     };
   });
+  // Upload own photo → small square JPEG data-URL.
+  const fileInput = scope.querySelector('#avatar-file-input');
+  const uploadBtn = scope.querySelector('#avatar-upload-btn');
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      try {
+        selectedAvatar = await fileToAvatarDataURL(file);
+        scope.querySelectorAll('.avatar-option').forEach(o => o.style.background = '');
+        refreshPreview();
+      } catch (_) {
+        showToast(t('avatarUploadFail'), 'error');
+      }
+      fileInput.value = '';
+    };
+  }
   const saveBtn = scope.querySelector('#profile-modal-save');
   if (!saveBtn) return;
   saveBtn.onclick = async () => {
@@ -4150,7 +4215,7 @@ async function renderProfile() {
       </div>
       <div class="profile-body">
         <div class="profile-head">
-          <div class="profile-avatar">${esc(u.avatar || initial)}</div>
+          <div class="profile-avatar">${avatarInner(u.avatar, initial)}</div>
           <div class="profile-id">
             <div class="profile-name">${esc(displayFullName(u) || displayUsername(u))}</div>
             <div class="profile-since">${t('pfSince')} ${year}</div>
