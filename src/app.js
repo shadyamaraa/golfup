@@ -2028,6 +2028,8 @@ async function renderJoinPay(gameId) {
   if (!game) { location.hash = '#/'; return; }
   if (isPlayerInGame(game, currentUser.id)) { location.hash = '#/game/' + gameId; return; }
 
+  // MTBogd bills a flat rate per booked slot (not split per player), so the
+  // only real number to show is the total it reports — no per-player guess.
   let amount = null;
   if (game.bookingId) {
     try {
@@ -2035,7 +2037,6 @@ async function renderJoinPay(gameId) {
       amount = status && status.amount ? status.amount : null;
     } catch (_) { /* fall back to no price shown */ }
   }
-  const perPlayer = amount ? Math.round(amount / (game.groupSize || 1)) : null;
 
   main().innerHTML = `
     <div class="detail-container fade-in" style="max-width:480px;">
@@ -2048,8 +2049,7 @@ async function renderJoinPay(gameId) {
         </div>
         ${amount ? `
         <div style="border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin:10px 0;padding:10px 0;font-size:0.9rem;">
-          <div style="display:flex;justify-content:space-between;"><span>${t('orderTotal')}</span><span>${amount.toLocaleString()}₮</span></div>
-          <div style="display:flex;justify-content:space-between;margin-top:4px;font-weight:700;"><span>${t('joinPayPerPlayer')}</span><span>~${perPlayer.toLocaleString()}₮</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('orderTotal')}</span><span>${amount.toLocaleString()}₮</span></div>
         </div>` : ''}
         <div style="margin-top:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">Төлбөр</label>
