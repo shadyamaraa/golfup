@@ -19,9 +19,10 @@ function applyTheme(theme) {
 }
 
 const isKiosk = !!window.__TAURI__;
-// QPay is live everywhere, including production (ubgolf.club). To restrict it to
-// preview/localhost again, use: /--|localhost|127\.0\.0\.1/.test(location.hostname)
-const QPAY_ENABLED = true;
+// QPay is currently disabled everywhere (tee-time booking + restaurant
+// checkout) — the QPay option shows as "coming soon" and only Clubhouse
+// payment is selectable. To re-enable, set this back to true.
+const QPAY_ENABLED = false;
 
 let currentUser = null;
 let allUsersMap = {};
