@@ -1,5 +1,31 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (remaining green notification accents)
+
+### Replace leftover pre-redesign green on toasts/alert banners with navy/gold
+
+A few notification-style elements still used the old bright green from
+before the redesign — either through the shared `--green-bright` token
+(`.toast-success`) or literal hex colors that bypassed the token system
+entirely (tee-time confirmation banners, the order-completed banner, the
+kitchen new-order alert). Fixed all of them to the brand's navy/gold
+language; left alone `.status-open`/`.order-chip.done` (already
+deliberately tuned green per theme) and the persistent invite/delivery
+status badges, since those are categorical labels, not notifications.
+
+- `.toast-success` (tokens-redesign.css): navy background + bold gold text
+  (was `--green-bright`) — now distinct from `.toast-info` (navy + cream)
+  and `.toast-warning` (gold + navy).
+- Tee-time slot-selected confirmation banners (create form + book-teetime
+  modal): green rgba/border → `rgba(var(--primary-rgb),0.12)` + gold border.
+- Order-detail "completed" banner: green rgba tint → same `--primary-rgb`
+  based gold tint (border/text were already gold, so the background now
+  matches instead of clashing).
+- Kitchen new-order alert banner: solid green → gold background + navy
+  text/close button, matching the toast-warning treatment.
+- `.food-cart-pill`'s dead `--primary-rgb` fallback (style.css) updated
+  from an old green default to the current gold rgb (cosmetic, inert).
+
 ## 2026-07-01 (MTBogd member match for later joiners)
 
 ### Send joining players' phone numbers to MTBogd so they can be matched to club membership

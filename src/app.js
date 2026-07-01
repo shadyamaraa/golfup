@@ -1368,7 +1368,7 @@ async function renderCreateGame() {
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     const price = selectedTeeSlot.price ? `${(selectedTeeSlot.price / 1000).toFixed(0)}K₮` : '';
-    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(76,175,80,0.12); border:1px solid #4caf5044; font-size:0.9rem;">
+    el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(var(--primary-rgb),0.12); border:1px solid var(--gold); font-size:0.9rem;">
       ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)} ${price ? `· ${price}` : ''}
       <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
     </div>
@@ -3385,7 +3385,7 @@ async function handleBookTeeTime(game) {
       </div>
       <div id="bt-slots"></div>
       ${btSlot ? `
-        <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(76,175,80,0.12);border:1px solid #4caf5044;font-size:0.9rem;">
+        <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(var(--primary-rgb),0.12);border:1px solid var(--gold);font-size:0.9rem;">
           ✅ ${t('bookSlotSelected')}: <strong>${slotLabel(btSlot)}</strong>
         </div>
         <button type="button" id="bt-confirm" class="btn btn-primary" style="width:100%;margin-top:10px;">${t('bookSubmit')}</button>
@@ -5182,7 +5182,7 @@ async function renderOrderDetail(orderId) {
       </div>`;
 
     const banner = done
-      ? `<div style="background:rgba(34,197,94,0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);display:flex;align-items:center;justify-content:center;gap:6px;">${icon('confirm', { size: 17 })} ${t('orderStatusCompleted')}</div>`
+      ? `<div style="background:rgba(var(--primary-rgb),0.15);border:1px solid var(--primary-color);border-radius:10px;padding:12px;text-align:center;font-weight:700;color:var(--primary-color);display:flex;align-items:center;justify-content:center;gap:6px;">${icon('confirm', { size: 17 })} ${t('orderStatusCompleted')}</div>`
       : paid
       ? `<div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('order', { size: 16 })} ${t('orderStatusPaid')}…</div>`
       : `<div style="background:rgba(148,163,184,0.12);border:1px solid var(--border-color);border-radius:10px;padding:12px;text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">${icon('time', { size: 16 })} ${t('orderStatusPending')}</div>`;
@@ -5332,14 +5332,14 @@ async function renderKitchenDisplay() {
     const items = (order.items || []).map(i => `${esc(i.name)} ×${i.qty}`).join(' · ');
     const banner = document.createElement('div');
     banner.id = 'kitchen-order-banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#16a34a;color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:var(--gold);color:#0C3051;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.5);animation:slideDown 0.3s ease;font-size:1rem;';
     banner.innerHTML = `
       <div>
         <div style="font-size:1.3rem;font-weight:800;margin-bottom:2px;">${icon('alerts', { size: 18 })} Шинэ захиалга!</div>
         <div style="font-weight:700;">${esc(order.customerName || '')} ${order.customerPhone ? '· ' + esc(order.customerPhone) : ''}</div>
-        <div style="opacity:0.9;font-size:0.9rem;">${items}</div>
+        <div style="opacity:0.85;font-size:0.9rem;">${items}</div>
       </div>
-      <button id="kitchen-banner-close" style="background:rgba(255,255,255,0.25);border:none;color:#fff;font-size:1.4rem;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;">✕</button>
+      <button id="kitchen-banner-close" style="background:rgba(12,48,81,0.15);border:none;color:#0C3051;font-size:1.4rem;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;">✕</button>
     `;
     if (!document.getElementById('kitchen-banner-style')) {
       const s = document.createElement('style');

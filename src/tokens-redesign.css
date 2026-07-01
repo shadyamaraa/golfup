@@ -541,7 +541,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   background: linear-gradient(145deg, #0C3051, #15406A); color: var(--gold);
 }
 .notif-item { border-radius: 16px; }
-.toast-success { background: var(--green-bright); color: #fff; }
+.toast-success { background: var(--emerald-dark); color: var(--gold); font-weight: 700; }
 .toast-info    { background: var(--emerald); color: #F3EFE4; }
 .toast-warning { background: var(--gold); color: #0C3051; }
 .toast-error   { background: var(--red); color: #fff; }
