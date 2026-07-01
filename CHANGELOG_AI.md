@@ -1,5 +1,26 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (show MTBogd's real member/guest price on the booking)
+
+### Surface the actual price MTBogd charges, not just the pre-match slot listing
+
+`GET /tee-times` (used while picking a slot in the create form) has no
+phone/member parameter — it shows one generic price for every slot, before
+any member match happens. So the "300K₮" shown at slot-selection time can be
+wrong: if the creator doesn't actually match a club membership, MTBogd may
+charge the guest rate instead (e.g. 380K₮) once the booking is confirmed
+with their phone. There's no way to preview the correct rate *before*
+booking (the API doesn't support a phone-aware quote) — but the real number
+becomes knowable immediately *after* `confirmBooking` sends the phone.
+
+- Game detail (creator view only) now shows "MTBogd-ийн бодит үнэ" under the
+  booking code, sourced live from `mtbogd.getQpayStatus(bookingId).amount` —
+  the same call already used to detect payment — labeled "(гишүүний үнэ)" /
+  "(зочны үнэ)" from `customerType`. Shows a loading state until it resolves;
+  if already paid, reads the stored `game.paidAmount` instead of re-fetching.
+  New i18n keys (bookRealPrice/bookPriceChecking/bookPriceMember/
+  bookPriceGuest, MN/EN/KR).
+
 ## 2026-07-01 (remaining green notification accents)
 
 ### Replace leftover pre-redesign green on toasts/alert banners with navy/gold
