@@ -5767,6 +5767,10 @@ async function renderAdminNewsTab() {
         <div style="display:flex;flex-direction:column;gap:8px;">
           <input id="news-title" type="text" placeholder="${t('newsTitle')}" style="${inputStyle}" />
           <input id="news-image" type="text" placeholder="${t('newsImageUrl')}" style="${inputStyle}" />
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button type="button" id="news-upload-btn" class="btn btn-outline btn-sm" style="gap:6px;">${icon('edit', { size: 14 })} ${t('avatarUpload')}</button>
+            <input type="file" id="news-file-input" accept="image/*" style="display:none;" />
+          </div>
           <img id="news-image-preview" src="" alt="" style="display:none;width:100%;max-height:130px;border-radius:8px;object-fit:cover;" />
           <input id="news-link" type="text" placeholder="${t('newsLink')}" style="${inputStyle}" />
           <div style="display:flex;gap:8px;">
@@ -5786,6 +5790,22 @@ async function renderAdminNewsTab() {
     if (u) { imgPreview.src = u; imgPreview.style.display = 'block'; } else { imgPreview.style.display = 'none'; }
   };
   imgInput.oninput = updatePreview;
+
+  // Upload own photo → resized (not cropped) JPEG data-URL, same as pasting a URL.
+  const newsFileInput = document.getElementById('news-file-input');
+  const newsUploadBtn = document.getElementById('news-upload-btn');
+  newsUploadBtn.onclick = () => newsFileInput.click();
+  newsFileInput.onchange = async () => {
+    const file = newsFileInput.files && newsFileInput.files[0];
+    if (!file) return;
+    try {
+      imgInput.value = await fileToWideImageDataURL(file);
+      updatePreview();
+    } catch (_) {
+      showToast(t('avatarUploadFail'), 'error');
+    }
+    newsFileInput.value = '';
+  };
 
   const openForm = (n) => {
     editing = n || null;
