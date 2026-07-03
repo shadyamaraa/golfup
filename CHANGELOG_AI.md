@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-07-01 (news image upload)
+
+### Admin news images can now be uploaded, not just linked by URL
+
+Mirrors the sponsor banner upload: an "Зураг оруулах" button + file input
+next to the news image URL field in the admin news add/edit form. Reuses
+the existing `fileToWideImageDataURL` helper (proportional resize, no crop
+— matches how news cards already render via `background-size:cover`) and
+the existing URL/preview/save flow unchanged; the uploaded file just
+becomes the value of the `news-image` field.
+
 ## 2026-07-01 (show MTBogd's real member/guest price on the booking)
 
 ### Surface the actual price MTBogd charges, not just the pre-match slot listing
