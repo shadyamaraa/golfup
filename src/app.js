@@ -767,7 +767,7 @@ async function renderHomeNews(items) {
     <div class="news-carousel">
       ${items.map(n => {
         const bg = n.imageUrl
-          ? `style="background-image:linear-gradient(to top, rgba(6,18,35,0.93) 0%, rgba(6,18,35,0.35) 55%, rgba(6,18,35,0.12) 100%), url('${esc(n.imageUrl)}'); background-size:cover; background-position:center;"`
+          ? `style="background-image:linear-gradient(to top, rgba(6,18,35,0.93) 0%, rgba(6,18,35,0.35) 55%, rgba(6,18,35,0.12) 100%), url('${esc(n.imageUrl)}'); background-size:cover; background-position:${n.posX ?? 50}% ${n.posY ?? 50}%;"`
           : '';
         const inner = `<span class="pill-soft news-pill">${t('newsTag')}</span><div class="news-title">${esc(n.title || '')}</div>`;
         return n.link
@@ -5771,7 +5771,10 @@ async function renderAdminNewsTab() {
             <button type="button" id="news-upload-btn" class="btn btn-outline btn-sm" style="gap:6px;">${icon('edit', { size: 14 })} ${t('avatarUpload')}</button>
             <input type="file" id="news-file-input" accept="image/*" style="display:none;" />
           </div>
-          <img id="news-image-preview" src="" alt="" style="display:none;width:100%;max-height:130px;border-radius:8px;object-fit:cover;" />
+          <div id="news-preview-wrap" class="sp-preview" style="display:none;">
+            <img id="news-image-preview" src="" alt="" />
+            <span class="sp-drag-hint">${t('sponsorDragHint')}</span>
+          </div>
           <input id="news-link" type="text" placeholder="${t('newsLink')}" style="${inputStyle}" />
           <div style="display:flex;gap:8px;">
             <button id="save-news-btn" class="btn btn-primary btn-sm">${t('save')}</button>
@@ -5784,10 +5787,14 @@ async function renderAdminNewsTab() {
   let editing = null;
   const form = document.getElementById('add-news-form');
   const imgInput = document.getElementById('news-image');
+  const previewWrap = document.getElementById('news-preview-wrap');
   const imgPreview = document.getElementById('news-image-preview');
+  let newsPosX = 50, newsPosY = 50;
+  const applyNewsPos = () => { imgPreview.style.objectPosition = `${newsPosX}% ${newsPosY}%`; };
   const updatePreview = () => {
     const u = imgInput.value.trim();
-    if (u) { imgPreview.src = u; imgPreview.style.display = 'block'; } else { imgPreview.style.display = 'none'; }
+    if (u) { imgPreview.src = u; previewWrap.style.display = 'block'; applyNewsPos(); }
+    else { previewWrap.style.display = 'none'; }
   };
   imgInput.oninput = updatePreview;
 
@@ -5800,6 +5807,7 @@ async function renderAdminNewsTab() {
     if (!file) return;
     try {
       imgInput.value = await fileToWideImageDataURL(file);
+      newsPosX = 50; newsPosY = 50;
       updatePreview();
     } catch (_) {
       showToast(t('avatarUploadFail'), 'error');
@@ -5807,11 +5815,30 @@ async function renderAdminNewsTab() {
     newsFileInput.value = '';
   };
 
+  // Drag the preview to choose which part of the image shows in the news card.
+  let newsDragging = false, newsLastX = 0, newsLastY = 0;
+  previewWrap.addEventListener('pointerdown', (e) => {
+    newsDragging = true; newsLastX = e.clientX; newsLastY = e.clientY;
+    previewWrap.setPointerCapture(e.pointerId);
+  });
+  previewWrap.addEventListener('pointermove', (e) => {
+    if (!newsDragging) return;
+    const r = previewWrap.getBoundingClientRect();
+    newsPosX = Math.min(100, Math.max(0, newsPosX - (e.clientX - newsLastX) / r.width * 100));
+    newsPosY = Math.min(100, Math.max(0, newsPosY - (e.clientY - newsLastY) / r.height * 100));
+    newsLastX = e.clientX; newsLastY = e.clientY;
+    applyNewsPos();
+  });
+  const endNewsDrag = () => { newsDragging = false; };
+  previewWrap.addEventListener('pointerup', endNewsDrag);
+  previewWrap.addEventListener('pointercancel', endNewsDrag);
+
   const openForm = (n) => {
     editing = n || null;
     document.getElementById('news-title').value = n?.title || '';
     imgInput.value = n?.imageUrl || '';
     document.getElementById('news-link').value = n?.link || '';
+    newsPosX = n?.posX ?? 50; newsPosY = n?.posY ?? 50;
     updatePreview();
     form.style.display = 'block';
     form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -5831,6 +5858,8 @@ async function renderAdminNewsTab() {
       title,
       imageUrl: imgInput.value.trim(),
       link: document.getElementById('news-link').value.trim(),
+      posX: Math.round(newsPosX),
+      posY: Math.round(newsPosY),
     };
     await store.saveNewsItem(item);
     showToast(editing ? '✅ Шинэчлэгдлээ' : '✅ Нэмэгдлээ', 'success');
