@@ -126,9 +126,9 @@ function fileToWideImageDataURL(file, maxWidth = 1200) {
 }
 
 const MN_BANKS = [
-  'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвескор банк', 'Капитрон банк',
-  'М банк', 'Төрийн банк', 'Хаан банк', 'Хас банк', 'Худалдаа Хөгжилийн Банк',
-  'Чингис хаан банк'
+  'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвэскор банк', 'Капитрон банк',
+  'М банк', 'Төрийн банк', 'Тээвэр хөгжлийн банк', 'Хаан банк', 'Хас банк',
+  'Худалдаа хөгжлийн банк', 'Үндэсний хөрөнгө оруулалтын банк', 'Чингис хаан банк'
 ];
 
 const COMMUNITY_OPTIONS = [
@@ -4264,9 +4264,9 @@ async function renderProfileEdit() {
         <div class="create-section">
           <div class="cs-label">${t('language')}</div>
           <div class="chip-row" id="lang-chips">
-            <button type="button" class="seg-chip" data-lang="mn">MN</button>
-            <button type="button" class="seg-chip" data-lang="en">EN</button>
-            <button type="button" class="seg-chip" data-lang="kr">한국</button>
+            <button type="button" class="seg-chip" data-lang="mn">Монгол</button>
+            <button type="button" class="seg-chip" data-lang="en">English</button>
+            <button type="button" class="seg-chip" data-lang="kr">한국어</button>
           </div>
         </div>
         <div style="border-top:1px solid var(--border-card); margin:6px 0 18px;"></div>
