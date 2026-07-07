@@ -41,6 +41,16 @@ let pendingAuthRedirect = null;
 
 // Past games stay in History for this many days, then move to Archive.
 const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+// A game counts as "live" (and stays in the active feed) for this long after its
+// start time, then it moves to past games.
+const LIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
+function gameStartMs(g) {
+  return new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+}
+function isGameLive(g, now = Date.now()) {
+  const ms = gameStartMs(g);
+  return !isNaN(ms) && now >= ms && now < ms + LIVE_WINDOW_MS;
+}
 
 const main = () => document.getElementById('main-content');
 
@@ -1134,7 +1144,8 @@ function renderGamesHome(games) {
   allGames.forEach(g => {
     if (!matchesHomeFilter(g)) return;
     const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
-    if (gDate >= now) activeGames.push(g);
+    // Future games AND games still within their 4h live window stay active.
+    if (gDate + LIVE_WINDOW_MS >= now) activeGames.push(g);
     else if (now - gDate <= ARCHIVE_AFTER_MS) pastGames.push(g);
     else archivedGames.push(g);
   });
@@ -1210,6 +1221,7 @@ function renderGamesCards(games, isPast = false) {
     const firstGroup = groups[0] || [];
     const spotsLeft = Math.max(0, g.groupSize - (Array.isArray(firstGroup) ? firstGroup.length : Object.values(firstGroup).length));
     const isFull = spotsLeft === 0;
+    const isLive = isGameLive(g);
     const dateStr = formatDate(g.date);
     const gameCommunities = gameCommunityIds(g);
     const fillPct = totalSlots > 0 ? Math.min(100, Math.round((totalPlayers / totalSlots) * 100)) : 0;
@@ -1230,7 +1242,9 @@ function renderGamesCards(games, isPast = false) {
           </div>
           <div class="gc-top-right">
             ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
-            <span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>
+            ${isLive
+              ? `<span class="game-status status-live"><span class="live-dot"></span>${t('liveNow')}</span>`
+              : `<span class="game-status ${isFull ? 'status-full' : 'status-open'}">${isFull ? t('full') : t('open')}</span>`}
           </div>
         </div>
         <div class="gc-foot">
@@ -2599,7 +2613,7 @@ async function renderAdminPanel() {
       if (!inGame) continue;
       const gMs = new Date(`${g.date}T${(g.time||'00:00').padStart(5,'0')}`).getTime();
       if (g.status === 'deleted') deleted.push({ g, isCreator, gMs });
-      else if (gMs < now) past.push({ g, isCreator, gMs });
+      else if (gMs + LIVE_WINDOW_MS < now) past.push({ g, isCreator, gMs });
       else upcoming.push({ g, isCreator, gMs });
     }
     upcoming.sort((a,b) => a.gMs - b.gMs);

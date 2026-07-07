@@ -625,3 +625,17 @@ body:has(.bottom-nav:not(.hidden)) #main-content { padding-bottom: 76px; }
 /* Logout button icon */
 .btn-logout-icon { cursor: pointer; background: none; border: none; opacity: 0.7; width: 20px; height: 20px; padding: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpolyline points='16 17 21 12 16 7'/%3E%3Cline x1='21' y1='12' x2='9' y2='12'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-size: contain; }
 .btn-logout-icon:hover { opacity: 1; }
+
+/* ====== Live game badge ====== */
+.game-status.status-live {
+  background: #e11d48; color: #fff;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #fff;
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,255,255,0.55); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(255,255,255,0); }
+}
