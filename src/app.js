@@ -125,11 +125,31 @@ function fileToWideImageDataURL(file, maxWidth = 1200) {
   });
 }
 
+// Bank options. `mn` is the stored/canonical value; en/kr are display labels.
 const MN_BANKS = [
-  'Ариг банк', 'Богд банк', 'Голомт банк', 'Инвэскор банк', 'Капитрон банк',
-  'М банк', 'Төрийн банк', 'Тээвэр хөгжлийн банк', 'Хаан банк', 'Хас банк',
-  'Худалдаа хөгжлийн банк', 'Үндэсний хөрөнгө оруулалтын банк', 'Чингис хаан банк'
+  { mn: 'Ариг банк', en: 'Arig Bank', kr: '아리그 은행' },
+  { mn: 'Богд банк', en: 'Bogd Bank', kr: '보그드 은행' },
+  { mn: 'Голомт банк', en: 'Golomt Bank', kr: '골롬트 은행' },
+  { mn: 'Инвэскор банк', en: 'Invescore Bank', kr: '인베스코어 은행' },
+  { mn: 'Капитрон банк', en: 'Capitron Bank', kr: '카피트론 은행' },
+  { mn: 'М банк', en: 'M Bank', kr: 'M 은행' },
+  { mn: 'Төрийн банк', en: 'State Bank', kr: '국영은행' },
+  { mn: 'Тээвэр хөгжлийн банк', en: 'Transport & Development Bank', kr: '운송개발은행' },
+  { mn: 'Хаан банк', en: 'Khan Bank', kr: '칸 은행' },
+  { mn: 'Хас банк', en: 'XacBank', kr: '하스 은행' },
+  { mn: 'Худалдаа хөгжлийн банк', en: 'Trade & Development Bank (TDB)', kr: '무역개발은행' },
+  { mn: 'Үндэсний хөрөнгө оруулалтын банк', en: 'National Investment Bank', kr: '국가투자은행' },
+  { mn: 'Чингис хаан банк', en: 'Chinggis Khaan Bank', kr: '칭기스칸 은행' },
 ];
+
+// Localized display name for a stored (Mongolian) bank name.
+function bankLabel(mnName) {
+  if (!mnName) return '';
+  const b = MN_BANKS.find(x => x.mn === mnName);
+  if (!b) return mnName;
+  const lang = getLang();
+  return lang === 'en' ? b.en : lang === 'kr' ? b.kr : b.mn;
+}
 
 const COMMUNITY_OPTIONS = [
   { id: 'club', label: 'Club', type: 'club' },
@@ -236,10 +256,12 @@ function matchesHomeFilter(game) {
 }
 
 function bankSelectHTML(id, currentValue) {
-  const opts = MN_BANKS.map(b =>
-    `<option value="${b}"${currentValue === b ? ' selected' : ''}>${b}</option>`
-  ).join('');
-  return `<select id="${id}" class="form-input"><option value="">— Банк сонгох —</option>${opts}</select>`;
+  const lang = getLang();
+  const opts = MN_BANKS.map(b => {
+    const label = lang === 'en' ? b.en : lang === 'kr' ? b.kr : b.mn;
+    return `<option value="${esc(b.mn)}"${currentValue === b.mn ? ' selected' : ''}>${esc(label)}</option>`;
+  }).join('');
+  return `<select id="${id}" class="form-input"><option value="">${t('selectBank')}</option>${opts}</select>`;
 }
 
 function clearActiveListeners() {
@@ -2918,7 +2940,7 @@ async function renderUsersList() {
         </div>
         <button class="user-detail-btn" data-id="${u.id}" style="display:flex;flex-direction:column;flex:1;text-align:left;background:none;border:none;color:inherit;padding:0;cursor:pointer;">
           <span class="player-name">${displayUsername(u)}${tag}</span>
-          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(u.bankName) || t('unknownBank'))}</span>
+          <span style="font-size:0.75rem;color:var(--text-secondary);">${displayFullName(u) !== displayUsername(u) ? displayFullName(u) : (esc(bankLabel(u.bankName)) || t('unknownBank'))}</span>
         </button>
         ${(u.bankAccount || u.bankName) ? `<button class="copy-bank-btn btn-icon" data-id="${u.id}" title="${t('viewBank')}" style="cursor:pointer;display:inline-flex;align-items:center;">${icon('card', { size: 18 })}</button>` : ''}
       </div>`;
@@ -3068,7 +3090,7 @@ function showUserDetailsModal(user) {
       </div>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${esc(user.bankName) || '-'}</span>
+        <span class="value">${esc(bankLabel(user.bankName)) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
@@ -4117,18 +4139,18 @@ function profileFormInner(user) {
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
-        <label>Username *</label>
+        <label>${t('usernameLabel')} *</label>
         <input type="text" id="profile-username-input" value="${user.username || user.name || ''}" required minlength="2" autocomplete="username" />
       </div>
 
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
         <div class="input-group">
-          <label>Овог *</label>
-          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="Овог" />
+          <label>${t('lastName')} *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="${t('lastName')}" />
         </div>
         <div class="input-group">
-          <label>Нэр *</label>
-          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="Нэр" />
+          <label>${t('firstName')} *</label>
+          <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="${t('firstName')}" />
         </div>
       </div>
 
@@ -4411,7 +4433,7 @@ function showBankDetailsModal(user) {
       <h3 class="modal-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">${icon('card', { size: 18 })} ${displayUsername(user)}-н данс</h3>
       <div class="bank-info-row">
         <span class="label">Банк:</span>
-        <span class="value">${esc(user.bankName) || '-'}</span>
+        <span class="value">${esc(bankLabel(user.bankName)) || '-'}</span>
       </div>
       <div class="bank-info-row">
         <span class="label">Данс:</span>
