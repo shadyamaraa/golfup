@@ -1,12 +1,18 @@
 name: Production Deploy
 
-# Manual trigger only — deploy to production from the GitHub Actions tab
-# ("Run workflow"). Pushing to main does NOT auto-deploy, so a merge is safe.
+# Deploys to production when either:
+#   - triggered manually from the Actions tab ("Run workflow"), or
+#   - a commit whose message contains [deploy] is pushed to main.
+# A normal merge/push to main does NOT deploy, so merging stays safe.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
