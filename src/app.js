@@ -1507,8 +1507,9 @@ async function renderCreateGame() {
             const teeRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
               tees.map(s => {
                 const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
+                const spots = s.spotsLeft != null ? ` · ${s.spotsLeft} ${t('spotsLeftShort')}` : '';
                 const sel = selectedTeeSlot?.slotId === s.slotId;
-                return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}</button>`;
+                return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 12px;">${s.teeLabel || ('T'+s.startTee)}${price}${spots}</button>`;
               }).join('')
             }</div>` : '';
             return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
@@ -3417,7 +3418,8 @@ async function handleBookTeeTime(game) {
 
   function slotLabel(s) {
     const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K` : '';
-    return `${s.time} ${s.teeLabel || ('T' + s.startTee)}${price}`;
+    const spots = s.spotsLeft != null ? ` · ${s.spotsLeft} ${t('spotsLeftShort')}` : '';
+    return `${s.time} ${s.teeLabel || ('T' + s.startTee)}${price}${spots}`;
   }
 
   function renderModal() {
