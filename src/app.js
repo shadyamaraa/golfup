@@ -214,6 +214,18 @@ function communityAudienceLabel(ids) {
   return `${labels}-ийн гишүүдэд`;
 }
 
+// When MTBogd returns no bookable slots, explain WHY from the slots' reasons.
+function noSlotsMessage(allSlots) {
+  const reasons = {};
+  (allSlots || []).forEach(s => {
+    if (s.status !== 'available') reasons[s.unavailableReason || '?'] = (reasons[s.unavailableReason || '?'] || 0) + 1;
+  });
+  const top = Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (top === 'booking_too_soon') return t('slotsTooSoon');
+  if (top === 'holes_time_restricted') return t('slotsHolesRestricted');
+  return t('bookNoSlots');
+}
+
 function communityCheckboxes(name, selected = [], options = {}) {
   const selectedSet = new Set(selected);
   const allowedIds = Array.isArray(options.ids) ? new Set(options.ids) : null;
@@ -1484,7 +1496,7 @@ async function renderCreateGame() {
       const data = await fetchTeeTimes();
       const slots = (data.times || []).filter(s => s.status === 'available');
       if (slots.length === 0) {
-        slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${t('bookNoSlots')}</p>`;
+        slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--text-secondary); margin:8px 0;">${noSlotsMessage(data.times)}</p>`;
         return;
       }
 
@@ -3534,7 +3546,7 @@ async function handleBookTeeTime(game) {
     try {
       const data = await mtbogd.getTeeTimes(game.date, groupSize, btHoles);
       const slots = (data.times || []).filter(s => s.status === 'available');
-      if (!slots.length) { slotsEl.innerHTML = `<p style="font-size:0.85rem;color:var(--text-secondary);margin:8px 0;">${t('bookNoSlots')}</p>`; return; }
+      if (!slots.length) { slotsEl.innerHTML = `<p style="font-size:0.85rem;color:var(--text-secondary);margin:8px 0;">${noSlotsMessage(data.times)}</p>`; return; }
       slotsEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${
         slots.map(s => `<button type="button" class="bt-slot btn btn-sm ${btSlot?.slotId === s.slotId ? 'btn-primary' : 'btn-outline'}" data-slot='${JSON.stringify(s)}' style="font-size:0.8rem;padding:5px 10px;">${slotLabel(s)}</button>`).join('')
       }</div>`;
