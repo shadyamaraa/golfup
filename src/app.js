@@ -1492,6 +1492,11 @@ async function renderCreateGame() {
         document.getElementById('game-minute').value = m;
         const ttVal = document.getElementById('time-teetime-val');
         if (ttVal) ttVal.textContent = slot.time || `${h}:${m}`;
+        // Auto-match the flight size to the MTBogd slot (rule-driven). spotsLeft
+        // is the bookable count — equals the rule's flight size on an empty slot
+        // (e.g. 5), and never exceeds what can actually be booked.
+        const cap = slot.spotsLeft || 0;
+        if (cap > 0) applyGroupSizeMax(cap, cap);
         updateValue9Visibility();
         updateSelectedSlotDisplay();
         overlay.remove();
@@ -1628,16 +1633,28 @@ async function renderCreateGame() {
     }
   });
 
-  // Group-size segmented chips → hidden #game-group-size value.
+  // Group-size segmented chips → hidden #game-group-size value. When a MTBogd
+  // tee-time slot is picked, the flight size auto-matches the slot's capacity
+  // (rule-driven), so UBGolf follows MTBogd even when the rule changes.
   const sizeInput = document.getElementById('game-group-size');
-  document.querySelectorAll('#size-chips .seg-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('#size-chips .seg-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      sizeInput.value = chip.dataset.size;
-      prefetchTeeTimes();
+  function applyGroupSizeMax(max, selected) {
+    max = Math.max(1, Math.min(APP_CONFIG.maxGroupSize, max || 4));
+    selected = Math.min(selected || max, max);
+    sizeInput.value = selected;
+    const chipsEl = document.getElementById('size-chips');
+    if (!chipsEl) return;
+    chipsEl.innerHTML = Array.from({ length: max }, (_, i) => i + 1)
+      .map(n => `<button type="button" class="seg-chip ${n === selected ? 'active' : ''}" data-size="${n}">${n}</button>`).join('');
+    chipsEl.querySelectorAll('.seg-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        chipsEl.querySelectorAll('.seg-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        sizeInput.value = chip.dataset.size;
+        prefetchTeeTimes();
+      });
     });
-  });
+  }
+  applyGroupSizeMax(4, +sizeInput.value || 4);
   // Visibility segmented chips → hidden #game-visibility value.
   const visInput = document.getElementById('game-visibility');
   document.querySelectorAll('#vis-chips .seg-chip').forEach(chip => {
