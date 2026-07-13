@@ -161,7 +161,7 @@ function bankLabel(mnName) {
   return lang === 'en' ? b.en : lang === 'kr' ? b.kr : b.mn;
 }
 
-const COMMUNITY_OPTIONS = [
+const BUILTIN_COMMUNITIES = [
   { id: 'club', label: 'Club', type: 'club' },
   { id: 'eagle', label: 'Eagle', type: 'club' },
   { id: 'jci', label: 'JCI', type: 'club' },
@@ -176,6 +176,18 @@ const COMMUNITY_OPTIONS = [
   { id: 'senior', label: 'Сениор', type: 'interest' },
   { id: 'women', label: 'Эмэгтэйчүүд', type: 'interest' }
 ];
+// Built-in circles + admin-added ones from RTDB. Rebuilt by refreshCommunities().
+let COMMUNITY_OPTIONS = [...BUILTIN_COMMUNITIES];
+const BUILTIN_COMMUNITY_IDS = new Set(BUILTIN_COMMUNITIES.map(c => c.id));
+
+async function refreshCommunities() {
+  try {
+    const custom = await store.loadCircles();
+    const seen = new Set(BUILTIN_COMMUNITY_IDS);
+    const extra = custom.filter(c => c && c.id && c.label && !seen.has(c.id));
+    COMMUNITY_OPTIONS = [...BUILTIN_COMMUNITIES, ...extra];
+  } catch (_) { /* keep built-ins on failure */ }
+}
 
 function userCommunityIds(user) {
   return Array.isArray(user?.communities) ? user.communities : [];
@@ -2443,6 +2455,7 @@ async function renderAdminPanel() {
             ${nonMembers.map(u => `<option value="${u.id}">${displayUsername(u)}</option>`).join('')}
           </select>
           <button class="btn btn-sm btn-primary circle-add-btn" data-circle="${circle.id}">+</button>
+          ${!BUILTIN_COMMUNITY_IDS.has(circle.id) ? `<button class="btn btn-sm btn-danger circle-delete-btn" data-circle="${circle.id}" title="${t('delete')}">${icon('trash', { size: 14 })}</button>` : ''}
         </div>
       </div>
       <div class="circle-members-wrap" data-circle="${circle.id}" style="display:${isOpen ? 'block' : 'none'}; margin-top:10px;">
@@ -2524,6 +2537,17 @@ async function renderAdminPanel() {
         </div>
 
         <div id="admin-tab-circles" style="display:none;">
+          <div style="margin-bottom:16px; background:var(--bg-card-hover); border-radius:10px; padding:14px;">
+            <h3 style="margin:0 0 10px;">${t('addCircle')}</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input id="new-circle-label" type="text" placeholder="${t('circleName')}" style="flex:1; min-width:160px; padding:9px; border-radius:7px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <select id="new-circle-type" style="padding:9px; border-radius:7px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);">
+                <option value="club">${t('clubCircles')}</option>
+                <option value="interest">${t('interestCircles')}</option>
+              </select>
+              <button id="add-circle-btn" class="btn btn-primary btn-sm">${t('create')}</button>
+            </div>
+          </div>
           ${circlesHtml}
         </div>
 
@@ -2798,6 +2822,39 @@ async function renderAdminPanel() {
           document.getElementById('admin-tab-btn-circles')?.click();
         });
       }
+    });
+  });
+
+  // Circles tab: add a new (custom) circle
+  document.getElementById('add-circle-btn')?.addEventListener('click', async () => {
+    const label = document.getElementById('new-circle-label').value.trim();
+    const type = document.getElementById('new-circle-type').value === 'interest' ? 'interest' : 'club';
+    if (!label) { showToast(t('circleName'), 'warning'); return; }
+    let base = label.toLowerCase().replace(/[^a-z0-9а-яөүёіъь]+/gi, '_').replace(/^_+|_+$/g, '') || ('c_' + Date.now());
+    let id = base, i = 1;
+    const existing = new Set(COMMUNITY_OPTIONS.map(c => c.id));
+    while (existing.has(id)) id = `${base}_${i++}`;
+    await store.saveCircle({ id, label, type });
+    await refreshCommunities();
+    showToast('✅ ' + t('addCircle'), 'success');
+    renderAdminPanel().then(() => document.getElementById('admin-tab-btn-circles')?.click());
+  });
+
+  // Circles tab: delete a custom circle (also drop it from members)
+  document.querySelectorAll('.circle-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const circleId = btn.dataset.circle;
+      if (BUILTIN_COMMUNITY_IDS.has(circleId)) return;
+      if (!confirm(t('confirmDelete'))) return;
+      const affected = users.filter(u => userCommunityIds(u).includes(circleId));
+      await Promise.all(affected.map(u => {
+        u.communities = userCommunityIds(u).filter(c => c !== circleId);
+        return store.adminUpdateUser(u);
+      }));
+      await store.deleteCircle(circleId);
+      await refreshCommunities();
+      showToast(t('gameDeleted'), 'info');
+      renderAdminPanel().then(() => document.getElementById('admin-tab-btn-circles')?.click());
     });
   });
 
@@ -4061,7 +4118,8 @@ export function initApp() {
   });
 
   window.addEventListener('hashchange', router);
-  router();
+  // Load admin-added circles before the first render so they show everywhere.
+  refreshCommunities().finally(router);
 }
 
 async function checkTimeConflict(userId, newGame) {

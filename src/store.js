@@ -325,6 +325,24 @@ export async function deleteMenuItem(id) {
   await remove(ref(db, 'menu/' + id));
 }
 
+// ---- Circles / communities (admin-added, on top of the built-in ones) ----
+export async function loadCircles() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'circles'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()).filter(c => c && c.id);
+}
+
+export async function saveCircle(circle) {
+  if (!useFirebase || !db) return;
+  await set(ref(db, 'circles/' + circle.id), circle);
+}
+
+export async function deleteCircle(id) {
+  if (!useFirebase || !db) return;
+  await remove(ref(db, 'circles/' + id));
+}
+
 // ---- News / announcements (RTDB) — shown in the home carousel ----
 export async function loadNews() {
   if (!useFirebase || !db) return [];
