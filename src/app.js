@@ -5878,7 +5878,9 @@ async function renderAdminStatsTab(users) {
     const gMs = new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
     const ids = new Set(ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).map(p => p?.id).filter(Boolean));
     ids.forEach(id => {
-      joined[id] = (joined[id] || 0) + 1;
+      // "Оролцсон" excludes the player's own created games, so created + joined
+      // adds up to a duplicate-free total.
+      if (id !== g.createdBy) joined[id] = (joined[id] || 0) + 1;
       if (!isNaN(gMs) && gMs >= d30 && gMs <= now) active30.add(id);
     });
   });
@@ -5886,8 +5888,9 @@ async function renderAdminStatsTab(users) {
   const nonAdmin = users.filter(u => u.id !== 'admin_uid');
   const rows = nonAdmin
     .map(u => ({ u, c: created[u.id] || 0, j: joined[u.id] || 0 }))
-    .filter(r => r.c > 0 || r.j > 0)
-    .sort((a, b) => (b.c - a.c) || (b.j - a.j));
+    .map(r => ({ ...r, tot: r.c + r.j }))
+    .filter(r => r.tot > 0)
+    .sort((a, b) => (b.tot - a.tot) || (b.c - a.c));
   const topLocs = Object.entries(locCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   el.innerHTML = `
@@ -5905,7 +5908,7 @@ async function renderAdminStatsTab(users) {
       </div>
     </div>` : ''}
     <div style="background:var(--bg-card-hover); border-radius:10px; padding:12px 14px;">
-      <h3 style="margin:0 0 10px; font-size:0.95rem;">${t('statPlayerStats')} <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:normal;">(${rows.length}) · ${t('statCreated')}: ${rows.reduce((s, r) => s + r.c, 0)} · ${t('statJoined')}: ${rows.reduce((s, r) => s + r.j, 0)}</span></h3>
+      <h3 style="margin:0 0 10px; font-size:0.95rem;">${t('statPlayerStats')} <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:normal;">(${rows.length}) · ${t('statCreated')}: ${rows.reduce((s, r) => s + r.c, 0)} · ${t('statJoined')}: ${rows.reduce((s, r) => s + r.j, 0)} · ${t('statTotalShort')}: ${rows.reduce((s, r) => s + r.tot, 0)}</span></h3>
       ${rows.length === 0 ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">-</p>` : `
       <div style="max-height:420px; overflow-y:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
@@ -5915,6 +5918,7 @@ async function renderAdminStatsTab(users) {
               <th style="padding:4px 6px; font-weight:600;">${t('usersListTitle')}</th>
               <th style="padding:4px 6px; font-weight:600; text-align:right;">${t('statCreated')}</th>
               <th style="padding:4px 6px; font-weight:600; text-align:right;">${t('statJoined')}</th>
+              <th style="padding:4px 6px; font-weight:600; text-align:right;">${t('statTotalShort')}</th>
             </tr>
           </thead>
           <tbody>
@@ -5927,8 +5931,9 @@ async function renderAdminStatsTab(users) {
                     ${esc(displayUsername(r.u))}
                   </span>
                 </td>
-                <td style="padding:5px 6px; text-align:right; font-weight:700;">${r.c}</td>
+                <td style="padding:5px 6px; text-align:right;">${r.c}</td>
                 <td style="padding:5px 6px; text-align:right;">${r.j}</td>
+                <td style="padding:5px 6px; text-align:right; font-weight:700;">${r.tot}</td>
               </tr>`).join('')}
           </tbody>
         </table>
