@@ -5905,7 +5905,7 @@ async function renderAdminStatsTab(users) {
       </div>
     </div>` : ''}
     <div style="background:var(--bg-card-hover); border-radius:10px; padding:12px 14px;">
-      <h3 style="margin:0 0 10px; font-size:0.95rem;">${t('statPlayerStats')} <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:normal;">(${rows.length})</span></h3>
+      <h3 style="margin:0 0 10px; font-size:0.95rem;">${t('statPlayerStats')} <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:normal;">(${rows.length}) · ${t('statCreated')}: ${rows.reduce((s, r) => s + r.c, 0)} · ${t('statJoined')}: ${rows.reduce((s, r) => s + r.j, 0)}</span></h3>
       ${rows.length === 0 ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">-</p>` : `
       <div style="max-height:420px; overflow-y:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
