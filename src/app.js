@@ -37,6 +37,7 @@ let historyOpen = false;
 let archiveOpen = false;
 let bellSubFor = null;
 let openCircles = new Set();
+let adminStatsMonth = 'all'; // admin stats tab month filter (YYYY-MM or 'all')
 let pendingAuthRedirect = null;
 
 // Past games stay in History for this many days, then move to Archive.
@@ -5859,8 +5860,12 @@ async function renderAdminStatsTab(users) {
   try { games = await store.loadAllGamesAdmin(); }
   catch (err) { el.innerHTML = `<p style="color:var(--danger-color);">⚠️ ${esc(err.message)}</p>`; return; }
 
-  const live = games.filter(g => g.status !== 'deleted');
-  const deletedCount = games.length - live.length;
+  const allLive = games.filter(g => g.status !== 'deleted');
+  // Month filter (YYYY-MM) — 'all' shows everything.
+  const months = [...new Set(allLive.map(g => (g.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort().reverse();
+  if (adminStatsMonth !== 'all' && !months.includes(adminStatsMonth)) adminStatsMonth = 'all';
+  const live = adminStatsMonth === 'all' ? allLive : allLive.filter(g => (g.date || '').startsWith(adminStatsMonth));
+  const deletedCount = games.filter(g => g.status === 'deleted' && (adminStatsMonth === 'all' || (g.date || '').startsWith(adminStatsMonth))).length;
   const now = Date.now();
   const monthPrefix = new Date().toISOString().slice(0, 7); // YYYY-MM
   const d30 = now - 30 * 24 * 60 * 60 * 1000;
@@ -5894,9 +5899,18 @@ async function renderAdminStatsTab(users) {
   const topLocs = Object.entries(locCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   el.innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+      <label style="font-size:0.85rem; color:var(--text-secondary);">${t('statMonthFilter')}</label>
+      <select id="stats-month-select" style="padding:7px 10px; border-radius:7px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:0.88rem;">
+        <option value="all"${adminStatsMonth === 'all' ? ' selected' : ''}>${t('viewAllShort')}</option>
+        ${months.map(m => `<option value="${m}"${adminStatsMonth === m ? ' selected' : ''}>${m.replace('-', '/')}</option>`).join('')}
+      </select>
+    </div>
     <div class="stat-grid" style="margin-bottom:16px;">
       <div class="stat-tile navy"><div class="st-label">${t('statTotalGames')}</div><div class="st-value">${live.length}</div></div>
-      <div class="stat-tile"><div class="st-label">${t('statThisMonth')}</div><div class="st-value">${monthCount}</div></div>
+      ${adminStatsMonth === 'all'
+        ? `<div class="stat-tile"><div class="st-label">${t('statThisMonth')}</div><div class="st-value">${monthCount}</div></div>`
+        : `<div class="stat-tile"><div class="st-label">${t('usersListTitle')}</div><div class="st-value">${rows.length}</div></div>`}
       <div class="stat-tile"><div class="st-label">${t('statActive30')}</div><div class="st-value">${active30.size}</div></div>
       <div class="stat-tile"><div class="st-label">MTBogd</div><div class="st-value">${bookedCount}</div></div>
     </div>
@@ -5940,6 +5954,11 @@ async function renderAdminStatsTab(users) {
       </div>`}
       ${deletedCount ? `<p style="margin:10px 0 0; font-size:0.76rem; color:var(--text-secondary);">${t('statDeletedNote')}: ${deletedCount}</p>` : ''}
     </div>`;
+
+  document.getElementById('stats-month-select').onchange = (e) => {
+    adminStatsMonth = e.target.value;
+    renderAdminStatsTab(users);
+  };
 }
 
 async function renderAdminNewsTab() {
