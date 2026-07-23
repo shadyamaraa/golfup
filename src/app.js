@@ -2505,6 +2505,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-lookup" class="btn btn-outline btn-sm" style="gap:5px;">${icon('search', { size: 14 })} Хэрэглэгч</button>
           <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm" style="gap:5px;">${icon('dining', { size: 14 })} ${t('menuManage')}</button>
           <button id="admin-tab-btn-news" class="btn btn-outline btn-sm" style="gap:5px;">${icon('alerts', { size: 14 })} ${t('newsManage')}</button>
+          <button id="admin-tab-btn-stats" class="btn btn-outline btn-sm" style="gap:5px;">${icon('leaderboard', { size: 14 })} ${t('statsTab')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -2602,6 +2603,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-news" style="display:none;">
           <div id="admin-news-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-stats" style="display:none;">
+          <div id="admin-stats-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -2613,14 +2618,16 @@ async function renderAdminPanel() {
   const tabLookup = document.getElementById('admin-tab-btn-lookup');
   const tabMenu = document.getElementById('admin-tab-btn-menu');
   const tabNews = document.getElementById('admin-tab-btn-news');
+  const tabStats = document.getElementById('admin-tab-btn-stats');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
   const sectionLookup = document.getElementById('admin-tab-lookup');
   const sectionMenu = document.getElementById('admin-tab-menu');
   const sectionNews = document.getElementById('admin-tab-news');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews];
+  const sectionStats = document.getElementById('admin-tab-stats');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -2638,6 +2645,10 @@ async function renderAdminPanel() {
   tabNews.addEventListener('click', async () => {
     switchTab(tabNews, sectionNews);
     await renderAdminNewsTab();
+  });
+  tabStats.addEventListener('click', async () => {
+    switchTab(tabStats, sectionStats);
+    await renderAdminStatsTab(users);
   });
 
   // No-circle tab: open edit modal
@@ -5839,6 +5850,93 @@ async function renderAdminMenuTab() {
 }
 
 // Admin: News management tab content (home carousel items: image · title · link)
+// Admin → Статистик: per-player game stats + overall app stats.
+async function renderAdminStatsTab(users) {
+  const el = document.getElementById('admin-stats-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+  let games;
+  try { games = await store.loadAllGamesAdmin(); }
+  catch (err) { el.innerHTML = `<p style="color:var(--danger-color);">⚠️ ${esc(err.message)}</p>`; return; }
+
+  const live = games.filter(g => g.status !== 'deleted');
+  const deletedCount = games.length - live.length;
+  const now = Date.now();
+  const monthPrefix = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const d30 = now - 30 * 24 * 60 * 60 * 1000;
+
+  // Per-player: created / joined counts (non-deleted games only).
+  const created = {}, joined = {};
+  const locCount = {};
+  const active30 = new Set();
+  let bookedCount = 0, monthCount = 0;
+  live.forEach(g => {
+    if (g.createdBy) created[g.createdBy] = (created[g.createdBy] || 0) + 1;
+    if (g.bookingId) bookedCount++;
+    if ((g.date || '').startsWith(monthPrefix)) monthCount++;
+    if (g.location) locCount[g.location] = (locCount[g.location] || 0) + 1;
+    const gMs = new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+    const ids = new Set(ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).map(p => p?.id).filter(Boolean));
+    ids.forEach(id => {
+      joined[id] = (joined[id] || 0) + 1;
+      if (!isNaN(gMs) && gMs >= d30 && gMs <= now) active30.add(id);
+    });
+  });
+
+  const nonAdmin = users.filter(u => u.id !== 'admin_uid');
+  const rows = nonAdmin
+    .map(u => ({ u, c: created[u.id] || 0, j: joined[u.id] || 0 }))
+    .filter(r => r.c > 0 || r.j > 0)
+    .sort((a, b) => (b.c - a.c) || (b.j - a.j));
+  const topLocs = Object.entries(locCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  el.innerHTML = `
+    <div class="stat-grid" style="margin-bottom:16px;">
+      <div class="stat-tile navy"><div class="st-label">${t('statTotalGames')}</div><div class="st-value">${live.length}</div></div>
+      <div class="stat-tile"><div class="st-label">${t('statThisMonth')}</div><div class="st-value">${monthCount}</div></div>
+      <div class="stat-tile"><div class="st-label">${t('statActive30')}</div><div class="st-value">${active30.size}</div></div>
+      <div class="stat-tile"><div class="st-label">MTBogd</div><div class="st-value">${bookedCount}</div></div>
+    </div>
+    ${topLocs.length ? `
+    <div style="margin-bottom:16px; background:var(--bg-card-hover); border-radius:10px; padding:12px 14px;">
+      <h3 style="margin:0 0 8px; font-size:0.95rem;">${t('statTopLocations')}</h3>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+        ${topLocs.map(([loc, n]) => `<span class="pill-soft">${esc(loc)} · ${n}</span>`).join('')}
+      </div>
+    </div>` : ''}
+    <div style="background:var(--bg-card-hover); border-radius:10px; padding:12px 14px;">
+      <h3 style="margin:0 0 10px; font-size:0.95rem;">${t('statPlayerStats')} <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:normal;">(${rows.length})</span></h3>
+      ${rows.length === 0 ? `<p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">-</p>` : `
+      <div style="max-height:420px; overflow-y:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
+          <thead>
+            <tr style="color:var(--text-secondary); text-align:left;">
+              <th style="padding:4px 6px; font-weight:600;">#</th>
+              <th style="padding:4px 6px; font-weight:600;">${t('usersListTitle')}</th>
+              <th style="padding:4px 6px; font-weight:600; text-align:right;">${t('statCreated')}</th>
+              <th style="padding:4px 6px; font-weight:600; text-align:right;">${t('statJoined')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => `
+              <tr style="border-top:1px solid var(--border-card);">
+                <td style="padding:5px 6px; color:var(--text-secondary);">${i + 1}</td>
+                <td style="padding:5px 6px;">
+                  <span style="display:inline-flex; align-items:center; gap:7px;">
+                    <span class="player-avatar-sm" style="background:var(--primary-color); flex-shrink:0;">${avatarInner(r.u.avatar, displayUsername(r.u).charAt(0).toUpperCase())}</span>
+                    ${esc(displayUsername(r.u))}
+                  </span>
+                </td>
+                <td style="padding:5px 6px; text-align:right; font-weight:700;">${r.c}</td>
+                <td style="padding:5px 6px; text-align:right;">${r.j}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+      ${deletedCount ? `<p style="margin:10px 0 0; font-size:0.76rem; color:var(--text-secondary);">${t('statDeletedNote')}: ${deletedCount}</p>` : ''}
+    </div>`;
+}
+
 async function renderAdminNewsTab() {
   const el = document.getElementById('admin-news-content');
   if (!el) return;
