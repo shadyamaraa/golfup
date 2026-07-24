@@ -38,6 +38,8 @@ let archiveOpen = false;
 let bellSubFor = null;
 let openCircles = new Set();
 let adminStatsMonth = 'all'; // admin stats tab month filter (YYYY-MM or 'all')
+let lastNotifsCache = [];    // latest notifications, for the header bell shortcut
+let pendingOpenNotifs = false; // bell tapped off-home → open the list after nav
 let pendingAuthRedirect = null;
 
 // Past games stay in History for this many days, then move to Archive.
@@ -1003,14 +1005,16 @@ async function renderServices() {
   });
 }
 
-// Count notifications that haven't expired (game start passed).
+// Count notifications that haven't expired (game start passed), grouped per
+// game so the bell badge matches the grouped list.
 function activeNotifCount(notifs) {
   if (!notifs) return 0;
   const now = Date.now();
-  return notifs.filter(n => {
+  const fresh = notifs.filter(n => {
     if (!n.gameDate || !n.gameTime) return true;
     return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() >= now;
-  }).length;
+  });
+  return new Set(fresh.map(n => n.gameId || n.id)).size;
 }
 
 // Unread badge on the header bell (shown on every page).
@@ -1022,8 +1026,11 @@ function updateBellBadge(count) {
 }
 
 function renderNotifications(notifs) {
+  lastNotifsCache = notifs || [];
   const container = document.getElementById('notifications-section');
   if (!container) return;
+  const openRequested = pendingOpenNotifs;
+  if (openRequested) { pendingOpenNotifs = false; container.dataset.open = 'true'; }
   if (!notifs || notifs.length === 0) { container.innerHTML = ''; return; }
 
   // Auto-remove expired notifications (game date+time has passed)
@@ -1033,10 +1040,27 @@ function renderNotifications(notifs) {
     return new Date(`${n.gameDate}T${n.gameTime.padStart(5, '0')}`).getTime() < now;
   });
   expired.forEach(n => store.deleteNotification(currentUser.id, n.id));
-  const active = notifs.filter(n => !expired.includes(n));
+  let active = notifs.filter(n => !expired.includes(n));
   if (active.length === 0) { container.innerHTML = ''; return; }
 
-  const isOpen = container.dataset.open !== 'false';
+  // Group per game: one row per gameId (invite wins over new_game, otherwise the
+  // newest event). Extra events on the same game collapse into a "+N" chip, and
+  // Dismiss clears the whole group — kills follower+circle duplicates and the
+  // joined/left/updated flood.
+  const byGame = new Map();
+  for (const n of active) {
+    const key = n.gameId || n.id;
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(n);
+  }
+  const typeRank = { invite: 0, new_game: 1, game_deleted: 2, game_updated: 3, player_joined: 4, player_left: 5 };
+  active = [...byGame.values()].map(group => {
+    group.sort((a, b) => ((typeRank[a.type] ?? 9) - (typeRank[b.type] ?? 9)) || ((b.createdAt || 0) - (a.createdAt || 0)));
+    return { ...group[0], groupIds: group.map(n => n.id), extraCount: group.length - 1 };
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  // Collapsed by default — the bell badge shows the count; tap to expand.
+  const isOpen = container.dataset.open === 'true';
   container.innerHTML = `
     <div class="section">
       <button id="notif-toggle-btn" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;padding:0;margin-bottom:${isOpen ? '10px' : '0'};">
@@ -1065,19 +1089,21 @@ function renderNotifications(notifs) {
               <div class="notif-content">
                 <span class="notif-icon">${icon(icName, { size: 18 })}</span>
                 <div>
-                  <div class="notif-title">${title}</div>
+                  <div class="notif-title">${title}${n.extraCount > 0 ? ` <span class="notif-badge" title="${n.extraCount}">+${n.extraCount}</span>` : ''}</div>
                   <div class="notif-sub">${sub}</div>
                 </div>
               </div>
               <div class="notif-actions">
-                ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-id="${n.id}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
-                <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-id="${n.id}">${t('decline')}</button>
+                ${!isDeleted ? `<button class="btn btn-primary btn-sm join-notif-btn" data-ids="${n.groupIds.join(',')}" data-game="${n.gameId}">${joinLabel}</button>` : ''}
+                <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-ids="${n.groupIds.join(',')}">${t('decline')}</button>
               </div>
             </div>`;
           }).join('')}
         </div>
       </div>
     </div>`;
+
+  if (openRequested) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   container.querySelector('#notif-toggle-btn').addEventListener('click', () => {
     const wrap = container.querySelector('#notif-list-wrap');
@@ -1089,13 +1115,13 @@ function renderNotifications(notifs) {
   });
   container.querySelectorAll('.join-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await store.deleteNotification(currentUser.id, btn.dataset.id);
+      await Promise.all(btn.dataset.ids.split(',').map(id => store.deleteNotification(currentUser.id, id)));
       location.hash = '#/game/' + btn.dataset.game;
     });
   });
   container.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await store.deleteNotification(currentUser.id, btn.dataset.id);
+      await Promise.all(btn.dataset.ids.split(',').map(id => store.deleteNotification(currentUser.id, id)));
     });
   });
 }
@@ -4085,7 +4111,19 @@ export function initApp() {
   }
 
   // Header: bell → home (notifications), avatar → profile.
-  document.getElementById('header-bell')?.addEventListener('click', () => { location.hash = '#/'; });
+  // Bell → open the notifications list on the home page (navigate there first
+  // when needed) and scroll it into view.
+  document.getElementById('header-bell')?.addEventListener('click', () => {
+    const sec = document.getElementById('notifications-section');
+    if ((location.hash === '#/' || location.hash === '') && sec) {
+      sec.dataset.open = 'true';
+      renderNotifications(lastNotifsCache);
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      pendingOpenNotifs = true;
+      location.hash = '#/';
+    }
+  });
   document.getElementById('header-avatar')?.addEventListener('click', () => { location.hash = '#/profile'; });
 
   document.getElementById('logout-btn')?.addEventListener('click', () => {
