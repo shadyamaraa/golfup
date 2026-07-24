@@ -919,7 +919,7 @@ function renderHomeUpcoming(games) {
   if (!host) return;
   const now = Date.now();
   const up = (games || [])
-    .filter(g => g.date && g.time)
+    .filter(g => g.date && g.time && canSeeGameByCommunity(g))
     .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
     .filter(x => !isNaN(x.ms) && x.ms >= now)
     .sort((a, b) => a.ms - b.ms)
