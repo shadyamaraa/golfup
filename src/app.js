@@ -3304,17 +3304,33 @@ function showUserDetailsModal(user) {
       <div class="bank-info-row">
         <span class="label">Данс:</span>
         <span class="value">${esc(user.bankAccount) || '-'}</span>
+        ${user.bankAccount ? `<button class="btn btn-sm btn-outline ud-copy-btn" data-copy="${esc(user.bankAccount)}">${t('copyShort')}</button>` : ''}
       </div>
       <div class="bank-info-row">
         <span class="label">IBAN:</span>
         <span class="value">${esc(user.bankIban) || '-'}</span>
+        ${user.bankIban ? `<button class="btn btn-sm btn-outline ud-copy-btn" data-copy="${esc(user.bankIban)}">${t('copyShort')}</button>` : ''}
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
+        ${(user.bankAccount && user.bankIban) ? `<button class="btn btn-primary" id="ud-copy-both">Данс + IBAN хуулах</button>` : ''}
         <button class="btn btn-ghost" id="user-detail-close">Хаах</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
   modal.querySelector('#user-detail-close').onclick = () => modal.remove();
+  modal.querySelectorAll('.ud-copy-btn').forEach(btn => {
+    btn.onclick = () => {
+      navigator.clipboard.writeText(btn.dataset.copy).then(() => showToast(t('copied'), 'success'));
+    };
+  });
+  const copyBoth = modal.querySelector('#ud-copy-both');
+  if (copyBoth) {
+    copyBoth.onclick = () => {
+      const iban = (user.bankIban || '').replace(/^MN/i, '');
+      navigator.clipboard.writeText(`${iban}${user.bankAccount || ''}`).then(() =>
+        showToast('IBAN + Данс хуулагдлаа', 'success'));
+    };
+  }
 }
 
 // ---- Edit Game View ----
