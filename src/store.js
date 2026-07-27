@@ -343,6 +343,18 @@ export async function deleteCircle(id) {
   await remove(ref(db, 'circles/' + id));
 }
 
+// ---- Ranking (admin-uploaded leaderboard) ----
+export async function loadRanking() {
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'ranking'));
+  return snap.exists() ? snap.val() : null;
+}
+
+export async function saveRanking(ranking) {
+  if (!useFirebase || !db) return;
+  await set(ref(db, 'ranking'), ranking);
+}
+
 // ---- News / announcements (RTDB) — shown in the home carousel ----
 export async function loadNews() {
   if (!useFirebase || !db) return [];

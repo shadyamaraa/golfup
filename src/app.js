@@ -357,6 +357,7 @@ export async function router() {
     else if (hash === '#/services') await renderServices();
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
+    else if (hash === '#/ranking') await renderRankingPage();
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -764,6 +765,7 @@ async function renderHome() {
         <a href="#/games" class="view-all">${t('viewAllShort')}</a>
       </div>
       <div id="home-upcoming" class="games-list"></div>
+      <div id="home-ranking"></div>
     </div>`;
 
   const [notifs, games] = await Promise.all([
@@ -782,6 +784,7 @@ async function renderHome() {
   renderNextGameFeature(games);
   renderHomeStats(games);
   renderHomeUpcoming(games);
+  renderHomeRanking();
 
   if (store.isUsingFirebase()) {
     const unsub = store.onAllGamesChanged((gs) => {
@@ -916,6 +919,62 @@ function renderHomeStats(games) {
 }
 
 // Upcoming games (nearest first) as surface list rows.
+// ---- Ranking (admin-uploaded via Excel; shown top-10 on home, full at #/ranking) ----
+function rankingDeltaHTML(e) {
+  if (e.prevRank == null) return `<span class="rk-delta rk-new">●</span>`;
+  const diff = e.prevRank - e.rank;
+  if (diff > 0) return `<span class="rk-delta rk-up">▲${diff}</span>`;
+  if (diff < 0) return `<span class="rk-delta rk-down">▼${-diff}</span>`;
+  return `<span class="rk-delta rk-same">–</span>`;
+}
+
+function rankingRowHTML(e) {
+  return `
+    <div class="rk-row" data-ranking-row>
+      <span class="rk-num ${e.rank <= 3 ? 'rk-top3' : ''}">${e.rank}</span>
+      <span class="rk-name">${esc(e.name)}</span>
+      ${e.points !== undefined && e.points !== '' && e.points !== null ? `<span class="rk-pts">${esc(String(e.points))}</span>` : ''}
+      ${rankingDeltaHTML(e)}
+    </div>`;
+}
+
+async function renderHomeRanking() {
+  const host = document.getElementById('home-ranking');
+  if (!host) return;
+  let data = null;
+  try { data = await store.loadRanking(); } catch (_) { }
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  if (entries.length === 0) { host.innerHTML = ''; return; }
+  host.innerHTML = `
+    <div class="section-head" style="margin-top:24px;">
+      <h2>${icon('leaderboard', { size: 17 })} ${t('rankingTitle')}</h2>
+      <a href="#/ranking" class="view-all">${t('viewAllShort')}</a>
+    </div>
+    <div class="glass-card rk-card">
+      ${entries.slice(0, 10).map(rankingRowHTML).join('')}
+    </div>`;
+  host.querySelectorAll('[data-ranking-row]').forEach(r =>
+    r.addEventListener('click', () => { location.hash = '#/ranking'; }));
+}
+
+async function renderRankingPage() {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  let data = null;
+  try { data = await store.loadRanking(); } catch (_) { }
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  main().innerHTML = `
+    <div class="detail-container fade-in">
+      <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+      <div class="page-head" style="margin-top:12px;"><div>
+        <h2 class="page-title">${t('rankingTitle')}</h2>
+        ${data?.updatedAt ? `<p class="page-sub">${t('rankingUpdated')}: ${formatDate(new Date(data.updatedAt).toISOString().slice(0, 10))}</p>` : ''}
+      </div></div>
+      ${entries.length === 0
+        ? `<p style="color:var(--text-secondary);">${t('rankingEmpty')}</p>`
+        : `<div class="glass-card rk-card">${entries.map(rankingRowHTML).join('')}</div>`}
+    </div>`;
+}
+
 function renderHomeUpcoming(games) {
   const host = document.getElementById('home-upcoming');
   if (!host) return;
@@ -2533,6 +2592,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-menu" class="btn btn-outline btn-sm" style="gap:5px;">${icon('dining', { size: 14 })} ${t('menuManage')}</button>
           <button id="admin-tab-btn-news" class="btn btn-outline btn-sm" style="gap:5px;">${icon('alerts', { size: 14 })} ${t('newsManage')}</button>
           <button id="admin-tab-btn-stats" class="btn btn-outline btn-sm" style="gap:5px;">${icon('leaderboard', { size: 14 })} ${t('statsTab')}</button>
+          <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -2634,6 +2694,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-stats" style="display:none;">
           <div id="admin-stats-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-rank" style="display:none;">
+          <div id="admin-rank-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -2646,6 +2710,7 @@ async function renderAdminPanel() {
   const tabMenu = document.getElementById('admin-tab-btn-menu');
   const tabNews = document.getElementById('admin-tab-btn-news');
   const tabStats = document.getElementById('admin-tab-btn-stats');
+  const tabRank = document.getElementById('admin-tab-btn-rank');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -2653,8 +2718,9 @@ async function renderAdminPanel() {
   const sectionMenu = document.getElementById('admin-tab-menu');
   const sectionNews = document.getElementById('admin-tab-news');
   const sectionStats = document.getElementById('admin-tab-stats');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats];
+  const sectionRank = document.getElementById('admin-tab-rank');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -2676,6 +2742,10 @@ async function renderAdminPanel() {
   tabStats.addEventListener('click', async () => {
     switchTab(tabStats, sectionStats);
     await renderAdminStatsTab(users);
+  });
+  tabRank.addEventListener('click', async () => {
+    switchTab(tabRank, sectionRank);
+    await renderAdminRankingTab();
   });
 
   // No-circle tab: open edit modal
@@ -5889,6 +5959,93 @@ async function renderAdminMenuTab() {
 }
 
 // Admin: News management tab content (home carousel items: image · title · link)
+// Parse a ranking spreadsheet (.xlsx/.xls via SheetJS, .csv natively) into
+// [{rank, name, points}] — header row (Байр/Rank, Нэр/Name, Оноо/Points) is
+// detected when present; otherwise column order decides.
+async function parseRankingFile(file) {
+  const fname = (file.name || '').toLowerCase();
+  let rows;
+  if (fname.endsWith('.csv')) {
+    const text = await file.text();
+    rows = text.split(/\r?\n/).map(l => l.split(/[,;\t]/).map(c => c.trim()));
+  } else {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' })
+      .map(r => r.map(c => String(c ?? '').trim()));
+  }
+  rows = rows.filter(r => r.some(c => c));
+  if (rows.length === 0) return [];
+
+  const head = rows[0].map(c => c.toLowerCase());
+  let ni = head.findIndex(c => c.includes('нэр') || c.includes('name'));
+  let ri = head.findIndex(c => c.includes('байр') || c.includes('rank') || c === '#' || c === '№');
+  let pi = head.findIndex(c => c.includes('оноо') || c.includes('point') || c.includes('score') || c.includes('pts'));
+  let data = rows;
+  if (ni >= 0) {
+    data = rows.slice(1);
+  } else {
+    const cols = rows[0].length;
+    if (cols >= 3 && /^\d+$/.test(rows[0][0])) { ri = 0; ni = 1; pi = 2; }
+    else if (cols >= 2) { ri = -1; ni = 0; pi = 1; }
+    else { ri = -1; ni = 0; pi = -1; }
+  }
+  const entries = data
+    .map((r, i) => ({
+      rank: ri >= 0 && parseInt(r[ri], 10) > 0 ? parseInt(r[ri], 10) : i + 1,
+      name: (r[ni] || '').trim(),
+      points: pi >= 0 ? (r[pi] || '') : '',
+    }))
+    .filter(e => e.name);
+  entries.sort((a, b) => a.rank - b.rank);
+  return entries;
+}
+
+// Admin → Чансаа: current ranking + Excel upload (computes ▲/▼ vs previous).
+async function renderAdminRankingTab() {
+  const el = document.getElementById('admin-rank-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+  let current = null;
+  try { current = await store.loadRanking(); } catch (_) { }
+  const entries = Array.isArray(current?.entries) ? current.entries : [];
+
+  el.innerHTML = `
+    <div style="margin-bottom:16px; background:var(--bg-card-hover); border-radius:10px; padding:14px;">
+      <h3 style="margin:0 0 6px;">${t('rankingUpload')}</h3>
+      <p style="margin:0 0 10px; font-size:0.8rem; color:var(--text-secondary);">${t('rankingUploadHint')}</p>
+      <button type="button" id="rank-upload-btn" class="btn btn-primary btn-sm">${t('rankingUpload')}</button>
+      <input type="file" id="rank-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />
+      ${current?.updatedAt ? `<p style="margin:10px 0 0; font-size:0.78rem; color:var(--text-secondary);">${t('rankingUpdated')}: ${new Date(current.updatedAt).toLocaleString()} · ${entries.length}</p>` : ''}
+    </div>
+    ${entries.length === 0
+      ? `<p style="color:var(--text-secondary);">${t('rankingEmpty')}</p>`
+      : `<div class="glass-card rk-card">${entries.map(rankingRowHTML).join('')}</div>`}`;
+
+  const fileInput = document.getElementById('rank-file-input');
+  document.getElementById('rank-upload-btn').onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    let parsed;
+    try { parsed = await parseRankingFile(file); }
+    catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
+    if (!parsed.length) { showToast(t('rankingEmpty'), 'warning'); return; }
+    if (!confirm(`${parsed.length} мөр уншигдлаа. Чансааг шинэчлэх үү?`)) return;
+    // Carry previous positions so the UI can show ▲/▼ deltas.
+    const prevByName = new Map(entries.map(e => [e.name.toLowerCase(), e.rank]));
+    parsed.forEach(e => {
+      const p = prevByName.get(e.name.toLowerCase());
+      if (p != null) e.prevRank = p;
+    });
+    await store.saveRanking({ updatedAt: Date.now(), entries: parsed });
+    showToast('✅ ' + t('rankingSaved'), 'success');
+    await renderAdminRankingTab();
+  };
+}
+
 // Admin → Статистик: per-player game stats + overall app stats.
 async function renderAdminStatsTab(users) {
   const el = document.getElementById('admin-stats-content');

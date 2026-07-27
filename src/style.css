@@ -639,3 +639,16 @@ body:has(.bottom-nav:not(.hidden)) #main-content { padding-bottom: 76px; }
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,255,255,0.55); }
   50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(255,255,255,0); }
 }
+
+/* ====== Ranking ====== */
+.rk-card { padding: 4px 0; }
+.rk-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; }
+.rk-row + .rk-row { border-top: 1px solid var(--border-card); }
+.rk-num { width: 26px; text-align: center; font-weight: 800; color: var(--text-secondary); flex-shrink: 0; }
+.rk-num.rk-top3 { color: var(--gold); }
+.rk-name { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rk-pts { color: var(--text-secondary); font-size: 0.85rem; }
+.rk-delta { font-size: 0.72rem; font-weight: 700; min-width: 30px; text-align: right; flex-shrink: 0; }
+.rk-delta.rk-up { color: #22c55e; }
+.rk-delta.rk-down { color: #e63946; }
+.rk-delta.rk-same, .rk-delta.rk-new { color: var(--text-muted); }
