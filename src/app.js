@@ -5997,7 +5997,7 @@ async function parseRankingFile(file) {
   const head = rows[0].map(c => c.toLowerCase());
   let ni = head.findIndex(c => c.includes('нэр') || c.includes('name') || c.includes('тоглогч') || c.includes('player'));
   let ri = head.findIndex(c => c.includes('байр') || c.includes('rank') || c === '#' || c === '№' || c === 'no');
-  let pi = head.findIndex(c => c.includes('оноо') || c.includes('point') || c.includes('score') || c.includes('pts') || c.includes('hcp') || c.includes('handicap') || c.includes('дундаж') || c.includes('avg'));
+  let pi = head.findIndex(c => c.includes('total') || c.includes('нийт') || c.includes('оноо') || c.includes('point') || c.includes('score') || c.includes('pts') || c.includes('hcp') || c.includes('handicap') || c.includes('дундаж') || c.includes('avg'));
   let data = rows;
   if (ni >= 0) {
     data = rows.slice(1);
@@ -6023,6 +6023,17 @@ async function parseRankingFile(file) {
       points: pi >= 0 ? (r[pi] || '') : '',
     }))
     .filter(e => e.name);
+  // No explicit rank column but numeric points (e.g. a Total column): the
+  // ranking IS the points order — sort by points descending and re-rank.
+  const num = v => parseFloat(String(v).replace(',', '.'));
+  if (ri < 0 && pi >= 0) {
+    const numeric = entries.filter(e => e.points !== '' && !isNaN(num(e.points)));
+    if (numeric.length >= entries.length * 0.8) {
+      entries.sort((a, b) => num(b.points) - num(a.points));
+      entries.forEach((e, i) => { e.rank = i + 1; });
+      return entries;
+    }
+  }
   entries.sort((a, b) => a.rank - b.rank);
   return entries;
 }
