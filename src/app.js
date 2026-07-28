@@ -5995,17 +5995,26 @@ async function parseRankingFile(file) {
   if (rows.length === 0) return [];
 
   const head = rows[0].map(c => c.toLowerCase());
-  let ni = head.findIndex(c => c.includes('нэр') || c.includes('name'));
-  let ri = head.findIndex(c => c.includes('байр') || c.includes('rank') || c === '#' || c === '№');
-  let pi = head.findIndex(c => c.includes('оноо') || c.includes('point') || c.includes('score') || c.includes('pts'));
+  let ni = head.findIndex(c => c.includes('нэр') || c.includes('name') || c.includes('тоглогч') || c.includes('player'));
+  let ri = head.findIndex(c => c.includes('байр') || c.includes('rank') || c === '#' || c === '№' || c === 'no');
+  let pi = head.findIndex(c => c.includes('оноо') || c.includes('point') || c.includes('score') || c.includes('pts') || c.includes('hcp') || c.includes('handicap') || c.includes('дундаж') || c.includes('avg'));
   let data = rows;
   if (ni >= 0) {
     data = rows.slice(1);
   } else {
     const cols = rows[0].length;
-    if (cols >= 3 && /^\d+$/.test(rows[0][0])) { ri = 0; ni = 1; pi = 2; }
-    else if (cols >= 2) { ri = -1; ni = 0; pi = 1; }
-    else { ri = -1; ni = 0; pi = -1; }
+    if (cols >= 2 && /^\d+$/.test(rows[0][0])) { ri = 0; ni = 1; }
+    else { ri = -1; ni = 0; }
+  }
+  // No points column identified yet → take the first remaining column where
+  // most cells look numeric (so "Байр | Нэр | 250" files still carry points).
+  if (pi < 0) {
+    const cols = Math.max(...data.map(r => r.length));
+    for (let c = 0; c < cols; c++) {
+      if (c === ri || c === ni) continue;
+      const vals = data.map(r => r[c]).filter(v => v);
+      if (vals.length && vals.filter(v => /^-?\d+([.,]\d+)?$/.test(v)).length >= vals.length * 0.6) { pi = c; break; }
+    }
   }
   const entries = data
     .map((r, i) => ({
