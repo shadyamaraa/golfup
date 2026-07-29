@@ -934,13 +934,13 @@ function rankingDeltaHTML(e) {
   return `<span class="rk-delta rk-same">–</span>`;
 }
 
-// Points display: numeric values are rounded to one decimal (65.66667 → 65.7,
-// 250.0 → 250); non-numeric values pass through as-is.
+// Points display: numeric values always show one decimal (65.66667 → 65.7,
+// 250 → 250.0); non-numeric values pass through as-is.
 function formatRankingPoints(p) {
   if (p === undefined || p === null || p === '') return '';
   const n = parseFloat(String(p).replace(',', '.'));
   if (isNaN(n)) return String(p);
-  return String(Math.round(n * 10) / 10);
+  return n.toFixed(1);
 }
 
 function rankingRowHTML(e) {
