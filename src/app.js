@@ -3073,6 +3073,18 @@ function showAdminEditUserModal(user, onSaved) {
         </div>
       </div>
 
+      <div style="margin-top:14px;">
+        <h4 style="margin-bottom:8px;">${t('clubCodes')}</h4>
+        <div class="input-group">
+          <label>${t('clubCodeMtbogd')}</label>
+          <input type="text" id="ae-mtbogd-code" value="${user.mtbogdCode || ''}" />
+        </div>
+        <div class="input-group" style="margin-top:8px;">
+          <label>${t('clubCodeOther')}</label>
+          <input type="text" id="ae-other-codes" value="${user.otherClubCodes || ''}" placeholder="${t('clubCodeOtherHint')}" />
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-ghost" id="ae-cancel">${t('cancel')}</button>
         <button class="btn btn-primary" id="ae-save">${t('save')}</button>
@@ -3110,6 +3122,8 @@ function showAdminEditUserModal(user, onSaved) {
     user.bankName = document.getElementById('ae-bank-name').value.trim();
     user.bankAccount = document.getElementById('ae-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('ae-bank-iban').value.trim();
+    user.mtbogdCode = document.getElementById('ae-mtbogd-code').value.trim();
+    user.otherClubCodes = document.getElementById('ae-other-codes').value.trim();
     if (pass) user.password = pass;
 
     await store.adminUpdateUser(user);
