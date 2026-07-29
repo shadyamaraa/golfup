@@ -1857,7 +1857,9 @@ async function renderCreateGame() {
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         // Always confirm the booking now (MTBogd: status confirmed, paymentStatus
         // pending). QPay is an optional payment step after, handled by MTBogd.
-        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone }, playerList);
+        // Club code (profile) lets MTBogd resolve member/senior rates directly
+        // instead of matching by phone.
+        const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: playerPhone, ...(currentUser.mtbogdCode ? { clubCode: currentUser.mtbogdCode } : {}) }, playerList);
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
@@ -3692,7 +3694,7 @@ async function handleBookTeeTime(game) {
       const playerName = currentUser.fullName || displayUsername(currentUser);
       const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles);
       const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
-      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '' }, playerList);
+      const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '', ...(currentUser.mtbogdCode ? { clubCode: currentUser.mtbogdCode } : {}) }, playerList);
       game.bookingCode = confirmed.bookingCode;
       game.bookingId = confirmed.bookingId;
       game.bookingSlotId = btSlot.slotId;
@@ -4421,6 +4423,19 @@ function profileFormInner(user) {
         </div>
       </div>
 
+      <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
+        <h4 style="margin-bottom: 10px; color: var(--emerald);">${t('clubCodes')}</h4>
+        <div class="input-group">
+          <label>${t('clubCodeMtbogd')}</label>
+          <input type="text" id="profile-mtbogd-code" value="${user.mtbogdCode || ''}" />
+          <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('clubCodeMtbogdHint')}</div>
+        </div>
+        <div class="input-group" style="margin-top: 10px;">
+          <label>${t('clubCodeOther')}</label>
+          <input type="text" id="profile-other-codes" value="${user.otherClubCodes || ''}" placeholder="${t('clubCodeOtherHint')}" />
+        </div>
+      </div>
+
       <div class="input-group" style="margin-top: 16px;">
         <label>${t('notificationSettings')}</label>
         <label class="toggle-label">
@@ -4492,6 +4507,8 @@ function wireProfileForm(scope, user, afterSave) {
     user.bankName = document.getElementById('profile-bank-name').value.trim();
     user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
+    user.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
+    user.otherClubCodes = document.getElementById('profile-other-codes').value.trim();
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
     if (user.notifyWeb) initFCM(user);
