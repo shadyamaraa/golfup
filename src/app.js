@@ -934,12 +934,22 @@ function rankingDeltaHTML(e) {
   return `<span class="rk-delta rk-same">–</span>`;
 }
 
+// Points display: numeric values are rounded to one decimal (65.66667 → 65.7,
+// 250.0 → 250); non-numeric values pass through as-is.
+function formatRankingPoints(p) {
+  if (p === undefined || p === null || p === '') return '';
+  const n = parseFloat(String(p).replace(',', '.'));
+  if (isNaN(n)) return String(p);
+  return String(Math.round(n * 10) / 10);
+}
+
 function rankingRowHTML(e) {
+  const pts = formatRankingPoints(e.points);
   return `
     <div class="rk-row" data-ranking-row>
       <span class="rk-num ${e.rank <= 3 ? 'rk-top3' : ''}">${e.rank}</span>
       <span class="rk-name">${esc(e.name)}</span>
-      ${e.points !== undefined && e.points !== '' && e.points !== null ? `<span class="rk-pts">${esc(String(e.points))}</span>` : ''}
+      ${pts ? `<span class="rk-pts">${esc(pts)}</span>` : ''}
       ${rankingDeltaHTML(e)}
     </div>`;
 }
