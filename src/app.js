@@ -173,7 +173,7 @@ const BUILTIN_COMMUNITIES = [
   { id: 'star', label: 'Star', type: 'club' },
   { id: 'vista', label: 'Vista', type: 'club' },
   { id: 'zaan_terelj', label: 'Zaan Terelj', type: 'club' },
-  { id: 'samraajid', label: 'Самраажид', type: 'club' },
+  { id: 'samraajid', label: 'Самраажид', type: 'circle' },
   { id: 'bulaa', label: 'Булаа', type: 'interest' },
   { id: 'petit_bulaa', label: 'Petit Bulaa', type: 'interest' },
   { id: 'senior', label: 'Сениор', type: 'interest' },
@@ -237,7 +237,7 @@ function communityCheckboxes(name, selected = [], options = {}) {
     if (items.length === 0) return '';
     return `
       <div class="community-checkbox-group">
-        <div style="font-size:0.78rem;font-weight:700;color:var(--gold);margin:${type === 'interest' ? '12px' : '0'} 0 6px;">${title}</div>
+        <div style="font-size:0.78rem;font-weight:700;color:var(--gold);margin:${type === 'club' ? '0' : '12px'} 0 6px;">${title}</div>
         ${items.map(c => `
           <label class="toggle-label" style="margin:6px 0;">
             <input type="checkbox" name="${name}" value="${c.id}" ${selectedSet.has(c.id) ? 'checked' : ''}>
@@ -252,7 +252,7 @@ function communityCheckboxes(name, selected = [], options = {}) {
         <span>${c.label}</span>
       </label>`).join('');
   }
-  return renderGroup('club', t('clubCircles')) + renderGroup('interest', t('interestCircles'));
+  return renderGroup('club', t('golfClubs')) + renderGroup('circle', t('clubCircles')) + renderGroup('interest', t('interestCircles'));
 }
 
 function selectedCommunities(name) {
@@ -2644,7 +2644,8 @@ async function renderAdminPanel() {
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <input id="new-circle-label" type="text" placeholder="${t('circleName')}" style="flex:1; min-width:160px; padding:9px; border-radius:7px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <select id="new-circle-type" style="padding:9px; border-radius:7px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);">
-                <option value="club">${t('clubCircles')}</option>
+                <option value="circle">${t('clubCircles')}</option>
+                <option value="club">${t('golfClubs')}</option>
                 <option value="interest">${t('interestCircles')}</option>
               </select>
               <button id="add-circle-btn" class="btn btn-primary btn-sm">${t('create')}</button>
@@ -2950,7 +2951,8 @@ async function renderAdminPanel() {
   // Circles tab: add a new (custom) circle
   document.getElementById('add-circle-btn')?.addEventListener('click', async () => {
     const label = document.getElementById('new-circle-label').value.trim();
-    const type = document.getElementById('new-circle-type').value === 'interest' ? 'interest' : 'club';
+    const typeVal = document.getElementById('new-circle-type').value;
+    const type = ['club', 'circle', 'interest'].includes(typeVal) ? typeVal : 'circle';
     if (!label) { showToast(t('circleName'), 'warning'); return; }
     let base = label.toLowerCase().replace(/[^a-z0-9а-яөүёіъь]+/gi, '_').replace(/^_+|_+$/g, '') || ('c_' + Date.now());
     let id = base, i = 1;
