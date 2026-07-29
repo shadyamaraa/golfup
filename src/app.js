@@ -3079,10 +3079,6 @@ function showAdminEditUserModal(user, onSaved) {
           <label>${t('clubCodeMtbogd')}</label>
           <input type="text" id="ae-mtbogd-code" value="${user.mtbogdCode || ''}" />
         </div>
-        <div class="input-group" style="margin-top:8px;">
-          <label>${t('clubCodeOther')}</label>
-          <input type="text" id="ae-other-codes" value="${user.otherClubCodes || ''}" placeholder="${t('clubCodeOtherHint')}" />
-        </div>
       </div>
 
       <div class="modal-actions">
@@ -3123,7 +3119,6 @@ function showAdminEditUserModal(user, onSaved) {
     user.bankAccount = document.getElementById('ae-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('ae-bank-iban').value.trim();
     user.mtbogdCode = document.getElementById('ae-mtbogd-code').value.trim();
-    user.otherClubCodes = document.getElementById('ae-other-codes').value.trim();
     if (pass) user.password = pass;
 
     await store.adminUpdateUser(user);
@@ -4442,11 +4437,6 @@ function profileFormInner(user) {
         <div class="input-group">
           <label>${t('clubCodeMtbogd')}</label>
           <input type="text" id="profile-mtbogd-code" value="${user.mtbogdCode || ''}" />
-          <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('clubCodeMtbogdHint')}</div>
-        </div>
-        <div class="input-group" style="margin-top: 10px;">
-          <label>${t('clubCodeOther')}</label>
-          <input type="text" id="profile-other-codes" value="${user.otherClubCodes || ''}" placeholder="${t('clubCodeOtherHint')}" />
         </div>
       </div>
 
@@ -4522,7 +4512,6 @@ function wireProfileForm(scope, user, afterSave) {
     user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
     user.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
-    user.otherClubCodes = document.getElementById('profile-other-codes').value.trim();
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
     if (user.notifyWeb) initFCM(user);
