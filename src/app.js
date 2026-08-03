@@ -2620,7 +2620,11 @@ async function renderAdminPanel() {
               <span id="create-user-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
             </button>
             <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
-              <input type="text" id="new-user-name" placeholder="${t('yourName')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-name" placeholder="${t('usernameLabel')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-firstname" placeholder="${t('firstName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-ghin" placeholder="${t('ghinNumber')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-memberid" placeholder="${t('ubgolfMemberId')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <div style="width:100%;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
@@ -2899,6 +2903,10 @@ async function renderAdminPanel() {
     const phone = document.getElementById('new-user-phone').value.trim();
     const pass = document.getElementById('new-user-pass').value;
     const communities = selectedCommunities('new-user-communities');
+    const lastName = document.getElementById('new-user-lastname').value.trim();
+    const firstName = document.getElementById('new-user-firstname').value.trim();
+    const ghin = document.getElementById('new-user-ghin').value.trim();
+    const ubgolfMemberId = document.getElementById('new-user-memberid').value.trim();
 
     const existing = await store.findUserByPhone(phone);
     if (existing) {
@@ -2907,7 +2915,11 @@ async function renderAdminPanel() {
       return;
     }
 
-    await store.adminCreateUser(name, pass, phone, 'user', communities);
+    await store.adminCreateUser(name, pass, phone, 'user', communities, {
+      lastName, firstName,
+      fullName: [lastName, firstName].filter(Boolean).join(' '),
+      ghin, ubgolfMemberId,
+    });
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
   });
@@ -3042,6 +3054,14 @@ function showAdminEditUserModal(user, onSaved) {
           <label>Нэр</label>
           <input type="text" id="ae-firstname" value="${user.firstName || ''}" placeholder="Нэр" />
         </div>
+        <div class="input-group">
+          <label>${t('ghinNumber')}</label>
+          <input type="text" id="ae-ghin" value="${user.ghin || ''}" />
+        </div>
+        <div class="input-group">
+          <label>${t('ubgolfMemberId')}</label>
+          <input type="text" id="ae-memberid" value="${user.ubgolfMemberId || ''}" />
+        </div>
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>${t('communities')}</label>
@@ -3126,6 +3146,8 @@ function showAdminEditUserModal(user, onSaved) {
     user.firstName = firstName;
     user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
+    user.ghin = document.getElementById('ae-ghin').value.trim();
+    user.ubgolfMemberId = document.getElementById('ae-memberid').value.trim();
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
     user.phone = document.getElementById('ae-phone').value.trim();
