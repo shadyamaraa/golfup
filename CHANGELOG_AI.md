@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-08-17 (weather forecast on home + game detail)
+
+### Show course weather with zero friction for players
+
+New `src/weather.js` module backed by Open-Meteo (no API key, no signup,
+CORS-open) — players see weather with no permission prompts, no login, no
+taps. One request per course per hour, cached in localStorage + memory;
+cached data up to 6h old is served silently when offline, and every failure
+path just hides the weather UI (no toasts/errors).
+
+- Home: compact `.wx-strip` under the greeting — current temp, condition,
+  day high/low, rain chance pill (only when > 20%). Coordinates come from
+  the user's next game's course, else the default course. A same-height
+  skeleton prevents layout shift while loading.
+- Game detail: `.wx-game` block (styled like the description callout) under
+  the date/time meta — forecast for the game's date at tee-time hour: temp,
+  feels-like, condition, day high/low, wind (m/s), rain %. Advisory pills
+  appear only past thresholds: wind ≥ 8 m/s, rain ≥ 60%, temp ≤ 0°.
+  Hidden entirely for past games and games beyond the 16-day forecast range.
+- 10 new stroke icons (`wx-*`) in the existing icon style; weather i18n keys
+  in MN/EN/KR; component CSS in tokens-redesign.css (dark theme via tokens).
+- Course coordinates in `COURSE_GEO` (src/weather.js) are approximate —
+  swap in exact Google Maps values there when provided.
+- index.html: preconnect to api.open-meteo.com.
+
 ## 2026-07-01 (news image upload)
 
 ### Admin news images can now be uploaded, not just linked by URL

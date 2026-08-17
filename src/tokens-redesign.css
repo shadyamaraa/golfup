@@ -711,3 +711,69 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   color: #0C3051; border: none; cursor: pointer;
   box-shadow: 0 8px 22px rgba(221,137,16,0.32);
 }
+
+/* ---- Weather (home strip + game-detail block, src/weather.js) ---- */
+.wx-strip {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  border-radius: 15px; padding: 10px 13px; box-shadow: var(--shadow-card);
+  margin-bottom: 14px;
+}
+.wx-strip .wx-ic { color: var(--gold-dark); display: flex; flex-shrink: 0; }
+[data-theme="dark"] .wx-strip .wx-ic { color: var(--gold); }
+.wx-strip .wx-temp { font-weight: 800; font-size: 1.05rem; color: var(--text-primary); }
+.wx-strip .wx-desc {
+  font-size: 0.8rem; color: var(--text-secondary); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wx-strip .wx-hilo { margin-left: auto; font-size: 0.78rem; color: var(--text-secondary); font-weight: 700; white-space: nowrap; }
+.wx-strip .wx-rain {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  background: var(--accent-soft); color: var(--gold-dark);
+  border-radius: 999px; padding: 3px 9px; font-size: 0.7rem; font-weight: 700;
+}
+[data-theme="dark"] .wx-strip .wx-rain { color: var(--gold); }
+
+/* Loading placeholder — same footprint as the strip, so nothing jumps */
+.wx-skel {
+  height: 46px; border-radius: 15px; margin-bottom: 14px;
+  background: linear-gradient(90deg, var(--bg-card-hover) 25%, var(--border-card) 37%, var(--bg-card-hover) 63%);
+  background-size: 400% 100%;
+  animation: wx-shimmer 1.4s ease infinite;
+}
+@keyframes wx-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+/* Game detail: tee-time forecast block (mirrors .game-description's look) */
+.wx-game {
+  background: var(--bg-card-hover); border-left: 3px solid var(--gold);
+  border-radius: 10px; padding: 11px 13px; margin: 2px 0 14px;
+}
+.wx-game .wg-label {
+  font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gold-dark); font-weight: 800;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+[data-theme="dark"] .wx-game .wg-label { color: var(--gold); }
+.wx-game .wg-main { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+.wx-game .wg-ic { color: var(--gold-dark); display: flex; flex-shrink: 0; }
+[data-theme="dark"] .wx-game .wg-ic { color: var(--gold); }
+.wx-game .wg-t { font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; line-height: 1; color: var(--text-primary); }
+.wx-game .wg-desc { font-size: 0.82rem; font-weight: 700; color: var(--text-primary); }
+.wx-game .wg-sub { font-size: 0.73rem; color: var(--text-secondary); font-weight: 600; margin-top: 2px; }
+.wx-game .wg-right { margin-left: auto; text-align: right; }
+.wx-game .wg-facts {
+  display: flex; gap: 14px; margin-top: 9px;
+  font-size: 0.76rem; color: var(--text-secondary); flex-wrap: wrap;
+}
+.wx-game .wg-facts span { display: inline-flex; align-items: center; gap: 4px; }
+.wx-game .wg-facts b { color: var(--text-primary); font-weight: 700; }
+.wx-warns { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.wx-warn {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.7rem; font-weight: 700; padding: 4px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber);
+}
+.wx-warn.rain {
+  background: color-mix(in srgb, var(--emerald-light) 16%, transparent);
+  color: var(--emerald-light);
+}

@@ -2,6 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
+import * as weather from './weather.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -762,6 +763,7 @@ async function renderHome() {
           <div class="home-greet-name">${esc(displayUsername(currentUser))}</div>
         </div>
       </div>
+      <div id="home-weather"><div class="wx-skel"></div></div>
       <div id="home-news"></div>
       <div id="next-game-feature"></div>
       <div id="home-stats"></div>
@@ -786,6 +788,7 @@ async function renderHome() {
       if (unsub) activeUnsubs.push(unsub);
     }
   }
+  renderHomeWeather(games);
   renderHomeNews();
   renderNextGameFeature(games);
   renderHomeStats(games);
@@ -1207,6 +1210,98 @@ function isMyGame(g) {
   const inGroups = ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).some(p => p?.id === currentUser.id);
   if (inGroups) return true;
   return ensureArray(g.waitingList).some(p => p?.id === currentUser.id);
+}
+
+// ---- Weather (Open-Meteo, see src/weather.js) ----
+// Both renderers are fire-and-forget: they never block page render, and on
+// any failure the placeholder is emptied silently — no toasts, no errors.
+
+// Home: one compact strip under the greeting — current temp, condition,
+// day high/low, rain chance (only when > 20%). Uses the user's next game's
+// course for coordinates, falling back to the default course.
+async function renderHomeWeather(games) {
+  const host = document.getElementById('home-weather');
+  if (!host) return;
+  try {
+    const now = Date.now();
+    const nextMine = (games || [])
+      .filter(g => isMyGame(g) && g.date && g.time)
+      .map(g => ({ g, ms: gameStartMs(g) }))
+      .filter(x => x.ms >= now)
+      .sort((a, b) => a.ms - b.ms)[0];
+    const loc = nextMine?.g.location || MTBOGD_CONFIG.locationName;
+    const data = await weather.getForecast(loc);
+    const live = document.getElementById('home-weather'); // route may have changed
+    if (!live) return;
+    const ubNow = weather.ubNowParts();
+    const cur = weather.pickHour(data, ubNow.date, ubNow.hour + ':00');
+    const day = weather.pickDay(data, ubNow.date);
+    if (!cur) { live.innerHTML = ''; return; }
+    const info = weather.wmoInfo(cur.code);
+    const rain = cur.rainPct ?? 0;
+    live.innerHTML = `
+      <div class="wx-strip">
+        <span class="wx-ic">${icon(info.icon, { size: 22, stroke: 1.7 })}</span>
+        <span class="wx-temp">${cur.temp}°</span>
+        <span class="wx-desc">${t(info.key)}</span>
+        ${day ? `<span class="wx-hilo">↑${day.max}° ↓${day.min}°</span>` : ''}
+        ${rain > 20 ? `<span class="wx-rain">${icon('wx-drop', { size: 11, stroke: 2.2 })} ${rain}%</span>` : ''}
+      </div>`;
+  } catch (_) {
+    const live = document.getElementById('home-weather');
+    if (live) live.innerHTML = '';
+  }
+}
+
+// Game detail: forecast for the game's date at tee-time hour. Hidden for
+// past games and games beyond the 16-day forecast range. Advisory chips
+// (wind/rain/cold) appear only when thresholds are crossed.
+async function renderGameWeather(game) {
+  const host = document.getElementById('game-weather');
+  if (!host) return;
+  try {
+    if (!game?.date || !game?.time) { host.innerHTML = ''; return; }
+    const ms = gameStartMs(game);
+    const now = Date.now();
+    if (isNaN(ms) || ms < now || ms - now > weather.FORECAST_DAYS * 24 * 60 * 60 * 1000) {
+      host.innerHTML = '';
+      return;
+    }
+    const data = await weather.getForecast(game.location);
+    const live = document.getElementById('game-weather');
+    if (!live) return;
+    const hr = weather.pickHour(data, game.date, game.time);
+    if (!hr) { live.innerHTML = ''; return; }
+    const day = weather.pickDay(data, game.date);
+    const info = weather.wmoInfo(hr.code);
+    const warns = [];
+    if (hr.windMs >= 8) warns.push(`<span class="wx-warn">${icon('wx-wind', { size: 11, stroke: 2.2 })} ${t('wxWarnWind')}</span>`);
+    if ((hr.rainPct ?? 0) >= 60) warns.push(`<span class="wx-warn rain">${icon('wx-drop', { size: 11, stroke: 2.2 })} ${t('wxWarnRain')}</span>`);
+    if (hr.temp <= 0) warns.push(`<span class="wx-warn rain">${icon('wx-snow', { size: 11, stroke: 2.2 })} ${t('wxWarnCold')}</span>`);
+    live.innerHTML = `
+      <div class="wx-game">
+        <span class="wg-label">${icon('wx-cloud', { size: 12, stroke: 2 })} ${t('weatherLabel')} · ${game.time}</span>
+        <div class="wg-main">
+          <span class="wg-ic">${icon(info.icon, { size: 30, stroke: 1.6 })}</span>
+          <div>
+            <span class="wg-t">${hr.temp}°</span>
+            ${day ? `<div class="wg-sub">${t('wxDayRange')} ↑${day.max}° ↓${day.min}°</div>` : ''}
+          </div>
+          <div class="wg-right">
+            <div class="wg-desc">${t(info.key)}</div>
+            <div class="wg-sub">${t('wxFeels')} ${hr.feels}°</div>
+          </div>
+        </div>
+        <div class="wg-facts">
+          <span>${icon('wx-wind', { size: 13, stroke: 1.9 })} ${t('wxWind')} <b>${hr.windMs} ${t('wxWindUnit')}</b></span>
+          ${hr.rainPct != null ? `<span>${icon('wx-drop', { size: 12, stroke: 1.9 })} ${t('wxRainChance')} <b>${hr.rainPct}%</b></span>` : ''}
+        </div>
+        ${warns.length ? `<div class="wx-warns">${warns.join('')}</div>` : ''}
+      </div>`;
+  } catch (_) {
+    const live = document.getElementById('game-weather');
+    if (live) live.innerHTML = '';
+  }
 }
 
 // Prototype "next game" hero — the user's nearest upcoming game they're part of.
@@ -2048,6 +2143,7 @@ function renderGameView(game) {
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('time', { size: 15 })} ${game.time}</span>
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('profile', { size: 15 })} ${t('createdBy')}: ${esc(game.creatorName || '-')}</span>
         </div>
+        <div id="game-weather"></div>
         <div class="detail-actions">
           ${!isReadOnly && !isJoined && currentUser ? `<button class="btn btn-primary" id="join-btn">${t('join')}</button>` : ''}
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
@@ -2113,6 +2209,8 @@ function renderGameView(game) {
           </div>
         </div>` : ''}
     </div>`;
+
+  renderGameWeather(game); // async; hides itself for past/far-future games
 
   // Event listeners
   // Nudge MTBogd to re-verify QPay payment for a booking still pending in our
