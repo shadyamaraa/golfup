@@ -131,7 +131,14 @@ const T = {
     onboardStep1Title: 'Тоглолт олж нэгдээрэй', onboardStep1Body: 'Нүүр хуудаснаас идэвхтэй тоглолтуудыг хараад нэг товшилтоор нэгдэнэ.',
     onboardStep2Title: 'Өөрөө тоглолт зохион байгуул', onboardStep2Body: 'Огноо, цаг, талбайгаа сонгоод найзуудаа урь. Tee time мөн захиалж болно.',
     onboardStep3Title: 'Хоол захиал', onboardStep3Body: 'Тоглолтын үеэр талбай эсвэл ширээ рүүгээ хоол захиалаарай.',
-    chooseGameForOrder: 'Аль тоглолтод зориулах вэ?', orderNoGame: 'Тоглолтгүй захиалах'
+    chooseGameForOrder: 'Аль тоглолтод зориулах вэ?', orderNoGame: 'Тоглолтгүй захиалах',
+    weatherLabel: 'Цаг агаар', wxFeels: 'Мэдрэгдэх', wxWind: 'Салхи', wxRainChance: 'Бороо',
+    wxDayRange: 'Өдөртөө', wxWindUnit: 'м/с',
+    wxWarnWind: 'Хүчтэй салхи', wxWarnRain: 'Бороотой', wxWarnCold: 'Хүйтэн',
+    wxClear: 'Цэлмэг', wxMostlyClear: 'Багавтар үүлтэй', wxPartlyCloudy: 'Хагас үүлтэй', wxCloudy: 'Үүлэрхэг',
+    wxFog: 'Манантай', wxDrizzle: 'Шиврээ бороо', wxRain: 'Бороотой', wxHeavyRain: 'Их бороо',
+    wxFreezingRain: 'Мөстөх бороо', wxSnow: 'Цастай', wxShowers: 'Түр зуурын бороо',
+    wxSnowShowers: 'Түр зуурын цас', wxThunder: 'Аадар, аянгатай'
   },
   en: {
     appName: 'UB Golf', tagline: 'Play together!',
@@ -265,7 +272,14 @@ const T = {
     onboardStep1Title: 'Find & join games', onboardStep1Body: 'Browse active games on the home feed and join with one tap.',
     onboardStep2Title: 'Organize your own', onboardStep2Body: 'Pick a date, time and course, then invite friends. You can book a tee time too.',
     onboardStep3Title: 'Order food', onboardStep3Body: 'Order food to the course or your table during a game.',
-    chooseGameForOrder: 'Which game is this for?', orderNoGame: 'Order without a game'
+    chooseGameForOrder: 'Which game is this for?', orderNoGame: 'Order without a game',
+    weatherLabel: 'Weather', wxFeels: 'Feels like', wxWind: 'Wind', wxRainChance: 'Rain',
+    wxDayRange: 'Day', wxWindUnit: 'm/s',
+    wxWarnWind: 'Strong wind', wxWarnRain: 'Rain likely', wxWarnCold: 'Cold',
+    wxClear: 'Clear', wxMostlyClear: 'Mostly clear', wxPartlyCloudy: 'Partly cloudy', wxCloudy: 'Overcast',
+    wxFog: 'Fog', wxDrizzle: 'Drizzle', wxRain: 'Rain', wxHeavyRain: 'Heavy rain',
+    wxFreezingRain: 'Freezing rain', wxSnow: 'Snow', wxShowers: 'Rain showers',
+    wxSnowShowers: 'Snow showers', wxThunder: 'Thunderstorm'
   },
   kr: {
     appName: 'UB 골프', tagline: '함께 플레이하자!',
@@ -399,7 +413,14 @@ const T = {
     onboardStep1Title: '게임 찾기 & 참가', onboardStep1Body: '홈에서 진행 중인 게임을 보고 한 번에 참가하세요.',
     onboardStep2Title: '직접 게임 만들기', onboardStep2Body: '날짜, 시간, 코스를 정하고 친구를 초대하세요. 티 타임도 예약할 수 있습니다.',
     onboardStep3Title: '음식 주문', onboardStep3Body: '게임 중 코스나 테이블로 음식을 주문하세요.',
-    chooseGameForOrder: '어느 게임을 위한 주문인가요?', orderNoGame: '게임 없이 주문'
+    chooseGameForOrder: '어느 게임을 위한 주문인가요?', orderNoGame: '게임 없이 주문',
+    weatherLabel: '날씨', wxFeels: '체감', wxWind: '바람', wxRainChance: '강수',
+    wxDayRange: '낮', wxWindUnit: 'm/s',
+    wxWarnWind: '강풍', wxWarnRain: '비 예보', wxWarnCold: '추움',
+    wxClear: '맑음', wxMostlyClear: '대체로 맑음', wxPartlyCloudy: '구름 조금', wxCloudy: '흐림',
+    wxFog: '안개', wxDrizzle: '이슬비', wxRain: '비', wxHeavyRain: '폭우',
+    wxFreezingRain: '어는 비', wxSnow: '눈', wxShowers: '소나기',
+    wxSnowShowers: '소낙눈', wxThunder: '뇌우'
   }
 };
 
