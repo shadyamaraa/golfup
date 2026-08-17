@@ -21,8 +21,9 @@ path just hides the weather UI (no toasts/errors).
   Hidden entirely for past games and games beyond the 16-day forecast range.
 - 10 new stroke icons (`wx-*`) in the existing icon style; weather i18n keys
   in MN/EN/KR; component CSS in tokens-redesign.css (dark theme via tokens).
-- Course coordinates in `COURSE_GEO` (src/weather.js) are approximate —
-  swap in exact Google Maps values there when provided.
+- Course coordinates live in `COURSE_GEO` (src/weather.js). Sky Resort is
+  exact (47.880971, 107.042176); Chinggis Khaan is still approximate —
+  swap in the exact Google Maps value there when available.
 - index.html: preconnect to api.open-meteo.com.
 
 ## 2026-07-01 (news image upload)

@@ -8,12 +8,13 @@
 // an in-memory map. When the network fails, cached data up to 6 hours old
 // is served silently.
 
-// Course coordinates. Approximate for now — refine with exact Google Maps
-// values when available (a few km of drift barely changes the forecast).
+// Course coordinates. Sky Resort is exact (from Google Maps); Chinggis Khaan
+// is still approximate — swap in the exact value when available (a few km of
+// drift barely changes the forecast).
 const UB_FALLBACK = { lat: 47.9188, lon: 106.9176 }; // Ulaanbaatar centre
 export const COURSE_GEO = {
-  'Sky Resort Golf Club': { lat: 47.8674, lon: 107.0075 },
-  'Chinggis Khaan Golf Course': { lat: 47.8, lon: 107.2 },
+  'Sky Resort Golf Club': { lat: 47.880971, lon: 107.042176 },
+  'Chinggis Khaan Golf Course': { lat: 47.8, lon: 107.2 }, // approximate
 };
 
 // Open-Meteo serves hourly + daily data up to 16 days out; games further
