@@ -918,13 +918,37 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   display: grid; grid-template-columns: 40px minmax(0, 1fr) 44px 34px 38px;
   align-items: center; gap: 8px; padding: 11px 14px;
 }
-/* From the second round on, the R column is replaced by a line of R1..R4
-   chips under the name — four columns and a name will not fit a phone. */
+/* From the second round on, the single R column is replaced by R1..R4 chips
+   sitting on the player's own line, between the name and the total. */
 .tn-lb-multi .tn-lb-head, .tn-lb-multi .tn-lb-row {
-  grid-template-columns: 40px minmax(0, 1fr) 44px 34px;
+  grid-template-columns: 40px minmax(0, 1fr) auto 44px 34px;
 }
-.tn-lb-multi .tn-lb-row { padding-top: 9px; padding-bottom: 9px; }
-.tn-rds { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.tn-rds { display: flex; gap: 5px; justify-content: flex-end; }
+/* On a phone the chips have to earn their width back from every other column,
+   or the names truncate to nothing. */
+@media (max-width: 559px) {
+  .tn-lb-multi .tn-lb-head, .tn-lb-multi .tn-lb-row {
+    grid-template-columns: 34px minmax(0, 1fr) auto 42px 30px; gap: 6px;
+  }
+  .tn-lb-multi .tn-rd { font-size: 0.62rem; padding: 1px 5px; gap: 3px; }
+  .tn-lb-multi .tn-rds { gap: 4px; }
+}
+/* Three or four chips plus a name still do not fit, so only there do the chips
+   drop to a second line; the row stays single-line everywhere else. */
+@media (max-width: 559px) {
+  .tn-lb-r3 .tn-lb-head, .tn-lb-r3 .tn-lb-row {
+    grid-template-columns: 34px minmax(0, 1fr) 42px 30px;
+  }
+  .tn-lb-r3 .tn-rd { font-size: 0.7rem; padding: 1px 6px; gap: 4px; }
+  .tn-lb-r3 .tn-lb-row { padding-top: 9px; padding-bottom: 9px; }
+  .tn-lb-r3 .tn-rds-head { display: none; }
+  .tn-lb-r3 .tn-c-tot { grid-column: 3; grid-row: 1; }
+  .tn-lb-r3 .tn-c-thru { grid-column: 4; grid-row: 1; }
+  .tn-lb-r3 .tn-rds {
+    grid-column: 2 / -1; grid-row: 2;
+    flex-wrap: wrap; justify-content: flex-start; margin-top: 4px;
+  }
+}
 .tn-rd {
   display: inline-flex; align-items: baseline; gap: 4px;
   padding: 1px 6px; border-radius: 6px;

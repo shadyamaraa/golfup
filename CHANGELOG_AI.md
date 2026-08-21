@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (the round chips ride on the player's own line)
+
+The R1..R4 chips sat on a second line under the name, which doubled the row
+height and broke the table's scan. They now sit between the name and the total,
+on the player's own line, in a track that sizes itself to however many rounds
+have been played. On a phone the other columns give width back to make room —
+position, total and thru tighten and the chips drop a size.
+
+Four chips plus a name still do not fit a 390px phone, so past two rounds the
+chips fall back to a second line on narrow screens only; every wider screen
+stays single-line at four rounds. A withdrawn player keeps an empty chip cell
+rather than none, or the total and thru columns would slide left on that row.
+
+Measured at 390px and 700px, both themes: two rounds are single-line at both
+widths (row height 61px, was 61/91); four rounds are single-line at 700px and
+wrap only on the phone; nothing overflows horizontally; the withdrawn row's
+total and thru land on the same pixel column as every other row.
+
 ## 2026-08-21 (a link with a gid names its own tab; the tab field steps aside)
 
 The R1–R4 change shipped and the board still showed one round. The code was
