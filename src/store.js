@@ -409,6 +409,56 @@ export function onSponsorChanged(callback) {
   return () => off(r, 'value', handler);
 }
 
+// ---- Tournaments (RTDB) ----
+// A tournament record carries its own denormalized leaderboard (`entries`),
+// the same shape `ranking` uses, so the strip and the leaderboard page need a
+// single read. See CHANGELOG_AI.md for the field list.
+export async function loadTournaments() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'tournaments'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()).filter(tn => tn && tn.id && tn.status !== 'deleted');
+}
+
+export async function loadTournament(id) {
+  if (!useFirebase || !db) return null;
+  const snap = await get(ref(db, 'tournaments/' + id));
+  if (!snap.exists()) return null;
+  const tn = snap.val();
+  return tn.status === 'deleted' ? null : tn;
+}
+
+export async function saveTournament(tn) {
+  if (!useFirebase || !db) return;
+  if (!tn.id) tn.id = 'tn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  await set(ref(db, 'tournaments/' + tn.id), { ...tn, updatedAt: Date.now() });
+  return tn.id;
+}
+
+export async function deleteTournament(id) {
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'tournaments/' + id), { status: 'deleted', deletedAt: Date.now() });
+}
+
+export function onTournamentsChanged(callback) {
+  if (!useFirebase || !db) return null;
+  const r = ref(db, 'tournaments');
+  const handler = onValue(r, (snap) => {
+    const list = snap.exists()
+      ? Object.values(snap.val()).filter(tn => tn && tn.id && tn.status !== 'deleted')
+      : [];
+    callback(list);
+  });
+  return () => off(r, 'value', handler);
+}
+
+export function onTournamentChanged(id, callback) {
+  if (!useFirebase || !db) return null;
+  const r = ref(db, 'tournaments/' + id);
+  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
+  return () => off(r, 'value', handler);
+}
+
 // ---- Tables (RTDB) ----
 export async function loadTables() {
   if (!useFirebase || !db) return [];

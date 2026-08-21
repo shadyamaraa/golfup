@@ -342,6 +342,7 @@ export async function router() {
     updateHeader();
     updateBottomNav(hash);
     updateGlobalSponsorVisibility(hash);
+    updateTournamentStripVisibility(hash);
     // Header bell unread badge — subscribe once per user (persists across routes).
     if (currentUser && bellSubFor !== currentUser.id) {
       bellSubFor = currentUser.id;
@@ -365,6 +366,7 @@ export async function router() {
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
     else if (hash === '#/ranking') await renderRankingPage();
+    else if (hash.startsWith('#/tournament/')) await renderTournamentPage(hash.split('#/tournament/')[1]);
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -912,6 +914,261 @@ function updateGlobalSponsorVisibility(hash) {
   host.classList.toggle('hidden', hide);
 }
 
+// ============================================================
+// Tournaments — home strip (#tn-strip) + leaderboard (#/tournament/:id)
+// ============================================================
+
+// How many players the home strip shows before you have to scroll it.
+const TN_STRIP_PLAYERS = 5;
+// How many leaderboard rows render before "show more".
+const TN_PAGE_SIZE = 20;
+
+// Sample tournament, so the strip and the leaderboard can be reviewed on a
+// preview channel before any real data exists. Never renders on the production
+// hosts — see tnDemoAllowed().
+const TN_DEMO = {
+  id: 'demo',
+  name: 'Хан-Уул Аварга 2026',
+  venue: 'Mt. Bogd Golf Club',
+  city: 'Улаанбаатар',
+  startDate: '2026-08-21',
+  endDate: '2026-08-23',
+  format: 'stroke',
+  rounds: 3,
+  currentRound: 1,
+  status: 'live',
+  maxPlayers: 48,
+  description: 'Жилийн төгсгөлийн аварга шалгаруулах тэмцээн. 3 тойрог, stroke play.',
+  updatedAt: Date.now(),
+  entries: [
+    { name: 'Б. Ганбат', club: 'Хан Богд', total: -6, thru: 'F', rounds: [-6] },
+    { name: 'Д. Энхжин', club: 'Eagle', total: -6, thru: 'F', rounds: [-6] },
+    { name: 'С. Мөнх-Эрдэнэ', club: 'Club', total: -4, thru: '16', rounds: [-4] },
+    { name: 'Г. Тэмүүлэн', club: 'Соёмбо', total: -3, thru: '15', rounds: [-3] },
+    { name: 'О. Бат-Эрдэнэ', club: 'Star', total: -2, thru: 'F', rounds: [-2] },
+    { name: 'Ж. Наранцэцэг', club: 'Эмэгтэйчүүд', total: -2, thru: '14', rounds: [-2] },
+    { name: 'Х. Батбаяр', club: 'Vista', total: 0, thru: '13', rounds: [0] },
+    { name: 'Т. Дорж', club: 'JCI', total: 1, thru: 'F', rounds: [1] },
+    { name: 'Л. Оюунбилэг', club: 'Сениор', total: 2, thru: 'F', rounds: [2] },
+    { name: 'Ч. Ганзориг', club: 'Заан Тэрэлж', total: 3, thru: '12', rounds: [3] },
+    { name: 'М. Алтанцэцэг', club: 'Эмэгтэйчүүд', total: 4, thru: '11', rounds: [4] },
+    { name: 'Б. Хүрэлбаатар', club: 'Булаа', total: 6, thru: 'F', rounds: [6] }
+  ]
+};
+
+// The demo tournament is for reviewing the UI, so it is confined to localhost
+// and Firebase preview channels (their hosts carry a "--" segment).
+function tnDemoAllowed() {
+  const h = location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h.includes('--');
+}
+
+// Demo only: seat the signed-in member mid-table, so the own-position banner
+// and the highlighted row can be reviewed alongside everything else.
+function tnDemo() {
+  if (!currentUser) return TN_DEMO;
+  const seat = 9;
+  const name = [currentUser.lastName, currentUser.firstName].filter(Boolean).join(' ')
+    || currentUser.fullName || currentUser.name || currentUser.username;
+  const entries = TN_DEMO.entries.map((e, i) => i === seat
+    ? { ...e, name: name || e.name, club: (currentUser.communities || [])[0] || e.club, userId: currentUser.id }
+    : e);
+  return { ...TN_DEMO, entries };
+}
+
+// "Б. Ганбат" → "Г": in Mongolian usage the given name carries the initial.
+function tnInitial(name) {
+  const given = String(name || '').split('.').pop().trim();
+  return (given || String(name || '?')).charAt(0).toUpperCase() || '?';
+}
+
+// Scores are stored relative to par. Rendering follows golf reading rather than
+// app semantics: under par is red, level is muted, over par is ink.
+function tnScoreText(v) {
+  if (v === undefined || v === null || v === '') return '–';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  if (n === 0) return 'E';
+  return n < 0 ? `−${Math.abs(n)}` : `+${n}`;
+}
+
+function tnScoreClass(v) {
+  const n = Number(v);
+  if (v === undefined || v === null || v === '' || isNaN(n)) return 'tn-sc-none';
+  if (n < 0) return 'tn-sc-under';
+  if (n > 0) return 'tn-sc-over';
+  return 'tn-sc-even';
+}
+
+function tnDayMs(dateStr) {
+  if (!dateStr) return null;
+  const ms = new Date(`${dateStr}T00:00:00`).getTime();
+  return isNaN(ms) ? null : ms;
+}
+
+function tnShortDate(dateStr) {
+  const ms = tnDayMs(dateStr);
+  if (ms === null) return '';
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// live | final | upcoming. An explicit status field wins; otherwise the dates
+// decide, with the end date counting as a whole day.
+function tnStatus(tn) {
+  if (tn?.status === 'live' || tn?.status === 'final' || tn?.status === 'upcoming') return tn.status;
+  const start = tnDayMs(tn?.startDate);
+  if (start === null) return 'upcoming';
+  const now = Date.now();
+  if (now < start) return 'upcoming';
+  const end = tnDayMs(tn?.endDate || tn?.startDate);
+  if (end !== null && now >= end + 86400000) return 'final';
+  return 'live';
+}
+
+function tnStateLabel(tn) {
+  const state = tnStatus(tn);
+  if (state === 'live') return t('tnLive');
+  if (state === 'final') return t('tnFinal');
+  return tn.registerOpen ? t('tnRegOpen') : t('tnSoon');
+}
+
+// Sort by total (lower is better, missing totals last) and label tie-aware
+// positions: T1, T1, 3.
+function tnRanked(tn) {
+  const list = Array.isArray(tn?.entries) ? tn.entries.slice() : [];
+  const score = (e) => {
+    const n = Number(e?.total);
+    return (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) ? Infinity : n;
+  };
+  list.sort((a, b) => score(a) - score(b) || String(a?.name || '').localeCompare(String(b?.name || '')));
+  const counts = new Map();
+  list.forEach(e => { const s = score(e); counts.set(s, (counts.get(s) || 0) + 1); });
+  let pos = 0;
+  return list.map((e, i) => {
+    const s = score(e);
+    if (i === 0 || score(list[i - 1]) !== s) pos = i + 1;
+    return { ...e, rank: pos, posLabel: s === Infinity ? '–' : `${counts.get(s) > 1 ? 'T' : ''}${pos}` };
+  });
+}
+
+// Does this leaderboard entry belong to the signed-in user? Entries carry a
+// userId when created from a member, and fall back to a name match.
+function tnIsMe(entry) {
+  if (!currentUser) return false;
+  if (entry.userId && entry.userId === currentUser.id) return true;
+  const mine = [currentUser.fullName, currentUser.name, currentUser.username]
+    .filter(Boolean).map(s => String(s).trim().toLowerCase());
+  return mine.includes(String(entry.name || '').trim().toLowerCase());
+}
+
+// One tournament gets the strip: a live one first, then the nearest upcoming
+// within two weeks, then a finished one for three days after it ends.
+function tnFeatured(list) {
+  const all = Array.isArray(list) ? list : [];
+  const now = Date.now();
+  const byStart = (a, b) => (tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0);
+
+  const live = all.filter(tn => tnStatus(tn) === 'live').sort(byStart);
+  if (live.length) return live[0];
+
+  const soon = all.filter(tn => {
+    const s = tnDayMs(tn.startDate);
+    return tnStatus(tn) === 'upcoming' && s !== null && s - now < 14 * 86400000;
+  }).sort(byStart);
+  if (soon.length) return soon[0];
+
+  const justDone = all.filter(tn => {
+    const e = tnDayMs(tn.endDate || tn.startDate);
+    return tnStatus(tn) === 'final' && e !== null && now - e < 3 * 86400000;
+  }).sort((a, b) => (tnDayMs(b.endDate || b.startDate) || 0) - (tnDayMs(a.endDate || a.startDate) || 0));
+  return justDone[0] || null;
+}
+
+// The strip sticks under the header, whose height moves with font size and
+// zoom, so the offset is measured rather than hard-coded.
+function syncTournamentStripTop() {
+  const header = document.getElementById('app-header');
+  if (header) document.documentElement.style.setProperty('--tn-top', `${header.offsetHeight}px`);
+}
+
+function updateTournamentStripVisibility(hash) {
+  const host = document.getElementById('tn-strip');
+  if (!host) return;
+  const onHome = hash === '#/' || hash === '#/home';
+  const hide = isKiosk || !currentUser || !onHome || host.dataset.has !== '1';
+  const wasHidden = host.classList.contains('hidden');
+  host.classList.toggle('hidden', hide);
+  if (hide) return;
+  syncTournamentStripTop();
+  // Returning to home should start at the leader again, not wherever the
+  // player row happened to be left scrolled.
+  if (wasHidden) {
+    const players = host.querySelector('.tn-players');
+    if (players) players.scrollLeft = 0;
+  }
+}
+
+// Home strip — the featured tournament plus its top players, rendered once at
+// boot and kept live. Hidden everywhere except the home route.
+async function renderTournamentStrip(list) {
+  const host = document.getElementById('tn-strip');
+  if (!host) return;
+  if (list === undefined) {
+    try { list = await store.loadTournaments(); } catch (_) { list = []; }
+  }
+  let tn = tnFeatured(list);
+  if (!tn && tnDemoAllowed()) tn = tnDemo();
+  if (!tn) {
+    host.innerHTML = '';
+    host.dataset.has = '0';
+    updateTournamentStripVisibility(location.hash || '#/');
+    return;
+  }
+
+  const state = tnStatus(tn);
+  const ranked = tnRanked(tn);
+  const badge = state === 'upcoming'
+    ? tnShortDate(tn.startDate)
+    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+
+  const playerHTML = (e) => `
+    <span class="tn-p">
+      <span class="tn-pos">${esc(e.posLabel)}</span>
+      <span class="tn-av">${avatarInner(e.avatar, tnInitial(e.name))}</span>
+      <span class="tn-pname">${esc(e.name || '')}</span>
+      <span class="tn-cap">${t('tnTotal')}</span>
+      <span class="tn-sc ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+      ${state === 'live' ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
+    </span>`;
+
+  // With scores, the third row is the top players; without them (an upcoming
+  // tournament, or one nobody has posted to yet) it carries the essentials.
+  const body = ranked.length
+    ? `<div class="tn-players">${ranked.slice(0, TN_STRIP_PLAYERS).map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
+    : `<div class="tn-meta">
+         <span class="tn-meta-txt">${esc(tn.venue || '')}${tn.startTime ? ` · ${esc(tn.startTime)}` : ''}</span>
+         ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
+       </div>`;
+
+  host.innerHTML = `
+    <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
+      <div class="tn-head">
+        ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
+        ${state === 'live' ? '<span class="tn-dot"></span>' : ''}
+        <span class="tn-state tn-state-${state}">${tnStateLabel(tn)}</span>
+      </div>
+      <div class="tn-name-row">
+        <span class="tn-name">${esc(tn.name || '')}</span>
+        ${icon('next', { size: 15, stroke: 2.4 })}
+      </div>
+      ${body}
+      <span class="tn-fade"></span>
+    </a>`;
+  host.dataset.has = '1';
+  updateTournamentStripVisibility(location.hash || '#/');
+}
+
 // 3 stat tiles from real data (games joined/created, following, followers).
 function renderHomeStats(games) {
   const host = document.getElementById('home-stats');
@@ -992,6 +1249,278 @@ async function renderRankingPage() {
         ? `<p style="color:var(--text-secondary);">${t('rankingEmpty')}</p>`
         : `<div class="glass-card rk-card">${entries.map(rankingRowHTML).join('')}</div>`}
     </div>`;
+}
+
+// ---- Tournament page (#/tournament/:id) ----
+let tnPageData = null;
+let tnPageTab = 'board';
+let tnPageFilter = 'all';
+let tnPageQuery = '';
+let tnPageLimit = TN_PAGE_SIZE;
+
+// Compact tournament dates: "8-р сар 21–23", collapsing the month when the
+// range stays inside it. formatDate() is tuned for a single game day (it says
+// "today" and appends a weekday), which reads wrong across a range.
+function tnDatesText(tn) {
+  const s = tnDayMs(tn.startDate);
+  if (s === null) return '';
+  const months = getLang() === 'mn'
+    ? ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
+    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const sd = new Date(s);
+  const start = `${months[sd.getMonth()]} ${sd.getDate()}`;
+  const e = tnDayMs(tn.endDate);
+  if (e === null || e === s) return start;
+  const ed = new Date(e);
+  return ed.getMonth() === sd.getMonth()
+    ? `${start}–${ed.getDate()}`
+    : `${start} – ${months[ed.getMonth()]} ${ed.getDate()}`;
+}
+
+function tnFormatText(tn) {
+  const key = { stroke: 'fmtStroke', match: 'fmtMatch', scramble: 'fmtScramble' }[tn.format];
+  return key ? t(key) : (tn.format || '');
+}
+
+// THRU only means something while a round is running; a finished tournament is
+// all F, one that hasn't started has nothing to show.
+function tnThruText(tn, entry) {
+  const state = tnStatus(tn);
+  if (state === 'final') return 'F';
+  if (state === 'live') return entry.thru || '–';
+  return '–';
+}
+
+async function renderTournamentPage(id) {
+  main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
+  let tn = null;
+  if (id === TN_DEMO.id && tnDemoAllowed()) tn = tnDemo();
+  else { try { tn = await store.loadTournament(id); } catch (_) { } }
+
+  if (!tn) {
+    main().innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+        <div class="empty-state" style="padding:40px 20px;"><p>${t('tnNotFound')}</p></div>
+      </div>`;
+    return;
+  }
+
+  tnPageTab = 'board';
+  tnPageFilter = 'all';
+  tnPageQuery = '';
+  tnPageLimit = TN_PAGE_SIZE;
+  paintTournamentPage(tn);
+
+  if (store.isUsingFirebase() && tn.id !== TN_DEMO.id) {
+    const unsub = store.onTournamentChanged(tn.id, (fresh) => {
+      if (!fresh || fresh.status === 'deleted') return;
+      tnPageData = fresh;
+      // Repaint the list alone while a search is in progress, so live score
+      // updates never steal the caret.
+      if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
+    });
+    if (unsub) activeUnsubs.push(unsub);
+  }
+}
+
+function paintTournamentPage(tn) {
+  tnPageData = tn;
+  const state = tnStatus(tn);
+  const badge = state === 'upcoming'
+    ? tnShortDate(tn.startDate)
+    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+  const facts = [tnDatesText(tn), tnFormatText(tn), tn.rounds ? `${tn.rounds} ${t('tnRounds')}` : '']
+    .filter(Boolean).join(' · ');
+
+  main().innerHTML = `
+    <div class="detail-container fade-in tn-page">
+      <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
+
+      <div class="surface-card tn-hero">
+        <div class="tn-crest">${icon('leaderboard', { size: 30 })}</div>
+        <div class="tn-hero-body">
+          <div class="tn-head">
+            ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
+            ${state === 'live' ? '<span class="tn-dot"></span>' : ''}
+            <span class="tn-state tn-state-${state}">${tnStateLabel(tn)}</span>
+          </div>
+          <h2 class="detail-title tn-hero-title">${esc(tn.name || '')}</h2>
+          <div class="tn-hero-sub">
+            ${esc([tn.venue, tn.city].filter(Boolean).join(' · '))}
+            ${facts ? `<br>${esc(facts)}` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="seg-tabs tn-tabs">
+        <button class="seg-tab active" data-tn-tab="board">${t('tnLeaderboard')}</button>
+        <button class="seg-tab" data-tn-tab="info">${t('tnInfo')}</button>
+      </div>
+
+      <div id="tn-board"></div>
+      ${tn.id === TN_DEMO.id ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
+    </div>`;
+
+  document.querySelectorAll('[data-tn-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tnPageTab = btn.dataset.tnTab;
+      document.querySelectorAll('[data-tn-tab]').forEach(b => b.classList.toggle('active', b === btn));
+      renderTnBoard();
+    });
+  });
+  renderTnBoard();
+}
+
+function tnInfoHTML(tn) {
+  const rows = [
+    [t('location'), [tn.venue, tn.city].filter(Boolean).join(' · ')],
+    [t('date'), tnDatesText(tn)],
+    [t('gameFormat'), tnFormatText(tn)],
+    [t('tnRounds'), tn.rounds],
+    [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
+  ].filter(([, v]) => v !== undefined && v !== null && v !== '');
+
+  return `
+    <div class="surface-card tn-info">
+      ${rows.map(([k, v]) => `
+        <div class="tn-info-row">
+          <span class="tn-info-k">${esc(k)}</span>
+          <span class="tn-info-v">${esc(String(v))}</span>
+        </div>`).join('')}
+    </div>
+    ${tn.description ? `<div class="game-description tn-desc">${esc(tn.description)}</div>` : ''}
+    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
+}
+
+// Tab body: the leaderboard's stable chrome (search, filters, own position)
+// plus the #tn-list host that renderTnList() fills.
+function renderTnBoard() {
+  const host = document.getElementById('tn-board');
+  const tn = tnPageData;
+  if (!host || !tn) return;
+
+  if (tnPageTab === 'info') {
+    host.innerHTML = tnInfoHTML(tn);
+    return;
+  }
+
+  const ranked = tnRanked(tn);
+  if (!ranked.length) {
+    host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
+    return;
+  }
+
+  const me = ranked.find(tnIsMe);
+  const hasCircles = (currentUser?.communities || []).length > 0;
+
+  host.innerHTML = `
+    <div class="search-field tn-search">
+      ${icon('search', { size: 18 })}
+      <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
+    </div>
+    <div class="tn-chips">
+      <button class="filter-tab ${tnPageFilter === 'all' ? 'active' : ''}" data-tn-filter="all">${t('tnAllPlayers')}</button>
+      ${hasCircles ? `<button class="filter-tab ${tnPageFilter === 'circle' ? 'active' : ''}" data-tn-filter="circle">${t('tnMyCircle')}</button>` : ''}
+    </div>
+    ${me ? `
+      <div class="tn-me-banner">
+        <span class="tn-me-av">${avatarInner(currentUser?.avatar, tnInitial(me.name))}</span>
+        <span class="tn-me-body">
+          <span class="tn-me-cap">${t('tnYourPos')}</span>
+          <span class="tn-me-name">${esc(me.posLabel)} · ${esc(me.name || '')}</span>
+        </span>
+        <span class="tn-me-score">
+          <span class="tn-sc ${tnScoreClass(me.total)}">${tnScoreText(me.total)}</span>
+          <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
+        </span>
+      </div>` : ''}
+    <div class="section-head tn-section">
+      <h2>${t('tnAllPlayers')}</h2>
+      <span class="pill-soft" id="tn-count"></span>
+    </div>
+    <div id="tn-list"></div>
+    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
+
+  const input = host.querySelector('#tn-q');
+  input?.addEventListener('input', () => {
+    tnPageQuery = input.value;
+    tnPageLimit = TN_PAGE_SIZE;
+    renderTnList();
+  });
+  host.querySelectorAll('[data-tn-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tnPageFilter = btn.dataset.tnFilter;
+      tnPageLimit = TN_PAGE_SIZE;
+      host.querySelectorAll('[data-tn-filter]').forEach(b => b.classList.toggle('active', b === btn));
+      renderTnList();
+    });
+  });
+
+  renderTnList();
+}
+
+function renderTnList() {
+  const host = document.getElementById('tn-list');
+  const tn = tnPageData;
+  if (!host || !tn) return;
+
+  const ranked = tnRanked(tn);
+  const myCircles = (currentUser?.communities || []).map(c => String(c).toLowerCase());
+  const q = tnPageQuery.trim().toLowerCase();
+  const shown = ranked.filter(e => {
+    if (tnPageFilter === 'circle' && !myCircles.includes(String(e.club || '').toLowerCase())) return false;
+    if (q && !String(e.name || '').toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const count = document.getElementById('tn-count');
+  if (count) count.textContent = String(shown.length);
+
+  if (!shown.length) {
+    host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('tnNoMatch')}</p></div>`;
+    return;
+  }
+
+  const page = shown.slice(0, tnPageLimit);
+  const rest = shown.length - page.length;
+  const rdLabel = `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+  const rdIndex = (tn.currentRound || 1) - 1;
+
+  const rowHTML = (e) => {
+    const mine = tnIsMe(e);
+    const sub = [e.club, mine ? t('tnYou') : ''].filter(Boolean).join(' · ');
+    const rd = Array.isArray(e.rounds) ? e.rounds[rdIndex] : e.total;
+    return `
+      <div class="tn-lb-row${mine ? ' tn-me' : ''}">
+        <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">${esc(e.posLabel)}</span>
+        <span class="tn-c-name">
+          <span class="tn-n">${esc(e.name || '')}</span>
+          ${sub ? `<span class="tn-club">${esc(sub)}</span>` : ''}
+        </span>
+        <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+        <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
+        <span class="tn-c-rd">${tnScoreText(rd)}</span>
+      </div>`;
+  };
+
+  host.innerHTML = `
+    <div class="surface-card tn-lb">
+      <div class="tn-lb-head">
+        <span class="tn-c-pos">${t('tnPos')}</span>
+        <span class="tn-c-name">${t('tnPlayer')}</span>
+        <span class="tn-c-tot">${t('tnTotal')}</span>
+        <span class="tn-c-thru">${t('tnThru')}</span>
+        <span class="tn-c-rd"><span class="tn-rd-chip">${esc(rdLabel)}</span></span>
+      </div>
+      ${page.map(rowHTML).join('')}
+      ${rest > 0 ? `<button class="tn-more" id="tn-more">${t('tnMore')} (${rest})</button>` : ''}
+    </div>`;
+
+  document.getElementById('tn-more')?.addEventListener('click', () => {
+    tnPageLimit += TN_PAGE_SIZE;
+    renderTnList();
+  });
 }
 
 function renderHomeUpcoming(games) {
@@ -4342,6 +4871,14 @@ export function initApp() {
   if (store.isUsingFirebase()) {
     store.onSponsorChanged((data) => renderGlobalSponsor(data));
   }
+
+  // Tournament strip (home only) — render once + live-update, and keep its
+  // sticky offset in step with the header height.
+  renderTournamentStrip();
+  if (store.isUsingFirebase()) {
+    store.onTournamentsChanged((list) => renderTournamentStrip(list));
+  }
+  window.addEventListener('resize', syncTournamentStripTop);
 
   // Header: bell → home (notifications), avatar → profile.
   // Bell → open the notifications list on the home page (navigate there first

@@ -1,5 +1,50 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (tournament strip on home + leaderboard page)
+
+### A live tournament reads from the top of home, one tap from the full board
+
+Two levels, modelled on how the tour apps do it but built from the existing
+vocabulary — no new tokens, no new dependency.
+
+- **Home strip** (`#tn-strip` in index.html, rendered by
+  `renderTournamentStrip()`): a ~100px band on the card surface, full-bleed,
+  **sticky directly under the header** — round chip + state (a pulsing dot
+  while live), the tournament name, then the **top 5** players in a
+  horizontally scrolling row (`T1 · avatar · name · НИЙТ −6 · ЯВЦ F`) with a
+  fade at the right edge. Home route only; hidden in kiosk, when signed out,
+  and when no tournament qualifies. Its sticky offset (`--tn-top`) is measured
+  from the header rather than hard-coded, and re-measured on resize.
+- **Leaderboard page** (`#/tournament/:id`): hero card (crest, state, name,
+  venue, dates/format/rounds), Хүснэгт / Мэдээлэл tabs, player search, an
+  "all players / my circles" filter, an own-position banner, and the full
+  table — POS · player (+ club) · TOT · THRU · round — paged 20 at a time.
+  Live-updates over `onTournamentChanged`, repainting the list alone while a
+  search is in progress so the caret is never stolen.
+- **Which tournament gets the strip**: live first, else the nearest upcoming
+  within 14 days, else one that finished in the last 3 days (`tnFeatured()`).
+  Status is an explicit field when set, otherwise derived from the dates.
+- **Score colours follow golf reading, not app semantics**: under par is
+  `--red`, level is muted, over par is ink. Positions are tie-aware (T1, T1, 3).
+- Instead of a country flag the strip and table carry the player's **club /
+  circle**, which is what this app actually knows about people.
+- `src/store.js`: `loadTournaments`, `loadTournament`, `saveTournament`,
+  `deleteTournament`, `onTournamentsChanged`, `onTournamentChanged` over
+  RTDB `/tournaments/{id}`. Entries are denormalized onto the record (same
+  shape `ranking` uses), so strip and page each need one read.
+- `database.rules.json`: `tournaments` read/write, matching the sibling
+  collections. **Not deployed** — run `firebase deploy --only database` before
+  real tournament data can be read.
+- **Demo data**: `TN_DEMO` renders only on localhost and Firebase preview
+  channels (`tnDemoAllowed()` — preview hosts carry a `--` segment), so the UI
+  can be reviewed before any record exists. It never renders on
+  ubgolf.club or golfup-app.web.app, where no data simply means no strip.
+- i18n keys in MN/EN/KR; component CSS in tokens-redesign.css (dark theme
+  follows the tokens).
+
+Not built yet, deliberately: admin CRUD for tournaments and score entry, tee
+times / flights tabs, favouriting a player. The page reads; nothing writes.
+
 ## 2026-08-17 (weather forecast on home + game detail)
 
 ### Show course weather with zero friction for players

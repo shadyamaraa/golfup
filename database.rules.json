@@ -13,6 +13,7 @@
     "ranking": { ".read": true, ".write": true },
     "news": { ".read": true, ".write": true },
     "sponsor": { ".read": true, ".write": true },
+    "tournaments": { ".read": true, ".write": true },
     "tables": { ".read": true, ".write": true },
     "orders": { ".read": true, ".write": true }
   }
