@@ -918,6 +918,24 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   display: grid; grid-template-columns: 40px minmax(0, 1fr) 44px 34px 38px;
   align-items: center; gap: 8px; padding: 11px 14px;
 }
+/* From the second round on, the R column is replaced by a line of R1..R4
+   chips under the name — four columns and a name will not fit a phone. */
+.tn-lb-multi .tn-lb-head, .tn-lb-multi .tn-lb-row {
+  grid-template-columns: 40px minmax(0, 1fr) 44px 34px;
+}
+.tn-lb-multi .tn-lb-row { padding-top: 9px; padding-bottom: 9px; }
+.tn-rds { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.tn-rd {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 1px 6px; border-radius: 6px;
+  background: var(--bg-card-hover); border: 1px solid var(--border-card);
+  font-size: 0.7rem; font-weight: 700;
+}
+.tn-rd i { font-style: normal; font-weight: 800; color: var(--text-muted); }
+.tn-rd b { font-weight: 800; }
+/* The round being played reads louder than the ones already in the books. */
+.tn-rd-live { border-color: var(--gold); background: var(--accent-soft); }
+.tn-rd-live i { color: var(--gold-dark); }
 /* Position stacks over its movement arrow, so ▲/▼ costs no column. */
 .tn-lb-row .tn-c-pos { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
 .tn-lb-row .tn-c-pos .rk-delta { min-width: 0; text-align: left; font-size: 0.62rem; }

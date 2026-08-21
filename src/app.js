@@ -1655,13 +1655,31 @@ function renderTnList() {
 
   const page = shown.slice(0, tnPageLimit);
   const rest = shown.length - page.length;
+  // Every round that has been played gets its own R1..R4 score. Four columns
+  // plus a name will not fit a phone, so from the second round on the rounds
+  // move to their own line under the name and the R column drops out.
   const activeRound = tnActiveRound(tn);
-  const rdLabel = `${t('tnRoundShort')}${activeRound}`;
-  const rdIndex = activeRound - 1;
+  const roundNos = Array.from({ length: activeRound }, (_, i) => i + 1);
+  const multi = roundNos.length > 1;
+
+  const hasAnyRound = (e) => roundNos.some(n => {
+    const v = Array.isArray(e.rounds) ? e.rounds[n - 1] : null;
+    return v !== null && v !== undefined && v !== '';
+  });
+
+  const roundsHTML = (e) => `
+    <span class="tn-rds">
+      ${roundNos.map(n => {
+        const v = Array.isArray(e.rounds) ? e.rounds[n - 1] : null;
+        return `<span class="tn-rd${n === activeRound ? ' tn-rd-live' : ''}">
+          <i>${t('tnRoundShort')}${n}</i>
+          <b class="${tnScoreClass(v)}">${tnScoreText(v)}</b>
+        </span>`;
+      }).join('')}
+    </span>`;
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
-    const rd = Array.isArray(e.rounds) ? e.rounds[rdIndex] : e.total;
     return `
       <div class="tn-lb-row${mine ? ' tn-me' : ''}">
         <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">
@@ -1674,18 +1692,21 @@ function renderTnList() {
         </span>
         <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        <span class="tn-c-rd">${tnScoreText(rd)}</span>
+        ${multi
+          // A withdrawn player has no round scores; a line of empty chips is noise.
+          ? (hasAnyRound(e) ? roundsHTML(e) : '')
+          : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}
       </div>`;
   };
 
   host.innerHTML = `
-    <div class="surface-card tn-lb">
+    <div class="surface-card tn-lb${multi ? ' tn-lb-multi' : ''}">
       <div class="tn-lb-head">
         <span class="tn-c-pos">${t('tnPos')}</span>
         <span class="tn-c-name">${t('tnPlayer')}</span>
         <span class="tn-c-tot">${t('tnTotal')}</span>
         <span class="tn-c-thru">${t('tnThru')}</span>
-        <span class="tn-c-rd"><span class="tn-rd-chip">${esc(rdLabel)}</span></span>
+        ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
       </div>
       ${page.map(rowHTML).join('')}
       ${rest > 0 ? `<button class="tn-more" id="tn-more">${t('tnMore')} (${rest})</button>` : ''}

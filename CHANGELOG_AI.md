@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (every played round on the board, not just the current one)
+
+The leaderboard had a single round column, so a four-day tournament showed R4
+and hid R1–R3 — a player could not see how the days added up to the total.
+
+Every round anybody has posted a score in now gets its own R1..R4 value. Four
+score columns plus a name do not fit a 390px phone (measured: the columns alone
+want 470px), so from the second round on the rounds move to their own line
+under the name as chips and the R column drops out; the round being played
+carries the gold outline. A one-round tournament is untouched — same table,
+same single R1 column. A withdrawn player, who has no round scores, gets no
+chip line rather than a row of dashes.
+
+Checked in the browser at 390px in both themes: R1 R2 R3 R4 on one line, no
+horizontal overflow, the own-position row still highlighted.
+
 ## 2026-08-21 (a saved tab name no longer outranks a freshly pasted link)
 
 Pointing the tournament at the 4-day tab did nothing: the board kept showing
