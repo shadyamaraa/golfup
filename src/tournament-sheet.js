@@ -169,6 +169,23 @@ function looksGross(rows, from, colIndex) {
   return vals[Math.floor(vals.length / 2)] >= GROSS_FLOOR;
 }
 
+// The header text a column was matched on, capped so a title row merged into
+// the label cannot bloat the stored record. gviz merges a spreadsheet's title
+// row INTO the header cell, which puts the real column name at the END — so a
+// long label keeps its tail, not its head.
+function headerLabel(header, index) {
+  if (index < 0) return null;
+  const text = String(header?.[index] || '').trim();
+  if (!text) return null;
+  return text.length > 60 ? `…${text.slice(-59)}` : text;
+}
+
+function roundLabels(header, map) {
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([round, i]) => ({ round, column: headerLabel(header, i) }));
+}
+
 // A spreadsheet built for broadcast graphics rarely starts with its header on
 // row 1, so try the first few rows and keep the one that resolves the most.
 function findHeader(rows) {
@@ -197,6 +214,7 @@ export function analyzeSheet(rows, { par } = {}) {
     return { ok: false, entries: [], rounds: 0, warnings: ['no-player-column'], columns: null };
   }
   const { index, cols } = found;
+  const header = rows[index] || [];
   const warnings = [];
 
   // Re-read columns whose header says "round" but whose values are to-par.
@@ -291,16 +309,19 @@ export function analyzeSheet(rows, { par } = {}) {
     entries,
     rounds,
     warnings,
+    // Report the column each field was actually read from, not just that one
+    // was found — "which cell fed this?" is the question an importer has to be
+    // able to answer. Strings, so the old boolean checks still read as truthy.
     columns: {
       headerRow: index + 1,
-      name: cols.name >= 0,
-      gross: cols.gross >= 0,
-      toPar: cols.toPar >= 0,
-      thru: cols.thru >= 0,
-      position: cols.position >= 0,
-      status: cols.status >= 0,
-      roundGross: [...cols.roundGross.keys()].sort((a, b) => a - b),
-      roundToPar: [...cols.roundToPar.keys()].sort((a, b) => a - b),
+      name: headerLabel(header, cols.name),
+      gross: headerLabel(header, cols.gross),
+      toPar: headerLabel(header, cols.toPar),
+      thru: headerLabel(header, cols.thru),
+      position: headerLabel(header, cols.position),
+      status: headerLabel(header, cols.status),
+      roundGross: roundLabels(header, cols.roundGross),
+      roundToPar: roundLabels(header, cols.roundToPar),
       holeRounds: [...cols.holes.keys()].sort((a, b) => a - b)
     }
   };

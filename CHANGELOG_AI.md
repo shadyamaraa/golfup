@@ -1,5 +1,48 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (fix: an uploaded file was ignored; show which column fed which field)
+
+### Uploading an Excel file appeared to do nothing
+
+A tournament with a `sheetUrl` had its board overlaid from the linked Google
+Sheet on **every** render, so an uploaded file was written to RTDB and then
+immediately painted over. The upload looked like it had failed.
+
+The active source is now explicit. `entriesSource` is set to `'file'` on
+upload and `'sheet'` on sync, and `tnWithLiveEntries()` skips the sheet overlay
+while a file is active. The admin row says which source is feeding the board
+and, when a file overrides a still-linked sheet, spells out that pressing Sync
+switches back. The cached sheet read is dropped on upload so nothing stale
+survives.
+
+### "Which column did this come from?"
+
+The import summary reported categories ("player, total, thru") but not the
+column each one was actually read from, so there was no way to check a mapping
+before it reached the leaderboard. `analyzeSheet()` now returns the matched
+header text per field instead of a boolean, and the admin panel renders it as a
+mapping:
+
+```
+Тоглогч  ← Player        R1 Нийт   ← D1 To Par
+Нийт     ← To Par        R1 Цохилт ← Day 1
+Цохилт   ← Total         R2 Цохилт ← Day 2
+Нүх      ← Thru
+Байр     ← Position
+Төлөв    ← Status
+```
+
+Records written before this stored booleans; the renderer treats only strings
+as column names, so old entries degrade to no mapping rather than breaking.
+
+Long labels keep their **tail**, not their head: gviz merges a spreadsheet's
+title row into the header cell, which puts the real column name at the end — a
+head-first cap dropped the word "Player" entirely from the MNAOC sheet.
+
+Verified by uploading the real MNAOC workbook through the admin button in a
+browser: source flips to Файл with the override note, and the mapping lists all
+nine columns.
+
 ## 2026-08-21 (make tournament editing findable)
 
 Editing a tournament already worked, but the only way in was clicking the
