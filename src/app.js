@@ -1140,6 +1140,16 @@ function tnEntryFromSheet(e) {
   };
 }
 
+// Which tab to ask for. A link that carries a gid already names its tab, and
+// that link is the most recent thing the admin pointed at, so it wins — the tab
+// field is for links without one. Without this rule a tab name saved by an
+// earlier sync keeps hijacking a freshly pasted link, and clearing the field by
+// hand does not stick: any page still holding the old record writes it back.
+function tnSheetTabFor(tn) {
+  if (!tn?.sheetTab) return undefined;
+  return tsheet.parseSheetUrl(tn.sheetUrl)?.gid ? undefined : tn.sheetTab;
+}
+
 async function tnLoadSheet(tn, { force = false } = {}) {
   if (!tn?.sheetUrl) return null;
   const hit = tnSheetCache.get(tn.id);
@@ -1147,7 +1157,7 @@ async function tnLoadSheet(tn, { force = false } = {}) {
   let rec;
   try {
     const res = await tsheet.fetchSheet(tn.sheetUrl, {
-      sheet: tn.sheetTab || undefined,
+      sheet: tnSheetTabFor(tn),
       par: tn.par || undefined
     });
     rec = { at: Date.now(), ok: res.ok, entries: res.entries.map(tnEntryFromSheet), rounds: res.rounds, error: null };
@@ -7136,7 +7146,7 @@ async function tnAdminSync(tn, { silent = false } = {}) {
   if (!silent) showToast(t('tnSyncing'), 'info');
   let res;
   try {
-    res = await tsheet.fetchSheet(tn.sheetUrl, { sheet: tn.sheetTab || undefined, par: tn.par || undefined });
+    res = await tsheet.fetchSheet(tn.sheetUrl, { sheet: tnSheetTabFor(tn), par: tn.par || undefined });
   } catch (err) {
     showToast('⚠️ ' + t('tnSyncFailed') + ' — ' + (err?.message || ''), 'error');
     return null;
@@ -7148,11 +7158,11 @@ async function tnAdminSync(tn, { silent = false } = {}) {
       entries: res.entries.map(tnEntryFromSheet),
       rounds: tn.rounds || res.rounds,
       entriesSource: 'sheet',
-      // Persist the tab that answered only when the admin named one (so a typo
-      // corrects itself) or the link carries no gid to steer by. A name saved
-      // on an earlier sync must never outrank a freshly pasted link — that is
-      // how a 4-day tab kept being read as the 2-day one.
-      sheetTab: (tn.sheetTab || !tsheet.parseSheetUrl(tn.sheetUrl)?.gid) ? (res.sheet || '') : '',
+      // A link with a gid steers itself, so any tab name is dropped here rather
+      // than carried forward — that is how a 4-day tab kept being read as the
+      // 2-day one. Without a gid the tab that answered is kept, so a typo in
+      // the field corrects itself on the first sync.
+      sheetTab: tsheet.parseSheetUrl(tn.sheetUrl)?.gid ? '' : (res.sheet || ''),
       lastSync: {
         at: Date.now(), count: res.entries.length, rounds: res.rounds,
         warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
