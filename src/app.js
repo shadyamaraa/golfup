@@ -1038,28 +1038,14 @@ function tnStateLabel(tn) {
   return tn.registerOpen ? t('tnRegOpen') : t('tnSoon');
 }
 
-// Sort by total (lower is better, missing totals last) and label tie-aware
-// positions: T1, T1, 3. A withdrawal shows its status where a position would
-// be and sorts to the bottom with everyone else who has no standing.
+// The leaderboard's ranking lives in tournament-sheet.js: it is pure, so it can
+// be checked against a hand-made result sheet without a browser. Here it only
+// gains the movement arrows, which need the rendered list.
 function tnRanked(tn) {
-  const list = Array.isArray(tn?.entries) ? tn.entries.slice() : [];
-  const score = (e) => {
-    const n = Number(e?.total);
-    return (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) ? Infinity : n;
-  };
-  list.sort((a, b) => score(a) - score(b) || String(a?.name || '').localeCompare(String(b?.name || '')));
-  const counts = new Map();
-  list.forEach(e => { const s = score(e); counts.set(s, (counts.get(s) || 0) + 1); });
-  let pos = 0;
-  const ranked = list.map((e, i) => {
-    const s = score(e);
-    if (i === 0 || score(list[i - 1]) !== s) pos = i + 1;
-    const label = s !== Infinity
-      ? `${counts.get(s) > 1 ? 'T' : ''}${pos}`
-      : (tsheet.isRetired(e.status) ? String(e.status).toUpperCase() : '–');
-    return { ...e, rank: s === Infinity ? Infinity : pos, posLabel: label };
-  });
-  return tnWithDeltas(ranked);
+  return tnWithDeltas(tsheet.rankEntries(tn?.entries, {
+    cutAfterRound: tn?.cutAfterRound,
+    cutSize: tn?.cutSize
+  }));
 }
 
 // The round actually being played: the highest one anybody has posted a score
@@ -1067,12 +1053,7 @@ function tnRanked(tn) {
 // yet, so nobody has to remember to bump it each morning — the board can never
 // read "R1" while round three is on the course.
 function tnActiveRound(tn) {
-  let played = 0;
-  (Array.isArray(tn?.entries) ? tn.entries : []).forEach(e =>
-    (e?.rounds || []).forEach((v, i) => {
-      if (v !== null && v !== undefined && v !== '') played = Math.max(played, i + 1);
-    }));
-  return played || Number(tn?.currentRound) || 1;
+  return tsheet.activeRound(tn?.entries, tn?.currentRound);
 }
 
 // Movement since the previous round. Every entry carries a per-round score, so
@@ -1674,6 +1655,25 @@ function renderTnList() {
   const multi = roundNos.length > 1;
   const lbClass = multi ? ` tn-lb-multi${roundNos.length > 2 ? ' tn-lb-r3' : ''}` : '';
 
+  // While the cut is still ahead, mark where it currently falls so the bubble is
+  // visible on the day it matters. Once it has been applied the CUT labels at
+  // the bottom carry the information instead, and a search would put the line in
+  // a meaningless place, so it is drawn on the full list only.
+  const cutSize = Number(tn.cutSize) || 0;
+  const cutPending = cutSize && Number(tn.cutAfterRound) >= activeRound;
+  let bubble = null;
+  if (cutPending && !q) {
+    const inPlay = ranked.filter(e => e.rank !== Infinity);
+    if (inPlay.length > cutSize) {
+      const edge = Number(inPlay[cutSize - 1].total);
+      let last = cutSize - 1;
+      while (last + 1 < inPlay.length && Number(inPlay[last + 1].total) === edge) last++;
+      bubble = inPlay[last];
+    }
+  }
+  const cutLineHTML = `
+    <div class="tn-cut-line"><span>${t('tnCutLine')} · ${t('tnCutTop')} ${cutSize}</span></div>`;
+
   const hasAnyRound = (e) => roundNos.some(n => {
     const v = Array.isArray(e.rounds) ? e.rounds[n - 1] : null;
     return v !== null && v !== undefined && v !== '';
@@ -1683,7 +1683,10 @@ function renderTnList() {
     <span class="tn-rds">
       ${roundNos.map(n => {
         const v = Array.isArray(e.rounds) ? e.rounds[n - 1] : null;
-        return `<span class="tn-rd${n === activeRound ? ' tn-rd-live' : ''}">
+        const empty = v === null || v === undefined || v === '';
+        // A cut player has no score in the round being played; highlighting an
+        // empty chip in gold only draws the eye to nothing.
+        return `<span class="tn-rd${n === activeRound && !empty ? ' tn-rd-live' : ''}">
           <i>${t('tnRoundShort')}${n}</i>
           <b class="${tnScoreClass(v)}">${tnScoreText(v)}</b>
         </span>`;
@@ -1723,7 +1726,7 @@ function renderTnList() {
         <span class="tn-c-thru">${t('tnThru')}</span>
         ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
       </div>
-      ${page.map(rowHTML).join('')}
+      ${page.map(e => rowHTML(e) + (e === bubble ? cutLineHTML : '')).join('')}
       ${rest > 0 ? `<button class="tn-more" id="tn-more">${t('tnMore')} (${rest})</button>` : ''}
     </div>`;
 
@@ -7104,6 +7107,8 @@ function tnAdminFormHTML(p, tn = {}) {
       <input id="${p}-rounds" type="number" min="1" max="8" placeholder="${t('tnFRounds')}" value="${tn.rounds || ''}" style="${TN_INPUT}" />
       <input id="${p}-round-now" type="number" min="1" max="8" placeholder="${t('tnFCurrentRound')}" value="${tn.currentRound || ''}" style="${TN_INPUT}" />
       <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
+      <input id="${p}-cut-after" type="number" min="1" max="8" placeholder="${t('tnFCutAfter')}" value="${tn.cutAfterRound || ''}" style="${TN_INPUT}" />
+      <input id="${p}-cut-size" type="number" min="1" max="500" placeholder="${t('tnFCutSize')}" value="${tn.cutSize || ''}" style="${TN_INPUT}" />
       <select id="${p}-format" style="${TN_INPUT}">
         <option value=""${sel('', tn.format || '')}>${t('gameFormat')}</option>
         <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
@@ -7139,7 +7144,9 @@ function tnAdminReadForm(p) {
     format: val('format'),
     status: val('status'),
     sheetUrl: val('sheet'),
-    sheetTab: val('tab')
+    sheetTab: val('tab'),
+    cutAfterRound: num('cut-after'),
+    cutSize: num('cut-size')
   };
 }
 

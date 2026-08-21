@@ -1,5 +1,78 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (a CUT written in the sheet frees its place)
+
+The organisers asked whether the app's cut updates their sheet. It does not —
+the data only travels `Sheet → App`, so their Position column and the PDF they
+print from it go on numbering cut players 51, 52, 53. The cut can be computed in
+the sheet instead, and the app already honours a `CUT` in the Status column, but
+the two did not compose: `cutSet()` skipped withdrawals when it ranked the field
+and not sheet-supplied cuts, so such a player still held a place and one extra
+player was dropped. Measured on six players cutting to three, with one marked
+`CUT` in the sheet: two made it instead of three. Anyone the sheet has already
+taken out now frees their place, exactly as a withdrawal does.
+
+The guidance also lost its helper columns. The scorers ran the three formulas
+against their own workbook and did not want the extra columns, which was fair —
+they were never needed. The doc now leads with the true answer, that nothing has
+to be added to the sheet at all because the app derives the cut itself, and
+offers a single-cell alternative for anyone who wants the printed PDF to say CUT
+too: a wrapper around their existing `Position` formula, no new columns, the
+rank folded into one `SUMPRODUCT`. Simulated against the real 76-player field it
+cuts exactly the same 17 players the app does, and marking the leader `WD` drops
+that to 16 with the 51st promoted.
+
+`docs/tournament-cut.md` writes the whole thing down for the scorers: what has to
+be typed (WD and DQ, always — no formula can tell "withdrew" from "not entered
+yet") and what never does (CUT), the app's two settings, and the three
+spreadsheet formulas that make the sheet agree with the app. Also why a filter on
+the sheet cannot do this: the app reads the gviz CSV, which returns cells rather
+than anybody's view, and a filter cannot express "promote the 51st when a top-50
+player withdraws" — that is a re-rank.
+
+Checked against the organisers' Day-2 sheet again: 76 players, 0 mismatches,
+every earlier cut/tie/promotion case still passing, and the spreadsheet formula
+cuts exactly the same 17 players the app does.
+
+## 2026-08-21 (the cut, and what WD/DQ do to it)
+
+A four-day tournament cuts the field after Day 2, and the board had no notion of
+it. That was about to break the standings outright: a player cut on two rounds
+keeps a two-round total, so the moment Day 3 scores landed a missed-cut +58 would
+have sorted above a +75 who actually played.
+
+Three tiers now, not two. Players with a standing rank as before; **CUT** keeps
+the total and the round scores it was cut on but holds no position; **WD/DQ**
+keep nothing. Each sorts below the one before it, and positions are numbered over
+the players still in the tournament only — so a cut player who happens to share a
+total can no longer turn somebody's position into a tie.
+
+The cut is derived, never stored: `cutSet()` ranks the field on the rounds before
+the cut, skips anyone withdrawn or disqualified, and drops everyone past the cut
+size except those level with the last player inside it ("top 50 and ties").
+Because the retired are skipped every time it runs, a player who makes the cut
+and then withdraws frees their place and the next player is pulled in on the
+spot — the organisers' promotion rule, with no history to keep. The cut only
+bites once the following round is under way, so the day's own standings still
+show the whole field, with a marked line where the cut currently falls.
+
+Two admin fields drive it, both optional: the round the cut follows, and how many
+advance. Blank means no cut.
+
+The ranking moved to `tournament-sheet.js` (`activeRound`, `cutSet`,
+`rankEntries`) so it is pure and can be checked without a browser; `app.js` keeps
+the movement arrows, which need the rendered list.
+
+Sheets also carry the status in the day the player stopped — "Day 2: WD" — as
+often as in a Status column, and only the column was read. Either now works.
+
+Checked against the organisers' hand-made Day-2 result sheet, 76 players: the
+standings reproduce it exactly, ties and all nine WD/DQ rows included, with
+nobody cut while Day 3 is empty. With Day 3 opened for the qualifiers, the 17
+players from 51 down read CUT, sort below every ranked player and keep their
+totals; a player level with 50th survives; and marking a qualifier WD — or DQ —
+promotes the player who was 51st.
+
 ## 2026-08-21 (the round chips ride on the player's own line)
 
 The R1..R4 chips sat on a second line under the name, which doubled the row
