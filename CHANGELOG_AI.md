@@ -1,5 +1,34 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (fix: silent failures in the tournament admin, wrong-tab recovery)
+
+Creating a tournament appeared to do nothing. Two causes, both fixed here; the
+third is operational and is on the deploy side.
+
+- **Failures were silent.** `/tournaments` writes are rejected because that
+  rule sits in `database.rules.json` but was never deployed, and the rejected
+  promise was not caught — which looks exactly like a dead button. Create,
+  save, delete, sync and Excel import now route errors through
+  `tnAdminError()`: a permission denial names the missing rules deploy and the
+  command that fixes it, anything else shows its own message.
+- **A denied READ read as "no tournaments yet."** The admin tab now shows a
+  red banner with the same explanation instead of an empty-state.
+- **A wrong tab name is no longer fatal.** `fetchSheet` used to give up when an
+  explicitly named tab failed; it now tries that name first and falls back to
+  the full probe. The tab that actually answered is written back, so a typo
+  ("MTBogd" in the tab field) corrects itself on the first sync.
+
+Still required to make this work against real data — nothing in the app can do
+it, it needs the project owner's credentials:
+
+```bash
+firebase deploy --only database
+```
+
+Verified: `/tournaments.json` currently answers `Permission denied` while
+`/news.json` and `/ranking.json` answer normally, which is the root rule having
+expired (2026-06-03) and leaving un-ruled paths closed.
+
 ## 2026-08-21 (tournaments managed in-app: Google Sheet source, Excel import, movement arrows)
 
 ### The tournament is created and fed from the admin panel, not from the code

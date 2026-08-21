@@ -333,9 +333,18 @@ export async function fetchSheet(url, { sheet, par, signal } = {}) {
   const parsed = parseSheetUrl(url);
   if (!parsed) throw new Error('bad-url');
 
-  const attempts = sheet
-    ? [{ sheet }]
-    : [parsed.gid ? { gid: parsed.gid } : { }, ...TAB_CANDIDATES.map(s => ({ sheet: s })), {}];
+  // A named tab goes first, but a wrong or renamed name must not be the end of
+  // it — everything else is still probed, so a typo costs nothing.
+  const seen = new Set();
+  const attempts = [];
+  const add = (a) => {
+    const key = a.sheet || a.gid || 'default';
+    if (!seen.has(key)) { seen.add(key); attempts.push(a); }
+  };
+  if (sheet) add({ sheet });
+  if (parsed.gid) add({ gid: parsed.gid });
+  TAB_CANDIDATES.forEach(s => add({ sheet: s }));
+  add({});
 
   let lastErr = null;
   const tried = [];

@@ -6930,6 +6930,15 @@ let adminOpenTn = null;
 
 const TN_INPUT = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-family:var(--font);';
 
+// A write to a path whose rules were never deployed is rejected, and an
+// uncaught rejection looks exactly like "the button does nothing". Every admin
+// action routes its failures here so the cause is on screen, not in the log.
+function tnAdminError(err) {
+  const msg = String(err?.message || err || '');
+  console.error('[tournament]', err);
+  showToast('⚠️ ' + (/permission[_ ]denied/i.test(msg) ? t('tnErrRules') : (msg || t('tnErrSave'))), 'error');
+}
+
 // Read a tournament sheet out of an uploaded workbook. A live-scoring file
 // carries setup, instructions and broadcast-output tabs alongside the scores,
 // so every sheet is analyzed and the one yielding the most players wins.
@@ -7041,16 +7050,20 @@ async function tnAdminSync(tn, { silent = false } = {}) {
     return null;
   }
   if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return null; }
-  await store.saveTournament({
-    ...tn,
-    entries: res.entries.map(tnEntryFromSheet),
-    rounds: tn.rounds || res.rounds,
-    sheetTab: tn.sheetTab || res.sheet || '',
-    lastSync: {
-      at: Date.now(), count: res.entries.length, rounds: res.rounds,
-      warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
-    }
-  });
+  try {
+    await store.saveTournament({
+      ...tn,
+      entries: res.entries.map(tnEntryFromSheet),
+      rounds: tn.rounds || res.rounds,
+      // Record the tab that actually answered, so a wrong name the admin typed
+      // corrects itself instead of failing the same way next time.
+      sheetTab: res.sheet || '',
+      lastSync: {
+        at: Date.now(), count: res.entries.length, rounds: res.rounds,
+        warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
+      }
+    });
+  } catch (err) { tnAdminError(err); return null; }
   tnSheetCache.delete(tn.id);
   showToast('✅ ' + t('tnSynced') + ` (${res.entries.length})`, 'success');
   return res;
@@ -7061,8 +7074,18 @@ async function renderAdminTournamentsTab() {
   if (!el) return;
   el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
   let list = [];
-  try { list = await store.loadTournaments(); } catch (_) { }
+  let loadErr = null;
+  try { list = await store.loadTournaments(); } catch (err) { loadErr = err; }
   list.sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+
+  // Reads are denied the same way writes are when the rule was never deployed,
+  // and an empty list would otherwise read as "nothing here yet".
+  const errBanner = loadErr ? `
+    <div style="background:rgba(215,38,61,0.10);border:1px solid var(--danger-color);border-radius:10px;padding:12px;margin-bottom:14px;">
+      <b style="color:var(--danger-color);">${t('tnErrRead')}</b>
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:5px;">${t('tnErrRules')}</div>
+      <code style="display:inline-block;margin-top:8px;font-size:0.78rem;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:6px;padding:4px 8px;">firebase deploy --only database</code>
+    </div>` : '';
 
   const rowHTML = (tn) => {
     const open = adminOpenTn === tn.id;
@@ -7100,6 +7123,7 @@ async function renderAdminTournamentsTab() {
   };
 
   el.innerHTML = `
+    ${errBanner}
     <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
       <button type="button" id="tn-create-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
         <h3 style="margin:0;">${t('tnCreate')}</h3>
@@ -7125,7 +7149,9 @@ async function renderAdminTournamentsTab() {
   document.getElementById('tn-create-btn').onclick = async () => {
     const data = tnAdminReadForm('tn-n');
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
-    const id = await store.saveTournament({ ...data, entries: [], createdAt: Date.now() });
+    let id;
+    try { id = await store.saveTournament({ ...data, entries: [], createdAt: Date.now() }); }
+    catch (err) { tnAdminError(err); return; }
     showToast('✅ ' + t('tnCreated'), 'success');
     // A link given at creation time is only useful once it has been read.
     if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
@@ -7143,7 +7169,8 @@ async function renderAdminTournamentsTab() {
     if (!tn) return;
     const data = tnAdminReadForm(`tn-e-${tn.id}`);
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
-    await store.saveTournament({ ...tn, ...data });
+    try { await store.saveTournament({ ...tn, ...data }); }
+    catch (err) { tnAdminError(err); return; }
     tnSheetCache.delete(tn.id);
     showToast('✅ ' + t('saved'), 'success');
     await renderAdminTournamentsTab();
@@ -7155,7 +7182,8 @@ async function renderAdminTournamentsTab() {
   el.querySelectorAll('.tn-adm-del').forEach(b => b.onclick = async () => {
     const tn = list.find(x => x.id === b.dataset.tn);
     if (!tn || !confirm(`${tn.name} — ${t('delete')}?`)) return;
-    await store.deleteTournament(tn.id);
+    try { await store.deleteTournament(tn.id); }
+    catch (err) { tnAdminError(err); return; }
     await renderAdminTournamentsTab();
   });
 
@@ -7175,15 +7203,17 @@ async function renderAdminTournamentsTab() {
     catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
     if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return; }
     if (!confirm(`${res.entries.length} ${t('tnPlayers')} — ${t('tnConfirmImport')}`)) return;
-    await store.saveTournament({
-      ...uploadTarget,
-      entries: res.entries.map(tnEntryFromSheet),
-      rounds: uploadTarget.rounds || res.rounds,
-      lastSync: {
-        at: Date.now(), count: res.entries.length, rounds: res.rounds,
-        warnings: res.warnings, columns: res.columns, sheet: res.sheet, source: 'file'
-      }
-    });
+    try {
+      await store.saveTournament({
+        ...uploadTarget,
+        entries: res.entries.map(tnEntryFromSheet),
+        rounds: uploadTarget.rounds || res.rounds,
+        lastSync: {
+          at: Date.now(), count: res.entries.length, rounds: res.rounds,
+          warnings: res.warnings, columns: res.columns, sheet: res.sheet, source: 'file'
+        }
+      });
+    } catch (err) { tnAdminError(err); return; }
     showToast('✅ ' + t('tnImported'), 'success');
     await renderAdminTournamentsTab();
   };
