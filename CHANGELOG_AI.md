@@ -1,5 +1,40 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (every played round on the board, not just the current one)
+
+The leaderboard had a single round column, so a four-day tournament showed R4
+and hid R1–R3 — a player could not see how the days added up to the total.
+
+Every round anybody has posted a score in now gets its own R1..R4 value. Four
+score columns plus a name do not fit a 390px phone (measured: the columns alone
+want 470px), so from the second round on the rounds move to their own line
+under the name as chips and the R column drops out; the round being played
+carries the gold outline. A one-round tournament is untouched — same table,
+same single R1 column. A withdrawn player, who has no round scores, gets no
+chip line rather than a row of dashes.
+
+Checked in the browser at 390px in both themes: R1 R2 R3 R4 on one line, no
+horizontal overflow, the own-position row still highlighted.
+
+## 2026-08-21 (a saved tab name no longer outranks a freshly pasted link)
+
+Pointing the tournament at the 4-day tab did nothing: the board kept showing
+R1. The link had been updated to the right tab's gid, but `sheetTab` still held
+`"Scoring"` — written automatically by an earlier sync — and a named tab is
+tried before the link's gid, so the app kept reading the 2-day tab where Day 2
+is empty.
+
+Sync now persists the tab that answered only when the admin actually named one
+(so a typo still self-corrects) or when the link carries no gid to steer by.
+A name saved on an earlier sync can no longer silently override a link the
+admin has just changed.
+
+Measured on the live workbook: `sheetTab="Scoring"` → 2 rounds, shows R1;
+`sheetTab` blank with the link's gid → 4 rounds, shows R2.
+
+Existing records still carry the stale name, so it has to be cleared once in
+the admin form.
+
 ## 2026-08-21 (round follows the scores; strip paints before the sheet answers)
 
 **The displayed round is now derived from the data.** `currentRound` had to be
