@@ -9,7 +9,7 @@ const T = {
     sponsorManage: 'Ивээн тэтгэгч', sponsorClear: 'Устгах', sponsorDragHint: '✥ Чирж байрлал тохируул',
     statGames: 'Тоглолт', statFollowing: 'Дагаж буй', statFollowers: 'Дагагч', statsTab: 'Статистик', statTotalGames: 'Нийт тоглолт', statThisMonth: 'Энэ сард', statActive30: 'Идэвхтэй (30 хоног)', statTopLocations: 'Түгээмэл байршил', statPlayerStats: 'Тоглогчдын статистик', statCreated: 'Үүсгэсэн', statJoined: 'Оролцсон', statDeletedNote: 'Устгагдсан тоглолт', statTotalShort: 'Нийт', statMonthFilter: 'Сар:', rankingTitle: 'Чансаа', rankingUpdated: 'Шинэчлэгдсэн', rankingEmpty: 'Чансаа оруулаагүй байна', rankingUpload: 'Excel оруулах', rankingUploadHint: 'Багана: Байр, Нэр, Оноо (эсвэл Нэр, Оноо). .xlsx, .csv дэмжинэ.', rankingSaved: 'Чансаа шинэчлэгдлээ',
     tnLive: 'Явагдаж байна', tnFinal: 'Албан ёсны дүн', tnRegOpen: 'Бүртгэл нээлттэй', tnSoon: 'Удахгүй',
-    tnTotal: 'Нийт', tnThru: 'Явц', tnRoundShort: 'R', tnLeaderboard: 'Хүснэгт', tnInfo: 'Мэдээлэл',
+    tnTotal: 'Нийт', tnThru: 'Нүх', tnRoundShort: 'R', tnLeaderboard: 'Хүснэгт', tnInfo: 'Мэдээлэл',
     tnAllPlayers: 'Бүх тоглогч', tnMyCircle: 'Миний тойрог', tnSearchPlayer: 'Тоглогч хайх',
     tnYourPos: 'Таны байр', tnYou: 'Та', tnPos: 'Байр', tnPlayer: 'Тоглогч', tnMore: 'Цааш үзэх',
     tnUpdated: 'Сүүлд шинэчилсэн', tnEmpty: 'Оноо оруулаагүй байна', tnNoMatch: 'Тохирох тоглогч алга',
