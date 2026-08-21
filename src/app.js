@@ -1062,6 +1062,19 @@ function tnRanked(tn) {
   return tnWithDeltas(ranked);
 }
 
+// The round actually being played: the highest one anybody has posted a score
+// in. `currentRound` is only the fallback for a tournament that has not started
+// yet, so nobody has to remember to bump it each morning — the board can never
+// read "R1" while round three is on the course.
+function tnActiveRound(tn) {
+  let played = 0;
+  (Array.isArray(tn?.entries) ? tn.entries : []).forEach(e =>
+    (e?.rounds || []).forEach((v, i) => {
+      if (v !== null && v !== undefined && v !== '') played = Math.max(played, i + 1);
+    }));
+  return played || Number(tn?.currentRound) || 1;
+}
+
 // Movement since the previous round. Every entry carries a per-round score, so
 // ranking the field on the rounds finished BEFORE the current one gives the
 // "before" position with no stored history — the arrows appear on their own as
@@ -1255,13 +1268,26 @@ async function renderTournamentStrip(list) {
     updateTournamentStripVisibility(location.hash || '#/');
     return;
   }
-  tn = await tnWithLiveEntries(tn);
 
+  // Paint from the stored snapshot at once, then upgrade when the linked sheet
+  // answers. Awaiting the fetch first left the strip blank for as long as the
+  // network took to fail — the worst place to stall is the top of home during
+  // a live round on venue wifi.
+  paintTournamentStrip(host, tn);
+  if (tn.sheetUrl && tn.entriesSource !== 'file') {
+    const rec = await tnLoadSheet(tn);
+    if (rec?.ok && rec.entries.length) {
+      paintTournamentStrip(host, { ...tn, entries: rec.entries, sheetAt: rec.at });
+    }
+  }
+}
+
+function paintTournamentStrip(host, tn) {
   const state = tnStatus(tn);
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
-    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
 
   const playerHTML = (e) => {
     const mine = tnIsMe(e);
@@ -1491,7 +1517,7 @@ function paintTournamentPage(tn) {
   const state = tnStatus(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
-    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
   const facts = [tnDatesText(tn), tnFormatText(tn), tn.rounds ? `${tn.rounds} ${t('tnRounds')}` : '']
     .filter(Boolean).join(' · ');
 
@@ -1629,8 +1655,9 @@ function renderTnList() {
 
   const page = shown.slice(0, tnPageLimit);
   const rest = shown.length - page.length;
-  const rdLabel = `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
-  const rdIndex = (tn.currentRound || 1) - 1;
+  const activeRound = tnActiveRound(tn);
+  const rdLabel = `${t('tnRoundShort')}${activeRound}`;
+  const rdIndex = activeRound - 1;
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
