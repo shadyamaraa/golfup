@@ -1,5 +1,29 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (a CUT written in the sheet frees its place)
+
+The organisers asked whether the app's cut updates their sheet. It does not —
+the data only travels `Sheet → App`, so their Position column and the PDF they
+print from it go on numbering cut players 51, 52, 53. The cut can be computed in
+the sheet instead, and the app already honours a `CUT` in the Status column, but
+the two did not compose: `cutSet()` skipped withdrawals when it ranked the field
+and not sheet-supplied cuts, so such a player still held a place and one extra
+player was dropped. Measured on six players cutting to three, with one marked
+`CUT` in the sheet: two made it instead of three. Anyone the sheet has already
+taken out now frees their place, exactly as a withdrawal does.
+
+`docs/tournament-cut.md` writes the whole thing down for the scorers: what has to
+be typed (WD and DQ, always — no formula can tell "withdrew" from "not entered
+yet") and what never does (CUT), the app's two settings, and the three
+spreadsheet formulas that make the sheet agree with the app. Also why a filter on
+the sheet cannot do this: the app reads the gviz CSV, which returns cells rather
+than anybody's view, and a filter cannot express "promote the 51st when a top-50
+player withdraws" — that is a re-rank.
+
+Checked against the organisers' Day-2 sheet again: 76 players, 0 mismatches,
+every earlier cut/tie/promotion case still passing, and the spreadsheet formula
+cuts exactly the same 17 players the app does.
+
 ## 2026-08-21 (the cut, and what WD/DQ do to it)
 
 A four-day tournament cuts the field after Day 2, and the board had no notion of

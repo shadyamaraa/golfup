@@ -463,7 +463,9 @@ export function cutSet(entries, { cutAfterRound, cutSize } = {}) {
 
   const scored = [];
   list.forEach(e => {
-    if (isRetired(e?.status)) return;
+    // Anyone the sheet has already taken out — withdrawn, disqualified, or
+    // marked CUT there — frees their place, so the field below moves up.
+    if (noStanding(e?.status)) return;
     const v = totalThrough(e, after);
     if (v !== null) scored.push({ e, v });
   });
