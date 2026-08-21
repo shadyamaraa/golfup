@@ -1062,6 +1062,19 @@ function tnRanked(tn) {
   return tnWithDeltas(ranked);
 }
 
+// The round actually being played: the highest one anybody has posted a score
+// in. `currentRound` is only the fallback for a tournament that has not started
+// yet, so nobody has to remember to bump it each morning — the board can never
+// read "R1" while round three is on the course.
+function tnActiveRound(tn) {
+  let played = 0;
+  (Array.isArray(tn?.entries) ? tn.entries : []).forEach(e =>
+    (e?.rounds || []).forEach((v, i) => {
+      if (v !== null && v !== undefined && v !== '') played = Math.max(played, i + 1);
+    }));
+  return played || Number(tn?.currentRound) || 1;
+}
+
 // Movement since the previous round. Every entry carries a per-round score, so
 // ranking the field on the rounds finished BEFORE the current one gives the
 // "before" position with no stored history — the arrows appear on their own as
@@ -1150,6 +1163,10 @@ async function tnLoadSheet(tn, { force = false } = {}) {
 // empty board.
 async function tnWithLiveEntries(tn) {
   if (!tn?.sheetUrl) return tn;
+  // An uploaded file is a deliberate override: without this the linked sheet
+  // would silently win on every render and the upload would look like it did
+  // nothing. Syncing switches the source back.
+  if (tn.entriesSource === 'file') return tn;
   const rec = await tnLoadSheet(tn);
   if (!rec?.ok || !rec.entries.length) return tn;
   return { ...tn, entries: rec.entries, rounds: tn.rounds || rec.rounds, sheetAt: rec.at };
@@ -1251,13 +1268,26 @@ async function renderTournamentStrip(list) {
     updateTournamentStripVisibility(location.hash || '#/');
     return;
   }
-  tn = await tnWithLiveEntries(tn);
 
+  // Paint from the stored snapshot at once, then upgrade when the linked sheet
+  // answers. Awaiting the fetch first left the strip blank for as long as the
+  // network took to fail — the worst place to stall is the top of home during
+  // a live round on venue wifi.
+  paintTournamentStrip(host, tn);
+  if (tn.sheetUrl && tn.entriesSource !== 'file') {
+    const rec = await tnLoadSheet(tn);
+    if (rec?.ok && rec.entries.length) {
+      paintTournamentStrip(host, { ...tn, entries: rec.entries, sheetAt: rec.at });
+    }
+  }
+}
+
+function paintTournamentStrip(host, tn) {
   const state = tnStatus(tn);
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
-    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
 
   const playerHTML = (e) => {
     const mine = tnIsMe(e);
@@ -1487,7 +1517,7 @@ function paintTournamentPage(tn) {
   const state = tnStatus(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
-    : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
+    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
   const facts = [tnDatesText(tn), tnFormatText(tn), tn.rounds ? `${tn.rounds} ${t('tnRounds')}` : '']
     .filter(Boolean).join(' · ');
 
@@ -1625,8 +1655,9 @@ function renderTnList() {
 
   const page = shown.slice(0, tnPageLimit);
   const rest = shown.length - page.length;
-  const rdLabel = `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
-  const rdIndex = (tn.currentRound || 1) - 1;
+  const activeRound = tnActiveRound(tn);
+  const rdLabel = `${t('tnRoundShort')}${activeRound}`;
+  const rdIndex = activeRound - 1;
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
@@ -6982,22 +7013,45 @@ async function parseTournamentFile(file, par) {
 function tnAnalysisHTML(a) {
   if (!a) return '';
   const cols = a.columns || {};
-  const found = [
-    cols.name && t('tnPlayer'), cols.toPar && t('tnTotal'),
-    cols.gross && t('tnColGross'), cols.thru && t('tnThru'), cols.position && t('tnPos'),
-    cols.status && t('tnColStatus')
-  ].filter(Boolean).join(', ');
+  // Records written before columns carried labels stored plain booleans.
+  const col = (v) => (typeof v === 'string' && v ? v : null);
+  // A title row merged into the header makes for a very long label, and the
+  // part that matched sits at its end — so keep the tail.
+  const short = (s) => (s.length > 30 ? '…' + s.slice(-29) : s);
+  const rounds = (list, suffix) => (Array.isArray(list) ? list : [])
+    .filter(r => r && r.column)
+    .map(r => [`${t('tnRoundShort')}${r.round} ${suffix}`, r.column]);
+
+  const map = [
+    [t('tnPlayer'), col(cols.name)],
+    [t('tnTotal'), col(cols.toPar)],
+    [t('tnColGross'), col(cols.gross)],
+    [t('tnThru'), col(cols.thru)],
+    [t('tnPos'), col(cols.position)],
+    [t('tnColStatus'), col(cols.status)],
+    ...rounds(cols.roundToPar, t('tnTotal')),
+    ...rounds(cols.roundGross, t('tnColGross'))
+  ].filter(([, v]) => v);
+
   const warn = {
     'no-to-par-column': t('tnWarnNoToPar'),
     'no-player-column': t('tnWarnNoPlayer'),
     'no-rows': t('tnWarnNoRows'),
     'no-scores-found': t('tnWarnNoScores')
   };
+
   return `
     <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:10px;font-size:0.8rem;">
       <div><b>${a.count ?? a.entries?.length ?? 0}</b> ${t('tnPlayers')} · <b>${a.rounds || 1}</b> ${t('tnRounds')}${a.sheet ? ` · ${esc(a.sheet)}` : ''}</div>
-      ${found ? `<div style="color:var(--text-secondary);margin-top:4px;">${t('tnColsFound')}: ${esc(found)}</div>` : ''}
-      ${(a.warnings || []).map(w => warn[w] ? `<div style="color:var(--amber);margin-top:4px;">⚠ ${warn[w]}</div>` : '').join('')}
+      ${map.length ? `
+        <div style="color:var(--text-secondary);margin-top:7px;font-size:0.74rem;font-weight:700;">${t('tnColsFound')}${cols.headerRow ? ` · ${t('tnHeaderRow')} ${cols.headerRow}` : ''}</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin-top:4px;font-size:0.76rem;">
+          ${map.map(([field, column]) => `
+            <span style="color:var(--text-secondary);white-space:nowrap;">${esc(field)}</span>
+            <span style="color:var(--text-primary);font-weight:600;">← ${esc(short(column))}</span>
+          `).join('')}
+        </div>` : ''}
+      ${(a.warnings || []).map(w => warn[w] ? `<div style="color:var(--amber);margin-top:6px;">⚠ ${warn[w]}</div>` : '').join('')}
     </div>`;
 }
 
@@ -7072,6 +7126,7 @@ async function tnAdminSync(tn, { silent = false } = {}) {
       ...tn,
       entries: res.entries.map(tnEntryFromSheet),
       rounds: tn.rounds || res.rounds,
+      entriesSource: 'sheet',
       // Record the tab that actually answered, so a wrong name the admin typed
       // corrects itself instead of failing the same way next time.
       sheetTab: res.sheet || '',
@@ -7108,7 +7163,8 @@ async function renderAdminTournamentsTab() {
     const open = adminOpenTn === tn.id;
     const state = tnStatus(tn);
     const count = (tn.entries || []).length;
-    const src = tn.sheetUrl ? t('tnSrcSheet') : (tn.lastSync?.source === 'file' ? t('tnSrcFile') : t('tnSrcNone'));
+    const fileWins = tn.entriesSource === 'file';
+    const src = fileWins ? t('tnSrcFile') : (tn.sheetUrl ? t('tnSrcSheet') : t('tnSrcNone'));
     return `
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -7123,8 +7179,12 @@ async function renderAdminTournamentsTab() {
         </div>
         <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
           ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
+          ${fileWins && tn.sheetUrl ? `<div style="color:var(--amber);margin-top:3px;">${t('tnFileOverridesSheet')}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-sm tn-adm-toggle" data-tn="${esc(tn.id)}" style="gap:5px;">
+            ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
+          </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
           ${tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
           <button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>
@@ -7177,9 +7237,17 @@ async function renderAdminTournamentsTab() {
   };
 
   // Row actions
+  // Both the row's name and its Засах button open the same editor.
   el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
-    adminOpenTn = adminOpenTn === b.dataset.tn ? null : b.dataset.tn;
+    const id = b.dataset.tn;
+    adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
+    // The form renders below the row's actions, which on a long list can land
+    // off screen — and a button that scrolls nothing reads as a dead button.
+    if (adminOpenTn) {
+      document.getElementById(`tn-e-${adminOpenTn}-name`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   });
   el.querySelectorAll('.tn-adm-save').forEach(b => b.onclick = async () => {
     const tn = list.find(x => x.id === b.dataset.tn);
@@ -7225,12 +7293,14 @@ async function renderAdminTournamentsTab() {
         ...uploadTarget,
         entries: res.entries.map(tnEntryFromSheet),
         rounds: uploadTarget.rounds || res.rounds,
+        entriesSource: 'file',
         lastSync: {
           at: Date.now(), count: res.entries.length, rounds: res.rounds,
           warnings: res.warnings, columns: res.columns, sheet: res.sheet, source: 'file'
         }
       });
     } catch (err) { tnAdminError(err); return; }
+    tnSheetCache.delete(uploadTarget.id);
     showToast('✅ ' + t('tnImported'), 'success');
     await renderAdminTournamentsTab();
   };

@@ -1,5 +1,115 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (round follows the scores; strip paints before the sheet answers)
+
+**The displayed round is now derived from the data.** `currentRound` had to be
+bumped by hand each morning or the board kept saying "R1" while round three was
+on the course — it drove the strip's round chip and which round the
+leaderboard's last column showed. `tnActiveRound()` takes the highest round
+anybody has posted a score in, and falls back to `currentRound` only before
+play starts. Verified against the live 4-day tab: shows R2 today, and R3/R4 as
+those days land, with `currentRound` left at 1. The admin field is relabelled
+"Эхлэх тойрог (оноогоор автоматаар)" since it is now a starting value.
+
+**The strip no longer waits for the linked sheet before painting.**
+`renderTournamentStrip()` awaited `tnWithLiveEntries()` before writing any
+markup, so on a slow or unreachable connection the top of home sat blank for as
+long as the fetch took to fail — through every probed tab. It now paints the
+stored snapshot immediately and repaints when the live read lands. Measured
+with Google unreachable: previously blank after 12s, now populated in 2.5s.
+
+Both verified in a browser against the built app; the leaderboard, own-position
+banner and movement arrows are unchanged.
+
+## 2026-08-21 (read a 4-day scoring tab; accept a Drive link)
+
+Two blockers found on the new MNAOC workbook, both in the parser.
+
+**A merged title cost us the player column.** gviz folds a spreadsheet's title
+row into the first column's label, so that cell is a sentence, not a column
+name. The 4-day sheet's title reads *"Enter Day 2–4 strokes only in yellow
+cells"* — `classify()` matched "Day 2" in it and filed the **player** column as
+a round-2 score column, leaving no name column at all (`no-player-column`, zero
+entries). A long cell that names the player column is now taken as the player
+column before the round/hole patterns are tried. The old workbook's title had
+no "Day N" in it, which is why this only surfaced now.
+
+**A sheet opened from Drive gives a `/file/d/<id>/view` URL**, not a
+`/spreadsheets/` one, and `parseSheetUrl()` returned null for it — the second
+tournament could not sync at all. `/file/d/<id>`, `?id=<id>` and a bare id are
+all accepted now; the id works against the same endpoints either way.
+
+Verified against the live file: `Scoring 4 Days` reads 76 players over **4
+rounds** with every round's gross, to-par and hole columns mapped; the original
+workbook still reads 2 rounds with Day 2 in progress; wrong-tab recovery, the
+Mongolian-header cases and the 50/76 member matching all unchanged.
+
+Note for operators: the tab auto-probe tries `Scoring` before `Scoring 4 Days`,
+so a 4-day tournament must name its tab explicitly in the admin form.
+
+## 2026-08-21 (fix: an uploaded file was ignored; show which column fed which field)
+
+### Uploading an Excel file appeared to do nothing
+
+A tournament with a `sheetUrl` had its board overlaid from the linked Google
+Sheet on **every** render, so an uploaded file was written to RTDB and then
+immediately painted over. The upload looked like it had failed.
+
+The active source is now explicit. `entriesSource` is set to `'file'` on
+upload and `'sheet'` on sync, and `tnWithLiveEntries()` skips the sheet overlay
+while a file is active. The admin row says which source is feeding the board
+and, when a file overrides a still-linked sheet, spells out that pressing Sync
+switches back. The cached sheet read is dropped on upload so nothing stale
+survives.
+
+### "Which column did this come from?"
+
+The import summary reported categories ("player, total, thru") but not the
+column each one was actually read from, so there was no way to check a mapping
+before it reached the leaderboard. `analyzeSheet()` now returns the matched
+header text per field instead of a boolean, and the admin panel renders it as a
+mapping:
+
+```
+Тоглогч  ← Player        R1 Нийт   ← D1 To Par
+Нийт     ← To Par        R1 Цохилт ← Day 1
+Цохилт   ← Total         R2 Цохилт ← Day 2
+Нүх      ← Thru
+Байр     ← Position
+Төлөв    ← Status
+```
+
+Records written before this stored booleans; the renderer treats only strings
+as column names, so old entries degrade to no mapping rather than breaking.
+
+Long labels keep their **tail**, not their head: gviz merges a spreadsheet's
+title row into the header cell, which puts the real column name at the end — a
+head-first cap dropped the word "Player" entirely from the MNAOC sheet.
+
+Verified by uploading the real MNAOC workbook through the admin button in a
+browser: source flips to Файл with the override note, and the mapping lists all
+nine columns.
+
+## 2026-08-21 (make tournament editing findable)
+
+Editing a tournament already worked, but the only way in was clicking the
+tournament's **name** — the action row offered Дэлгэрэнгүй / Sync / Excel /
+Устгах and nothing that said "edit", so the feature read as missing.
+
+- The row now leads with a **Засах** button (pencil icon) that opens the same
+  inline editor and flips to **Хаах** while it is open. Clicking the name still
+  works; both share one handler.
+- Opening the editor scrolls it into view. The form renders below the row's
+  actions, so on a list of several tournaments it could land off screen — and a
+  button that appears to scroll nothing reads as a dead button.
+- New `tnEdit` / `tnClose` keys in MN/EN/KR rather than reusing the
+  menu-specific `editMenuItem`.
+
+Verified in a browser against the built app: the action row reads Засах ·
+Дэлгэрэнгүй · Sync · Excel · Устгах; opening prefills every field from the
+record; changing the name, format and current round and pressing Хадгалах
+saves and re-renders the row with the new title.
+
 ## 2026-08-21 (drop circles from the leaderboard; match players to members by name)
 
 ### Circles removed
