@@ -31,3 +31,11 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
           projectId: golfup-app
           channelId: live
+
+      # Keep RTDB rules (database.rules.json) in sync with every production deploy.
+      - name: Deploy database rules
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/sa.json"
+          npx firebase-tools deploy --only database --project golfup-app --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
