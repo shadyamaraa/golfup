@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (a saved tab name no longer outranks a freshly pasted link)
+
+Pointing the tournament at the 4-day tab did nothing: the board kept showing
+R1. The link had been updated to the right tab's gid, but `sheetTab` still held
+`"Scoring"` — written automatically by an earlier sync — and a named tab is
+tried before the link's gid, so the app kept reading the 2-day tab where Day 2
+is empty.
+
+Sync now persists the tab that answered only when the admin actually named one
+(so a typo still self-corrects) or when the link carries no gid to steer by.
+A name saved on an earlier sync can no longer silently override a link the
+admin has just changed.
+
+Measured on the live workbook: `sheetTab="Scoring"` → 2 rounds, shows R1;
+`sheetTab` blank with the link's gid → 4 rounds, shows R2.
+
+Existing records still carry the stale name, so it has to be cleared once in
+the admin form.
+
 ## 2026-08-21 (round follows the scores; strip paints before the sheet answers)
 
 **The displayed round is now derived from the data.** `currentRound` had to be

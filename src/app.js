@@ -7127,9 +7127,11 @@ async function tnAdminSync(tn, { silent = false } = {}) {
       entries: res.entries.map(tnEntryFromSheet),
       rounds: tn.rounds || res.rounds,
       entriesSource: 'sheet',
-      // Record the tab that actually answered, so a wrong name the admin typed
-      // corrects itself instead of failing the same way next time.
-      sheetTab: res.sheet || '',
+      // Persist the tab that answered only when the admin named one (so a typo
+      // corrects itself) or the link carries no gid to steer by. A name saved
+      // on an earlier sync must never outrank a freshly pasted link — that is
+      // how a 4-day tab kept being read as the 2-day one.
+      sheetTab: (tn.sheetTab || !tsheet.parseSheetUrl(tn.sheetUrl)?.gid) ? (res.sheet || '') : '',
       lastSync: {
         at: Date.now(), count: res.entries.length, rounds: res.rounds,
         warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
