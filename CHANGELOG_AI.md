@@ -12,6 +12,17 @@ player was dropped. Measured on six players cutting to three, with one marked
 `CUT` in the sheet: two made it instead of three. Anyone the sheet has already
 taken out now frees their place, exactly as a withdrawal does.
 
+The scorers then proposed the simplest thing of all: type `CUT`, `WD` and `DQ`
+straight into the Status column. That works, and it needed measuring rather than
+assuming. All 17 cut players typed by hand come out identical to what the app
+derives — with the app's cut settings on or off — and typing only five leaves the
+app to fill the other twelve, still identical. A typed `CUT` keeps its total.
+
+The one difference is worth knowing and is now pinned by a test: left to the app,
+a withdrawal inside the cut promotes the 51st on its own; typed by hand, that
+51st stays cut until somebody deletes the `CUT`, because an explicit entry must
+beat a derived one.
+
 The guidance also lost its helper columns. The scorers ran the three formulas
 against their own workbook and did not want the extra columns, which was fair —
 they were never needed. The doc now leads with the true answer, that nothing has
