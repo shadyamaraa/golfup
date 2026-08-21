@@ -119,8 +119,6 @@ function classify(header) {
   if (hasWord(h, 'thru', 'явц')) return { kind: 'thru' };
   if (hasWord(h, 'position', 'pos', 'байр')) return { kind: 'position' };
   if (hasWord(h, 'status', 'төлөв')) return { kind: 'status' };
-  // "Тойрог 1" was already taken as a round above; a bare "тойрог" is a circle.
-  if (hasWord(h, 'club', 'клуб', 'team', 'баг', 'тойрог')) return { kind: 'club' };
   if (hasWord(h, 'total', 'нийт', 'дүн')) return { kind: 'gross' };
   if (hasWord(h, 'player', 'name', 'нэр', 'тоглогч', 'оролцогч')) return { kind: 'name' };
   return { kind: 'none' };
@@ -128,14 +126,13 @@ function classify(header) {
 
 function mapColumns(header) {
   const cols = {
-    name: -1, club: -1, gross: -1, toPar: -1, thru: -1, position: -1, status: -1,
+    name: -1, gross: -1, toPar: -1, thru: -1, position: -1, status: -1,
     roundGross: new Map(), roundToPar: new Map(), holes: new Map()
   };
   header.forEach((cell, i) => {
     const c = classify(cell);
     switch (c.kind) {
       case 'name': if (cols.name < 0) cols.name = i; break;
-      case 'club': if (cols.club < 0) cols.club = i; break;
       case 'gross': if (cols.gross < 0) cols.gross = i; break;
       case 'toPar': if (cols.toPar < 0) cols.toPar = i; break;
       case 'thru': if (cols.thru < 0) cols.thru = i; break;
@@ -273,7 +270,6 @@ export function analyzeSheet(rows, { par } = {}) {
 
     entries.push({
       name,
-      club: cols.club >= 0 ? (row[cols.club] || '').trim() : '',
       // A withdrawal keeps its strokes but carries no standing: sheets blank
       // the to-par cell on purpose, so deriving one from gross would invent a
       // position the scorer deliberately removed.
@@ -287,7 +283,6 @@ export function analyzeSheet(rows, { par } = {}) {
     });
   }
 
-  if (cols.club < 0) warnings.push('no-club-column');
   if (cols.toPar < 0 && !cols.roundToPar.size && !par) warnings.push('no-to-par-column');
   if (!entries.length) warnings.push('no-rows');
 
@@ -299,7 +294,6 @@ export function analyzeSheet(rows, { par } = {}) {
     columns: {
       headerRow: index + 1,
       name: cols.name >= 0,
-      club: cols.club >= 0,
       gross: cols.gross >= 0,
       toPar: cols.toPar >= 0,
       thru: cols.thru >= 0,
@@ -365,4 +359,66 @@ export async function fetchSheet(url, { sheet, par, signal } = {}) {
   }
   if (lastErr && !tried.length) throw lastErr;
   return { ok: false, entries: [], rounds: 0, warnings: ['no-scores-found'], columns: null, tried };
+}
+
+// ---- Matching a leaderboard name to an app member ----
+// A scoring sheet writes "Given Surname" while the app stores "Surname Given",
+// so comparing strings never matches — the sorted token set does. Names go
+// through the same normalization on both sides (case, dots, hyphens, accents).
+export function nameKey(name) {
+  const tokens = String(name || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[.,'’`\-]/g, ' ')
+    .split(/\s+/).filter(Boolean);
+  // A single token is too weak to identify anyone.
+  return tokens.length >= 2 ? tokens.sort().join(' ') : '';
+}
+
+// Every spelling the app holds for a user; any of them may be the one the
+// scorer typed.
+export function userNameKeys(user) {
+  if (!user) return [];
+  const spellings = [
+    [user.lastName, user.firstName].filter(Boolean).join(' '),
+    user.fullName,
+    user.name
+  ].filter(Boolean);
+  return [...new Set(spellings.map(nameKey).filter(Boolean))];
+}
+
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length];
+}
+
+// Exact token set, or the same tokens with exactly ONE of them off by a single
+// character (Biligsaikhan / Bilegsaikhan). Allowing more than one slip would
+// start handing a member somebody else's score, which is worse than showing
+// them nothing.
+export function nameMatches(key, candidateKeys) {
+  if (!key || !candidateKeys.length) return false;
+  if (candidateKeys.includes(key)) return true;
+  const a = key.split(' ');
+  return candidateKeys.some(other => {
+    const b = other.split(' ');
+    if (b.length !== a.length) return false;
+    let slips = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] === b[i]) continue;
+      if (++slips > 1 || editDistance(a[i], b[i]) > 1) return false;
+    }
+    return slips === 1;
+  });
 }

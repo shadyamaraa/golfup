@@ -1,5 +1,48 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (drop circles from the leaderboard; match players to members by name)
+
+### Circles removed
+
+The "Миний тойрог" filter, the club sub-label on each row and the club column
+detection are gone end to end — parser, entry shape, UI, i18n and the chip-row
+CSS. The MNAOC sheet has no such column and the filter had nothing to filter
+on. `.tn-club` became `.tn-sub` since it now only carries the "Та" tag.
+
+### A leaderboard name now finds its member
+
+Scoring sheets write **"Given Surname"** while the app stores **"Surname
+Given"**, so the old exact-string check in `tnIsMe()` never matched anybody —
+the own-position banner and the highlighted row were dead code for every real
+tournament. Matching now compares **sorted token sets** after normalizing case,
+dots, hyphens and accents, which makes the name order irrelevant.
+
+- One token may differ by a single character (Biligsaikhan / Bilegsaikhan);
+  every other token must be exact. Two slips are rejected: handing a member
+  somebody else's score is worse than showing them nothing.
+- A single-token name never matches — too weak to identify anyone.
+- Measured against the live data: **50 of 76** sheet entries resolve to a UB
+  Golf member, **0 ambiguous** (no entry matches two different members). The
+  26 that don't match are competitors who aren't app members — MNAOC is a
+  national championship, not a club event.
+- The comparison lives in `tournament-sheet.js` (pure, no DOM, no Firebase) as
+  `nameKey` / `userNameKeys` / `nameMatches`, so it can be tested directly
+  against real data; `app.js` keeps only the current-user glue.
+
+### Your own line on the home strip
+
+A member playing in the tournament now gets their own line **first** in the
+strip — gold "ТА" chip, position, total, thru — with the leaders behind it.
+It is the one thing horizontal scrolling could hide, and it is what a
+competitor opens the app for. Members already inside the top five are
+highlighted in place rather than shown twice.
+
+**Fixed while doing this:** the strip is built once during `initApp()`, before
+the router has resolved who is signed in, so `currentUser` was still null and
+the member's line could never have appeared — for the demo or for real data.
+`updateTournamentStripVisibility()` now rebuilds the strip when the signed-in
+identity changes, reusing the cached tournament list rather than re-reading it.
+
 ## 2026-08-21 (fix: silent failures in the tournament admin, wrong-tab recovery)
 
 Creating a tournament appeared to do nothing. Two causes, both fixed here; the

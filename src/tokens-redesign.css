@@ -836,6 +836,13 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .tn-players::-webkit-scrollbar { display: none; }
 .tn-p { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
+/* The signed-in member's own line, appended after the leaders. */
+.tn-p-me .tn-pos, .tn-p-me .tn-pname { color: var(--gold-dark); }
+.tn-you {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  padding: 2px 7px; background: var(--accent-soft); color: var(--gold-dark);
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
 .tn-pos { font-size: 0.78rem; font-weight: 800; color: var(--text-primary); }
 .tn-av {
   width: 19px; height: 19px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
@@ -881,7 +888,6 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 
 .tn-tabs { margin-bottom: 14px; }
 .tn-search { margin-bottom: 10px; }
-.tn-chips { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .tn-section { margin: 0 0 10px; }
 
 /* own position — soft-gold, matching the waitlist banner's role */
@@ -929,7 +935,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   font-size: 0.9rem; font-weight: 700; color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tn-club { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+.tn-sub { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
 .tn-c-tot { text-align: right; font-size: 0.95rem; font-weight: 800; }
 .tn-c-thru { text-align: right; font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); }
 .tn-c-rd { text-align: right; font-size: 0.82rem; font-weight: 700; color: var(--text-secondary); }
@@ -940,7 +946,7 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .tn-lb-row.tn-me { background: var(--accent-soft); }
 .tn-lb-row.tn-me .tn-c-pos { color: var(--gold-dark); }
-.tn-lb-row.tn-me .tn-club { color: var(--gold-dark); font-weight: 700; }
+.tn-lb-row.tn-me .tn-sub { color: var(--gold-dark); font-weight: 700; }
 .tn-more {
   display: block; width: 100%; padding: 14px; border: 0; cursor: pointer;
   border-top: 1px solid var(--border-card); background: transparent;
