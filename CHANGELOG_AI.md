@@ -1,5 +1,66 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (tournaments managed in-app: Google Sheet source, Excel import, movement arrows)
+
+### The tournament is created and fed from the admin panel, not from the code
+
+- **Admin → Тэмцээн** (new tab): create a tournament (name, venue, city, dates,
+  rounds, current round, course par, format, status), edit it inline, delete
+  it, and feed its leaderboard one of two ways —
+  - **Google Sheet link** + optional tab name, with a **Sync** button, or
+  - **Excel/CSV upload** (.xlsx/.xls/.csv), reusing the lazily-imported SheetJS
+    chunk the ranking upload already pulls in.
+  Status left blank means "derive from the dates".
+- **What the importer understood is shown before it ships**: after a sync or an
+  upload the row reports how many players and rounds were read, which columns
+  were recognized (player, club, to-par, strokes, thru, position, status), and
+  warns about what was missing — a sheet with no club column says so, because
+  the "my circles" filter silently depends on it.
+
+### Reading the sheet (option A: the sheet stays the source of truth)
+
+New `src/tournament-sheet.js` — no DOM, no Firebase, unit-testable:
+
+- Accepts any Sheets URL (or a bare id) and reads the **gviz CSV** endpoint,
+  which Google serves with permissive CORS while the document is link-shared.
+  Deliberately sent without a `headers` parameter: gviz's own header detection
+  merges a title row into the column labels, which is what makes a column like
+  "Day 1" resolvable at all.
+- **Probes tabs**: the link a scorer has open usually points at a setup tab, so
+  the URL's gid is tried first, then Scoring / Leaderboard / Live / Results /
+  Хүснэгт / Оноо / Дүн, then the default sheet.
+- **Column detection works in Cyrillic.** `\b` is defined over ASCII word
+  characters and never fires next to a Cyrillic letter, so the matchers use
+  Unicode letter/number boundaries — "Тойрог 1" resolves as round 1, a bare
+  "Тойрог" as a circle.
+- **Gross vs to-par is decided from the values, not the header**, per column and
+  by median: an 18-hole gross sits far above anything to-par reaches. A round
+  column holding 74 is strokes; one holding −2 is to-par.
+- **Withdrawals hold no position**: WD/DQ/DNS/DNF/NC/RTD keep their strokes but
+  their to-par is nulled, so a blanked cell can't be back-derived into a
+  standing the scorer deliberately removed. They sort last and show the status
+  where a position would be.
+- Live reads are cached ~45s so the strip and the leaderboard share one
+  request, refresh every 60s while a tournament is live, and fall back to the
+  stored snapshot on any failure (sharing revoked, offline, Google down).
+
+### Movement arrows
+
+▲/▼ in the leaderboard, same vocabulary as the ranking page. **No stored
+history**: each entry carries a per-round score, so ranking the field on the
+rounds completed *before* the current one gives the "before" position. Arrows
+appear by themselves once round two starts landing and reset when a new round
+opens.
+
+### Verified / not verified
+
+Parser checked against the real MNAOC 2026 workbook (76 players, 2 rounds, 3
+WD, top of the board and every column mapping); arrows, WD handling and the
+admin tab checked in a browser against the built app. **The browser-side fetch
+to Google could not be exercised here** — the build sandbox has no route to
+docs.google.com at all — so the CORS headers were confirmed with curl instead.
+The preview channel is where that last hop gets proven.
+
 ## 2026-08-21 (tournament strip on home + leaderboard page)
 
 ### A live tournament reads from the top of home, one tap from the full board

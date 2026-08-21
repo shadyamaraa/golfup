@@ -3,6 +3,7 @@ import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
+import * as tsheet from './tournament-sheet.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -935,24 +936,28 @@ const TN_DEMO = {
   endDate: '2026-08-23',
   format: 'stroke',
   rounds: 3,
-  currentRound: 1,
+  currentRound: 2,
+  par: 72,
   status: 'live',
   maxPlayers: 48,
   description: 'Жилийн төгсгөлийн аварга шалгаруулах тэмцээн. 3 тойрог, stroke play.',
   updatedAt: Date.now(),
+  // Two rounds on purpose: the movement arrows only mean something once a
+  // second round starts landing, so the sample has to show them.
   entries: [
-    { name: 'Б. Ганбат', club: 'Хан Богд', total: -6, thru: 'F', rounds: [-6] },
-    { name: 'Д. Энхжин', club: 'Eagle', total: -6, thru: 'F', rounds: [-6] },
-    { name: 'С. Мөнх-Эрдэнэ', club: 'Club', total: -4, thru: '16', rounds: [-4] },
-    { name: 'Г. Тэмүүлэн', club: 'Соёмбо', total: -3, thru: '15', rounds: [-3] },
-    { name: 'О. Бат-Эрдэнэ', club: 'Star', total: -2, thru: 'F', rounds: [-2] },
-    { name: 'Ж. Наранцэцэг', club: 'Эмэгтэйчүүд', total: -2, thru: '14', rounds: [-2] },
-    { name: 'Х. Батбаяр', club: 'Vista', total: 0, thru: '13', rounds: [0] },
-    { name: 'Т. Дорж', club: 'JCI', total: 1, thru: 'F', rounds: [1] },
-    { name: 'Л. Оюунбилэг', club: 'Сениор', total: 2, thru: 'F', rounds: [2] },
-    { name: 'Ч. Ганзориг', club: 'Заан Тэрэлж', total: 3, thru: '12', rounds: [3] },
-    { name: 'М. Алтанцэцэг', club: 'Эмэгтэйчүүд', total: 4, thru: '11', rounds: [4] },
-    { name: 'Б. Хүрэлбаатар', club: 'Булаа', total: 6, thru: 'F', rounds: [6] }
+    { name: 'Б. Ганбат', club: 'Хан Богд', total: -6, thru: 'F', rounds: [-2, -4] },
+    { name: 'Д. Энхжин', club: 'Eagle', total: -6, thru: 'F', rounds: [-5, -1] },
+    { name: 'С. Мөнх-Эрдэнэ', club: 'Club', total: -4, thru: '16', rounds: [-3, -1] },
+    { name: 'Г. Тэмүүлэн', club: 'Соёмбо', total: -3, thru: '15', rounds: [-4, 1] },
+    { name: 'О. Бат-Эрдэнэ', club: 'Star', total: -2, thru: 'F', rounds: [-1, -1] },
+    { name: 'Ж. Наранцэцэг', club: 'Эмэгтэйчүүд', total: -2, thru: '14', rounds: [0, -2] },
+    { name: 'Х. Батбаяр', club: 'Vista', total: 0, thru: '13', rounds: [2, -2] },
+    { name: 'Т. Дорж', club: 'JCI', total: 1, thru: 'F', rounds: [-1, 2] },
+    { name: 'Л. Оюунбилэг', club: 'Сениор', total: 2, thru: 'F', rounds: [1, 1] },
+    { name: 'Ч. Ганзориг', club: 'Заан Тэрэлж', total: 3, thru: '12', rounds: [2, 1] },
+    { name: 'М. Алтанцэцэг', club: 'Эмэгтэйчүүд', total: 4, thru: '11', rounds: [3, 1] },
+    { name: 'Б. Хүрэлбаатар', club: 'Булаа', total: 6, thru: 'F', rounds: [4, 2] },
+    { name: 'Д. Батсайхан', club: 'JCI', total: null, thru: 'WD', status: 'WD', rounds: [null, null] }
   ]
 };
 
@@ -1034,7 +1039,8 @@ function tnStateLabel(tn) {
 }
 
 // Sort by total (lower is better, missing totals last) and label tie-aware
-// positions: T1, T1, 3.
+// positions: T1, T1, 3. A withdrawal shows its status where a position would
+// be and sorts to the bottom with everyone else who has no standing.
 function tnRanked(tn) {
   const list = Array.isArray(tn?.entries) ? tn.entries.slice() : [];
   const score = (e) => {
@@ -1045,11 +1051,105 @@ function tnRanked(tn) {
   const counts = new Map();
   list.forEach(e => { const s = score(e); counts.set(s, (counts.get(s) || 0) + 1); });
   let pos = 0;
-  return list.map((e, i) => {
+  const ranked = list.map((e, i) => {
     const s = score(e);
     if (i === 0 || score(list[i - 1]) !== s) pos = i + 1;
-    return { ...e, rank: pos, posLabel: s === Infinity ? '–' : `${counts.get(s) > 1 ? 'T' : ''}${pos}` };
+    const label = s !== Infinity
+      ? `${counts.get(s) > 1 ? 'T' : ''}${pos}`
+      : (tsheet.isRetired(e.status) ? String(e.status).toUpperCase() : '–');
+    return { ...e, rank: s === Infinity ? Infinity : pos, posLabel: label };
   });
+  return tnWithDeltas(ranked);
+}
+
+// Movement since the previous round. Every entry carries a per-round score, so
+// ranking the field on the rounds finished BEFORE the current one gives the
+// "before" position with no stored history — the arrows appear on their own as
+// soon as round two starts landing, and reset when a new round opens.
+function tnWithDeltas(ranked) {
+  let current = 0;
+  ranked.forEach(e => (e.rounds || []).forEach((v, i) => {
+    if (v !== null && v !== undefined && v !== '') current = Math.max(current, i + 1);
+  }));
+  if (current < 2) return ranked;
+
+  const prevTotal = (e) => {
+    const parts = (e.rounds || []).slice(0, current - 1)
+      .filter(v => v !== null && v !== undefined && v !== '')
+      .map(Number).filter(v => !isNaN(v));
+    return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+  };
+  const prior = ranked.map(e => ({ e, v: prevTotal(e) }))
+    .filter(x => x.v !== null && x.e.rank !== Infinity)
+    .sort((a, b) => a.v - b.v);
+
+  const prevRank = new Map();
+  let pos = 0;
+  prior.forEach((x, i) => {
+    if (i === 0 || prior[i - 1].v !== x.v) pos = i + 1;
+    prevRank.set(x.e, pos);
+  });
+
+  return ranked.map(e => {
+    const p = prevRank.get(e);
+    return p ? { ...e, prevRank: p, delta: p - e.rank } : e;
+  });
+}
+
+// Same vocabulary as the ranking page's ▲/▼, so movement reads identically
+// wherever it appears in the app.
+function tnDeltaHTML(e) {
+  if (e.prevRank == null) return '';
+  if (e.delta > 0) return `<span class="rk-delta rk-up">▲${e.delta}</span>`;
+  if (e.delta < 0) return `<span class="rk-delta rk-down">▼${-e.delta}</span>`;
+  return `<span class="rk-delta rk-same">–</span>`;
+}
+
+// ---- Linked Google Sheet as the live source ----
+// The sheet stays the source of truth: the browser reads its published CSV
+// directly. One short-lived cache serves the strip and the leaderboard page so
+// they never double-fetch, and any failure falls back to the stored snapshot.
+const TN_SHEET_TTL_MS = 45000;
+const tnSheetCache = new Map();
+
+function tnEntryFromSheet(e) {
+  return {
+    name: e.name,
+    club: e.club || '',
+    total: e.total,
+    thru: e.thru || '',
+    status: e.status || '',
+    rounds: e.rounds,
+    gross: e.gross
+  };
+}
+
+async function tnLoadSheet(tn, { force = false } = {}) {
+  if (!tn?.sheetUrl) return null;
+  const hit = tnSheetCache.get(tn.id);
+  if (!force && hit && Date.now() - hit.at < TN_SHEET_TTL_MS) return hit;
+  let rec;
+  try {
+    const res = await tsheet.fetchSheet(tn.sheetUrl, {
+      sheet: tn.sheetTab || undefined,
+      par: tn.par || undefined
+    });
+    rec = { at: Date.now(), ok: res.ok, entries: res.entries.map(tnEntryFromSheet), rounds: res.rounds, error: null };
+  } catch (err) {
+    rec = { at: Date.now(), ok: false, entries: [], rounds: 0, error: err?.message || 'fetch failed' };
+  }
+  tnSheetCache.set(tn.id, rec);
+  return rec;
+}
+
+// Overlay the live sheet on the stored record. Sharing revoked, offline phone,
+// Google having a bad day — all land on the last saved snapshot instead of an
+// empty board.
+async function tnWithLiveEntries(tn) {
+  if (!tn?.sheetUrl) return tn;
+  const rec = await tnLoadSheet(tn);
+  if (!rec?.ok || !rec.entries.length) return tn;
+  return { ...tn, entries: rec.entries, rounds: tn.rounds || rec.rounds, sheetAt: rec.at };
 }
 
 // Does this leaderboard entry belong to the signed-in user? Entries carry a
@@ -1125,6 +1225,7 @@ async function renderTournamentStrip(list) {
     updateTournamentStripVisibility(location.hash || '#/');
     return;
   }
+  tn = await tnWithLiveEntries(tn);
 
   const state = tnStatus(tn);
   const ranked = tnRanked(tn);
@@ -1285,6 +1386,7 @@ function tnFormatText(tn) {
 // THRU only means something while a round is running; a finished tournament is
 // all F, one that hasn't started has nothing to show.
 function tnThruText(tn, entry) {
+  if (tsheet.isRetired(entry.status)) return String(entry.status).toUpperCase();
   const state = tnStatus(tn);
   if (state === 'final') return 'F';
   if (state === 'live') return entry.thru || '–';
@@ -1310,17 +1412,37 @@ async function renderTournamentPage(id) {
   tnPageFilter = 'all';
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
-  paintTournamentPage(tn);
+  paintTournamentPage(await tnWithLiveEntries(tn));
+
+  // Repaint the list alone while a search is in progress, so an incoming score
+  // never steals the caret.
+  const repaint = () => {
+    if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
+  };
 
   if (store.isUsingFirebase() && tn.id !== TN_DEMO.id) {
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
-      tnPageData = fresh;
-      // Repaint the list alone while a search is in progress, so live score
-      // updates never steal the caret.
-      if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
+      // Meta edits must not roll the board back to the stored snapshot when a
+      // newer sheet read is already in hand.
+      const cached = tnSheetCache.get(fresh.id);
+      tnPageData = (cached?.ok && cached.entries.length)
+        ? { ...fresh, entries: cached.entries }
+        : fresh;
+      repaint();
     });
     if (unsub) activeUnsubs.push(unsub);
+  }
+
+  // A linked sheet has no change feed, so poll it while play is under way.
+  if (tn.sheetUrl && tnStatus(tn) === 'live') {
+    const timer = setInterval(async () => {
+      const rec = await tnLoadSheet(tnPageData, { force: true });
+      if (!rec?.ok || !rec.entries.length) return;
+      tnPageData = { ...tnPageData, entries: rec.entries, sheetAt: rec.at };
+      repaint();
+    }, 60000);
+    activeUnsubs.push(() => clearInterval(timer));
   }
 }
 
@@ -1493,7 +1615,10 @@ function renderTnList() {
     const rd = Array.isArray(e.rounds) ? e.rounds[rdIndex] : e.total;
     return `
       <div class="tn-lb-row${mine ? ' tn-me' : ''}">
-        <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">${esc(e.posLabel)}</span>
+        <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">
+          <span class="tn-pos-n">${esc(e.posLabel)}</span>
+          ${tnDeltaHTML(e)}
+        </span>
         <span class="tn-c-name">
           <span class="tn-n">${esc(e.name || '')}</span>
           ${sub ? `<span class="tn-club">${esc(sub)}</span>` : ''}
@@ -3238,6 +3363,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-news" class="btn btn-outline btn-sm" style="gap:5px;">${icon('alerts', { size: 14 })} ${t('newsManage')}</button>
           <button id="admin-tab-btn-stats" class="btn btn-outline btn-sm" style="gap:5px;">${icon('leaderboard', { size: 14 })} ${t('statsTab')}</button>
           <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
+          <button id="admin-tab-btn-tn" class="btn btn-outline btn-sm" style="gap:5px;">${icon('hole', { size: 14 })} ${t('tnAdminTab')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -3347,6 +3473,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-rank" style="display:none;">
           <div id="admin-rank-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-tn" style="display:none;">
+          <div id="admin-tn-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -3360,6 +3490,7 @@ async function renderAdminPanel() {
   const tabNews = document.getElementById('admin-tab-btn-news');
   const tabStats = document.getElementById('admin-tab-btn-stats');
   const tabRank = document.getElementById('admin-tab-btn-rank');
+  const tabTn = document.getElementById('admin-tab-btn-tn');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -3368,8 +3499,9 @@ async function renderAdminPanel() {
   const sectionNews = document.getElementById('admin-tab-news');
   const sectionStats = document.getElementById('admin-tab-stats');
   const sectionRank = document.getElementById('admin-tab-rank');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank];
+  const sectionTn = document.getElementById('admin-tab-tn');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -3395,6 +3527,10 @@ async function renderAdminPanel() {
   tabRank.addEventListener('click', async () => {
     switchTab(tabRank, sectionRank);
     await renderAdminRankingTab();
+  });
+  tabTn.addEventListener('click', async () => {
+    switchTab(tabTn, sectionTn);
+    await renderAdminTournamentsTab();
   });
 
   // No-circle tab: open edit modal
@@ -6784,6 +6920,272 @@ async function renderAdminRankingTab() {
     await store.saveRanking({ updatedAt: Date.now(), entries: parsed });
     showToast('✅ ' + t('rankingSaved'), 'success');
     await renderAdminRankingTab();
+  };
+}
+
+// ---- Admin → Тэмцээн ----
+
+// Which tournament's editor is open in the admin list.
+let adminOpenTn = null;
+
+const TN_INPUT = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-family:var(--font);';
+
+// Read a tournament sheet out of an uploaded workbook. A live-scoring file
+// carries setup, instructions and broadcast-output tabs alongside the scores,
+// so every sheet is analyzed and the one yielding the most players wins.
+async function parseTournamentFile(file, par) {
+  const fname = (file.name || '').toLowerCase();
+  if (fname.endsWith('.csv')) {
+    return { ...tsheet.analyzeSheet(tsheet.parseCsv(await file.text()), { par }), sheet: null };
+  }
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  let best = null;
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' })
+      .map(r => r.map(c => String(c ?? '').trim()));
+    const res = tsheet.analyzeSheet(rows, { par });
+    if (res.ok && (!best || res.entries.length > best.res.entries.length)) best = { name, res };
+  }
+  return best ? { ...best.res, sheet: best.name } : { ok: false, entries: [], rounds: 0, warnings: ['no-rows'], columns: null, sheet: null };
+}
+
+// What the importer understood, in the admin's words — the point is that a bad
+// mapping is visible BEFORE it reaches the leaderboard.
+function tnAnalysisHTML(a) {
+  if (!a) return '';
+  const cols = a.columns || {};
+  const found = [
+    cols.name && t('tnPlayer'), cols.club && t('tnColClub'), cols.toPar && t('tnTotal'),
+    cols.gross && t('tnColGross'), cols.thru && t('tnThru'), cols.position && t('tnPos'),
+    cols.status && t('tnColStatus')
+  ].filter(Boolean).join(', ');
+  const warn = {
+    'no-club-column': t('tnWarnNoClub'),
+    'no-to-par-column': t('tnWarnNoToPar'),
+    'no-player-column': t('tnWarnNoPlayer'),
+    'no-rows': t('tnWarnNoRows'),
+    'no-scores-found': t('tnWarnNoScores')
+  };
+  return `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:10px;font-size:0.8rem;">
+      <div><b>${a.count ?? a.entries?.length ?? 0}</b> ${t('tnPlayers')} · <b>${a.rounds || 1}</b> ${t('tnRounds')}${a.sheet ? ` · ${esc(a.sheet)}` : ''}</div>
+      ${found ? `<div style="color:var(--text-secondary);margin-top:4px;">${t('tnColsFound')}: ${esc(found)}</div>` : ''}
+      ${(a.warnings || []).map(w => warn[w] ? `<div style="color:var(--amber);margin-top:4px;">⚠ ${warn[w]}</div>` : '').join('')}
+    </div>`;
+}
+
+// Shared field set for both the create form and each row's editor.
+function tnAdminFormHTML(p, tn = {}) {
+  const sel = (v, cur) => v === cur ? ' selected' : '';
+  return `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+      <input id="${p}-name" type="text" placeholder="${t('tnFName')} *" value="${esc(tn.name || '')}" style="${TN_INPUT}" />
+      <input id="${p}-venue" type="text" placeholder="${t('tnFVenue')}" value="${esc(tn.venue || '')}" style="${TN_INPUT}" />
+      <input id="${p}-city" type="text" placeholder="${t('tnFCity')}" value="${esc(tn.city || '')}" style="${TN_INPUT}" />
+      <input id="${p}-start" type="date" value="${esc(tn.startDate || '')}" style="${TN_INPUT}" />
+      <input id="${p}-end" type="date" value="${esc(tn.endDate || '')}" style="${TN_INPUT}" />
+      <input id="${p}-rounds" type="number" min="1" max="8" placeholder="${t('tnFRounds')}" value="${tn.rounds || ''}" style="${TN_INPUT}" />
+      <input id="${p}-round-now" type="number" min="1" max="8" placeholder="${t('tnFCurrentRound')}" value="${tn.currentRound || ''}" style="${TN_INPUT}" />
+      <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
+      <select id="${p}-format" style="${TN_INPUT}">
+        <option value=""${sel('', tn.format || '')}>${t('gameFormat')}</option>
+        <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
+        <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
+        <option value="scramble"${sel('scramble', tn.format)}>${t('fmtScramble')}</option>
+      </select>
+      <select id="${p}-status" style="${TN_INPUT}">
+        <option value=""${sel('', tn.status || '')}>${t('tnFStatusAuto')}</option>
+        <option value="upcoming"${sel('upcoming', tn.status)}>${t('tnSoon')}</option>
+        <option value="live"${sel('live', tn.status)}>${t('tnLive')}</option>
+        <option value="final"${sel('final', tn.status)}>${t('tnFinal')}</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:8px;">
+      <input id="${p}-sheet" type="url" placeholder="${t('tnFSheetUrl')}" value="${esc(tn.sheetUrl || '')}" style="${TN_INPUT}" />
+      <input id="${p}-tab" type="text" placeholder="${t('tnFSheetTab')}" value="${esc(tn.sheetTab || '')}" style="${TN_INPUT}" />
+    </div>
+    <p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('tnFSheetHint')}</p>`;
+}
+
+function tnAdminReadForm(p) {
+  const val = (id) => document.getElementById(`${p}-${id}`)?.value.trim() || '';
+  const num = (id) => { const n = parseInt(val(id), 10); return isNaN(n) ? null : n; };
+  return {
+    name: val('name'),
+    venue: val('venue'),
+    city: val('city'),
+    startDate: val('start'),
+    endDate: val('end'),
+    rounds: num('rounds'),
+    currentRound: num('round-now'),
+    par: num('par'),
+    format: val('format'),
+    status: val('status'),
+    sheetUrl: val('sheet'),
+    sheetTab: val('tab')
+  };
+}
+
+// Pull the linked sheet and store what came back. The stored copy is the
+// fallback the app shows when Google is unreachable; the live read still goes
+// straight to the sheet.
+async function tnAdminSync(tn, { silent = false } = {}) {
+  if (!tn.sheetUrl) { showToast(t('tnNoSheet'), 'warning'); return null; }
+  if (!silent) showToast(t('tnSyncing'), 'info');
+  let res;
+  try {
+    res = await tsheet.fetchSheet(tn.sheetUrl, { sheet: tn.sheetTab || undefined, par: tn.par || undefined });
+  } catch (err) {
+    showToast('⚠️ ' + t('tnSyncFailed') + ' — ' + (err?.message || ''), 'error');
+    return null;
+  }
+  if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return null; }
+  await store.saveTournament({
+    ...tn,
+    entries: res.entries.map(tnEntryFromSheet),
+    rounds: tn.rounds || res.rounds,
+    sheetTab: tn.sheetTab || res.sheet || '',
+    lastSync: {
+      at: Date.now(), count: res.entries.length, rounds: res.rounds,
+      warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
+    }
+  });
+  tnSheetCache.delete(tn.id);
+  showToast('✅ ' + t('tnSynced') + ` (${res.entries.length})`, 'success');
+  return res;
+}
+
+async function renderAdminTournamentsTab() {
+  const el = document.getElementById('admin-tn-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+  let list = [];
+  try { list = await store.loadTournaments(); } catch (_) { }
+  list.sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+
+  const rowHTML = (tn) => {
+    const open = adminOpenTn === tn.id;
+    const state = tnStatus(tn);
+    const count = (tn.entries || []).length;
+    const src = tn.sheetUrl ? t('tnSrcSheet') : (tn.lastSync?.source === 'file' ? t('tnSrcFile') : t('tnSrcNone'));
+    return `
+      <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button type="button" class="tn-adm-toggle" data-tn="${esc(tn.id)}" style="flex:1;min-width:150px;text-align:left;background:none;border:none;color:var(--text-primary);cursor:pointer;padding:0;">
+            <span style="color:var(--text-secondary);font-size:0.85rem;">${open ? '▲' : '▼'}</span>
+            <b>${esc(tn.name || '—')}</b>
+          </button>
+          <span class="pill-soft">${tnStateLabel(tn)}</span>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">
+          ${esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '))}
+        </div>
+        <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
+          ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+          <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+          ${tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
+          <button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>
+          <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
+        </div>
+        ${tn.lastSync ? tnAnalysisHTML(tn.lastSync) : ''}
+        ${open ? `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
+            ${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}
+            <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
+          </div>` : ''}
+      </div>`;
+  };
+
+  el.innerHTML = `
+    <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
+      <button type="button" id="tn-create-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
+        <h3 style="margin:0;">${t('tnCreate')}</h3>
+        <span id="tn-create-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
+      </button>
+      <div id="tn-create-form" style="display:none;margin-top:14px;">
+        ${tnAdminFormHTML('tn-n')}
+        <button id="tn-create-btn" class="btn btn-primary btn-sm" style="margin-top:10px;">${t('tnCreate')}</button>
+      </div>
+    </div>
+    ${list.length === 0
+      ? `<p style="color:var(--text-secondary);">${t('tnAdminEmpty')}</p>`
+      : list.map(rowHTML).join('')}
+    <input type="file" id="tn-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />`;
+
+  // Create
+  const form = document.getElementById('tn-create-form');
+  document.getElementById('tn-create-toggle').onclick = () => {
+    const open = form.style.display !== 'none';
+    form.style.display = open ? 'none' : 'block';
+    document.getElementById('tn-create-chevron').textContent = open ? '▼' : '▲';
+  };
+  document.getElementById('tn-create-btn').onclick = async () => {
+    const data = tnAdminReadForm('tn-n');
+    if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
+    const id = await store.saveTournament({ ...data, entries: [], createdAt: Date.now() });
+    showToast('✅ ' + t('tnCreated'), 'success');
+    // A link given at creation time is only useful once it has been read.
+    if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
+    adminOpenTn = null;
+    await renderAdminTournamentsTab();
+  };
+
+  // Row actions
+  el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
+    adminOpenTn = adminOpenTn === b.dataset.tn ? null : b.dataset.tn;
+    await renderAdminTournamentsTab();
+  });
+  el.querySelectorAll('.tn-adm-save').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (!tn) return;
+    const data = tnAdminReadForm(`tn-e-${tn.id}`);
+    if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
+    await store.saveTournament({ ...tn, ...data });
+    tnSheetCache.delete(tn.id);
+    showToast('✅ ' + t('saved'), 'success');
+    await renderAdminTournamentsTab();
+  });
+  el.querySelectorAll('.tn-adm-sync').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (tn && await tnAdminSync(tn)) await renderAdminTournamentsTab();
+  });
+  el.querySelectorAll('.tn-adm-del').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (!tn || !confirm(`${tn.name} — ${t('delete')}?`)) return;
+    await store.deleteTournament(tn.id);
+    await renderAdminTournamentsTab();
+  });
+
+  // Upload
+  const fileInput = document.getElementById('tn-file-input');
+  let uploadTarget = null;
+  el.querySelectorAll('.tn-adm-upload').forEach(b => b.onclick = () => {
+    uploadTarget = list.find(x => x.id === b.dataset.tn) || null;
+    if (uploadTarget) fileInput.click();
+  });
+  fileInput.onchange = async () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file || !uploadTarget) return;
+    let res;
+    try { res = await parseTournamentFile(file, uploadTarget.par || undefined); }
+    catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
+    if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return; }
+    if (!confirm(`${res.entries.length} ${t('tnPlayers')} — ${t('tnConfirmImport')}`)) return;
+    await store.saveTournament({
+      ...uploadTarget,
+      entries: res.entries.map(tnEntryFromSheet),
+      rounds: uploadTarget.rounds || res.rounds,
+      lastSync: {
+        at: Date.now(), count: res.entries.length, rounds: res.rounds,
+        warnings: res.warnings, columns: res.columns, sheet: res.sheet, source: 'file'
+      }
+    });
+    showToast('✅ ' + t('tnImported'), 'success');
+    await renderAdminTournamentsTab();
   };
 }
 

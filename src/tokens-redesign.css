@@ -909,9 +909,12 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 /* leaderboard table */
 .tn-lb { overflow: hidden; }
 .tn-lb-head, .tn-lb-row {
-  display: grid; grid-template-columns: 34px minmax(0, 1fr) 44px 34px 38px;
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) 44px 34px 38px;
   align-items: center; gap: 8px; padding: 11px 14px;
 }
+/* Position stacks over its movement arrow, so ▲/▼ costs no column. */
+.tn-lb-row .tn-c-pos { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.tn-lb-row .tn-c-pos .rk-delta { min-width: 0; text-align: left; font-size: 0.62rem; }
 .tn-lb-head {
   padding-top: 10px; padding-bottom: 10px;
   background: var(--bg-card-hover); border-bottom: 1px solid var(--border-card);
