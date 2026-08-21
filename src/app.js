@@ -7125,6 +7125,9 @@ async function renderAdminTournamentsTab() {
           ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
         </div>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-sm tn-adm-toggle" data-tn="${esc(tn.id)}" style="gap:5px;">
+            ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
+          </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
           ${tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
           <button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>
@@ -7177,9 +7180,17 @@ async function renderAdminTournamentsTab() {
   };
 
   // Row actions
+  // Both the row's name and its Засах button open the same editor.
   el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
-    adminOpenTn = adminOpenTn === b.dataset.tn ? null : b.dataset.tn;
+    const id = b.dataset.tn;
+    adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
+    // The form renders below the row's actions, which on a long list can land
+    // off screen — and a button that scrolls nothing reads as a dead button.
+    if (adminOpenTn) {
+      document.getElementById(`tn-e-${adminOpenTn}-name`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   });
   el.querySelectorAll('.tn-adm-save').forEach(b => b.onclick = async () => {
     const tn = list.find(x => x.id === b.dataset.tn);

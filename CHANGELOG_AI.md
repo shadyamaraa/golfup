@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (make tournament editing findable)
+
+Editing a tournament already worked, but the only way in was clicking the
+tournament's **name** — the action row offered Дэлгэрэнгүй / Sync / Excel /
+Устгах and nothing that said "edit", so the feature read as missing.
+
+- The row now leads with a **Засах** button (pencil icon) that opens the same
+  inline editor and flips to **Хаах** while it is open. Clicking the name still
+  works; both share one handler.
+- Opening the editor scrolls it into view. The form renders below the row's
+  actions, so on a list of several tournaments it could land off screen — and a
+  button that appears to scroll nothing reads as a dead button.
+- New `tnEdit` / `tnClose` keys in MN/EN/KR rather than reusing the
+  menu-specific `editMenuItem`.
+
+Verified in a browser against the built app: the action row reads Засах ·
+Дэлгэрэнгүй · Sync · Excel · Устгах; opening prefills every field from the
+record; changing the name, format and current round and pressing Хадгалах
+saves and re-renders the row with the new title.
+
 ## 2026-08-21 (drop circles from the leaderboard; match players to members by name)
 
 ### Circles removed
