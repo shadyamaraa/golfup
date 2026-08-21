@@ -1665,12 +1665,14 @@ function renderTnList() {
 
   const page = shown.slice(0, tnPageLimit);
   const rest = shown.length - page.length;
-  // Every round that has been played gets its own R1..R4 score. Four columns
-  // plus a name will not fit a phone, so from the second round on the rounds
-  // move to their own line under the name and the R column drops out.
+  // Every round that has been played gets its own R1..R4 score, riding on the
+  // player's own line. Four chips plus a name do not fit a phone, so past two
+  // rounds the chips drop under the name on narrow screens only — tn-lb-r3
+  // carries the count the CSS needs to make that call.
   const activeRound = tnActiveRound(tn);
   const roundNos = Array.from({ length: activeRound }, (_, i) => i + 1);
   const multi = roundNos.length > 1;
+  const lbClass = multi ? ` tn-lb-multi${roundNos.length > 2 ? ' tn-lb-r3' : ''}` : '';
 
   const hasAnyRound = (e) => roundNos.some(n => {
     const v = Array.isArray(e.rounds) ? e.rounds[n - 1] : null;
@@ -1700,20 +1702,23 @@ function renderTnList() {
           <span class="tn-n">${esc(e.name || '')}</span>
           ${mine ? `<span class="tn-sub">${t('tnYou')}</span>` : ''}
         </span>
+        ${multi
+          // A withdrawn player has no round scores; a line of empty chips is
+          // noise, but the cell has to stay so TOT and THRU keep their columns.
+          ? (hasAnyRound(e) ? roundsHTML(e) : '<span class="tn-rds"></span>')
+          : ''}
         <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        ${multi
-          // A withdrawn player has no round scores; a line of empty chips is noise.
-          ? (hasAnyRound(e) ? roundsHTML(e) : '')
-          : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}
+        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}
       </div>`;
   };
 
   host.innerHTML = `
-    <div class="surface-card tn-lb${multi ? ' tn-lb-multi' : ''}">
+    <div class="surface-card tn-lb${lbClass}">
       <div class="tn-lb-head">
         <span class="tn-c-pos">${t('tnPos')}</span>
         <span class="tn-c-name">${t('tnPlayer')}</span>
+        ${multi ? '<span class="tn-rds-head"></span>' : ''}
         <span class="tn-c-tot">${t('tnTotal')}</span>
         <span class="tn-c-thru">${t('tnThru')}</span>
         ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
