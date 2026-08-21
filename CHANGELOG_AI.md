@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (a link with a gid names its own tab; the tab field steps aside)
+
+The R1–R4 change shipped and the board still showed one round. The code was
+live; the record was not. `sheetTab` on the live tournament read `"Scoring"`
+again — the 2-day tab, where Day 2 is empty — a few minutes after being
+cleared. Clearing it by hand cannot stick: any page still holding the old
+record writes the old value back on its next sync.
+
+So the rule is now in the code rather than in the data. A link carrying a gid
+already names its tab and is the most recent thing the admin pointed at, so it
+wins outright: the tab field is only read when the link has no gid, on the live
+read and on sync alike, and a sync against a gid link clears any stored name.
+A stale name is now ignored rather than obeyed, which makes the record
+self-healing. The admin field says when it applies.
+
+Measured against the live workbook, all four combinations: stale name + gid
+link → 4 rounds, 2 played (was 2 rounds, 1 played — the reported bug); no name
++ gid link → the same; name + link without a gid → that named tab, so a
+gid-less link can still be steered; neither → the probe's default.
+
 ## 2026-08-21 (every played round on the board, not just the current one)
 
 The leaderboard had a single round column, so a four-day tournament showed R4
