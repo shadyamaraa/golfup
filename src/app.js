@@ -945,19 +945,19 @@ const TN_DEMO = {
   // Two rounds on purpose: the movement arrows only mean something once a
   // second round starts landing, so the sample has to show them.
   entries: [
-    { name: 'Б. Ганбат', club: 'Хан Богд', total: -6, thru: 'F', rounds: [-2, -4] },
-    { name: 'Д. Энхжин', club: 'Eagle', total: -6, thru: 'F', rounds: [-5, -1] },
-    { name: 'С. Мөнх-Эрдэнэ', club: 'Club', total: -4, thru: '16', rounds: [-3, -1] },
-    { name: 'Г. Тэмүүлэн', club: 'Соёмбо', total: -3, thru: '15', rounds: [-4, 1] },
-    { name: 'О. Бат-Эрдэнэ', club: 'Star', total: -2, thru: 'F', rounds: [-1, -1] },
-    { name: 'Ж. Наранцэцэг', club: 'Эмэгтэйчүүд', total: -2, thru: '14', rounds: [0, -2] },
-    { name: 'Х. Батбаяр', club: 'Vista', total: 0, thru: '13', rounds: [2, -2] },
-    { name: 'Т. Дорж', club: 'JCI', total: 1, thru: 'F', rounds: [-1, 2] },
-    { name: 'Л. Оюунбилэг', club: 'Сениор', total: 2, thru: 'F', rounds: [1, 1] },
-    { name: 'Ч. Ганзориг', club: 'Заан Тэрэлж', total: 3, thru: '12', rounds: [2, 1] },
-    { name: 'М. Алтанцэцэг', club: 'Эмэгтэйчүүд', total: 4, thru: '11', rounds: [3, 1] },
-    { name: 'Б. Хүрэлбаатар', club: 'Булаа', total: 6, thru: 'F', rounds: [4, 2] },
-    { name: 'Д. Батсайхан', club: 'JCI', total: null, thru: 'WD', status: 'WD', rounds: [null, null] }
+    { name: 'Б. Ганбат', total: -6, thru: 'F', rounds: [-2, -4] },
+    { name: 'Д. Энхжин', total: -6, thru: 'F', rounds: [-5, -1] },
+    { name: 'С. Мөнх-Эрдэнэ', total: -4, thru: '16', rounds: [-3, -1] },
+    { name: 'Г. Тэмүүлэн', total: -3, thru: '15', rounds: [-4, 1] },
+    { name: 'О. Бат-Эрдэнэ', total: -2, thru: 'F', rounds: [-1, -1] },
+    { name: 'Ж. Наранцэцэг', total: -2, thru: '14', rounds: [0, -2] },
+    { name: 'Х. Батбаяр', total: 0, thru: '13', rounds: [2, -2] },
+    { name: 'Т. Дорж', total: 1, thru: 'F', rounds: [-1, 2] },
+    { name: 'Л. Оюунбилэг', total: 2, thru: 'F', rounds: [1, 1] },
+    { name: 'Ч. Ганзориг', total: 3, thru: '12', rounds: [2, 1] },
+    { name: 'М. Алтанцэцэг', total: 4, thru: '11', rounds: [3, 1] },
+    { name: 'Б. Хүрэлбаатар', total: 6, thru: 'F', rounds: [4, 2] },
+    { name: 'Д. Батсайхан', total: null, thru: 'WD', status: 'WD', rounds: [null, null] }
   ]
 };
 
@@ -976,7 +976,7 @@ function tnDemo() {
   const name = [currentUser.lastName, currentUser.firstName].filter(Boolean).join(' ')
     || currentUser.fullName || currentUser.name || currentUser.username;
   const entries = TN_DEMO.entries.map((e, i) => i === seat
-    ? { ...e, name: name || e.name, club: (currentUser.communities || [])[0] || e.club, userId: currentUser.id }
+    ? { ...e, name: name || e.name, userId: currentUser.id }
     : e);
   return { ...TN_DEMO, entries };
 }
@@ -1111,11 +1111,14 @@ function tnDeltaHTML(e) {
 // they never double-fetch, and any failure falls back to the stored snapshot.
 const TN_SHEET_TTL_MS = 45000;
 const tnSheetCache = new Map();
+// Last tournament list the strip was built from, and the member it was built
+// for — a rebuild on sign-in reuses the list instead of re-reading it.
+let tnListCache = null;
+let tnStripFor;
 
 function tnEntryFromSheet(e) {
   return {
     name: e.name,
-    club: e.club || '',
     total: e.total,
     thru: e.thru || '',
     status: e.status || '',
@@ -1152,14 +1155,25 @@ async function tnWithLiveEntries(tn) {
   return { ...tn, entries: rec.entries, rounds: tn.rounds || rec.rounds, sheetAt: rec.at };
 }
 
+// ---- Matching a leaderboard name to a member ----
+// The comparison itself lives in tournament-sheet.js (pure, unit-testable);
+// this side only holds the current user's spellings.
+let tnMyKeysFor = null;
+let tnMyKeys = [];
+function tnMyNameKeys() {
+  if (tnMyKeysFor !== currentUser?.id) {
+    tnMyKeysFor = currentUser?.id || null;
+    tnMyKeys = tsheet.userNameKeys(currentUser);
+  }
+  return tnMyKeys;
+}
+
 // Does this leaderboard entry belong to the signed-in user? Entries carry a
-// userId when created from a member, and fall back to a name match.
+// userId when created from a member, and fall back to the name match.
 function tnIsMe(entry) {
   if (!currentUser) return false;
   if (entry.userId && entry.userId === currentUser.id) return true;
-  const mine = [currentUser.fullName, currentUser.name, currentUser.username]
-    .filter(Boolean).map(s => String(s).trim().toLowerCase());
-  return mine.includes(String(entry.name || '').trim().toLowerCase());
+  return tsheet.nameMatches(tsheet.nameKey(entry.name), tnMyNameKeys());
 }
 
 // One tournament gets the strip: a live one first, then the nearest upcoming
@@ -1196,6 +1210,16 @@ function updateTournamentStripVisibility(hash) {
   const host = document.getElementById('tn-strip');
   if (!host) return;
   const onHome = hash === '#/' || hash === '#/home';
+
+  // The strip is built once at boot, before the router has resolved who is
+  // signed in — so rebuild it whenever the identity changes, or the member's
+  // own line and avatar would never appear. Guarded by tnStripFor, and the
+  // rebuild ends by calling back into here with the ids already equal.
+  if (onHome && !isKiosk && currentUser && tnStripFor !== currentUser.id) {
+    renderTournamentStrip(tnListCache ?? undefined);
+    return;
+  }
+
   const hide = isKiosk || !currentUser || !onHome || host.dataset.has !== '1';
   const wasHidden = host.classList.contains('hidden');
   host.classList.toggle('hidden', hide);
@@ -1217,6 +1241,8 @@ async function renderTournamentStrip(list) {
   if (list === undefined) {
     try { list = await store.loadTournaments(); } catch (_) { list = []; }
   }
+  tnListCache = list;
+  tnStripFor = currentUser?.id || null;
   let tn = tnFeatured(list);
   if (!tn && tnDemoAllowed()) tn = tnDemo();
   if (!tn) {
@@ -1233,20 +1259,32 @@ async function renderTournamentStrip(list) {
     ? tnShortDate(tn.startDate)
     : `${t('tnRoundShort')}${tn.currentRound || tn.rounds || 1}`;
 
-  const playerHTML = (e) => `
-    <span class="tn-p">
+  const playerHTML = (e) => {
+    const mine = tnIsMe(e);
+    return `
+    <span class="tn-p${mine ? ' tn-p-me' : ''}">
+      ${mine ? `<span class="tn-you">${t('tnYou')}</span>` : ''}
       <span class="tn-pos">${esc(e.posLabel)}</span>
-      <span class="tn-av">${avatarInner(e.avatar, tnInitial(e.name))}</span>
+      <span class="tn-av">${avatarInner(mine ? currentUser?.avatar : e.avatar, tnInitial(e.name))}</span>
       <span class="tn-pname">${esc(e.name || '')}</span>
       <span class="tn-cap">${t('tnTotal')}</span>
       <span class="tn-sc ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
       ${state === 'live' ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
     </span>`;
+  };
 
-  // With scores, the third row is the top players; without them (an upcoming
+  // A member playing in the tournament cares about their own line first, and
+  // it is the one thing scrolling could hide — so it leads, with the leaders
+  // right behind it. Members already inside the top are simply highlighted in
+  // place rather than shown twice.
+  const top = ranked.slice(0, TN_STRIP_PLAYERS);
+  const me = ranked.find(tnIsMe);
+  const shown = (me && !top.includes(me)) ? [me, ...top] : top;
+
+  // With scores, the third row is the players; without them (an upcoming
   // tournament, or one nobody has posted to yet) it carries the essentials.
   const body = ranked.length
-    ? `<div class="tn-players">${ranked.slice(0, TN_STRIP_PLAYERS).map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
+    ? `<div class="tn-players">${shown.map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
     : `<div class="tn-meta">
          <span class="tn-meta-txt">${esc(tn.venue || '')}${tn.startTime ? ` · ${esc(tn.startTime)}` : ''}</span>
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
@@ -1355,7 +1393,6 @@ async function renderRankingPage() {
 // ---- Tournament page (#/tournament/:id) ----
 let tnPageData = null;
 let tnPageTab = 'board';
-let tnPageFilter = 'all';
 let tnPageQuery = '';
 let tnPageLimit = TN_PAGE_SIZE;
 
@@ -1409,7 +1446,6 @@ async function renderTournamentPage(id) {
   }
 
   tnPageTab = 'board';
-  tnPageFilter = 'all';
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
   paintTournamentPage(await tnWithLiveEntries(tn));
@@ -1534,16 +1570,11 @@ function renderTnBoard() {
   }
 
   const me = ranked.find(tnIsMe);
-  const hasCircles = (currentUser?.communities || []).length > 0;
 
   host.innerHTML = `
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
-    </div>
-    <div class="tn-chips">
-      <button class="filter-tab ${tnPageFilter === 'all' ? 'active' : ''}" data-tn-filter="all">${t('tnAllPlayers')}</button>
-      ${hasCircles ? `<button class="filter-tab ${tnPageFilter === 'circle' ? 'active' : ''}" data-tn-filter="circle">${t('tnMyCircle')}</button>` : ''}
     </div>
     ${me ? `
       <div class="tn-me-banner">
@@ -1570,15 +1601,6 @@ function renderTnBoard() {
     tnPageLimit = TN_PAGE_SIZE;
     renderTnList();
   });
-  host.querySelectorAll('[data-tn-filter]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      tnPageFilter = btn.dataset.tnFilter;
-      tnPageLimit = TN_PAGE_SIZE;
-      host.querySelectorAll('[data-tn-filter]').forEach(b => b.classList.toggle('active', b === btn));
-      renderTnList();
-    });
-  });
-
   renderTnList();
 }
 
@@ -1588,13 +1610,10 @@ function renderTnList() {
   if (!host || !tn) return;
 
   const ranked = tnRanked(tn);
-  const myCircles = (currentUser?.communities || []).map(c => String(c).toLowerCase());
   const q = tnPageQuery.trim().toLowerCase();
-  const shown = ranked.filter(e => {
-    if (tnPageFilter === 'circle' && !myCircles.includes(String(e.club || '').toLowerCase())) return false;
-    if (q && !String(e.name || '').toLowerCase().includes(q)) return false;
-    return true;
-  });
+  const shown = q
+    ? ranked.filter(e => String(e.name || '').toLowerCase().includes(q))
+    : ranked;
 
   const count = document.getElementById('tn-count');
   if (count) count.textContent = String(shown.length);
@@ -1611,7 +1630,6 @@ function renderTnList() {
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
-    const sub = [e.club, mine ? t('tnYou') : ''].filter(Boolean).join(' · ');
     const rd = Array.isArray(e.rounds) ? e.rounds[rdIndex] : e.total;
     return `
       <div class="tn-lb-row${mine ? ' tn-me' : ''}">
@@ -1621,7 +1639,7 @@ function renderTnList() {
         </span>
         <span class="tn-c-name">
           <span class="tn-n">${esc(e.name || '')}</span>
-          ${sub ? `<span class="tn-club">${esc(sub)}</span>` : ''}
+          ${mine ? `<span class="tn-sub">${t('tnYou')}</span>` : ''}
         </span>
         <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
@@ -6965,12 +6983,11 @@ function tnAnalysisHTML(a) {
   if (!a) return '';
   const cols = a.columns || {};
   const found = [
-    cols.name && t('tnPlayer'), cols.club && t('tnColClub'), cols.toPar && t('tnTotal'),
+    cols.name && t('tnPlayer'), cols.toPar && t('tnTotal'),
     cols.gross && t('tnColGross'), cols.thru && t('tnThru'), cols.position && t('tnPos'),
     cols.status && t('tnColStatus')
   ].filter(Boolean).join(', ');
   const warn = {
-    'no-club-column': t('tnWarnNoClub'),
     'no-to-par-column': t('tnWarnNoToPar'),
     'no-player-column': t('tnWarnNoPlayer'),
     'no-rows': t('tnWarnNoRows'),
