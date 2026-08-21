@@ -12,6 +12,16 @@ player was dropped. Measured on six players cutting to three, with one marked
 `CUT` in the sheet: two made it instead of three. Anyone the sheet has already
 taken out now frees their place, exactly as a withdrawal does.
 
+The guidance also lost its helper columns. The scorers ran the three formulas
+against their own workbook and did not want the extra columns, which was fair —
+they were never needed. The doc now leads with the true answer, that nothing has
+to be added to the sheet at all because the app derives the cut itself, and
+offers a single-cell alternative for anyone who wants the printed PDF to say CUT
+too: a wrapper around their existing `Position` formula, no new columns, the
+rank folded into one `SUMPRODUCT`. Simulated against the real 76-player field it
+cuts exactly the same 17 players the app does, and marking the leader `WD` drops
+that to 16 with the 51st promoted.
+
 `docs/tournament-cut.md` writes the whole thing down for the scorers: what has to
 be typed (WD and DQ, always — no formula can tell "withdrew" from "not entered
 yet") and what never does (CUT), the app's two settings, and the three
