@@ -1,5 +1,44 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (the cut, and what WD/DQ do to it)
+
+A four-day tournament cuts the field after Day 2, and the board had no notion of
+it. That was about to break the standings outright: a player cut on two rounds
+keeps a two-round total, so the moment Day 3 scores landed a missed-cut +58 would
+have sorted above a +75 who actually played.
+
+Three tiers now, not two. Players with a standing rank as before; **CUT** keeps
+the total and the round scores it was cut on but holds no position; **WD/DQ**
+keep nothing. Each sorts below the one before it, and positions are numbered over
+the players still in the tournament only — so a cut player who happens to share a
+total can no longer turn somebody's position into a tie.
+
+The cut is derived, never stored: `cutSet()` ranks the field on the rounds before
+the cut, skips anyone withdrawn or disqualified, and drops everyone past the cut
+size except those level with the last player inside it ("top 50 and ties").
+Because the retired are skipped every time it runs, a player who makes the cut
+and then withdraws frees their place and the next player is pulled in on the
+spot — the organisers' promotion rule, with no history to keep. The cut only
+bites once the following round is under way, so the day's own standings still
+show the whole field, with a marked line where the cut currently falls.
+
+Two admin fields drive it, both optional: the round the cut follows, and how many
+advance. Blank means no cut.
+
+The ranking moved to `tournament-sheet.js` (`activeRound`, `cutSet`,
+`rankEntries`) so it is pure and can be checked without a browser; `app.js` keeps
+the movement arrows, which need the rendered list.
+
+Sheets also carry the status in the day the player stopped — "Day 2: WD" — as
+often as in a Status column, and only the column was read. Either now works.
+
+Checked against the organisers' hand-made Day-2 result sheet, 76 players: the
+standings reproduce it exactly, ties and all nine WD/DQ rows included, with
+nobody cut while Day 3 is empty. With Day 3 opened for the qualifiers, the 17
+players from 51 down read CUT, sort below every ranked player and keep their
+totals; a player level with 50th survives; and marking a qualifier WD — or DQ —
+promotes the player who was 51st.
+
 ## 2026-08-21 (the round chips ride on the player's own line)
 
 The R1..R4 chips sat on a second line under the name, which doubled the row

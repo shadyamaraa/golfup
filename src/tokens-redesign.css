@@ -986,6 +986,16 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   display: inline-flex; align-items: center; border-radius: 6px; padding: 2px 6px;
   background: var(--gold); color: #0C3051; font-size: 0.6rem; font-weight: 800;
 }
+/* Where the cut currently falls, drawn only while it is still ahead. */
+.tn-cut-line {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px; background: var(--bg-card-hover);
+  border-top: 1px dashed var(--gold); border-bottom: 1px dashed var(--gold);
+}
+.tn-cut-line span {
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--gold-dark);
+}
 .tn-lb-row.tn-me { background: var(--accent-soft); }
 .tn-lb-row.tn-me .tn-c-pos { color: var(--gold-dark); }
 .tn-lb-row.tn-me .tn-sub { color: var(--gold-dark); font-weight: 700; }

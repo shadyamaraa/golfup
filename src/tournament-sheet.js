@@ -85,6 +85,18 @@ export function isRetired(status) {
   return RETIRED.test(String(status || '').trim());
 }
 
+// Missing the cut is a different kind of exclusion: no position, but the
+// strokes played before the cut still stand, so it is deliberately not part of
+// RETIRED. The app derives it, but a scorer may also write it in the sheet.
+export function isCut(status) {
+  return /^cut$/i.test(String(status || '').trim());
+}
+
+// Holds no standing either way — what the leaderboard sorts on.
+export function noStanding(status) {
+  return isRetired(status) || isCut(status);
+}
+
 export function parseIntOrNull(v) {
   const s = String(v ?? '').trim();
   if (!s) return null;
@@ -267,7 +279,18 @@ export function analyzeSheet(rows, { par } = {}) {
     // since "Б. Ганбат" is a perfectly ordinary name.
     if (name.length > 60 || NOTE_PREFIX.test(name)) continue;
 
-    const status = cols.status >= 0 ? (row[cols.status] || '').trim().toUpperCase() : '';
+    let status = cols.status >= 0 ? (row[cols.status] || '').trim().toUpperCase() : '';
+    // Scorers usually write the withdrawal in the day the player stopped —
+    // "Day 2: WD" — rather than in a separate Status column, and a sheet may
+    // not carry that column at all. Both spellings mean the same thing.
+    if (!status) {
+      for (let n = 1; n <= rounds && !status; n++) {
+        for (const ci of [cols.roundGross.get(n), cols.roundToPar.get(n)]) {
+          const cell = ci >= 0 ? (row[ci] || '').trim() : '';
+          if (cell && (RETIRED.test(cell) || isCut(cell))) { status = cell.toUpperCase(); break; }
+        }
+      }
+    }
     const retired = RETIRED.test(status);
     const perRound = [];
     let thruPlayed = 0, thruHoles = 0;
@@ -399,6 +422,98 @@ export async function fetchSheet(url, { sheet, par, signal } = {}) {
 // A scoring sheet writes "Given Surname" while the app stores "Surname Given",
 // so comparing strings never matches — the sorted token set does. Names go
 // through the same normalization on both sides (case, dots, hyphens, accents).
+// ---- Standings ----
+// Pure, so the ranking the leaderboard shows can be checked against a
+// hand-made result sheet without a browser.
+
+// The round actually being played: the highest one anybody has posted a score
+// in. `fallback` (the tournament's currentRound) only covers a field that has
+// not teed off yet.
+export function activeRound(entries, fallback) {
+  let played = 0;
+  (Array.isArray(entries) ? entries : []).forEach(e =>
+    (e?.rounds || []).forEach((v, i) => {
+      if (v !== null && v !== undefined && v !== '') played = Math.max(played, i + 1);
+    }));
+  return played || Number(fallback) || 1;
+}
+
+// Cumulative to-par over the first `upto` rounds, or null if the player has
+// posted nothing in them.
+export function totalThrough(entry, upto) {
+  const parts = (entry?.rounds || []).slice(0, upto)
+    .filter(v => v !== null && v !== undefined && v !== '')
+    .map(Number).filter(v => !isNaN(v));
+  return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+}
+
+// Who missed the cut, as a set of the entry objects passed in. Nothing is
+// stored: the cut is re-derived every time, so a player who made it and then
+// withdraws frees their place and the next one is pulled in on the spot —
+// which is exactly the rule the organisers apply by hand.
+export function cutSet(entries, { cutAfterRound, cutSize } = {}) {
+  const out = new Set();
+  const after = Number(cutAfterRound) || 0;
+  const size = Number(cutSize) || 0;
+  const list = Array.isArray(entries) ? entries : [];
+  if (!after || !size) return out;
+  // The cut only bites once the next round is under way. Until then the board
+  // shows the whole field, which is what that day's standings should look like.
+  if (activeRound(list) <= after) return out;
+
+  const scored = [];
+  list.forEach(e => {
+    if (isRetired(e?.status)) return;
+    const v = totalThrough(e, after);
+    if (v !== null) scored.push({ e, v });
+  });
+  if (scored.length <= size) return out;
+  scored.sort((a, b) => a.v - b.v);
+  // "Top N and ties": everyone level with the player holding the last place
+  // stays, so two players on the same score are never split by the cut.
+  const edge = scored[size - 1].v;
+  scored.forEach((x, i) => { if (i >= size && x.v > edge) out.add(x.e); });
+  return out;
+}
+
+// Sort by total (lower is better) and label tie-aware positions: T1, T1, 3.
+// Three tiers, in this order: players with a standing, then those who missed
+// the cut — they keep the total they were cut on — then withdrawals and
+// disqualifications, which keep nothing. Anyone without a standing shows their
+// status where a position would be.
+export function rankEntries(entries, { cutAfterRound, cutSize } = {}) {
+  const cut = cutSet(entries, { cutAfterRound, cutSize });
+  const list = (Array.isArray(entries) ? entries : [])
+    .map(e => (cut.has(e) ? { ...e, status: 'CUT' } : e));
+  const score = (e) => {
+    const n = Number(e?.total);
+    return (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) ? Infinity : n;
+  };
+  const out = (e) => (noStanding(e?.status) ? 1 : 0);
+  list.sort((a, b) => out(a) - out(b)
+    || score(a) - score(b)
+    || String(a?.name || '').localeCompare(String(b?.name || '')));
+
+  // Positions are numbered over the players still in the tournament only, so a
+  // cut player who happens to share a total with one of them cannot turn that
+  // player's position into a tie.
+  const inPlay = list.filter(e => !out(e) && score(e) !== Infinity);
+  const counts = new Map();
+  inPlay.forEach(e => { const s = score(e); counts.set(s, (counts.get(s) || 0) + 1); });
+  const rankOf = new Map();
+  let pos = 0;
+  inPlay.forEach((e, i) => {
+    if (i === 0 || score(inPlay[i - 1]) !== score(e)) pos = i + 1;
+    rankOf.set(e, pos);
+  });
+
+  return list.map(e => {
+    const p = rankOf.get(e);
+    if (p) return { ...e, rank: p, posLabel: `${counts.get(score(e)) > 1 ? 'T' : ''}${p}` };
+    return { ...e, rank: Infinity, posLabel: noStanding(e.status) ? String(e.status).toUpperCase() : '–' };
+  });
+}
+
 export function nameKey(name) {
   const tokens = String(name || '')
     .toLowerCase()
