@@ -12,11 +12,15 @@
 // ---- URL handling ----
 
 // Pull the file id (and the tab's gid, when the URL carries one) out of any
-// Google Sheets link the admin might paste.
+// Google link the admin might paste. A sheet opened from Drive gives a
+// /file/d/<id>/view URL rather than a /spreadsheets/ one, and the id in it
+// works against the same endpoints — so both shapes are accepted.
 export function parseSheetUrl(url) {
   const s = String(url || '').trim();
   if (!s) return null;
   const id = s.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9-_]{20,})/)?.[1]
+    || s.match(/\/file\/d\/([a-zA-Z0-9-_]{20,})/)?.[1]
+    || s.match(/[?&]id=([a-zA-Z0-9-_]{20,})/)?.[1]
     // A bare id pasted on its own.
     || (/^[a-zA-Z0-9-_]{20,}$/.test(s) ? s : null);
   if (!id) return null;
@@ -105,6 +109,15 @@ function classify(header) {
   const h = norm(header);
   if (!h) return { kind: 'none' };
   if (hasWord(h, 'sortkey', 'rankbase', 'sort key', 'rank base')) return { kind: 'ignore' };
+
+  // gviz merges a spreadsheet's title row into the first column's label, so
+  // that cell is a sentence rather than a column name — and a sentence like
+  // "Enter Day 2–4 strokes only in yellow cells Player" would otherwise be
+  // read as a round-2 column, costing us the player column entirely. A long
+  // cell that names the player column IS the player column.
+  if (h.length > 40 && hasWord(h, 'player', 'name', 'нэр', 'тоглогч', 'оролцогч')) {
+    return { kind: 'name' };
+  }
 
   const roundNo = matchNum(h, 'd|r|day|round|тойрог');
   const holeNo = matchNum(h, 'h|hole|нүх');

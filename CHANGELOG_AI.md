@@ -1,5 +1,31 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (read a 4-day scoring tab; accept a Drive link)
+
+Two blockers found on the new MNAOC workbook, both in the parser.
+
+**A merged title cost us the player column.** gviz folds a spreadsheet's title
+row into the first column's label, so that cell is a sentence, not a column
+name. The 4-day sheet's title reads *"Enter Day 2–4 strokes only in yellow
+cells"* — `classify()` matched "Day 2" in it and filed the **player** column as
+a round-2 score column, leaving no name column at all (`no-player-column`, zero
+entries). A long cell that names the player column is now taken as the player
+column before the round/hole patterns are tried. The old workbook's title had
+no "Day N" in it, which is why this only surfaced now.
+
+**A sheet opened from Drive gives a `/file/d/<id>/view` URL**, not a
+`/spreadsheets/` one, and `parseSheetUrl()` returned null for it — the second
+tournament could not sync at all. `/file/d/<id>`, `?id=<id>` and a bare id are
+all accepted now; the id works against the same endpoints either way.
+
+Verified against the live file: `Scoring 4 Days` reads 76 players over **4
+rounds** with every round's gross, to-par and hole columns mapped; the original
+workbook still reads 2 rounds with Day 2 in progress; wrong-tab recovery, the
+Mongolian-header cases and the 50/76 member matching all unchanged.
+
+Note for operators: the tab auto-probe tries `Scoring` before `Scoring 4 Days`,
+so a 4-day tournament must name its tab explicitly in the admin form.
+
 ## 2026-08-21 (fix: an uploaded file was ignored; show which column fed which field)
 
 ### Uploading an Excel file appeared to do nothing
