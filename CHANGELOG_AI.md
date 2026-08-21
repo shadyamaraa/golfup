@@ -1,5 +1,140 @@
 # CHANGELOG_AI.md
 
+## 2026-08-21 (fix: silent failures in the tournament admin, wrong-tab recovery)
+
+Creating a tournament appeared to do nothing. Two causes, both fixed here; the
+third is operational and is on the deploy side.
+
+- **Failures were silent.** `/tournaments` writes are rejected because that
+  rule sits in `database.rules.json` but was never deployed, and the rejected
+  promise was not caught — which looks exactly like a dead button. Create,
+  save, delete, sync and Excel import now route errors through
+  `tnAdminError()`: a permission denial names the missing rules deploy and the
+  command that fixes it, anything else shows its own message.
+- **A denied READ read as "no tournaments yet."** The admin tab now shows a
+  red banner with the same explanation instead of an empty-state.
+- **A wrong tab name is no longer fatal.** `fetchSheet` used to give up when an
+  explicitly named tab failed; it now tries that name first and falls back to
+  the full probe. The tab that actually answered is written back, so a typo
+  ("MTBogd" in the tab field) corrects itself on the first sync.
+
+Still required to make this work against real data — nothing in the app can do
+it, it needs the project owner's credentials:
+
+```bash
+firebase deploy --only database
+```
+
+Verified: `/tournaments.json` currently answers `Permission denied` while
+`/news.json` and `/ranking.json` answer normally, which is the root rule having
+expired (2026-06-03) and leaving un-ruled paths closed.
+
+## 2026-08-21 (tournaments managed in-app: Google Sheet source, Excel import, movement arrows)
+
+### The tournament is created and fed from the admin panel, not from the code
+
+- **Admin → Тэмцээн** (new tab): create a tournament (name, venue, city, dates,
+  rounds, current round, course par, format, status), edit it inline, delete
+  it, and feed its leaderboard one of two ways —
+  - **Google Sheet link** + optional tab name, with a **Sync** button, or
+  - **Excel/CSV upload** (.xlsx/.xls/.csv), reusing the lazily-imported SheetJS
+    chunk the ranking upload already pulls in.
+  Status left blank means "derive from the dates".
+- **What the importer understood is shown before it ships**: after a sync or an
+  upload the row reports how many players and rounds were read, which columns
+  were recognized (player, club, to-par, strokes, thru, position, status), and
+  warns about what was missing — a sheet with no club column says so, because
+  the "my circles" filter silently depends on it.
+
+### Reading the sheet (option A: the sheet stays the source of truth)
+
+New `src/tournament-sheet.js` — no DOM, no Firebase, unit-testable:
+
+- Accepts any Sheets URL (or a bare id) and reads the **gviz CSV** endpoint,
+  which Google serves with permissive CORS while the document is link-shared.
+  Deliberately sent without a `headers` parameter: gviz's own header detection
+  merges a title row into the column labels, which is what makes a column like
+  "Day 1" resolvable at all.
+- **Probes tabs**: the link a scorer has open usually points at a setup tab, so
+  the URL's gid is tried first, then Scoring / Leaderboard / Live / Results /
+  Хүснэгт / Оноо / Дүн, then the default sheet.
+- **Column detection works in Cyrillic.** `\b` is defined over ASCII word
+  characters and never fires next to a Cyrillic letter, so the matchers use
+  Unicode letter/number boundaries — "Тойрог 1" resolves as round 1, a bare
+  "Тойрог" as a circle.
+- **Gross vs to-par is decided from the values, not the header**, per column and
+  by median: an 18-hole gross sits far above anything to-par reaches. A round
+  column holding 74 is strokes; one holding −2 is to-par.
+- **Withdrawals hold no position**: WD/DQ/DNS/DNF/NC/RTD keep their strokes but
+  their to-par is nulled, so a blanked cell can't be back-derived into a
+  standing the scorer deliberately removed. They sort last and show the status
+  where a position would be.
+- Live reads are cached ~45s so the strip and the leaderboard share one
+  request, refresh every 60s while a tournament is live, and fall back to the
+  stored snapshot on any failure (sharing revoked, offline, Google down).
+
+### Movement arrows
+
+▲/▼ in the leaderboard, same vocabulary as the ranking page. **No stored
+history**: each entry carries a per-round score, so ranking the field on the
+rounds completed *before* the current one gives the "before" position. Arrows
+appear by themselves once round two starts landing and reset when a new round
+opens.
+
+### Verified / not verified
+
+Parser checked against the real MNAOC 2026 workbook (76 players, 2 rounds, 3
+WD, top of the board and every column mapping); arrows, WD handling and the
+admin tab checked in a browser against the built app. **The browser-side fetch
+to Google could not be exercised here** — the build sandbox has no route to
+docs.google.com at all — so the CORS headers were confirmed with curl instead.
+The preview channel is where that last hop gets proven.
+
+## 2026-08-21 (tournament strip on home + leaderboard page)
+
+### A live tournament reads from the top of home, one tap from the full board
+
+Two levels, modelled on how the tour apps do it but built from the existing
+vocabulary — no new tokens, no new dependency.
+
+- **Home strip** (`#tn-strip` in index.html, rendered by
+  `renderTournamentStrip()`): a ~100px band on the card surface, full-bleed,
+  **sticky directly under the header** — round chip + state (a pulsing dot
+  while live), the tournament name, then the **top 5** players in a
+  horizontally scrolling row (`T1 · avatar · name · НИЙТ −6 · ЯВЦ F`) with a
+  fade at the right edge. Home route only; hidden in kiosk, when signed out,
+  and when no tournament qualifies. Its sticky offset (`--tn-top`) is measured
+  from the header rather than hard-coded, and re-measured on resize.
+- **Leaderboard page** (`#/tournament/:id`): hero card (crest, state, name,
+  venue, dates/format/rounds), Хүснэгт / Мэдээлэл tabs, player search, an
+  "all players / my circles" filter, an own-position banner, and the full
+  table — POS · player (+ club) · TOT · THRU · round — paged 20 at a time.
+  Live-updates over `onTournamentChanged`, repainting the list alone while a
+  search is in progress so the caret is never stolen.
+- **Which tournament gets the strip**: live first, else the nearest upcoming
+  within 14 days, else one that finished in the last 3 days (`tnFeatured()`).
+  Status is an explicit field when set, otherwise derived from the dates.
+- **Score colours follow golf reading, not app semantics**: under par is
+  `--red`, level is muted, over par is ink. Positions are tie-aware (T1, T1, 3).
+- Instead of a country flag the strip and table carry the player's **club /
+  circle**, which is what this app actually knows about people.
+- `src/store.js`: `loadTournaments`, `loadTournament`, `saveTournament`,
+  `deleteTournament`, `onTournamentsChanged`, `onTournamentChanged` over
+  RTDB `/tournaments/{id}`. Entries are denormalized onto the record (same
+  shape `ranking` uses), so strip and page each need one read.
+- `database.rules.json`: `tournaments` read/write, matching the sibling
+  collections. **Not deployed** — run `firebase deploy --only database` before
+  real tournament data can be read.
+- **Demo data**: `TN_DEMO` renders only on localhost and Firebase preview
+  channels (`tnDemoAllowed()` — preview hosts carry a `--` segment), so the UI
+  can be reviewed before any record exists. It never renders on
+  ubgolf.club or golfup-app.web.app, where no data simply means no strip.
+- i18n keys in MN/EN/KR; component CSS in tokens-redesign.css (dark theme
+  follows the tokens).
+
+Not built yet, deliberately: admin CRUD for tournaments and score entry, tee
+times / flights tabs, favouriting a player. The page reads; nothing writes.
+
 ## 2026-08-17 (weather forecast on home + game detail)
 
 ### Show course weather with zero friction for players
