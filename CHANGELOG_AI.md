@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-08-22 (a clobbered header no longer costs the whole sheet)
+
+Day 3 would not appear from the new workbook. Two separate faults, one of them
+ours.
+
+The `Scoring 4 Days` tab has every day in it — 76 players, Day 1 complete, Day 2
+71, Day 3 47, and the organisers' own WD/DQ/CUT columns filled in — but its
+player-column header cell had been overwritten with an assistant's refusal
+message ("I cannot create a canvas dashboard…"). `classify()` could not see a
+player column, so `analyzeSheet()` returned nothing at all and the tab looked
+empty. A scoring sheet is worked on by many hands and that cell will be clobbered
+again, so the parser now recovers: when the header names no player column but the
+rest of the row still reads like a scoring header, it takes the first column that
+holds names — mostly text, no numbers, at least five of them. Measured on the
+live tab: 0 entries before, 76 players over 4 rounds after. Sheets that genuinely
+have no players — the course data and the instructions tabs — still report
+`no-player-column`, so the recovery cannot invent a leaderboard out of a note.
+
+The other fault is in the record, not the code: the saved link points at
+`gid=162790001`, which is the "Live Scoring Setup" tab. With no players there the
+app falls back to probing tab names and finds `Scoring` — the old **one-day**
+tab — which is exactly the Day-1-only board that was reported. The 4-day tab is
+`gid=1348093971`.
+
+Also worth the organisers knowing: Solongobat Otgonbaatar carries `Day 4 = 16`,
+which is not a golf round. It reads as 41 under par, puts him first, and makes
+the whole board believe round four is under way.
+
 ## 2026-08-21 (a CUT written in the sheet frees its place)
 
 The organisers asked whether the app's cut updates their sheet. It does not —

@@ -213,11 +213,35 @@ function roundLabels(header, map) {
 
 // A spreadsheet built for broadcast graphics rarely starts with its header on
 // row 1, so try the first few rows and keep the one that resolves the most.
+// A column of names: mostly non-empty text, and not numbers. Used to recover a
+// player column whose header cell has been overwritten — a scoring sheet is
+// worked on by many hands and that cell does get clobbered.
+function looksLikeNames(rows, from, col) {
+  let text = 0, numeric = 0, seen = 0;
+  for (let r = from; r < rows.length && seen < 20; r++) {
+    const v = String(rows[r]?.[col] ?? '').trim();
+    if (!v) continue;
+    seen++;
+    if (/^[+-]?[\d.]+$/.test(v)) numeric++; else text++;
+  }
+  return seen >= 5 && text >= seen * 0.8 && numeric === 0;
+}
+
 function findHeader(rows) {
   let best = null;
   for (let i = 0; i < Math.min(5, rows.length); i++) {
     const cols = mapColumns(rows[i]);
-    if (cols.name < 0) continue;
+    // The header cell over the players can be anything — a title merged in by
+    // gviz, or a note somebody pasted over it. If the rest of the row still
+    // reads like a scoring header, take the first column of names instead of
+    // discarding the whole sheet.
+    if (cols.name < 0) {
+      const scored = cols.roundGross.size + cols.roundToPar.size + cols.holes.size;
+      if (scored < 1) continue;
+      const guess = [0, 1].find(c => cols.gross !== c && cols.toPar !== c && looksLikeNames(rows, i + 1, c));
+      if (guess === undefined) continue;
+      cols.name = guess;
+    }
     const score = [cols.toPar, cols.gross, cols.thru, cols.position, cols.status]
       .filter(v => v >= 0).length + cols.roundGross.size + cols.roundToPar.size + cols.holes.size;
     if (!best || score > best.score) best = { index: i, cols, score };
