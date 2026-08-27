@@ -1,5 +1,36 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup phase 2 — pushes when matches finish, player stats, the archive)
+
+**Pushes.** A member taps "Мэдэгдэл авах" on the Match Center (subscription
+in `tnSubs/{tnId}/{userId}`, open like the rest of the member data). A new
+Cloud Function, `mcupMatchFinished`, watches hole writes, re-settles the
+match server-side (a compact copy of settleMatch — the client bundle cannot
+be imported into functions, so the comment marks the twin), and writes one
+record per subscriber into the existing `/notifications` pipeline, whose
+sender gained an `mcup` branch: ready-made title/body, link to the
+tournament. The title carries the result ("Match №7 — ALTAI 4 & 3"); when
+that was the last undecided match, the body carries the tournament's final
+score instead of burying it. What was last announced is recorded in
+`mp/notified/{matchId}` — a correction that CHANGES a final result announces
+again, a same-result recompletion stays silent. The bell list renders `mcup`
+entries with their own text and a tournament link, grouped per tournament so
+24 finishes don't stack 24 rows. Needs `firebase deploy --only
+functions,database` once.
+
+**Player statistics (spec §25).** `playerStats()` and `pairStats()` in the
+engine — completed matches only, each player carrying their side's match
+points — with three regression tests, including slot order not splitting a
+pair. The Match Center shows them in a collapsed panel (score and matches
+stay the headline per §22): per team Played / W-L-H / Pts sorted by points,
+pair records under. A live repaint no longer snaps the panel shut if the
+viewer had it open.
+
+**The archive.** Below the board, finished match play tournaments list with
+their derived final scores, newest first, each linking to its own Match
+Center. `tournamentComplete()` (never vacuously true on an empty setup) is
+the gate, so the archive grows by itself as tournaments finish.
+
 ## 2026-08-27 (M Cup match play — the scoreboard stops taking writes from strangers)
 
 Until now the database accepted a tournament write from anyone who could

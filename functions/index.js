@@ -342,6 +342,31 @@ exports.sendPushOnNotification = functions.database
 
     if (!user || user.notifyWeb === false || !user.fcmToken) return null;
 
+    // M Cup results carry their own ready-made text and link to a
+    // tournament rather than a game.
+    if (notif.type === 'mcup') {
+      await admin.messaging().send({
+        token: user.fcmToken,
+        data: {
+          title: notif.title || 'M Cup',
+          body: notif.body || '',
+          gameId: ''
+        },
+        webpush: {
+          notification: {
+            title: notif.title || 'M Cup',
+            body: notif.body || '',
+            icon: `${APP_URL}/icon.svg`
+          },
+          fcm_options: {
+            link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : APP_URL
+          }
+        }
+      });
+      console.log(`FCM mcup push sent to user ${userId} for notif ${notifId}`);
+      return null;
+    }
+
     const line1 = notif.type === 'invite'
       ? `${notif.from} таныг тоглолтод урьлаа!`
       : notif.type === 'player_joined'
@@ -375,5 +400,104 @@ exports.sendPushOnNotification = functions.database
     });
 
     console.log(`FCM push sent to user ${userId} for notif ${notifId}`);
+    return null;
+  });
+
+// ---- M Cup: push when a match finishes ----
+// Fires on every hole write of a match play tournament. The match play
+// arithmetic is a compact copy of src/matchplay.js settleMatch() — the
+// client bundle cannot be imported here, so the rules live twice; keep them
+// in step. Duplicate sends are prevented by recording the result that was
+// last announced under mp/notified/{matchId} (admin SDK, so the device
+// allowlist rules do not apply): a correction that CHANGES a final result
+// announces again, a same-result recompletion does not.
+
+function mpSettle(holes, totalHoles) {
+  const total = Number(totalHoles) || 18;
+  const wins = { a: 0, b: 0 };
+  let thru = 0;
+  for (let hole = 1; hole <= total; hole++) {
+    const v = holes && holes[hole];
+    if (v !== 'a' && v !== 'b' && v !== 'h') break;
+    if (v !== 'h') wins[v]++;
+    thru = hole;
+    if (Math.abs(wins.a - wins.b) > total - hole) break;
+  }
+  const margin = Math.abs(wins.a - wins.b);
+  const leader = margin === 0 ? null : (wins.a > wins.b ? 'a' : 'b');
+  const remaining = total - thru;
+  const closedOut = remaining > 0 && margin > remaining;
+  const finished = closedOut || thru === total;
+  return {
+    finished,
+    winner: finished && leader ? leader : null,
+    result: !finished ? null : !leader ? 'HALVED' : closedOut ? `${margin} & ${remaining}` : `${margin} UP`
+  };
+}
+
+const mpPts = (n) => (n % 1 ? n.toFixed(1) : String(n));
+
+exports.mcupMatchFinished = functions.database
+  .ref('/tournaments/{tnId}/mp/matches/{matchId}/holes')
+  .onWrite(async (change, context) => {
+    const { tnId, matchId } = context.params;
+    const db = admin.database();
+
+    const [tnSnap, subsSnap] = await Promise.all([
+      db.ref(`tournaments/${tnId}`).once('value'),
+      db.ref(`tnSubs/${tnId}`).once('value')
+    ]);
+    const tn = tnSnap.val();
+    const mp = tn && tn.mp;
+    const match = mp && mp.matches && mp.matches[matchId];
+    if (!tn || !match) return null;
+
+    const settled = mpSettle(change.after.val(), match.totalHoles);
+    if (!settled.finished) return null;
+
+    const notifiedRef = db.ref(`tournaments/${tnId}/mp/notified/${matchId}`);
+    if ((await notifiedRef.once('value')).val() === settled.result) return null;
+    await notifiedRef.set(settled.result);
+
+    const subs = subsSnap.val() || {};
+    const userIds = Object.keys(subs);
+    if (!userIds.length) return null;
+
+    const short = (k) => (mp.teams && mp.teams[k] && (mp.teams[k].short || mp.teams[k].name))
+      || (k === 'a' ? 'A' : 'B');
+    const names = (k) => ((match.players && match.players[k]) || [])
+      .map((pid) => mp.roster && mp.roster[pid] && mp.roster[pid].name)
+      .filter(Boolean).join(' / ');
+
+    const title = settled.winner
+      ? `${tn.name || 'M Cup'}: Match №${match.number || '?'} — ${short(settled.winner)} ${settled.result}`
+      : `${tn.name || 'M Cup'}: Match №${match.number || '?'} — Тэнцэв`;
+    let body = [names('a'), names('b')].filter(Boolean).join(' vs ');
+
+    // When that was the last undecided match, lead with the tournament's
+    // final score instead of burying it.
+    const all = Object.values(mp.matches).filter(Boolean);
+    const settledAll = all.map((m) => mpSettle(m.holes, m.totalHoles));
+    if (settledAll.every((s) => s.finished)) {
+      const total = { a: 0, b: 0 };
+      settledAll.forEach((s) => {
+        if (!s.winner) { total.a += 0.5; total.b += 0.5; }
+        else total[s.winner] += 1;
+      });
+      body = `Эцсийн дүн: ${short('a')} ${mpPts(total.a)} — ${mpPts(total.b)} ${short('b')}`;
+    }
+
+    const now = Date.now();
+    await Promise.all(userIds.map((uid) =>
+      db.ref(`notifications/${uid}`).push({
+        type: 'mcup',
+        title,
+        body,
+        tnId,
+        gameId: `tn:${tnId}`,
+        createdAt: now
+      })));
+
+    console.log(`mcup: notified ${userIds.length} subscribers of ${tnId}/${matchId} (${settled.result})`);
     return null;
   });

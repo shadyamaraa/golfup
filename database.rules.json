@@ -19,6 +19,7 @@
       ".read": true,
       ".write": "auth != null && (!root.child('mpDevices').exists() || root.child('mpDevices').child(auth.uid).child('role').val() === 'admin')"
     },
+    "tnSubs": { ".read": true, ".write": true },
     "mpDeviceRequests": {
       ".read": true,
       "$uid": {

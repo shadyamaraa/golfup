@@ -305,3 +305,60 @@ export function participation(roster, matches) {
   });
   return out;
 }
+
+// ---- Player statistics (spec §25) ----
+
+// Per-player record over COMPLETED matches only: played, W/L/H, and points —
+// each player carries their side's match points (1 / ½ / 0), which is how
+// Ryder Cup individual tallies are read. Live and upcoming matches count for
+// nothing yet, so the table can render mid-tournament without lying.
+export function playerStats(mp) {
+  const out = {};
+  const row = (pid) => (out[pid] = out[pid] || { played: 0, w: 0, l: 0, h: 0, points: 0 });
+  matchList(mp?.matches).forEach(m => {
+    if (matchState(m) !== 'COMPLETED') return;
+    const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+    const points = matchPoints(m);
+    TEAM_KEYS.forEach(teamId => {
+      (m.players?.[teamId] || []).filter(Boolean).forEach(pid => {
+        const r = row(pid);
+        r.played++;
+        r.points += points[teamId];
+        if (!settled.winner) r.h++;
+        else if (settled.winner === teamId) r.w++;
+        else r.l++;
+      });
+    });
+  });
+  return out;
+}
+
+// Pair records (spec §25): how each two-player side has fared together, keyed
+// by the sorted pair of player ids joined with '+'. Singles contribute
+// nothing here.
+export function pairStats(mp) {
+  const out = {};
+  matchList(mp?.matches).forEach(m => {
+    if (matchState(m) !== 'COMPLETED') return;
+    const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+    TEAM_KEYS.forEach(teamId => {
+      const ids = (m.players?.[teamId] || []).filter(Boolean);
+      if (ids.length !== 2) return;
+      const key = [...ids].sort().join('+');
+      const r = (out[key] = out[key] || { teamId, players: [...ids].sort(), played: 0, w: 0, l: 0, h: 0 });
+      r.played++;
+      if (!settled.winner) r.h++;
+      else if (settled.winner === teamId) r.w++;
+      else r.l++;
+    });
+  });
+  return out;
+}
+
+// True once every match in the tournament is decided — what "the M Cup is
+// over" means; there is at least one match, or an empty setup would read as
+// finished.
+export function tournamentComplete(mp) {
+  const list = matchList(mp?.matches);
+  return list.length > 0 && list.every(m => matchState(m) === 'COMPLETED');
+}

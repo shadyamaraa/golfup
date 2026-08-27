@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
-  lineupIssues, participation, HALVED, UNGROUPED
+  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -255,4 +255,45 @@ test('a match with no session still reaches the breakdown', () => {
   assert.deepEqual(totals[UNGROUPED], { a: 1, b: 0 });
   const sum = Object.values(totals).reduce((acc, v) => ({ a: acc.a + v.a, b: acc.b + v.b }), { a: 0, b: 0 });
   assert.deepEqual(sum, teamTotals([{ sessionId: 's1', holes: holes(...Array(10).fill('b')) }, stray]));
+});
+
+// ---- Phase 2: statistics ----
+
+test('spec §25: player stats count completed matches only', () => {
+  const mp = {
+    matches: {
+      m1: { id: 'm1', players: { a: ['p1', 'p2'], b: ['q1', 'q2'] }, holes: holes(...Array(10).fill('a')) },
+      m2: { id: 'm2', players: { a: ['p1'], b: ['q1'] }, holes: holes(...Array(18).fill(HALVED)) },
+      m3: { id: 'm3', players: { a: ['p2'], b: ['q2'] }, holes: holes('a') } // live
+    }
+  };
+  const s = playerStats(mp);
+  assert.deepEqual(s.p1, { played: 2, w: 1, l: 0, h: 1, points: 1.5 });
+  assert.deepEqual(s.p2, { played: 1, w: 1, l: 0, h: 0, points: 1 });
+  assert.deepEqual(s.q1, { played: 2, w: 0, l: 1, h: 1, points: 0.5 });
+  assert.deepEqual(s.q2, { played: 1, w: 0, l: 1, h: 0, points: 0 });
+});
+
+test('spec §25: pair records key the sorted pair, singles excluded', () => {
+  const mp = {
+    matches: {
+      m1: { id: 'm1', players: { a: ['p2', 'p1'], b: ['q1', 'q2'] }, holes: holes(...Array(10).fill('a')) },
+      m2: { id: 'm2', players: { a: ['p1', 'p2'], b: ['q1', 'q2'] }, holes: holes(...Array(18).fill(HALVED)) },
+      m3: { id: 'm3', players: { a: ['p1'], b: ['q1'] }, holes: holes(...Array(10).fill('a')) }
+    }
+  };
+  const s = pairStats(mp);
+  // Slot order must not split the pair: m1 fields p2,p1 and m2 fields p1,p2.
+  assert.deepEqual(s['p1+p2'], { teamId: 'a', players: ['p1', 'p2'], played: 2, w: 1, l: 0, h: 1 });
+  assert.deepEqual(s['q1+q2'], { teamId: 'b', players: ['q1', 'q2'], played: 2, w: 0, l: 1, h: 1 });
+  assert.equal(Object.keys(s).length, 2, 'the singles match forms no pair');
+});
+
+test('tournamentComplete: every match decided, and never vacuously', () => {
+  const done = { id: 'x', holes: holes(...Array(10).fill('a')) };
+  const live = { id: 'y', holes: holes('a') };
+  assert.equal(tournamentComplete({ matches: { m1: done } }), true);
+  assert.equal(tournamentComplete({ matches: { m1: done, m2: live } }), false);
+  assert.equal(tournamentComplete({ matches: {} }), false);
+  assert.equal(tournamentComplete(null), false);
 });
