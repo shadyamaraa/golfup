@@ -104,7 +104,7 @@ export const MP_DEMO = {
   city: 'Улаанбаатар',
   startDate: '2026-08-26',
   endDate: '2026-08-27',
-  format: 'match',
+  format: 'ryder',
   status: 'live',
   description: 'Altai Eagles vs Wellcom Diesels — багийн match play тэмцээн.',
   entries: [],

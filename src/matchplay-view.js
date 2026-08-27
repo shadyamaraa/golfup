@@ -14,7 +14,7 @@ import { t } from './i18n.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
-  playerStats, pairStats, tournamentComplete
+  playerStats, pairStats, tournamentComplete, tnKind
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -115,7 +115,22 @@ function scoreboardHTML(mp) {
 
 // ---- Match cards (spec §9) ----
 
-function cardHTML(mp, match, state) {
+// Does this member play in this match? Modern roster entries are keyed by
+// the member's userId; older ones carry it in the record.
+export function isPlayerInMatch(userId, match, roster) {
+  if (!userId || !match) return false;
+  return TEAM_KEYS.some(k => (match.players?.[k] || [])
+    .some(pid => pid === userId || roster?.[pid]?.userId === userId));
+}
+
+// What the leading side is called on a status line: the team's short name in
+// a team tournament, the player(s) themselves in plain match play.
+function sideLabel(mp, match, k, singles) {
+  if (!singles) return teamShort(mp, k);
+  return playerNames(mp, match, k) || (k === 'a' ? 'A' : 'B');
+}
+
+function cardHTML(mp, match, state, tnId, viewerId, singles) {
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
   const session = mp.sessions?.[match.sessionId] || {};
@@ -129,7 +144,7 @@ function cardHTML(mp, match, state) {
   const lead = state === 'UPCOMING'
     ? stateText
     : settled.leader
-      ? `${teamShort(mp, settled.leader)} ${statusText(settled)}`
+      ? `${sideLabel(mp, match, settled.leader, singles)} ${statusText(settled)}`
       : (settled.finished ? t('mpTied') : 'AS');
 
   // Tee time before the off, THRU once under way (spec §17).
@@ -165,12 +180,17 @@ function cardHTML(mp, match, state) {
         <b style="font-size:0.95rem;">${esc(lead)}</b>
         ${progress ? `<span style="font-size:0.76rem;color:var(--text-secondary);margin-left:auto;">${esc(progress)}</span>` : ''}
       </div>
-    </button>`;
+    </button>
+    ${isPlayerInMatch(viewerId, match, mp.roster) && state !== 'COMPLETED' ? `
+      <a href="#/score/${esc(tnId)}/${esc(match.id)}" class="btn btn-primary btn-sm"
+         style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
+        ⛳ ${t('mpEnterScore')}
+      </a>` : ''}`;
 }
 
 // ---- Detail modal (spec §11) ----
 
-function detailHTML(mp, match) {
+function detailHTML(mp, match, singles) {
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
   const session = mp.sessions?.[match.sessionId] || {};
@@ -189,7 +209,7 @@ function detailHTML(mp, match) {
   };
 
   const lead = settled.leader
-    ? `${teamShort(mp, settled.leader)} ${statusText(settled)}`
+    ? `${sideLabel(mp, match, settled.leader, singles)} ${statusText(settled)}`
     : (settled.finished ? t('mpTied') : 'AS');
 
   return `
@@ -213,7 +233,36 @@ function detailHTML(mp, match) {
         ${rows.map(cell).join('')}
       </div>
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;text-align:center;">
-        A = ${esc(teamShort(mp, 'a'))} · W = ${esc(teamShort(mp, 'b'))} · – = ${t('mpHalved')}
+        A = ${esc(singles ? (playerNames(mp, match, 'a') || 'A') : teamShort(mp, 'a'))}
+        · W = ${esc(singles ? (playerNames(mp, match, 'b') || 'B') : teamShort(mp, 'b'))}
+        · – = ${t('mpHalved')}
+      </div>
+    </div>`;
+}
+
+// ---- Standings (plain match play) ----
+
+// One row per participant over completed matches: P, W-L-H, points — the
+// scoreboard a flat singles tournament has instead of team totals.
+function standingsHTML(mp) {
+  const stats = playerStats(mp);
+  const rows = Object.entries(stats)
+    .map(([pid, s]) => ({ name: mp.roster?.[pid]?.name || pid, ...s }))
+    .sort((x, y) => y.points - x.points || y.w - x.w || x.name.localeCompare(y.name));
+  if (!rows.length) return '';
+  return `
+    <div class="surface-card" style="padding:14px;margin-top:12px;">
+      <div style="font-size:0.8rem;font-weight:800;">${t('mpStandings')}</div>
+      <div style="display:grid;grid-template-columns:1fr repeat(2,44px) 44px;gap:2px 6px;margin-top:8px;font-size:0.8rem;">
+        <span></span>
+        <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">P</span>
+        <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">W-L-H</span>
+        <span style="text-align:right;color:var(--text-muted);font-size:0.66rem;font-weight:700;">Pts</span>
+        ${rows.map(r => `
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</span>
+          <span style="text-align:center;color:var(--text-secondary);">${r.played}</span>
+          <span style="text-align:center;color:var(--text-secondary);">${r.w}-${r.l}-${r.h}</span>
+          <span style="text-align:right;font-weight:700;">${pts(r.points)}</span>`).join('')}
       </div>
     </div>`;
 }
@@ -345,7 +394,7 @@ export function historyHTML(list, currentId) {
 // ---- Board ----
 
 // Matches grouped the way the spec orders them for a phone (§22).
-function groupsHTML(mp) {
+function groupsHTML(mp, tnId, viewerId, singles) {
   const sorted = sortMatchesForDisplay(matchesOf(mp));
   if (!sorted.length) {
     return `<div class="empty-state" style="padding:30px 20px;"><p>${t('mpNoMatches')}</p></div>`;
@@ -357,7 +406,7 @@ function groupsHTML(mp) {
       <div class="section-head" style="margin-top:14px;">
         <h2 style="font-size:0.86rem;">${esc(label)} <span style="color:var(--text-secondary);font-weight:500;">(${items.length})</span></h2>
       </div>
-      ${items.map(x => cardHTML(mp, x.match, x.state)).join('')}`;
+      ${items.map(x => cardHTML(mp, x.match, x.state, tnId, viewerId, singles)).join('')}`;
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.
@@ -386,16 +435,24 @@ export function renderMatchCenter(host, tn, ctx = {}) {
     return;
   }
 
+  // Plain match play carries no team scoreboard, session breakdown or pair
+  // records — its headline is the player standings.
+  const singles = tnKind(tn) === 'match';
+
   // A live update replaces the whole board; a stats panel the viewer had
   // open must not snap shut on every incoming hole. (Optional call: the
   // render tests drive this with a bare {innerHTML} host.)
   const statsOpen = host.querySelector?.('details[data-mpv-stats]')?.open;
 
-  host.innerHTML = `
-    ${scoreboardHTML(mp)}
-    ${groupsHTML(mp)}
-    ${summaryHTML(mp)}
-    ${statsHTML(mp)}`;
+  host.innerHTML = singles
+    ? `
+      ${standingsHTML(mp)}
+      ${groupsHTML(mp, tn?.id, ctx.userId, true)}`
+    : `
+      ${scoreboardHTML(mp)}
+      ${groupsHTML(mp, tn?.id, ctx.userId, false)}
+      ${summaryHTML(mp)}
+      ${statsHTML(mp)}`;
 
   if (statsOpen) {
     const d = host.querySelector?.('details[data-mpv-stats]');
@@ -407,7 +464,7 @@ export function renderMatchCenter(host, tn, ctx = {}) {
     if (!match) return;
     ctx.showModal?.(
       `${t('mpMatchNo')}${match.number ?? ''}`,
-      detailHTML(mp, match),
+      detailHTML(mp, match, singles),
       match.id
     );
   });
@@ -415,18 +472,23 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   // This runs on every repaint, so a detail left open follows the match.
   ctx.refreshModal?.((id) => {
     const match = mp.matches[id];
-    return match ? detailHTML(mp, match) : null;
+    return match ? detailHTML(mp, match, singles) : null;
   });
 }
 
-// Compact line for the home strip: the team score and what is running.
+// Compact line for the home strip: the team score and what is running. Plain
+// match play has no team score — its summary carries only the live count, and
+// the strip renders the tournament identity instead of a scoreboard.
 export function stripSummary(tn) {
   const mp = tn?.mp;
   if (!mp) return null;
   const matches = matchesOf(mp);
   if (!matches.length) return null;
-  const total = teamTotals(matches);
   const liveCount = matches.filter(m => matchState(m) === 'LIVE').length;
+  if (tnKind(tn) === 'match') {
+    return { singles: true, liveCount, session: '' };
+  }
+  const total = teamTotals(matches);
   return {
     a: { name: teamShort(mp, 'a'), points: total.a, color: teamColor(mp, 'a') },
     b: { name: teamShort(mp, 'b'), points: total.b, color: teamColor(mp, 'b') },

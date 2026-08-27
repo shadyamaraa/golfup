@@ -15,7 +15,8 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import {
-  settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED
+  settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED,
+  holeChangeAction, canResolveHoleChange
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -33,12 +34,20 @@ export function resetScorerView() {
 
 // ---- Access (spec §14) ----
 
-// Super Admin edits anything; a Scorer only the matches assigned to them.
-// Marshals run the day on the course, so they score too.
-export function canScore(user, match) {
+// Admin and marshal edit anything; an assigned scorer their matches; and the
+// players IN a match score their own match — modern roster entries are keyed
+// by the member's userId, older ones carry it in the record.
+export function isFielded(userId, match, roster) {
+  if (!userId || !match) return false;
+  return ['a', 'b'].some(k => (match.players?.[k] || [])
+    .some(pid => pid === userId || roster?.[pid]?.userId === userId));
+}
+
+export function canScore(user, match, roster) {
   if (!user) return false;
   if (user.role === 'admin' || user.role === 'marshal') return true;
-  return !!match?.scorerIds?.[user.id];
+  if (match?.scorerIds?.[user.id]) return true;
+  return isFielded(user.id, match, roster);
 }
 
 // ---- Rendering ----
@@ -68,8 +77,20 @@ function playerNames(mp, match, k) {
     .join(' / ') || '—';
 }
 
-// The three big buttons. Team names are on them, never colour alone (§23).
-function keypadHTML(mp, hole, current) {
+// The label a side's keypad button and status line carry: the team's short
+// name in a team tournament, the player themselves in plain match play (a
+// singles match has no team to name).
+function sideLabel(mp, match, k) {
+  const rosterTeamless = !mp?.teams?.a?.name && !mp?.teams?.b?.name;
+  if (rosterTeamless) {
+    const names = playerNames(mp, match, k);
+    if (names && names !== '—') return names;
+  }
+  return teamLabel(mp, k);
+}
+
+// The three big buttons. Side names are on them, never colour alone (§23).
+function keypadHTML(mp, hole, current, match) {
   const key = (value, label, color) => `
     <button data-sc="hole" data-value="${value}"
       style="flex:1;min-width:96px;padding:22px 10px;border-radius:14px;cursor:pointer;
@@ -80,9 +101,9 @@ function keypadHTML(mp, hole, current) {
     </button>`;
   return `
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      ${key('a', teamLabel(mp, 'a'), teamColor(mp, 'a'))}
+      ${key('a', sideLabel(mp, match, 'a'), teamColor(mp, 'a'))}
       ${key(HALVED, t('mpHalved'), 'var(--text-secondary)')}
-      ${key('b', teamLabel(mp, 'b'), teamColor(mp, 'b'))}
+      ${key('b', sideLabel(mp, match, 'b'), teamColor(mp, 'b'))}
     </div>`;
 }
 
@@ -94,7 +115,9 @@ function stripHTML(match, hole) {
     const on = r.hole === hole;
     const bg = r.result === 'a' ? 'var(--mp-a)' : r.result === 'b' ? 'var(--mp-b)' : 'transparent';
     const fg = r.result === 'a' || r.result === 'b' ? '#fff' : 'var(--text-secondary)';
-    const mark = r.result === 'a' ? 'A' : r.result === 'b' ? 'W' : r.result === HALVED ? '–' : '';
+    // A pending correction marks its hole, whoever it is waiting on.
+    const pend = !!match.pending?.[r.hole];
+    const mark = pend ? '⏳' : r.result === 'a' ? 'A' : r.result === 'b' ? 'W' : r.result === HALVED ? '–' : '';
     return `
       <button data-sc="goto" data-hole="${r.hole}"
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
@@ -106,7 +129,49 @@ function stripHTML(match, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:12px;">${rows.map(cell).join('')}</div>`;
 }
 
-function screenHTML(tn, match, demo) {
+// The label a proposal shows for each side of "W → A".
+function valueLabel(mp, v) {
+  if (v === 'a' || v === 'b') return teamLabel(mp, v);
+  if (v === HALVED) return t('mpHalved');
+  if (v === 'clear') return t('mpPendingClear');
+  return '—';
+}
+
+// Pending corrections, split by what this user can do about them: the ones
+// waiting on THEIR consent get approve/reject buttons; their own outgoing
+// proposals just show as waiting.
+function pendingHTML(mp, match, user) {
+  const entries = Object.entries(match.pending || {})
+    .map(([hole, p]) => ({ hole: Number(hole), ...p }))
+    .filter(p => p && p.value)
+    .sort((x, y) => x.hole - y.hole);
+  if (!entries.length) return '';
+
+  const row = (p) => {
+    const from = valueLabel(mp, match.holes?.[p.hole] ?? null);
+    const to = valueLabel(mp, p.value);
+    const mine = p.by === user?.id;
+    const canResolve = !mine && canResolveHoleChange(user, match, p.hole);
+    return `
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:0.8rem;flex-wrap:wrap;">
+        <span><b>${esc(p.byName || '?')}</b> · ${t('mpHole')} ${p.hole}: ${esc(from)} → <b>${esc(to)}</b></span>
+        ${canResolve ? `
+          <span style="margin-left:auto;display:flex;gap:6px;">
+            <button data-sc="resolve" data-hole="${p.hole}" data-ok="1" class="btn btn-primary btn-sm">${t('mpApprove')}</button>
+            <button data-sc="resolve" data-hole="${p.hole}" data-ok="0" class="btn btn-outline-danger btn-sm">${t('mpReject')}</button>
+          </span>`
+        : `<span style="margin-left:auto;font-size:0.72rem;color:var(--amber);">⏳ ${mine ? t('mpProposeSent') : t('mpPendingWaiting')}</span>`}
+      </div>`;
+  };
+
+  return `
+    <div style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:10px;padding:10px;margin-top:12px;">
+      <b style="font-size:0.76rem;">${t('mpPendingTitle')}</b>
+      ${entries.map(row).join('')}
+    </div>`;
+}
+
+function screenHTML(tn, match, demo, user) {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
@@ -116,7 +181,7 @@ function screenHTML(tn, match, demo) {
   const hole = Math.min(viewHole ?? (settled.thru + 1), total);
   const current = match.holes?.[hole] ?? null;
   const session = mp.sessions?.[match.sessionId] || {};
-  const lead = settled.leader ? teamLabel(mp, settled.leader) : '';
+  const lead = settled.leader ? sideLabel(mp, match, settled.leader) : '';
 
   return `
     <div class="detail-container fade-in" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
@@ -146,6 +211,7 @@ function screenHTML(tn, match, demo) {
         </div>
       </div>
 
+      ${pendingHTML(mp, match, user)}
       ${done && viewHole === null ? `
         <div style="text-align:center;margin-top:14px;font-size:0.85rem;color:var(--text-secondary);">
           ${t('mpMatchDone')}
@@ -154,7 +220,7 @@ function screenHTML(tn, match, demo) {
           <div style="text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
             ${t('mpHole')} ${hole}${current ? ` · ${t('mpEditing')}` : ''}
           </div>
-          ${keypadHTML(mp, hole, current)}
+          ${keypadHTML(mp, hole, current, match)}
         </div>`}
 
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -173,7 +239,7 @@ function screenHTML(tn, match, demo) {
 
       ${stripHTML(match, hole)}
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;text-align:center;">
-        A = ${esc(teamLabel(mp, 'a'))} · W = ${esc(teamLabel(mp, 'b'))} · – = ${t('mpHalved')}
+        A = ${esc(sideLabel(mp, match, 'a'))} · W = ${esc(sideLabel(mp, match, 'b'))} · – = ${t('mpHalved')}
       </div>
       <div id="sc-device" style="min-height:0;"></div>
       <div id="sc-note" style="font-size:0.75rem;color:var(--text-secondary);margin-top:10px;text-align:center;min-height:1.2em;"></div>
@@ -223,13 +289,13 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       if (!store.isUsingFirebase()) notFound(t('tnNotFound'), '#/');
       return;
     }
-    if (!canScore(ctx.user, m)) {
+    if (!canScore(ctx.user, m, data?.mp?.roster)) {
       denied = true;
       notFound(t('mpNoScorerAccess'), `#/tournament/${esc(tnId)}`);
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, m, demoMode);
+    host.innerHTML = screenHTML(data, m, demoMode, ctx.user);
     wire();
     // Repainted every time because the screen was just replaced wholesale.
     paintDeviceBanner();
@@ -253,7 +319,17 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     saving = true;
     const note = document.getElementById('sc-note');
     try {
-      await store.saveTnMatchHole(tnId, matchId, hole, value, ctx.user?.id);
+      // Correction consent: changing a hole somebody else entered does not
+      // overwrite it — it files a proposal the original enterer approves.
+      // Officials, your own entries, and unowned holes write straight through.
+      const m = data?.mp?.matches?.[matchId];
+      if (holeChangeAction(ctx.user, m, hole) === 'propose') {
+        await store.proposeTnHoleChange(tnId, matchId, hole,
+          value === null ? 'clear' : value, ctx.user);
+        ctx.showToast?.('⏳ ' + t('mpProposeSent'), 'info');
+      } else {
+        await store.saveTnMatchHole(tnId, matchId, hole, value, ctx.user?.id);
+      }
       // Any entry — a new hole or a correction to an old one — puts the
       // scorer back on the hole being played. The strip below carries the
       // change they just made, so nothing is lost by moving on. Repainting
@@ -298,6 +374,15 @@ export async function renderScorerPage(tnId, matchId, ctx) {
           return;
         }
         store.setTnMatchSuspended(tnId, matchId, !now, ctx.user?.id)
+          .catch(err => {
+            console.error('[scorer]', err);
+            ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+          });
+      } else if (kind === 'resolve') {
+        const h = Number(b.dataset.hole);
+        const ok = b.dataset.ok === '1';
+        store.resolveTnHoleChange(tnId, matchId, h, ok, ctx.user)
+          .then(() => ctx.showToast?.(ok ? '✅ ' + t('mpApproved') : t('mpRejected'), ok ? 'success' : 'info'))
           .catch(err => {
             console.error('[scorer]', err);
             ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
@@ -359,7 +444,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       data = fresh;
       // A repaint must not silently reinstate a screen access was refused
       // on — paint() re-checks, so this only guards the ordering.
-      if (!denied || canScore(ctx.user, fresh.mp?.matches?.[matchId])) paint();
+      if (!denied || canScore(ctx.user, fresh.mp?.matches?.[matchId], fresh.mp?.roster)) paint();
     });
     if (unsub) ctx.onUnsub?.(unsub);
   }

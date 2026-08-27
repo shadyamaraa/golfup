@@ -463,11 +463,13 @@ exports.mcupMatchFinished = functions.database
     const userIds = Object.keys(subs);
     if (!userIds.length) return null;
 
-    const short = (k) => (mp.teams && mp.teams[k] && (mp.teams[k].short || mp.teams[k].name))
-      || (k === 'a' ? 'A' : 'B');
     const names = (k) => ((match.players && match.players[k]) || [])
       .map((pid) => mp.roster && mp.roster[pid] && mp.roster[pid].name)
       .filter(Boolean).join(' / ');
+    // Singles tournaments have no teams — the winning side is a player, so
+    // the notification leads with their name instead of a team short.
+    const short = (k) => (mp.teams && mp.teams[k] && (mp.teams[k].short || mp.teams[k].name))
+      || names(k) || (k === 'a' ? 'A' : 'B');
 
     const title = settled.winner
       ? `${tn.name || 'M Cup'}: Match №${match.number || '?'} — ${short(settled.winner)} ${settled.result}`

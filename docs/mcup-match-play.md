@@ -6,10 +6,34 @@ whoever maintains the code next.
 ## What it is
 
 A Ryder Cup-style team competition inside the existing tournament model. A
-tournament whose **Format** is `Тулаан / Match` grows a second life: teams, a
+tournament whose **Format** is `Ryder Cup` grows a second life: teams, a
 roster per team, sessions, pairings, a scorer screen, and a public Live Match
 Center. Stroke play tournaments are untouched — same records, same Google
 Sheet import, same leaderboard.
+
+## The three formats
+
+- **Stroke** (`format: 'stroke'`) — the original stroke play tournament:
+  rounds, PAR, the cut, the Google Sheet leaderboard. Unchanged.
+- **Match** (`format: 'match'`) — plain match play under Rules of Golf
+  Rule 3: **1v1 singles only**. No teams, no sessions, no 12/14-player
+  rules. The admin picks participants from the members and pairs them into
+  a flat match list; the board shows the match cards plus a player
+  standings table (P / W-L-H / Pts). Everything else — the scoring engine,
+  the scorer screen, consent, device protection, push — is the same
+  machinery as Ryder Cup.
+- **Ryder Cup** (`format: 'ryder'`) — everything the rest of this document
+  describes: two teams, sessions of FOURSOMES / FOURBALL / SINGLES, the
+  club's M Cup rulebook. Tournaments saved before the rename (`'match'`
+  with `mp.teams` or `mp.sessions`) are recognised as Ryder Cup
+  automatically.
+
+The branching lives in one place: `tnKind(tn)` in `src/matchplay.js`
+returns `'stroke' | 'match' | 'ryder'`, and every view, editor and strip
+decides from it. Each match play format carries its rulebook
+(`src/mcup-rules.js`) — shown on the wizard's type step and on the
+tournament's Мэдээлэл tab, with a "📖 Форматын дүрэм" shortcut under the
+Match Center.
 
 ## The one rule that explains the rest
 
@@ -23,9 +47,17 @@ there is no "recalculate" button to forget to press.
 
 ## Setting up a tournament
 
-Admin → Тэмцээн → create a tournament with **Format = Тулаан / Match**. It
-opens straight into its editor, where the match play section appears under the
-usual fields.
+Admin → Тэмцээн → the creation wizard: name the tournament, pick **Ryder
+Cup** on the type step (only that type's questions follow — PAR, rounds,
+the cut and the scoring sheet belong to stroke play and never appear), dates
+and venue, the two team names, create. It opens straight into its editor,
+where the match play section appears under the usual fields.
+
+For a plain **Match** tournament the wizard asks nothing extra — its editor
+shows a single Оролцогчид member picker instead of the team boxes, and an
+"Match нэмэх" list where each side is one player picked from the
+participants; matches are `SINGLES` automatically and there is no session
+block.
 
 1. **Teams.** Name, short name (what the cards and scoreboard show), and an
    optional **logo** — pick any image and it is shrunk in the browser to a
@@ -35,9 +67,10 @@ usual fields.
    without one keep the colour dot. Either way the mark is decoration only —
    every status line names its team in words, so the board still reads
    correctly in greyscale or to a colour-blind viewer.
-2. **Roster.** One player name per line, 14 per team. Editing a name in place
-   keeps that player's match assignments; a player removed from the list while
-   still fielded in a match is kept and flagged rather than silently dropped.
+2. **Roster.** Picked straight from the app's members, 14 per team — a
+   roster entry IS the member, which is what lets them score their own match.
+   Removing a player still fielded in a match warns before it empties that
+   pick.
 3. **Sessions.** Day, number, format (`FOURSOMES`, `FOURBALL`, `SINGLES`),
    start time. Matches belong to a session and inherit its format, which is
    what sizes the pairing selects (2 v 2, or 1 v 1 for singles).
@@ -62,8 +95,10 @@ players who have not been given a match yet. All 14 must play at least once.
 
 ## Scoring on the course
 
-`#/score/:tournamentId/:matchId` — reachable from the **Оноо оруулах** button
-on each match row in the admin editor. Give scorers that link.
+`#/score/:tournamentId/:matchId`. The players IN a match score it themselves:
+their own match card on the Match Center grows an **Оноо оруулах** button.
+Admins, marshals and per-match assigned scorers can score any match from the
+admin editor's link as before.
 
 The screen is three buttons: **team A**, **ТЭНЦСЭН**, **team B**. Tap the one
 that won the hole; the screen moves to the next hole itself. That is the whole
@@ -72,6 +107,12 @@ interaction — a hole should take a couple of seconds.
 - **Сүүлийн нүхийг буцаах** clears the last hole entered.
 - **Tapping any played hole** in the strip at the bottom opens it for
   correction. Everything after it re-settles.
+- **Corrections need the enterer's consent.** Changing a hole SOMEBODY ELSE
+  entered does not overwrite it: the change parks as a proposal (⏳ on that
+  hole), and the person who entered it sees it at the top of their scoring
+  screen with Зөвшөөрөх / Татгалзах. Your own entries, holes nobody owns,
+  and officials (admin, marshal) write straight through. Ownership passes to
+  whoever's value was accepted.
 - **Түр зогсоох** marks the match SUSPENDED (weather, darkness). This is the
   one state a human sets rather than the holes deriving; resume clears it.
 
@@ -128,7 +169,9 @@ Under `tournaments/{id}/mp`:
 | `sessions/{sessionId}` | day, number, format, startTime |
 | `matches/{matchId}` | sessionId, number, teeTime, players.{a,b}[], scorerIds, stateOverride |
 | `matches/{matchId}/holes/{n}` | `'a'` \| `'b'` \| `'h'` |
-| `audit/{pushId}` | at, by, matchId, hole, value, prev |
+| `matches/{matchId}/holeMeta/{n}` | by — who entered the hole (consent owner) |
+| `matches/{matchId}/pending/{n}` | value \| 'clear', by, byName, at — proposed correction |
+| `audit/{pushId}` | at, by, matchId, hole, value/action, prev |
 
 `'h'` rather than `null` for a halved hole: Realtime Database deletes null
 values, so a halved hole stored as null would be indistinguishable from a hole

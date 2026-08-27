@@ -1,5 +1,77 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Three formats: Stroke / Match play (1v1) / Ryder Cup)
+
+The team M Cup system is now the **Ryder Cup** format (`format: 'ryder'`),
+and a new plain **Match play** format (`format: 'match'`) joins it: 1v1
+singles under Rule 3, no teams, no sessions, no 12/14 rules. All branching
+goes through a new pure helper `tnKind(tn)` in `src/matchplay.js`
+(`'stroke' | 'match' | 'ryder'`; legacy `'match'` records carrying
+`mp.teams`/`mp.sessions` are recognised as Ryder Cup, so nothing saved
+before the rename changes behaviour).
+
+- **Wizard** (`src/tournament-wizard.js`): three type cards — ⛳ Цохилтын
+  тоглолт / 🎯 Match play / 🏆 Ryder Cup — each match play card with a
+  "Дүрэм харах" fold-out; Ryder asks the two team names, Match asks nothing
+  (participants and pairs are built in the editor).
+- **Rulebooks** (`src/mcup-rules.js`, new): the club's full M Cup document
+  (Fourball, Foursomes odd/even tee, Singles, dormie / 4&3 / gimme,
+  Score → Hole → Match → TEAM) for Ryder Cup, and a Rule 3 primer for
+  Match play. Shown on the wizard's type step and the tournament's
+  Мэдээлэл tab; a "📖 Форматын дүрэм" button under the Match Center jumps
+  there.
+- **Editor** (`src/matchplay-admin.js`): singles mode — one Оролцогчид
+  member picker instead of team boxes, a flat sessionless match list with
+  one player per side (format `SINGLES` automatic), and a warning when both
+  sides are the same player. Saving never writes `mp/teams` or
+  `mp/sessions` for singles, so a Match tournament can't drift into
+  looking like a team one.
+- **Board** (`src/matchplay-view.js`): singles shows a player standings
+  table (P / W-L-H / Pts) instead of the team scoreboard and session
+  breakdown; cards and the detail legend lead with player names ("Бат
+  2 UP"). The scorer keypad and its legend do the same
+  (`src/matchplay-score.js`).
+- **Push** (`functions/index.js`): a finished singles match is announced by
+  the winner's name instead of a team short.
+- i18n: `fmtMatch` → 'Match play', new `fmtRyder`; the demo tournament is
+  `format: 'ryder'` now. Tests grew to 54 (tnKind table + singles render).
+
+## 2026-08-27 (M Cup — players score their own matches, corrections need consent, and creation grows a wizard)
+
+Four connected changes, modelled on how Squabbit runs its tournaments and on
+what match play actually needs.
+
+**Creation is a wizard now** (`src/tournament-wizard.js`): name → type (two
+cards, Цохилтын тоглолт / Багийн тулаан — Scramble left the picker, legacy
+records still display) → dates & venue → the chosen type's own settings →
+summary and create. Match play is never asked for PAR, rounds, a cut or a
+scoring sheet — those are stroke play concepts; it asks for the two team
+names instead and opens straight into its editor. The row editor got the
+same discipline: a match tournament's editor hides the stroke fields, its
+row hides Sync/Excel and the sheet-analysis panel, and switching type in the
+editor swaps the visible fields without losing what was typed.
+
+**Rosters are members, not names.** The team roster is picked from the app's
+member list (same picker pattern as scorer assignment); a roster entry is
+keyed by the member's userId, which is what makes the next change possible.
+Legacy name-only entries keep working. Removing a fielded player warns
+before it empties their match pick.
+
+**Players score their own match.** `canScore` now recognises a fielded
+member, and their own match's card on the Match Center grows an "Оноо
+оруулах" button. Officials and per-match assigned scorers keep their access.
+
+**Corrections need the enterer's consent.** Every hole write records who
+entered it (`holeMeta/{n}`). Changing a hole somebody else entered files a
+proposal (`pending/{n}`, ⏳ on the strip) instead of overwriting; the
+original enterer sees it at the top of their scoring screen with
+Зөвшөөрөх / Татгалзах, and only their approval (or an official's) applies
+it — ownership then passes to the proposer. Your own entries, unowned legacy
+holes and officials write straight through. The decision lives in the engine
+as pure `holeChangeAction` / `canResolveHoleChange` with tests (51 total).
+`holes` stays canonical, so nothing downstream — settling, points, the
+board — changed at all.
+
 ## 2026-08-27 (M Cup — team logos instead of the colour picker)
 
 The team editor's colour picker gave way to a logo upload. Any picked image
