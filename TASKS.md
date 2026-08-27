@@ -14,6 +14,10 @@
 - [ ] Consider mapping `manage.ubgolf.club` to a manage route or separate manage app.
 - [ ] Improve admin panel layout for desktop operations.
 - [ ] Add clearer notification cleanup/status handling.
+- [ ] M Cup: decide on Firebase Auth so scorer access can be enforced by
+      database rules, not only in the UI. See `docs/mcup-match-play.md`.
+- [ ] M Cup phase 2 (spec §27): push notifications, player and pair
+      statistics, historical results.
 
 ## In Progress
 
@@ -29,3 +33,4 @@
 - [x] Fix duplicate notification creation.
 - [x] Filter history by the selected home tab.
 - [x] Upgrade Firebase Functions runtime to Node.js 22.
+- [x] M Cup live match tracking (team match play) — phase 1 of the spec.

@@ -4,6 +4,10 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
+import { mountMpAdmin, discardMpDraft } from './matchplay-admin.js';
+import { renderScorerPage } from './matchplay-score.js';
+import { renderMatchCenter, stripSummary } from './matchplay-view.js';
+import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -354,7 +358,13 @@ export async function router() {
     }
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
+    // A tournament board is a public scoreboard (spec §1: a viewer opens UB
+    // Golf and just sees it), so it renders without an account. Everything
+    // else — games, orders, the scorer screen — still requires signing in.
+    // Guests landing on home get the sign-in card with the tournament strip
+    // above it, so a live M Cup is one tap away.
+    const guestOk = hash.startsWith('#/tournament/');
+    if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
     }
@@ -368,6 +378,16 @@ export async function router() {
     else if (hash === '#/users') await renderUsersList();
     else if (hash === '#/ranking') await renderRankingPage();
     else if (hash.startsWith('#/tournament/')) await renderTournamentPage(hash.split('#/tournament/')[1]);
+    else if (hash.startsWith('#/score/')) {
+      const [tnId, matchId] = hash.split('#/score/')[1].split('/');
+      await renderScorerPage(tnId, matchId, {
+        main, user: currentUser, showToast,
+        onUnsub: (fn) => activeUnsubs.push(fn),
+        // The sample M Cup can be scored on preview builds: taps stay local,
+        // nothing is written, and the demo resets on reload.
+        demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
+      });
+    }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -408,6 +428,15 @@ function updateHeader() {
   } else if (userInfo) {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
+  }
+  // Guests on a public page (a tournament board) get a way into the app;
+  // on the auth screen itself the button would only point at the page
+  // they are already on.
+  const guestLogin = document.getElementById('guest-login');
+  if (guestLogin) {
+    guestLogin.textContent = t('guestLogin');
+    guestLogin.classList.toggle('hidden',
+      !!currentUser || !(location.hash || '#/').startsWith('#/tournament/'));
   }
 }
 
@@ -1223,12 +1252,14 @@ function updateTournamentStripVisibility(hash) {
   // signed in — so rebuild it whenever the identity changes, or the member's
   // own line and avatar would never appear. Guarded by tnStripFor, and the
   // rebuild ends by calling back into here with the ids already equal.
-  if (onHome && !isKiosk && currentUser && tnStripFor !== currentUser.id) {
+  // Guests count as an identity of their own (null): the strip shows over
+  // the sign-in card too, so a visitor sees the live tournament first.
+  if (onHome && !isKiosk && tnStripFor !== (currentUser?.id || null)) {
     renderTournamentStrip(tnListCache ?? undefined);
     return;
   }
 
-  const hide = isKiosk || !currentUser || !onHome || host.dataset.has !== '1';
+  const hide = isKiosk || !onHome || host.dataset.has !== '1';
   const wasHidden = host.classList.contains('hidden');
   host.classList.toggle('hidden', hide);
   if (hide) return;
@@ -1252,7 +1283,10 @@ async function renderTournamentStrip(list) {
   tnListCache = list;
   tnStripFor = currentUser?.id || null;
   let tn = tnFeatured(list);
-  if (!tn && tnDemoAllowed()) tn = tnDemo();
+  // With no real tournament to feature, preview builds fall back to the M Cup
+  // sample so the strip's team-score row can be reviewed. The stroke play
+  // sample is still reachable directly at #/tournament/demo.
+  if (!tn && tnDemoAllowed()) tn = MP_DEMO;
   if (!tn) {
     host.innerHTML = '';
     host.dataset.has = '0';
@@ -1302,14 +1336,32 @@ function paintTournamentStrip(host, tn) {
   const me = ranked.find(tnIsMe);
   const shown = (me && !top.includes(me)) ? [me, ...top] : top;
 
+  // A match play tournament's third row is the team score, never a player
+  // list: "who is winning" is the whole question the strip has to answer
+  // (spec §22/§28). Team names ride along with the numbers, so the strip
+  // never depends on colour alone (§23).
+  const mpSummary = stripSummary(tn);
+  const mpBody = mpSummary ? `
+    <div class="tn-meta">
+      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.a.color};">
+        ${esc(mpSummary.a.name)} ${esc(String(mpSummary.a.points))}
+      </span>
+      <span class="tn-sep"></span>
+      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.b.color};">
+        ${esc(String(mpSummary.b.points))} ${esc(mpSummary.b.name)}
+      </span>
+      ${mpSummary.liveCount ? `<span class="tn-sep"></span><span class="tn-meta-txt">${mpSummary.liveCount} ${t('mpLive')}</span>` : ''}
+      ${mpSummary.session ? `<span class="tn-sep"></span><span class="tn-meta-txt">${esc(mpSummary.session)}</span>` : ''}
+    </div>` : '';
+
   // With scores, the third row is the players; without them (an upcoming
   // tournament, or one nobody has posted to yet) it carries the essentials.
-  const body = ranked.length
+  const body = mpBody || (ranked.length
     ? `<div class="tn-players">${shown.map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
     : `<div class="tn-meta">
          <span class="tn-meta-txt">${esc(tn.venue || '')}${tn.startTime ? ` · ${esc(tn.startTime)}` : ''}</span>
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
-       </div>`;
+       </div>`);
 
   host.innerHTML = `
     <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
@@ -1455,6 +1507,7 @@ async function renderTournamentPage(id) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   let tn = null;
   if (id === TN_DEMO.id && tnDemoAllowed()) tn = tnDemo();
+  else if (id === MP_DEMO_ID && tnDemoAllowed()) tn = MP_DEMO;
   else { try { tn = await store.loadTournament(id); } catch (_) { } }
 
   if (!tn) {
@@ -1466,18 +1519,24 @@ async function renderTournamentPage(id) {
     return;
   }
 
-  tnPageTab = 'board';
+  // paintTournamentPage() settles the tab against what this tournament has.
+  tnPageTab = isMatchPlay(tn) ? 'match' : 'board';
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
   paintTournamentPage(await tnWithLiveEntries(tn));
 
   // Repaint the list alone while a search is in progress, so an incoming score
-  // never steals the caret.
+  // never steals the caret. The tab bar is built by paintTournamentPage, so a
+  // change that adds or removes a tab — the first match of an M Cup arriving,
+  // for one — needs the whole page rather than just the board.
+  let tabsShown = tnTabsFor(tn).join();
   const repaint = () => {
+    const tabs = tnTabsFor(tnPageData).join();
+    if (tabs !== tabsShown) { tabsShown = tabs; paintTournamentPage(tnPageData); return; }
     if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
   };
 
-  if (store.isUsingFirebase() && tn.id !== TN_DEMO.id) {
+  if (store.isUsingFirebase() && tn.id !== TN_DEMO.id && tn.id !== MP_DEMO_ID) {
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
       // Meta edits must not roll the board back to the stored snapshot when a
@@ -1503,8 +1562,26 @@ async function renderTournamentPage(id) {
   }
 }
 
+// A match play tournament (M Cup) shows the Live Match Center instead of a
+// stroke leaderboard. Both can coexist: a tournament that carries entries as
+// well as matches keeps its board tab.
+function isMatchPlay(tn) {
+  return tn?.format === 'match' && !!Object.keys(tn?.mp?.matches || {}).length;
+}
+
+function tnTabsFor(tn) {
+  const tabs = [];
+  if (isMatchPlay(tn)) tabs.push('match');
+  if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
+  tabs.push('info');
+  return tabs;
+}
+
 function paintTournamentPage(tn) {
   tnPageData = tn;
+  // The tab the page opens on has to exist for this tournament.
+  const tabs = tnTabsFor(tn);
+  if (!tabs.includes(tnPageTab)) tnPageTab = tabs[0];
   const state = tnStatus(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
@@ -1533,12 +1610,14 @@ function paintTournamentPage(tn) {
       </div>
 
       <div class="seg-tabs tn-tabs">
-        <button class="seg-tab active" data-tn-tab="board">${t('tnLeaderboard')}</button>
-        <button class="seg-tab" data-tn-tab="info">${t('tnInfo')}</button>
+        ${tnTabsFor(tn).map(tab => `
+          <button class="seg-tab${tnPageTab === tab ? ' active' : ''}" data-tn-tab="${tab}">
+            ${tab === 'match' ? t('mpMatchCenter') : tab === 'board' ? t('tnLeaderboard') : t('tnInfo')}
+          </button>`).join('')}
       </div>
 
       <div id="tn-board"></div>
-      ${tn.id === TN_DEMO.id ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
+      ${tn.id === TN_DEMO.id || tn.id === MP_DEMO_ID ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
 
   document.querySelectorAll('[data-tn-tab]').forEach(btn => {
@@ -1581,6 +1660,11 @@ function renderTnBoard() {
 
   if (tnPageTab === 'info') {
     host.innerHTML = tnInfoHTML(tn);
+    return;
+  }
+
+  if (tnPageTab === 'match') {
+    renderMatchCenter(host, tn, { showModal: showMatchModal, refreshModal: refreshMatchModal });
     return;
   }
 
@@ -3147,6 +3231,40 @@ async function renderJoinPay(gameId) {
     const method = document.querySelector('#jp-pay-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
     await handleJoin(game, method);
   };
+}
+
+// Match detail (spec §11) — the card's hole-by-hole story, in the app's own
+// modal chrome so it matches every other overlay. Tagged with its match id so
+// an incoming score can refresh it in place: a spectator who opens a live
+// match and leaves it open should watch it change, not read a snapshot.
+function showMatchModal(title, bodyHTML, matchId) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.dataset.mpMatch = matchId || '';
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width:460px;">
+      <h3 class="modal-title">${esc(title)}</h3>
+      <div data-mp-body>${bodyHTML}</div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn btn-secondary" data-close="1">${t('tnClose')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-close]').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+// Re-render an open match modal from the latest data. `render(matchId)`
+// returns fresh body HTML, or null when that match no longer exists — in
+// which case the modal closes rather than showing a match that was deleted.
+function refreshMatchModal(render) {
+  const modal = document.querySelector('.modal-overlay[data-mp-match]');
+  const id = modal?.dataset.mpMatch;
+  if (!id) return;
+  const html = render(id);
+  if (html === null || html === undefined) { modal.remove(); return; }
+  const body = modal.querySelector('[data-mp-body]');
+  if (body) body.innerHTML = html;
 }
 
 // ---- Game Actions ----
@@ -7240,6 +7358,7 @@ async function renderAdminTournamentsTab() {
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
             ${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}
             <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
+            ${tn.format === 'match' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
           </div>` : ''}
       </div>`;
   };
@@ -7277,7 +7396,9 @@ async function renderAdminTournamentsTab() {
     showToast('✅ ' + t('tnCreated'), 'success');
     // A link given at creation time is only useful once it has been read.
     if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
-    adminOpenTn = null;
+    // A match play tournament is set up in its editor (teams, sessions,
+    // pairings), so a fresh one opens straight into it.
+    adminOpenTn = data.format === 'match' ? id : null;
     await renderAdminTournamentsTab();
   };
 
@@ -7285,6 +7406,10 @@ async function renderAdminTournamentsTab() {
   // Both the row's name and its Засах button open the same editor.
   el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
     const id = b.dataset.tn;
+    // Closing the editor drops any unsaved match play draft. Keeping it would
+    // let an hour-old snapshot sit around and then overwrite newer work the
+    // next time somebody opened that tournament and pressed Save.
+    if (adminOpenTn === id) discardMpDraft(id);
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
     // The form renders below the row's actions, which on a long list can land
@@ -7299,7 +7424,9 @@ async function renderAdminTournamentsTab() {
     if (!tn) return;
     const data = tnAdminReadForm(`tn-e-${tn.id}`);
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
-    try { await store.saveTournament({ ...tn, ...data }); }
+    // Partial update on purpose: a whole-record set would silently overwrite
+    // whatever a match play scorer wrote under mp/ while this form was open.
+    try { await store.updateTournament(tn.id, data); }
     catch (err) { tnAdminError(err); return; }
     tnSheetCache.delete(tn.id);
     showToast('✅ ' + t('saved'), 'success');
@@ -7316,6 +7443,23 @@ async function renderAdminTournamentsTab() {
     catch (err) { tnAdminError(err); return; }
     await renderAdminTournamentsTab();
   });
+
+  // Match play setup lives in its own module; it renders into the open
+  // editor's host div and keeps its own draft, so this tab re-rendering
+  // (saves, syncs) never loses in-progress lineup edits.
+  if (adminOpenTn) {
+    const tn = list.find(x => x.id === adminOpenTn);
+    const host = tn && document.getElementById(`mp-adm-${tn.id}`);
+    if (host) {
+      // Members are only needed for the scorer picker, so they are read when
+      // a match play editor actually opens rather than on every tab render.
+      let users = [];
+      try { users = await store.loadAllUsers(); } catch (_) { }
+      users = users.filter(u => u && u.id && u.status !== 'deleted')
+        .sort((a, b) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
+      mountMpAdmin(host, tn, { showToast, users, rerender: renderAdminTournamentsTab });
+    }
+  }
 
   // Upload
   const fileInput = document.getElementById('tn-file-input');

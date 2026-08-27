@@ -1,6 +1,237 @@
 # CHANGELOG_AI.md
 
-## 2026-08-21 (a CUT written in the sheet frees its place)
+## 2026-08-27 (a tournament board needs no account, and deploys stop hiding for an hour)
+
+A tournament board is a public scoreboard — spec §1's viewer "opens UB Golf
+and just sees it" — but the router sent every signed-out visitor to the login
+card, so a shared M Cup link demanded an account before showing a score. Now
+`#/tournament/…` renders for guests: the board, the match cards, the detail
+modal, all read-only. Guests get a Нэвтрэх button in the header on those
+pages, and the home route shows the sign-in card with the tournament strip
+above it, so a visitor landing on the site sees the live team score first and
+the way in second. Everything else — games, orders, member lists, admin, and
+the scorer screen — still requires signing in, and the strip rebuilds when
+identity changes, guests counting as an identity of their own. Verified in a
+browser with no stored user: board and detail render, the scorer route
+bounces to the sign-in card, the strip links to the board.
+
+Separately, the reason "deploy went out, phones still show the old app" kept
+happening: firebase.json gave `no-cache` to `/index.html`, but hash routing
+means browsers request `/` — which matched no header rule and got the CDN
+default of an hour. `/` now carries the same `no-cache, must-revalidate`, so
+the next visit after any deploy picks up the new version at once.
+
+The whole flow was driven end to end in a real browser against a local
+preview build: the Match Center (dark and light, mobile and desktop), the
+match detail modal, the home strip, and the scorer screen — where tapping
+ALTAI took the demo fourball 2 UP → 3 UP → 4 UP → 5 & 4 with the keypad
+withdrawing itself, Undo brought it back to 4 UP, and correcting hole 6
+re-settled the match to 6 & 5. One gap found: the scorer screen was the only
+piece of the feature the sample tournament did not reach — it read straight
+from the database, so a reviewer on a preview channel had nothing to try.
+
+`renderScorerPage` now takes the demo the same way the tournament page does
+(localhost and preview hosts only): taps land on a local copy, nothing is
+written anywhere, the screen carries the same "sample data" note, and a
+reload resets it.
+
+## 2026-08-27 (M Cup match play — what an adversarial read of the branch found)
+
+An independent review of the whole feature turned up three ways it could lose
+or misreport a result. Each is fixed with a regression test (46 total).
+
+**A finished match with a stale suspension scored nothing.** `matchState()`
+checked the suspension flag before asking whether the holes had already
+decided the match, and `matchPoints()` only pays a COMPLETED match. Suspend at
+dusk, resume next morning, keep tapping without pressing Resume — the match
+closes out, sits under LIVE forever, and its point never reaches the
+scoreboard. The holes now settle the state first; a suspension only holds a
+match that is genuinely unfinished.
+
+**Saving the setup could resurrect deleted scores.** The merge took the
+scorer's fields from the live record only when the live record *had* them, so
+absence never propagated: a hole the scorer had just undone, or a suspension
+they had just cleared, came back from the draft's snapshot — the second of
+those combining with the bug above to silently delete a match's point.
+Scorer-owned fields (`holes`, `stateOverride`) are now never written by this
+editor at all. Two more in the same code: `mp/matches` and `mp/sessions` were
+replaced wholesale, deleting anything another admin had created since the
+draft was cloned, and deletions were inferred from absence rather than
+recorded — both now write one key per record, from an explicit record of what
+this editor removed. Drafts are also dropped when the editor closes, so an
+hour-old snapshot cannot come back to overwrite newer work.
+
+**Undo could void a whole match.** The handler settled from the match as it
+was when the buttons were wired, so with a second scorer on the same match it
+could clear a hole that was no longer the last one — and since the engine
+treats a gap as the end of play, every hole after it stopped counting. Taps
+now read the match as it stands at that moment.
+
+Also fixed: the scorer screen told you to pick a hole to correct on a
+completed match and then did nothing (the keypad was gated on the match being
+unfinished); the screen gave up with "tournament not found" when opened
+offline, where it should wait for the listener; a session switched to a
+smaller format stranded players in slots nothing rendered; `lineupIssues()`
+waved through an unrecognized format entirely, mis-attributed a wrong-team
+player's place, and described two slots of one match as "plays twice in one
+session"; `settleMatch()` never finished if `totalHoles` arrived as a string;
+upcoming cards read "AS" before anyone had teed off; suspended matches were
+counted under the LIVE heading; a match with no session held points that no
+row showed; the Match Center tab needed a reload to appear when the first
+match arrived; and an open match detail was a frozen snapshot.
+
+The review found no XSS or escaping gaps, no missing i18n keys, and no arity
+or runtime-throw problems.
+
+## 2026-08-27 (M Cup match play — a sample tournament to review it against)
+
+`src/matchplay-demo.js` (new) is an M Cup shaped like the real one: both teams
+at 14, three sessions (foursomes finished, fourball running, singles still to
+tee off), 24 matches covering every state the tournament can produce — a
+3 & 2 close-out, a 1 UP decided on the last green, a halved match, a dormie,
+a suspension, and one just teed off. `#/tournament/mcup-demo` opens it, and
+with no real tournament to feature it also takes the home strip so the
+team-score row can be reviewed; the stroke play sample is unchanged at
+`#/tournament/demo`. Confined to localhost and preview channels by the same
+`tnDemoAllowed()` gate as the existing sample.
+
+It doubles as a fixture: four more tests (38 total) assert the sample passes
+its own lineup rules in every session, fields all 14 players per team, covers
+all four states, and renders the board — including the spec's own example
+card, ALTAI 2 UP thru 11. A careless edit to the sample fails there rather
+than on a reviewer's screen.
+
+Also fixed: correcting an earlier hole left the scorer's screen on that hole,
+because `viewHole` was cleared after the database listener had already
+repainted with it still set.
+
+## 2026-08-27 (M Cup match play — suspension, render tests, docs, phase 5 of 5)
+
+`SUSPENDED` was readable but unreachable: `matchState()` honoured it and
+nothing could ever set it. The scorer screen now has a suspend/resume button
+(weather and darkness being the usual reasons) writing through
+`setTnMatchSuspended()`, audited like a hole entry. It is the one match state
+a human sets rather than the holes deriving, so resuming simply clears it.
+
+Render smoke tests (`scripts/test-matchplay-render.mjs`, 11 cases, 34 total)
+push a full M Cup-shaped tournament — two teams, two sessions, a match in
+every state — through the Match Center and check the HTML for what a
+spectator must be able to read: both team names and their derived points, the
+running session, a card per match, `ALTAI 2 UP` with `Thru 11` on the live
+one, `3 & 2` on the closed-out one, a tee time on the upcoming one, group
+order, the session breakdown, and that a player name containing a tag is
+escaped rather than rendered. They catch template crashes and silently empty
+sections the pure engine tests cannot see.
+
+`docs/mcup-match-play.md` documents the feature for whoever runs the
+tournament and whoever maintains it next — setup, the scorer flow, the data
+model, why halved holes store `'h'` rather than null, and the scorer-access
+limitation, which is now also a backlog item. Dropped `mpScorerHint`, an i18n
+key nothing used.
+
+## 2026-08-27 (M Cup match play — the public Live Match Center, phase 4 of 5)
+
+`src/matchplay-view.js` (new) is what a spectator opens: the team scoreboard
+(ALTAI 8.5 — 7.5 WELLCOM) with the running session under it, then match cards
+grouped LIVE → FINAL → UPCOMING, then the session-by-session breakdown. Each
+card answers the spec's two-second question on one line — who leads and by how
+much, and how far the match has got: THRU before the off becomes the tee time
+instead. Tapping a card opens the hole-by-hole detail (A / W / – across 18,
+with the running status behind it). Every status line names its team, so
+nothing depends on colour alone.
+
+The tournament page grows a Match Center tab, first and selected by default
+when the tournament's format is 'match' and it has matches; a match play
+tournament with no stroke entries drops the leaderboard tab entirely rather
+than showing an empty board. On the home strip a match play tournament shows
+the team score, the live match count and the session in place of the player
+list — the strip's job there is "who is winning", not "where am I".
+
+Live updates need no new machinery: the page's existing RTDB listener already
+repaints the board on every change, so a scorer's tap reaches every spectator
+without the polling the spec allowed as a fallback (§20).
+
+Tests: 8 more cases (23 total) covering which session a viewer is shown —
+including a suspended match holding its session — and what the strip
+summarizes.
+
+## 2026-08-27 (M Cup match play — the scorer screen, phase 3 of 5)
+
+`#/score/:tnId/:matchId` (`src/matchplay-score.js`, new) is the on-course
+screen: three big buttons — team A, HALVED, team B — under the match's current
+status, sized for a thumb and labelled with team names rather than colour
+alone (spec §23). The hole advances by itself after each tap, UNDO clears the
+last hole entered, and the 18-hole strip below doubles as the correction
+affordance: tapping a played hole edits it, and the engine re-settles
+everything after it (spec §13).
+
+The screen holds no scoring state of its own — every tap writes the hole and
+the RTDB listener paints what came back. Two scorers on the same match
+therefore cannot diverge, and offline it still feels instant because RTDB
+answers its own listener from the pending write before the network sees it.
+`saveTnMatchHole()` no longer lets the audit read block the write for the same
+reason. Admins assign scorers per match from a member picker in the setup
+section (spec §14), and each match row links straight to its scorer screen.
+
+Access is currently enforced in the UI only: admins and marshals score any
+match, others only where assigned. Server-side enforcement is not possible as
+things stand — the app authenticates through a localStorage session rather
+than Firebase Auth, so a database rule has no identity to check. Worth
+deciding separately before the tournament; the assignment data the rule would
+need is already stored.
+
+## 2026-08-27 (M Cup match play — admin setup, phase 2 of 5)
+
+The admin side of a match play tournament: `src/matchplay-admin.js` (new)
+renders a setup section inside the existing tournament editor whenever the
+tournament's format is 'match' — teams (name, short name, color), a roster
+textarea per team (one name per line, reconciled by name so an unchanged
+player keeps their id and their match assignments), sessions (day, number,
+FOURSOMES/FOURBALL/SINGLES, start time) and matches (number, tee time, player
+selects sized by the session's format). The lineup panel runs the engine's
+validation live — duplicate players, 12-per-team-per-session, wrong-team and
+off-roster picks — and the participation indicator shows n/14 per team with
+the unplayed names.
+
+Editing happens on a local draft, so the admin tab re-rendering never loses
+keystrokes; the save button writes only the mp/* subtrees and merges hole
+results, scorer assignments and suspensions from a fresh read first, so
+saving the setup can never erase what a scorer entered meanwhile. For the
+same reason the base tournament form's save switched from a whole-record set
+to a partial update. Creating a match-format tournament now opens straight
+into its editor. Deleting a session or match that already carries scores
+asks twice as loudly.
+
+## 2026-08-27 (M Cup match play — the scoring engine, phase 1 of 5)
+
+Groundwork for the M Cup Live Match Center (Ryder Cup-style team match play),
+integrated into the existing tournament model rather than built beside it: the
+`format` field a tournament already carries becomes the switch, and a
+match-play tournament keeps everything else — dates, status, the strip — as is.
+
+`src/matchplay.js` (new) is the whole rulebook as pure functions, mirroring how
+`tournament-sheet.js` keeps the stroke play ranking testable without a browser.
+Hole results are the ONLY stored scoring fact (`'a' | 'b' | 'h'` per hole —
+halved needs a real sentinel because RTDB deletes nulls); status lines
+(AS / 2 UP), dormie, close-outs (4 & 3), match states, points (1 / ½ / 0), team
+and session totals, the hole-by-hole timeline, lineup validation (12 unique
+players per team per session, no double-booking, roster/side checks) and the
+14-player participation indicator are all derived, so a correction to any hole
+re-settles everything downstream by itself. The replay walks holes strictly in
+order, stops at a gap or a close-out — a stray entry past either can never
+change a result, and undoing the hole that caused a close-out brings later
+entries back into play.
+
+`src/store.js` gains `updateTournament()` (partial update — `saveTournament()`
+sets the whole record, which would clobber a scorer's concurrent write) and
+`saveTnMatchHole()`: one scorer tap or its undo, with an audit entry (who,
+when, what it replaced) pushed alongside every write. RTDB queues writes while
+offline, which is what the on-course dead spots need.
+
+Tests: `npm run test:mp` (node's built-in runner, no new dependency) — 15
+cases walking the spec's own examples. Nothing is wired into the UI yet; the
+admin setup screens, scorer interface and the public Live Match Center are the
+next phases.
 
 The organisers asked whether the app's cut updates their sheet. It does not —
 the data only travels `Sheet → App`, so their Position column and the PDF they

@@ -1,0 +1,185 @@
+# M Cup — match play (Live Match Center)
+
+How the team match play feature works, for whoever runs the tournament and
+whoever maintains the code next.
+
+## What it is
+
+A Ryder Cup-style team competition inside the existing tournament model. A
+tournament whose **Format** is `Тулаан / Match` grows a second life: teams, a
+roster per team, sessions, pairings, a scorer screen, and a public Live Match
+Center. Stroke play tournaments are untouched — same records, same Google
+Sheet import, same leaderboard.
+
+## The one rule that explains the rest
+
+**Only hole winners are stored.** Everything else — match status, dormie,
+close-outs, who won, team points, session results, the overall score — is
+recomputed from those holes every time anything is displayed.
+
+That is why a correction needs no cleanup: change hole 4 and the status line,
+the final result and both team totals re-settle themselves. It is also why
+there is no "recalculate" button to forget to press.
+
+## Setting up a tournament
+
+Admin → Тэмцээн → create a tournament with **Format = Тулаан / Match**. It
+opens straight into its editor, where the match play section appears under the
+usual fields.
+
+1. **Teams.** Name, short name (what the cards and scoreboard show), colour.
+   Colour is decoration only — every status line names its team in words, so
+   the board still reads correctly in greyscale or to a colour-blind viewer.
+2. **Roster.** One player name per line, 14 per team. Editing a name in place
+   keeps that player's match assignments; a player removed from the list while
+   still fielded in a match is kept and flagged rather than silently dropped.
+3. **Sessions.** Day, number, format (`FOURSOMES`, `FOURBALL`, `SINGLES`),
+   start time. Matches belong to a session and inherit its format, which is
+   what sizes the pairing selects (2 v 2, or 1 v 1 for singles).
+4. **Matches.** Match number, tee time, and the players on each side.
+5. **Scorers.** Per match, pick the app members allowed to enter its holes.
+
+Press **Match play хадгалах**. Until you do, edits live only in the browser —
+which is deliberate: the admin tab re-renders often, and a draft cannot lose
+your typing to a re-render.
+
+### Validation as you go
+
+Under each session:
+
+- 12 unique players per team per session
+- nobody in two matches of the same session
+- the right number of players per side for the format
+- nobody fielded for the team they are not on
+
+And under the whole setup, **participation**: `n/14` per team, naming the
+players who have not been given a match yet. All 14 must play at least once.
+
+## Scoring on the course
+
+`#/score/:tournamentId/:matchId` — reachable from the **Оноо оруулах** button
+on each match row in the admin editor. Give scorers that link.
+
+The screen is three buttons: **team A**, **ТЭНЦСЭН**, **team B**. Tap the one
+that won the hole; the screen moves to the next hole itself. That is the whole
+interaction — a hole should take a couple of seconds.
+
+- **Сүүлийн нүхийг буцаах** clears the last hole entered.
+- **Tapping any played hole** in the strip at the bottom opens it for
+  correction. Everything after it re-settles.
+- **Түр зогсоох** marks the match SUSPENDED (weather, darkness). This is the
+  one state a human sets rather than the holes deriving; resume clears it.
+
+A match closes itself out the moment it is decided — 4 up with 3 to play is
+`4 & 3`, `COMPLETED`, and nothing entered afterwards can change it. Undo the
+hole that caused the close-out and the later holes come back into play.
+
+### Bad signal on the course
+
+Taps are written through Firebase Realtime Database, which queues writes
+locally when the phone is offline and sends them when signal returns. The
+screen updates immediately either way, because it paints from the database's
+own local answer rather than waiting for the network.
+
+Two scorers on the same match cannot diverge: neither screen keeps scoring
+state of its own, and each tap reads the match as it stands at that moment
+rather than as it looked when the screen was drawn.
+
+One caveat worth telling the scoring crew: **open the screen before you lose
+signal**. A screen already open keeps working through a dead spot, but one
+opened cold with no connection has nothing to show until the connection
+returns — it waits rather than failing, but it cannot score in the meantime.
+
+## What spectators see
+
+The tournament page opens on **Match Center**:
+
+1. **Team score** — `ALTAI 8.5 — 7.5 WELLCOM`, with the running session under it.
+2. **LIVE matches**, then **FINAL**, then **UPCOMING**.
+3. **Session results** — the breakdown per session and the overall.
+
+Each card gives the match number, format, both sides, and one line: who leads
+and by how much (`ALTAI 2 UP`), plus `Явц 11`. Before a match tees off that
+line is its tee time instead. Tapping a card opens the hole-by-hole story.
+
+The home strip shows the team score, how many matches are live, and the
+current session — not a player list. Updates arrive on their own; there is
+nothing to refresh.
+
+## Points
+
+Win 1, halve ½ each, loss 0. Team totals are the sum over completed matches.
+An unfinished match contributes nothing until it finishes. Nobody types a team
+score anywhere.
+
+## Data model
+
+Under `tournaments/{id}/mp`:
+
+| Path | Holds |
+| --- | --- |
+| `teams/{a\|b}` | name, short, color |
+| `roster/{playerId}` | teamId, name |
+| `sessions/{sessionId}` | day, number, format, startTime |
+| `matches/{matchId}` | sessionId, number, teeTime, players.{a,b}[], scorerIds, stateOverride |
+| `matches/{matchId}/holes/{n}` | `'a'` \| `'b'` \| `'h'` |
+| `audit/{pushId}` | at, by, matchId, hole, value, prev |
+
+`'h'` rather than `null` for a halved hole: Realtime Database deletes null
+values, so a halved hole stored as null would be indistinguishable from a hole
+nobody has played.
+
+Setup saves and scoring writes never touch the same paths, so an admin fixing
+a tee time cannot erase a hole a scorer entered a second earlier. The setup
+editor writes one key per field and never writes `holes` or `stateOverride` at
+all; deletions come from what the editor actually removed, so a match created
+by someone else while the editor was open survives the save.
+
+A suspension is the only stored state, and it never outranks the holes: a
+match the holes have decided is COMPLETED whatever the flag says, so play that
+resumes without anyone pressing Resume still finishes and still scores its
+point.
+
+## Known limitation: scorer access is not enforced server-side
+
+The scorer restriction is applied in the UI only. The app signs members in
+through a localStorage session rather than Firebase Auth, so a database rule
+has no identity to check — anyone who can reach the database directly could
+write a hole result regardless of assignment.
+
+For a supervised tournament with a known scoring crew this is usually
+acceptable, and the audit trail records who the app believed was scoring. If
+it is not acceptable, the fix is Firebase Auth, which is a wider decision than
+this feature: the assignment data a rule would need (`matches/{id}/scorerIds`)
+is already stored, so the rule itself is short once identities are real.
+
+## Reviewing it without a real tournament
+
+`#/tournament/mcup-demo` opens a sample M Cup — both teams at 14, three
+sessions, 24 matches covering every state including a dormie and a suspension.
+It also takes the home strip when there is no real tournament to feature. Like
+the stroke play sample at `#/tournament/demo`, it only exists on localhost and
+Firebase preview channels, never on the production hosts.
+
+## Code map
+
+| File | Responsibility |
+| --- | --- |
+| `src/matchplay.js` | The rules. Pure functions, no DOM, no Firebase. |
+| `src/matchplay-admin.js` | Setup UI: teams, roster, sessions, pairings, validation. |
+| `src/matchplay-score.js` | The scorer screen (`#/score/:tnId/:matchId`). |
+| `src/matchplay-view.js` | Public Live Match Center and the home strip summary. |
+| `src/matchplay-demo.js` | The sample tournament, also used as a test fixture. |
+| `src/store.js` | `updateTournament`, `saveTnMatchHole`, `setTnMatchSuspended`. |
+
+Tests: `npm run test:mp`. They cover the engine against the spec's own worked
+examples, which session a viewer is shown, and the rendered output of a full
+M Cup-shaped tournament.
+
+## Adding a format
+
+`FOURSOMES`, `FOURBALL` and `SINGLES` differ, as far as the software is
+concerned, only in how many players a side fields — the match play arithmetic
+is identical. To add one, extend `FORMATS` and `FORMAT_TEAM_SIZE` in
+`src/matchplay.js`; the setup UI sizes its selects from that table and the rest
+follows.
