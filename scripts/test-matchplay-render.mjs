@@ -101,6 +101,13 @@ test('the running session is named on the scoreboard', () => {
   assert.match(host.innerHTML, /DAY 1 — FOURBALL/);
 });
 
+test('every card names its day and session, not just the format', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN);
+  assert.match(host.innerHTML, /Day 1 — FOURSOMES/);
+  assert.match(host.innerHTML, /Day 1 — FOURBALL/);
+});
+
 test('every match state gets a card, with players named', () => {
   const host = hostStub();
   renderMatchCenter(host, TN);

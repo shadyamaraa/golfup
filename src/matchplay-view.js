@@ -186,7 +186,7 @@ function cardHTML(mp, match, state, tnId, viewer, singles) {
         <span style="font-size:0.72rem;font-weight:800;color:var(--text-secondary);">
           ${t('mpMatchNo')}${esc(match.number ?? '')}
         </span>
-        <span style="font-size:0.66rem;color:var(--text-muted);">${esc(session.format || '')}</span>
+        <span style="font-size:0.66rem;color:var(--text-muted);">${esc(sessionLabel(session) || match.format || '')}</span>
         <span class="pill-soft" style="margin-left:auto;font-size:0.66rem;font-weight:800;">${esc(stateText)}</span>
       </div>
       ${sideHTML('a')}
@@ -226,7 +226,7 @@ function detailHTML(mp, match, singles, tnId, viewer) {
   return `
     <div style="padding:4px 2px;">
       <div style="font-size:0.74rem;color:var(--text-secondary);font-weight:700;">
-        ${t('mpMatchNo')}${esc(match.number ?? '')} — ${esc(session.format || '')}
+        ${t('mpMatchNo')}${esc(match.number ?? '')} — ${esc(sessionLabel(session) || match.format || '')}
         ${match.teeTime ? ` · ${esc(match.teeTime)}` : ''}
       </div>
       ${TEAM_KEYS.map(k => `

@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Cards name their day and session)
+
+Match cards on the board and the detail modal header showed only the
+format (FOURSOMES / FOURBALL / SINGLES), so with several sessions set up
+nothing said which day a match belongs to. Both now carry the session's
+full label ("Өдөр 1 — FOURSOMES") via the existing `sessionLabel`;
+sessionless singles matches fall back to their own format text.
+
 ## 2026-08-27 (Score entry reachable straight from the Match Center)
 
 Entering scores from the Match Center only worked for fielded players —
