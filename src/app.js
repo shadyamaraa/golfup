@@ -4,6 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
+import { mountMpAdmin } from './matchplay-admin.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -7240,6 +7241,7 @@ async function renderAdminTournamentsTab() {
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
             ${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}
             <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
+            ${tn.format === 'match' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
           </div>` : ''}
       </div>`;
   };
@@ -7277,7 +7279,9 @@ async function renderAdminTournamentsTab() {
     showToast('✅ ' + t('tnCreated'), 'success');
     // A link given at creation time is only useful once it has been read.
     if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
-    adminOpenTn = null;
+    // A match play tournament is set up in its editor (teams, sessions,
+    // pairings), so a fresh one opens straight into it.
+    adminOpenTn = data.format === 'match' ? id : null;
     await renderAdminTournamentsTab();
   };
 
@@ -7299,7 +7303,9 @@ async function renderAdminTournamentsTab() {
     if (!tn) return;
     const data = tnAdminReadForm(`tn-e-${tn.id}`);
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
-    try { await store.saveTournament({ ...tn, ...data }); }
+    // Partial update on purpose: a whole-record set would silently overwrite
+    // whatever a match play scorer wrote under mp/ while this form was open.
+    try { await store.updateTournament(tn.id, data); }
     catch (err) { tnAdminError(err); return; }
     tnSheetCache.delete(tn.id);
     showToast('✅ ' + t('saved'), 'success');
@@ -7316,6 +7322,15 @@ async function renderAdminTournamentsTab() {
     catch (err) { tnAdminError(err); return; }
     await renderAdminTournamentsTab();
   });
+
+  // Match play setup lives in its own module; it renders into the open
+  // editor's host div and keeps its own draft, so this tab re-rendering
+  // (saves, syncs) never loses in-progress lineup edits.
+  if (adminOpenTn) {
+    const tn = list.find(x => x.id === adminOpenTn);
+    const host = tn && document.getElementById(`mp-adm-${tn.id}`);
+    if (host) mountMpAdmin(host, tn, { showToast, rerender: renderAdminTournamentsTab });
+  }
 
   // Upload
   const fileInput = document.getElementById('tn-file-input');

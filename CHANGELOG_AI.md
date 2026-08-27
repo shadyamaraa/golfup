@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — admin setup, phase 2 of 5)
+
+The admin side of a match play tournament: `src/matchplay-admin.js` (new)
+renders a setup section inside the existing tournament editor whenever the
+tournament's format is 'match' — teams (name, short name, color), a roster
+textarea per team (one name per line, reconciled by name so an unchanged
+player keeps their id and their match assignments), sessions (day, number,
+FOURSOMES/FOURBALL/SINGLES, start time) and matches (number, tee time, player
+selects sized by the session's format). The lineup panel runs the engine's
+validation live — duplicate players, 12-per-team-per-session, wrong-team and
+off-roster picks — and the participation indicator shows n/14 per team with
+the unplayed names.
+
+Editing happens on a local draft, so the admin tab re-rendering never loses
+keystrokes; the save button writes only the mp/* subtrees and merges hole
+results, scorer assignments and suspensions from a fresh read first, so
+saving the setup can never erase what a scorer entered meanwhile. For the
+same reason the base tournament form's save switched from a whole-record set
+to a partial update. Creating a match-format tournament now opens straight
+into its editor. Deleting a session or match that already carries scores
+asks twice as loudly.
+
 ## 2026-08-27 (M Cup match play — the scoring engine, phase 1 of 5)
 
 Groundwork for the M Cup Live Match Center (Ryder Cup-style team match play),
