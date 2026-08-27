@@ -67,10 +67,12 @@ const TN = {
         players: { a: ['p3'], b: ['q3'] },
         holes: holes(...Array(18).fill(HALVED))
       },
-      // Live: ALTAI 2 UP thru 11.
+      // Live: ALTAI 2 UP thru 11. Carries an assigned scorer who is not a
+      // player — the enter-score tests below depend on that.
       m3: {
         id: 'm3', sessionId: 's2', number: 3, teeTime: '13:00',
         players: { a: ['p1', 'p2'], b: ['q1', 'q2'] },
+        scorerIds: { scorekeeper: true },
         holes: holes('a', HALVED, 'a', HALVED, HALVED, 'b', 'a', HALVED, HALVED, HALVED, HALVED)
       },
       // Upcoming.
@@ -213,6 +215,13 @@ test('an admin sees enter-score on every unfinished match', () => {
   renderMatchCenter(host, TN, { user: { id: 'boss', role: 'admin' } });
   // m3 live + m4 upcoming; m1/m2 are completed.
   assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 2);
+});
+
+test('an assigned scorer sees enter-score on their match only', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'scorekeeper' } });
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 1);
+  assert.match(host.innerHTML, new RegExp(`#/score/${TN.id}/m3`));
 });
 
 test('a spectator sees no enter-score buttons', () => {
