@@ -11,6 +11,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -57,7 +58,7 @@ function stepHTML() {
 
   if (draft.step === 2) {
     const card = (value, icon, title, desc) => `
-      <button data-wz-type="${value}" style="flex:1;min-width:200px;text-align:left;cursor:pointer;
+      <button data-wz-type="${value}" style="flex:1;min-width:160px;text-align:left;cursor:pointer;
         padding:14px;border-radius:12px;font-family:var(--font);color:var(--text-primary);
         background:${draft.format === value ? 'var(--bg-card-hover)' : 'var(--bg-color)'};
         border:2px solid ${draft.format === value ? 'var(--gold,#DD8910)' : 'var(--border-color)'};">
@@ -65,12 +66,22 @@ function stepHTML() {
         <div style="font-weight:800;margin-top:6px;">${title}</div>
         <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px;line-height:1.45;">${desc}</div>
       </button>`;
+    // The two match play kinds carry their rulebook right here, so the choice
+    // between plain match play and the Ryder Cup rules is made informed.
+    const rules = draft.format === 'ryder' ? ryderRulesHTML()
+      : draft.format === 'match' ? matchRulesHTML() : '';
     return `
       <h4 style="margin:0 0 10px;">${t('wzType')}</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         ${card('stroke', '⛳', t('wzTypeStroke'), t('wzTypeStrokeDesc'))}
-        ${card('match', '🏆', t('wzTypeMatch'), t('wzTypeMatchDesc'))}
-      </div>`;
+        ${card('match', '🎯', t('wzTypeMatch'), t('wzTypeMatchDesc'))}
+        ${card('ryder', '🏆', t('wzTypeRyder'), t('wzTypeRyderDesc'))}
+      </div>
+      ${rules ? `
+        <details style="margin-top:10px;">
+          <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('wzRules')}</summary>
+          ${rules}
+        </details>` : ''}`;
   }
 
   if (draft.step === 3) {
@@ -85,7 +96,7 @@ function stepHTML() {
   }
 
   if (draft.step === 4) {
-    if (draft.format === 'match') {
+    if (draft.format === 'ryder') {
       return `
         <h4 style="margin:0 0 10px;">${t('wzTypeSettings')}</h4>
         <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;">
@@ -95,6 +106,13 @@ function stepHTML() {
           ${field(t('mpTeamShort'), input('teamBShort', 'text', 'WELLCOM'))}
         </div>
         <p style="margin:10px 0 0;font-size:0.76rem;color:var(--text-secondary);">${t('wzMatchHint')}</p>`;
+    }
+    if (draft.format === 'match') {
+      // Plain match play has no up-front settings — participants and the
+      // match list are built in the editor once the tournament exists.
+      return `
+        <h4 style="margin:0 0 10px;">${t('wzTypeSettings')}</h4>
+        <p style="margin:0;font-size:0.8rem;color:var(--text-secondary);">${t('wzMatchHint')}</p>`;
     }
     return `
       <h4 style="margin:0 0 10px;">${t('wzTypeSettings')}</h4>
@@ -120,18 +138,18 @@ function stepHTML() {
   return `
     <h4 style="margin:0 0 10px;">${t('wzSummary')}</h4>
     ${line(t('tnFName'), draft.name)}
-    ${line(t('wzType'), draft.format === 'match' ? t('wzTypeMatch') : t('wzTypeStroke'))}
+    ${line(t('wzType'), { stroke: t('wzTypeStroke'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
     ${line(t('date'), [draft.startDate, draft.endDate].filter(Boolean).join(' — '))}
     ${line(t('tnFVenue'), [draft.venue, draft.city].filter(Boolean).join(' · '))}
-    ${draft.format === 'match'
+    ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
-      : line(t('tnFPar'), draft.par)}`;
+      : draft.format === 'stroke' ? line(t('tnFPar'), draft.par) : ''}`;
 }
 
 // A step's gate: what must be filled before Үргэлжлүүлэх works.
 function stepValid() {
   if (draft.step === 1) return !!draft.name.trim();
-  if (draft.step === 2) return draft.format === 'stroke' || draft.format === 'match';
+  if (draft.step === 2) return ['stroke', 'match', 'ryder'].includes(draft.format);
   return true;
 }
 
@@ -147,13 +165,15 @@ async function create(ctx) {
     entries: [],
     createdAt: Date.now()
   };
-  if (draft.format === 'match') {
+  if (draft.format === 'ryder') {
     data.mp = {
       teams: {
         a: { name: draft.teamAName.trim(), short: draft.teamAShort.trim(), color: '' },
         b: { name: draft.teamBName.trim(), short: draft.teamBShort.trim(), color: '' }
       }
     };
+  } else if (draft.format === 'match') {
+    // Participants and matches are added in the editor; nothing to seed.
   } else {
     Object.assign(data, {
       rounds: num(draft.rounds), currentRound: num(draft.currentRound),

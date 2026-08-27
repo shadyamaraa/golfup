@@ -1,5 +1,41 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Three formats: Stroke / Match play (1v1) / Ryder Cup)
+
+The team M Cup system is now the **Ryder Cup** format (`format: 'ryder'`),
+and a new plain **Match play** format (`format: 'match'`) joins it: 1v1
+singles under Rule 3, no teams, no sessions, no 12/14 rules. All branching
+goes through a new pure helper `tnKind(tn)` in `src/matchplay.js`
+(`'stroke' | 'match' | 'ryder'`; legacy `'match'` records carrying
+`mp.teams`/`mp.sessions` are recognised as Ryder Cup, so nothing saved
+before the rename changes behaviour).
+
+- **Wizard** (`src/tournament-wizard.js`): three type cards — ⛳ Цохилтын
+  тоглолт / 🎯 Match play / 🏆 Ryder Cup — each match play card with a
+  "Дүрэм харах" fold-out; Ryder asks the two team names, Match asks nothing
+  (participants and pairs are built in the editor).
+- **Rulebooks** (`src/mcup-rules.js`, new): the club's full M Cup document
+  (Fourball, Foursomes odd/even tee, Singles, dormie / 4&3 / gimme,
+  Score → Hole → Match → TEAM) for Ryder Cup, and a Rule 3 primer for
+  Match play. Shown on the wizard's type step and the tournament's
+  Мэдээлэл tab; a "📖 Форматын дүрэм" button under the Match Center jumps
+  there.
+- **Editor** (`src/matchplay-admin.js`): singles mode — one Оролцогчид
+  member picker instead of team boxes, a flat sessionless match list with
+  one player per side (format `SINGLES` automatic), and a warning when both
+  sides are the same player. Saving never writes `mp/teams` or
+  `mp/sessions` for singles, so a Match tournament can't drift into
+  looking like a team one.
+- **Board** (`src/matchplay-view.js`): singles shows a player standings
+  table (P / W-L-H / Pts) instead of the team scoreboard and session
+  breakdown; cards and the detail legend lead with player names ("Бат
+  2 UP"). The scorer keypad and its legend do the same
+  (`src/matchplay-score.js`).
+- **Push** (`functions/index.js`): a finished singles match is announced by
+  the winner's name instead of a team short.
+- i18n: `fmtMatch` → 'Match play', new `fmtRyder`; the demo tournament is
+  `format: 'ryder'` now. Tests grew to 54 (tnKind table + singles render).
+
 ## 2026-08-27 (M Cup — players score their own matches, corrections need consent, and creation grows a wizard)
 
 Four connected changes, modelled on how Squabbit runs its tournaments and on

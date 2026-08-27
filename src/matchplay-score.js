@@ -77,8 +77,20 @@ function playerNames(mp, match, k) {
     .join(' / ') || '—';
 }
 
-// The three big buttons. Team names are on them, never colour alone (§23).
-function keypadHTML(mp, hole, current) {
+// The label a side's keypad button and status line carry: the team's short
+// name in a team tournament, the player themselves in plain match play (a
+// singles match has no team to name).
+function sideLabel(mp, match, k) {
+  const rosterTeamless = !mp?.teams?.a?.name && !mp?.teams?.b?.name;
+  if (rosterTeamless) {
+    const names = playerNames(mp, match, k);
+    if (names && names !== '—') return names;
+  }
+  return teamLabel(mp, k);
+}
+
+// The three big buttons. Side names are on them, never colour alone (§23).
+function keypadHTML(mp, hole, current, match) {
   const key = (value, label, color) => `
     <button data-sc="hole" data-value="${value}"
       style="flex:1;min-width:96px;padding:22px 10px;border-radius:14px;cursor:pointer;
@@ -89,9 +101,9 @@ function keypadHTML(mp, hole, current) {
     </button>`;
   return `
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      ${key('a', teamLabel(mp, 'a'), teamColor(mp, 'a'))}
+      ${key('a', sideLabel(mp, match, 'a'), teamColor(mp, 'a'))}
       ${key(HALVED, t('mpHalved'), 'var(--text-secondary)')}
-      ${key('b', teamLabel(mp, 'b'), teamColor(mp, 'b'))}
+      ${key('b', sideLabel(mp, match, 'b'), teamColor(mp, 'b'))}
     </div>`;
 }
 
@@ -169,7 +181,7 @@ function screenHTML(tn, match, demo, user) {
   const hole = Math.min(viewHole ?? (settled.thru + 1), total);
   const current = match.holes?.[hole] ?? null;
   const session = mp.sessions?.[match.sessionId] || {};
-  const lead = settled.leader ? teamLabel(mp, settled.leader) : '';
+  const lead = settled.leader ? sideLabel(mp, match, settled.leader) : '';
 
   return `
     <div class="detail-container fade-in" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
@@ -208,7 +220,7 @@ function screenHTML(tn, match, demo, user) {
           <div style="text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
             ${t('mpHole')} ${hole}${current ? ` · ${t('mpEditing')}` : ''}
           </div>
-          ${keypadHTML(mp, hole, current)}
+          ${keypadHTML(mp, hole, current, match)}
         </div>`}
 
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -227,7 +239,7 @@ function screenHTML(tn, match, demo, user) {
 
       ${stripHTML(match, hole)}
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;text-align:center;">
-        A = ${esc(teamLabel(mp, 'a'))} · W = ${esc(teamLabel(mp, 'b'))} · – = ${t('mpHalved')}
+        A = ${esc(sideLabel(mp, match, 'a'))} · W = ${esc(sideLabel(mp, match, 'b'))} · – = ${t('mpHalved')}
       </div>
       <div id="sc-device" style="min-height:0;"></div>
       <div id="sc-note" style="font-size:0.75rem;color:var(--text-secondary);margin-top:10px;text-align:center;min-height:1.2em;"></div>

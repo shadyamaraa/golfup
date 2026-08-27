@@ -195,6 +195,57 @@ test('the sample covers all four match states', () => {
     .forEach(s => assert.ok(states.has(s), `sample must include a ${s} match`));
 });
 
+// ---- Plain match play (1v1 singles, no teams) ----
+// The Match format reuses the whole engine but must never show team chrome:
+// the board is a standings table plus the match cards, and every side is a
+// player's name.
+
+const SINGLES_TN = {
+  id: 'sgl',
+  format: 'match',
+  mp: {
+    roster: {
+      p1: { name: 'Bat', userId: 'p1' },
+      p2: { name: 'Dorj', userId: 'p2' },
+      p3: { name: 'Saruul', userId: 'p3' },
+      p4: { name: 'Tulga', userId: 'p4' }
+    },
+    matches: {
+      // Bat closes out Dorj 3 & 2.
+      m1: {
+        id: 'm1', number: 1, format: 'SINGLES', teeTime: '09:00',
+        players: { a: ['p1'], b: ['p2'] },
+        holes: holes('a', 'a', HALVED, 'a', HALVED, HALVED, HALVED, HALVED,
+          HALVED, HALVED, HALVED, HALVED, HALVED, HALVED, HALVED, HALVED)
+      },
+      // Saruul 1 UP on Tulga thru 3, live.
+      m2: {
+        id: 'm2', number: 2, format: 'SINGLES', teeTime: '09:10',
+        players: { a: ['p3'], b: ['p4'] },
+        holes: holes('a', HALVED, HALVED)
+      }
+    }
+  }
+};
+
+test('a singles board shows standings, not a team scoreboard', () => {
+  const host = hostStub();
+  renderMatchCenter(host, SINGLES_TN);
+  assert.match(host.innerHTML, /Standings/);
+  ['Bat', 'Dorj', 'Saruul', 'Tulga'].forEach(n =>
+    assert.match(host.innerHTML, new RegExp(n)));
+  assert.ok(!/Session results/.test(host.innerHTML), 'no session breakdown');
+  assert.ok(!/Team A|Team B/.test(host.innerHTML), 'no team fallback labels');
+});
+
+test('singles cards lead with the player, not a team short', () => {
+  const host = hostStub();
+  renderMatchCenter(host, SINGLES_TN);
+  assert.match(host.innerHTML, /Bat 3 &amp; 2/);
+  assert.match(host.innerHTML, /Saruul 1 UP/);
+  assert.equal((host.innerHTML.match(/data-mpv="open"/g) || []).length, 2);
+});
+
 test('the sample renders the whole board', () => {
   const host = hostStub();
   renderMatchCenter(host, MP_DEMO);

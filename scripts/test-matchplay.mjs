@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
-  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange
+  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -326,4 +326,18 @@ test('consent: who may settle a pending change', () => {
   assert.equal(canResolveHoleChange({ id: 'u2', role: 'user' }, match, 5), false);
   assert.equal(canResolveHoleChange({ id: 'm', role: 'marshal' }, match, 5), true);
   assert.equal(canResolveHoleChange(null, match, 5), false);
+});
+
+// ---- Tournament kind ----
+
+test('tnKind: ryder, plain match, legacy match-with-teams, stroke', () => {
+  assert.equal(tnKind({ format: 'ryder' }), 'ryder');
+  assert.equal(tnKind({ format: 'match' }), 'match');
+  assert.equal(tnKind({ format: 'match', mp: { roster: {}, matches: {} } }), 'match');
+  // Records from before 'ryder' existed: format 'match' but team-shaped.
+  assert.equal(tnKind({ format: 'match', mp: { teams: { a: {} } } }), 'ryder');
+  assert.equal(tnKind({ format: 'match', mp: { sessions: { s1: {} } } }), 'ryder');
+  assert.equal(tnKind({ format: 'stroke' }), 'stroke');
+  assert.equal(tnKind({ format: 'scramble' }), 'stroke');
+  assert.equal(tnKind(null), 'stroke');
 });

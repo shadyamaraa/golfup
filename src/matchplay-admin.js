@@ -20,7 +20,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
-  lineupIssues, participation, matchState
+  lineupIssues, participation, matchState, tnKind
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -189,8 +189,12 @@ function readLogoFile(file) {
   });
 }
 
-function playerSelectHTML(mp, match, teamId, slot) {
-  const roster = rosterOf(mp, teamId);
+function playerSelectHTML(mp, match, teamId, slot, anyPlayer) {
+  // Team formats pick from that team's roster; singles from everyone.
+  const roster = anyPlayer
+    ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : rosterOf(mp, teamId);
   const cur = match.players?.[teamId]?.[slot] || '';
   const known = !cur || roster.some(p => p.id === cur);
   return `
@@ -228,12 +232,16 @@ function scorerHTML(tn, match, users) {
 
 function matchRowHTML(tn, match, users) {
   const mp = draftFor(tn).mp;
+  const singles = tnKind(tn) === 'match';
   const session = mp.sessions[match.sessionId] || {};
-  const size = FORMAT_TEAM_SIZE[session.format] || 2;
+  const size = singles ? 1 : (FORMAT_TEAM_SIZE[session.format] || 2);
   const live = matchState({ ...match }) !== 'UPCOMING';
+  // The one lineup rule singles has: a player cannot face themselves.
+  const selfPlay = singles && match.players?.a?.[0]
+    && match.players.a[0] === match.players?.b?.[0];
   const sideHTML = (teamId) => `
     <div style="display:flex;flex-direction:column;gap:4px;min-width:150px;flex:1;">
-      ${Array.from({ length: size }, (_, i) => playerSelectHTML(mp, match, teamId, i)).join('')}
+      ${Array.from({ length: size }, (_, i) => playerSelectHTML(mp, match, teamId, i, singles)).join('')}
     </div>`;
   return `
     <div style="border:1px solid var(--border-color);border-radius:8px;padding:8px;margin-top:6px;background:var(--bg-color);">
@@ -249,6 +257,7 @@ function matchRowHTML(tn, match, users) {
         <b style="font-size:0.72rem;color:var(--text-secondary);">vs</b>
         ${sideHTML('b')}
       </div>
+      ${selfPlay ? `<div style="font-size:0.74rem;color:var(--amber);margin-top:4px;">⚠ ${t('mpIssueDupMatch')}</div>` : ''}
       ${scorerHTML(tn, match, users)}
     </div>`;
 }
@@ -320,22 +329,67 @@ function participationHTML(tn) {
     </div>`;
 }
 
+// Plain match play: one participants list instead of two team boxes.
+function participantsBoxHTML(tn, users) {
+  const mp = draftFor(tn).mp;
+  const taken = new Set(Object.keys(mp.roster));
+  const roster = Object.entries(mp.roster)
+    .map(([id, p]) => ({ id, name: p?.name || id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const chip = (p) => `
+    <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name)}
+      <button data-mp="del-player" data-pid="${esc(p.id)}"
+        style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
+    </span>`;
+  return `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;">
+      <span style="${LABEL}">${t('mpParticipants')} — ${roster.length}</span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
+        ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
+      </div>
+      <select data-mp="add-player" data-team="" style="${INPUT}width:100%;margin-top:6px;">
+        <option value="">+ ${t('mpPickMember')}</option>
+        ${(users || []).filter(u => u && u.id && !taken.has(u.id))
+          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+// The flat singles match list — no sessions, sides of one.
+function singlesMatchesHTML(tn, users) {
+  const mp = draftFor(tn).mp;
+  const matches = Object.values(mp.matches).filter(Boolean)
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+      <b style="font-size:0.85rem;">Match</b>
+      <button data-mp="add-match" data-session="" class="btn btn-outline btn-sm">+ ${t('mpAddMatch')}</button>
+    </div>
+    ${matches.map(m => matchRowHTML(tn, m, users)).join('')
+      || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoMatches')}</p>`}`;
+}
+
 function sectionHTML(tn, users) {
   const mp = draftFor(tn).mp;
   const dirty = drafts.get(tn.id)?.dirty;
+  const singles = tnKind(tn) === 'match';
+  const body = singles
+    ? `${participantsBoxHTML(tn, users)}
+       ${singlesMatchesHTML(tn, users)}`
+    : `<div style="display:flex;gap:10px;flex-wrap:wrap;">
+         ${TEAM_KEYS.map(k => teamBoxHTML(tn, k, users)).join('')}
+       </div>
+       <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+         <b style="font-size:0.85rem;">${t('mpSessions')}</b>
+         <button data-mp="add-session" class="btn btn-outline btn-sm">+ ${t('mpAddSession')}</button>
+       </div>
+       ${sessionList(mp).map(s => sessionBoxHTML(tn, s, users)).join('')
+         || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoSessions')}</p>`}
+       ${participationHTML(tn)}`;
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
       <h4 style="margin:0 0 8px;">${t('mpSetup')}</h4>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        ${TEAM_KEYS.map(k => teamBoxHTML(tn, k, users)).join('')}
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
-        <b style="font-size:0.85rem;">${t('mpSessions')}</b>
-        <button data-mp="add-session" class="btn btn-outline btn-sm">+ ${t('mpAddSession')}</button>
-      </div>
-      ${sessionList(mp).map(s => sessionBoxHTML(tn, s, users)).join('')
-        || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoSessions')}</p>`}
-      ${participationHTML(tn)}
+      ${body}
       <button data-mp="save" class="btn ${dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
         ${t('mpSave')}${dirty ? ' *' : ''}
       </button>
@@ -350,29 +404,37 @@ const SCORER_OWNED = ['holes', 'stateOverride'];
 async function saveDraft(tn, ctx) {
   const draft = draftFor(tn);
   const mp = draft.mp;
+  const singles = tnKind(tn) === 'match';
 
   // Written per record rather than by replacing mp/matches and mp/sessions
   // wholesale: replacing a node deletes anything created elsewhere since this
   // draft was cloned, and a match taken that way takes its scores with it.
-  // Teams and the roster are edited as whole units here, so they go as units.
-  const patch = { 'mp/teams': mp.teams, 'mp/roster': mp.roster };
+  // The roster is edited as a whole unit here, so it goes as a unit. Singles
+  // never writes teams or sessions at all — an empty teams node would make
+  // tnKind read the record as a team tournament.
+  const patch = { 'mp/roster': mp.roster };
+  if (!singles) patch['mp/teams'] = mp.teams;
 
-  Object.values(mp.sessions).forEach(s => {
-    if (s?.id) patch[`mp/sessions/${s.id}`] = s;
-  });
-  draft.removedSessions.forEach(id => { patch[`mp/sessions/${id}`] = null; });
+  if (!singles) {
+    Object.values(mp.sessions).forEach(s => {
+      if (s?.id) patch[`mp/sessions/${s.id}`] = s;
+    });
+    draft.removedSessions.forEach(id => { patch[`mp/sessions/${id}`] = null; });
+  }
 
   Object.values(mp.matches).forEach(m => {
     if (!m) return;
-    const session = mp.sessions[m.sessionId];
-    if (!session) return; // its session was deleted
-    const size = FORMAT_TEAM_SIZE[session.format] || 2;
+    // A singles match belongs to no session; a team match whose session was
+    // deleted goes with it.
+    const session = singles ? null : mp.sessions[m.sessionId];
+    if (!singles && !session) return;
+    const size = singles ? 1 : (FORMAT_TEAM_SIZE[session.format] || 2);
     // The draft's copy of a scorer-owned field is a snapshot from whenever it
     // was cloned, so it is dropped outright rather than merged: taking it
     // whenever the live record lacks the field would resurrect a hole the
     // scorer had just undone, or a suspension they had just cleared — and a
     // stale suspension on a decided match used to cost that match's point.
-    const setup = { ...m, format: session.format };
+    const setup = { ...m, format: singles ? 'SINGLES' : session.format };
     SCORER_OWNED.forEach(f => { delete setup[f]; });
     // A session switched to a smaller format leaves players in slots the form
     // no longer renders, which nothing could then clear.
@@ -457,10 +519,15 @@ function handleClick(tn, el, ctx, host) {
     delete mp.sessions[id];
   } else if (kind === 'add-match') {
     const sessionId = el.dataset.session;
-    const nums = sessionMatches(mp, sessionId).map(m => Number(m.number) || 0);
+    // Singles matches live in one flat list (no session) and number over it.
+    const pool = sessionId
+      ? sessionMatches(mp, sessionId)
+      : Object.values(mp.matches).filter(Boolean);
+    const nums = pool.map(m => Number(m.number) || 0);
     const id = newId('m');
     mp.matches[id] = {
-      id, sessionId,
+      id,
+      ...(sessionId ? { sessionId } : { format: 'SINGLES' }),
       number: (nums.length ? Math.max(...nums) : 0) + 1,
       teeTime: '',
       players: { a: [], b: [] }
@@ -484,11 +551,10 @@ function handleClick(tn, el, ctx, host) {
     // in this match". The display name is a snapshot; the id is the truth.
     const u = (ctx.users || []).find(x => x.id === el.value);
     if (!u) return;
-    mp.roster[u.id] = {
-      teamId: el.dataset.team,
-      name: u.fullName || u.name || u.username || u.id,
-      userId: u.id
-    };
+    const entry = { name: u.fullName || u.name || u.username || u.id, userId: u.id };
+    // Team formats file the player under their team; singles has no teams.
+    if (el.dataset.team) entry.teamId = el.dataset.team;
+    mp.roster[u.id] = entry;
   } else if (kind === 'del-player') {
     const pid = el.dataset.pid;
     const fielded = Object.values(mp.matches).some(m =>

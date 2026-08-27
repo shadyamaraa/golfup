@@ -6,10 +6,34 @@ whoever maintains the code next.
 ## What it is
 
 A Ryder Cup-style team competition inside the existing tournament model. A
-tournament whose **Format** is `Тулаан / Match` grows a second life: teams, a
+tournament whose **Format** is `Ryder Cup` grows a second life: teams, a
 roster per team, sessions, pairings, a scorer screen, and a public Live Match
 Center. Stroke play tournaments are untouched — same records, same Google
 Sheet import, same leaderboard.
+
+## The three formats
+
+- **Stroke** (`format: 'stroke'`) — the original stroke play tournament:
+  rounds, PAR, the cut, the Google Sheet leaderboard. Unchanged.
+- **Match** (`format: 'match'`) — plain match play under Rules of Golf
+  Rule 3: **1v1 singles only**. No teams, no sessions, no 12/14-player
+  rules. The admin picks participants from the members and pairs them into
+  a flat match list; the board shows the match cards plus a player
+  standings table (P / W-L-H / Pts). Everything else — the scoring engine,
+  the scorer screen, consent, device protection, push — is the same
+  machinery as Ryder Cup.
+- **Ryder Cup** (`format: 'ryder'`) — everything the rest of this document
+  describes: two teams, sessions of FOURSOMES / FOURBALL / SINGLES, the
+  club's M Cup rulebook. Tournaments saved before the rename (`'match'`
+  with `mp.teams` or `mp.sessions`) are recognised as Ryder Cup
+  automatically.
+
+The branching lives in one place: `tnKind(tn)` in `src/matchplay.js`
+returns `'stroke' | 'match' | 'ryder'`, and every view, editor and strip
+decides from it. Each match play format carries its rulebook
+(`src/mcup-rules.js`) — shown on the wizard's type step and on the
+tournament's Мэдээлэл tab, with a "📖 Форматын дүрэм" shortcut under the
+Match Center.
 
 ## The one rule that explains the rest
 
@@ -23,11 +47,17 @@ there is no "recalculate" button to forget to press.
 
 ## Setting up a tournament
 
-Admin → Тэмцээн → the creation wizard: name the tournament, pick **Багийн
-тулаан** on the type step (only that type's questions follow — PAR, rounds,
+Admin → Тэмцээн → the creation wizard: name the tournament, pick **Ryder
+Cup** on the type step (only that type's questions follow — PAR, rounds,
 the cut and the scoring sheet belong to stroke play and never appear), dates
 and venue, the two team names, create. It opens straight into its editor,
 where the match play section appears under the usual fields.
+
+For a plain **Match** tournament the wizard asks nothing extra — its editor
+shows a single Оролцогчид member picker instead of the team boxes, and an
+"Match нэмэх" list where each side is one player picked from the
+participants; matches are `SINGLES` automatically and there is no session
+block.
 
 1. **Teams.** Name, short name (what the cards and scoreboard show), and an
    optional **logo** — pick any image and it is shrunk in the browser to a

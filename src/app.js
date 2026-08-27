@@ -8,6 +8,8 @@ import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admi
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
+import { tnKind } from './matchplay.js';
+import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -1344,13 +1346,15 @@ function paintTournamentStrip(host, tn) {
   const mpSummary = stripSummary(tn);
   const mpBody = mpSummary ? `
     <div class="tn-meta">
-      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.a.color};">
-        ${esc(mpSummary.a.name)} ${esc(String(mpSummary.a.points))}
-      </span>
-      <span class="tn-sep"></span>
-      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.b.color};">
-        ${esc(String(mpSummary.b.points))} ${esc(mpSummary.b.name)}
-      </span>
+      ${mpSummary.singles ? `
+        <span class="tn-meta-strong">${t('fmtMatch')}</span>` : `
+        <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.a.color};">
+          ${esc(mpSummary.a.name)} ${esc(String(mpSummary.a.points))}
+        </span>
+        <span class="tn-sep"></span>
+        <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.b.color};">
+          ${esc(String(mpSummary.b.points))} ${esc(mpSummary.b.name)}
+        </span>`}
       ${mpSummary.liveCount ? `<span class="tn-sep"></span><span class="tn-meta-txt">${mpSummary.liveCount} ${t('mpLive')}</span>` : ''}
       ${mpSummary.session ? `<span class="tn-sep"></span><span class="tn-meta-txt">${esc(mpSummary.session)}</span>` : ''}
     </div>` : '';
@@ -1563,11 +1567,11 @@ async function renderTournamentPage(id) {
   }
 }
 
-// A match play tournament (M Cup) shows the Live Match Center instead of a
-// stroke leaderboard. Both can coexist: a tournament that carries entries as
-// well as matches keeps its board tab.
+// A match play tournament — plain 1v1 or the Ryder Cup team kind — shows the
+// Live Match Center instead of a stroke leaderboard. Both can coexist: a
+// tournament that carries entries as well as matches keeps its board tab.
 function isMatchPlay(tn) {
-  return tn?.format === 'match' && !!Object.keys(tn?.mp?.matches || {}).length;
+  return tnKind(tn) !== 'stroke' && !!Object.keys(tn?.mp?.matches || {}).length;
 }
 
 function tnTabsFor(tn) {
@@ -1640,6 +1644,11 @@ function tnInfoHTML(tn) {
     [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
+  // Each match play kind ships its rulebook: the Ryder Cup format carries the
+  // club's full M Cup document, plain match play a Rule 3 primer.
+  const kind = tnKind(tn);
+  const rules = kind === 'ryder' ? ryderRulesHTML() : kind === 'match' ? matchRulesHTML() : '';
+
   return `
     <div class="surface-card tn-info">
       ${rows.map(([k, v]) => `
@@ -1649,6 +1658,11 @@ function tnInfoHTML(tn) {
         </div>`).join('')}
     </div>
     ${tn.description ? `<div class="game-description tn-desc">${esc(tn.description)}</div>` : ''}
+    ${rules ? `
+      <div class="surface-card" style="margin-top:12px;">
+        <h4 style="margin:0 0 4px;">📖 ${t('mpRulesTitle')}</h4>
+        ${rules}
+      </div>` : ''}
     ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
 }
 
@@ -1726,7 +1740,15 @@ function renderTnBoard() {
     host.insertAdjacentHTML('beforeend', `
       ${currentUser && store.isUsingFirebase() && tn.id !== MP_DEMO_ID
         ? `<button id="tn-sub-btn" class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;"></button>` : ''}
+      <button id="tn-rules-link" class="btn btn-outline btn-sm" style="width:100%;margin-top:8px;">📖 ${t('mpRulesTitle')}</button>
       <div id="tn-mp-history"></div>`);
+    const rulesBtn = document.getElementById('tn-rules-link');
+    if (rulesBtn) rulesBtn.onclick = () => {
+      tnPageTab = 'info';
+      document.querySelectorAll('[data-tn-tab]').forEach(b =>
+        b.classList.toggle('active', b.dataset.tnTab === 'info'));
+      renderTnBoard();
+    };
     wireTnSubscribe(tn);
     paintTnHistory(tn);
     return;
@@ -7299,7 +7321,7 @@ function tnAnalysisHTML(a) {
 // only hole winners score and sessions replace rounds.
 function tnAdminFormHTML(p, tn = {}) {
   const sel = (v, cur) => v === cur ? ' selected' : '';
-  const isMatch = tn.format === 'match';
+  const isMatch = tnKind(tn) !== 'stroke';
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
       <input id="${p}-name" type="text" placeholder="${t('tnFName')} *" value="${esc(tn.name || '')}" style="${TN_INPUT}" />
@@ -7317,6 +7339,7 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value=""${sel('', tn.format || '')}>${t('gameFormat')}</option>
         <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
         <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
+        <option value="ryder"${sel('ryder', tn.format)}>${t('fmtRyder')}</option>
         ${tn.format === 'scramble' ? `<option value="scramble" selected>${t('fmtScramble')}</option>` : ''}
       </select>
       <select id="${p}-status" style="${TN_INPUT}">
@@ -7427,7 +7450,7 @@ async function renderAdminTournamentsTab() {
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">
           ${esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '))}
         </div>
-        ${tn.format === 'match' ? '' : `
+        ${tnKind(tn) !== 'stroke' ? '' : `
           <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
             ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
             ${fileWins && tn.sheetUrl ? `<div style="color:var(--amber);margin-top:3px;">${t('tnFileOverridesSheet')}</div>` : ''}
@@ -7437,16 +7460,16 @@ async function renderAdminTournamentsTab() {
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
-          ${tn.format !== 'match' && tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
-          ${tn.format === 'match' ? '' : `<button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>`}
+          ${tnKind(tn) === 'stroke' && tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
+          ${tnKind(tn) !== 'stroke' ? '' : `<button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>`}
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
-        ${tn.lastSync && tn.format !== 'match' ? tnAnalysisHTML(tn.lastSync) : ''}
+        ${tn.lastSync && tnKind(tn) === 'stroke' ? tnAnalysisHTML(tn.lastSync) : ''}
         ${open ? `
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
             <div id="tn-e-${esc(tn.id)}-formwrap">${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}</div>
             <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
-            ${tn.format === 'match' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
+            ${tnKind(tn) !== 'stroke' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
           </div>` : ''}
       </div>`;
   };
@@ -7477,7 +7500,7 @@ async function renderAdminTournamentsTab() {
       if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
       // A match play tournament is set up in its editor (roster, sessions,
       // pairings), so a fresh one opens straight into it.
-      adminOpenTn = data.format === 'match' ? id : null;
+      adminOpenTn = data.format === 'match' || data.format === 'ryder' ? id : null;
       await renderAdminTournamentsTab();
     }
   });

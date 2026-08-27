@@ -388,3 +388,21 @@ export function canResolveHoleChange(user, match, hole) {
   if (user.role === 'admin' || user.role === 'marshal') return true;
   return match?.holeMeta?.[hole]?.by === user.id;
 }
+
+// ---- Tournament kind ----
+
+// Which engine a tournament runs on. 'ryder' is the team competition (two
+// teams, sessions, the M Cup rules); 'match' is plain 1v1 match play (a flat
+// list of singles matches, no teams); everything else is stroke play. Records
+// written before 'ryder' existed carry format 'match' WITH teams/sessions, so
+// shape breaks the tie for them.
+export function tnKind(tn) {
+  if (!tn) return 'stroke';
+  if (tn.format === 'ryder') return 'ryder';
+  if (tn.format === 'match') {
+    const mp = tn.mp;
+    if (mp && (mp.teams || mp.sessions)) return 'ryder';
+    return 'match';
+  }
+  return 'stroke';
+}
