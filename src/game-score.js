@@ -100,12 +100,12 @@ function playerRowHTML(game, p, hole, editable) {
     <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
       <div style="flex:1;min-width:0;">
         <div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || '?')}</div>
-        <div style="font-size:0.72rem;color:var(--text-secondary);">
+        <div data-gs-tot="${esc(p.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
           ${totals ? `${t('gsTotal')} ${totals.total} · ${t('mpThru')} ${totals.thru}` : '—'}
         </div>
       </div>
       ${editable ? stepBtn('minus', '−', strokes === null) : ''}
-      <div style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;">
+      <div data-gs-val="${esc(p.id)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;">
         ${strokes ?? '·'}
       </div>
       ${editable ? stepBtn('plus', '+', strokes !== null && strokes >= MAX_STROKES) : ''}
@@ -133,12 +133,12 @@ function stripHTML(game, players, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">${cells.join('')}</div>`;
 }
 
-function screenHTML(game, groupIdx, user) {
+function screenHTML(game, groupIdx, user, fade) {
   const players = groupsOf(game)[groupIdx] || [];
   const holeCount = gameHoleCount(game);
   const hole = Math.min(viewHole ?? followHole(game, players), holeCount);
   return `
-    <div class="detail-container fade-in" style="max-width:560px;">
+    <div class="detail-container${fade ? ' fade-in' : ''}" style="max-width:560px;">
       <a href="#/game/${esc(game.id)}" class="back-link">${t('back')}</a>
 
       <div style="margin-top:8px;">
@@ -152,7 +152,7 @@ function screenHTML(game, groupIdx, user) {
 
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
         <button data-gs="prev" ${hole <= 1 ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">‹</button>
-        <div style="flex:1;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
+        <div id="gs-hole-label" style="flex:1;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
           ${t('mpHole')} ${hole} / ${holeCount}
         </div>
         <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">›</button>
@@ -205,11 +205,62 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   let data = null;
   try { data = await store.loadGame(gameId); } catch (_) { }
   let denied = false;
+  // What the current DOM was built for. While it matches, paints update the
+  // existing elements in place instead of replacing the whole screen —
+  // replacing it re-ran the fade-in animation on every tap and listener
+  // event, which read as the page "refreshing" mid-round.
+  let paintedKey = null;
+
+  const structureKey = (players) =>
+    groupIdx + '|' + players.map(p => p.id + (canScoreGamePlayer(ctx.user, data, p.id) ? '+' : '-')).join(',');
 
   const notFound = (msg, back) => {
+    paintedKey = null;
     host.innerHTML = `<div class="detail-container fade-in">
       <a href="${back}" class="back-link">${t('back')}</a>
       <div class="empty-state" style="padding:40px 20px;"><p>${msg}</p></div></div>`;
+  };
+
+  const setStep = (btn, disabled) => {
+    if (!btn) return;
+    btn.disabled = disabled;
+    btn.style.opacity = disabled ? '0.35' : '1';
+    btn.style.cursor = disabled ? 'default' : 'pointer';
+  };
+
+  // Refresh only what a score or hole change touches: the hole header, each
+  // row's value/total/stepper state, and the hole strip. Buttons are never
+  // replaced, so their listeners survive and nothing flashes or reflows.
+  const updateInPlace = (players) => {
+    const holeCount = gameHoleCount(data);
+    const hole = Math.min(viewHole ?? followHole(data, players), holeCount);
+    const label = host.querySelector('#gs-hole-label');
+    if (label) label.textContent = `${t('mpHole')} ${hole} / ${holeCount}`;
+    const prev = host.querySelector('button[data-gs="prev"]');
+    if (prev) prev.disabled = hole <= 1;
+    const next = host.querySelector('button[data-gs="next"]');
+    if (next) next.disabled = hole >= holeCount;
+    const totals = gameScoreTotals(data);
+    for (const p of players) {
+      const strokes = data.scores?.[p.id]?.holes?.[hole] ?? null;
+      const val = host.querySelector(`[data-gs-val="${p.id}"]`);
+      if (val) val.textContent = strokes ?? '·';
+      const tot = host.querySelector(`[data-gs-tot="${p.id}"]`);
+      if (tot) tot.textContent = totals[p.id]
+        ? `${t('gsTotal')} ${totals[p.id].total} · ${t('mpThru')} ${totals[p.id].thru}` : '—';
+      setStep(host.querySelector(`button[data-gs="minus"][data-pid="${p.id}"]`), strokes === null);
+      setStep(host.querySelector(`button[data-gs="plus"][data-pid="${p.id}"]`), strokes !== null && strokes >= MAX_STROKES);
+    }
+    for (let n = 1; n <= holeCount; n++) {
+      const cell = host.querySelector(`button[data-gs="goto"][data-hole="${n}"]`);
+      if (!cell) continue;
+      const entered = players.filter(p => data.scores?.[p.id]?.holes?.[n]).length;
+      const full = players.length > 0 && entered >= players.length;
+      cell.style.border = n === hole ? '2px solid var(--text-primary)' : '1px solid var(--border-color)';
+      cell.style.background = full ? 'var(--accent-color)' : 'transparent';
+      cell.style.color = full ? '#fff' : 'var(--text-secondary)';
+      cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${entered || '·'}`;
+    }
   };
 
   const paint = () => {
@@ -226,7 +277,15 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, groupIdx, ctx.user);
+    const key = structureKey(players);
+    if (key === paintedKey && host.querySelector('#gs-hole-label')) {
+      updateInPlace(players);
+      return;
+    }
+    // Full render only when the screen's structure changed (first paint, or
+    // the group's members/permissions did); fade-in only the very first time.
+    host.innerHTML = screenHTML(data, groupIdx, ctx.user, paintedKey === null);
+    paintedKey = key;
     wire();
   };
 
