@@ -604,12 +604,28 @@ function wirePickers(host, tn, ctx) {
     const candidates = () => {
       const mp = draftFor(tn).mp;
       if (kind === 'player') {
+        const singles = tnKind(tn) === 'match';
+        const m = mp.matches[inp.dataset.match] || {};
+        const slotPid = m.players?.[inp.dataset.team]?.[Number(inp.dataset.slot)] || '';
+        // A player fields once per session, so whoever is already placed in
+        // this session's matches is out of the picker — the next match only
+        // offers who remains. Singles has no such rule; there only this
+        // match's own picks are excluded (nobody plays themselves).
+        const used = new Set();
+        const eat = (x) => TEAM_KEYS.forEach(k =>
+          (x?.players?.[k] || []).forEach(pid => { if (pid) used.add(pid); }));
+        if (singles) eat(m);
+        else Object.values(mp.matches).forEach(x => {
+          if (x && x.sessionId === m.sessionId) eat(x);
+        });
+        used.delete(slotPid); // the slot's own pick stays visible
         // Team formats pick from that team's roster; singles from everyone.
-        const pool = tnKind(tn) === 'match'
+        const pool = singles
           ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
               .sort((a, b) => a.name.localeCompare(b.name))
           : rosterOf(mp, inp.dataset.team);
-        return pool.map(p => ({ id: p.id, label: p.name || p.id, sub: '' }));
+        return pool.filter(p => !used.has(p.id))
+          .map(p => ({ id: p.id, label: p.name || p.id, sub: '' }));
       }
       const taken = kind === 'add-scorer'
         ? new Set(Object.keys(mp.matches[inp.dataset.match]?.scorerIds || {}))

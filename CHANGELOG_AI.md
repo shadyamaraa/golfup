@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Session pickers only offer the remaining players)
+
+Within a session, once a match's players are placed the next match's
+player picker no longer lists them — only whoever remains unfielded in
+that session (a player fields once per session; `lineupIssues` already
+flagged the duplicates, now the picker prevents them). The slot's own
+pick stays visible so it can be re-chosen, and singles is untouched
+except that a match's picker hides that same match's own picks (nobody
+plays themselves).
+
 ## 2026-08-27 (Type-to-search player pickers; names read Нэр Овог)
 
 The four `<select>` pickers in the match play editor — team roster add,
