@@ -226,7 +226,7 @@ function scorerHTML(tn, match, users) {
   const ids = Object.keys(match.scorerIds || {});
   const chip = (id) => {
     const u = users.find(x => x.id === id);
-    return `<span class="pill-soft" style="font-size:0.68rem;">${esc(u ? (u.fullName || u.name || u.username) : id)}
+    return `<span class="pill-soft" style="font-size:0.68rem;">${esc(u ? store.memberName(u) : id)}
       <button data-mp="del-scorer" data-match="${esc(match.id)}" data-user="${esc(id)}" style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button></span>`;
   };
   return `
@@ -553,7 +553,7 @@ function handleClick(tn, el, ctx, host) {
     // in this match". The display name is a snapshot; the id is the truth.
     const u = (ctx.users || []).find(x => x.id === el.value);
     if (!u) return;
-    const entry = { name: u.fullName || u.name || u.username || u.id, userId: u.id };
+    const entry = { name: store.memberName(u), userId: u.id };
     // Team formats file the player under their team; singles has no teams.
     if (el.dataset.team) entry.teamId = el.dataset.team;
     mp.roster[u.id] = entry;
@@ -587,6 +587,21 @@ function handleClick(tn, el, ctx, host) {
 // ---- Mount ----
 
 function paint(host, tn, ctx) {
+  // Roster names are snapshots taken when the player was added, so entries
+  // saved before the first-name-first rename still show the old order.
+  // Refresh them from the live member records; the correction is display-only
+  // until the admin's next save carries it along. Both the source record and
+  // the draft get it: a clean draft is re-cloned from tn.mp on every read,
+  // so mutating only the draft would be thrown away at once.
+  const byId = new Map((ctx.users || []).filter(u => u && u.id).map(u => [u.id, u]));
+  const refreshNames = (roster) => Object.entries(roster || {}).forEach(([id, p]) => {
+    const u = p && byId.get(p.userId || id);
+    if (!u) return;
+    const name = store.memberName(u);
+    if (name && p.name !== name) p.name = name;
+  });
+  refreshNames(tn.mp?.roster);
+  refreshNames(draftFor(tn).mp.roster);
   host.innerHTML = sectionHTML(tn, ctx.users || []);
   wire(host, tn, ctx);
 }
@@ -637,7 +652,7 @@ function wirePickers(host, tn, ctx) {
       return (ctx.users || [])
         .filter(u => u && u.id && !taken.has(u.id))
         .map(u => {
-          const label = u.fullName || u.name || u.username || u.id;
+          const label = store.memberName(u);
           return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
         });
     };

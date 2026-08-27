@@ -424,7 +424,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     const btn = document.getElementById('sc-dev-req');
     if (btn) btn.onclick = async () => {
       try {
-        await store.requestDeviceAccess(ctx.user?.fullName || ctx.user?.name || ctx.user?.username || '');
+        await store.requestDeviceAccess(store.memberName(ctx.user));
         ctx.showToast?.('✅ ' + t('mpDevRequestSent'), 'success');
       } catch (err) {
         console.error('[scorer]', err);

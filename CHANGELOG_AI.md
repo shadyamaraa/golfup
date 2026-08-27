@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Legacy names still showed Овог first — one memberName helper)
+
+Flipping the display composition wasn't enough: rosters, pickers and the
+scorer chips were built straight from stored `fullName` strings, which
+predate the rename and read "Овог Нэр". A single `store.memberName(u)`
+now defines how a member is named — split firstName/lastName fields win
+(first name first), stored `fullName` is only the legacy fallback — and
+every label site uses it: the match play pickers, roster entries, scorer
+chips, `displayFullName`, the editor's member sort, booking names, and
+the audit `byName`. The editor also refreshes stale roster snapshots
+from the live member records on paint (on both `tn.mp` and the draft —
+a clean draft re-clones from `tn.mp`, so the source must carry the fix),
+and the next save persists them. Members with only a single `fullName`
+string and no split fields keep it unchanged — the order of a plain
+string can't be known.
+
 ## 2026-08-27 (Session pickers only offer the remaining players)
 
 Within a session, once a match's players are placed the next match's

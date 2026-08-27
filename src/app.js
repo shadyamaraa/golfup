@@ -78,8 +78,7 @@ function displayUsername(user) {
 
 function displayFullName(user) {
   if (!user) return '-';
-  if (user.lastName || user.firstName) return esc([user.firstName, user.lastName].filter(Boolean).join(' '));
-  return esc(user.fullName || user.name || '-');
+  return esc(store.memberName(user) || '-');
 }
 
 function needsProfileCompletion(user) {
@@ -2897,7 +2896,7 @@ async function renderCreateGame() {
       const submitBtn = document.getElementById('create-submit-btn');
       submitBtn.textContent = t('bookingInProgress');
       try {
-        const playerName = currentUser.fullName || displayUsername(currentUser);
+        const playerName = store.memberName(currentUser) || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
@@ -4816,7 +4815,7 @@ async function handleBookTeeTime(game) {
     confirmBtn.textContent = t('bookLoading');
     const errEl = document.getElementById('bt-error');
     try {
-      const playerName = currentUser.fullName || displayUsername(currentUser);
+      const playerName = store.memberName(currentUser) || displayUsername(currentUser);
       const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles);
       const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
       const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '', ...(currentUser.mtbogdCode ? { clubCode: currentUser.mtbogdCode } : {}) }, playerList);
@@ -7600,7 +7599,7 @@ async function renderAdminTournamentsTab() {
       let users = [];
       try { users = await store.loadAllUsers(); } catch (_) { }
       users = users.filter(u => u && u.id && u.status !== 'deleted')
-        .sort((a, b) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
+        .sort((a, b) => store.memberName(a).localeCompare(store.memberName(b)));
       mountMpAdmin(host, tn, { showToast, users, rerender: renderAdminTournamentsTab });
     }
   }

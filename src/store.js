@@ -43,6 +43,15 @@ export async function initStore() {
 
 export function isUsingFirebase() { return useFirebase; }
 
+// The one way a member is named on screen: first name first. Stored fullName
+// strings predate that order (they were saved as "Овог Нэр"), so whenever the
+// split fields exist they win, and fullName is only the legacy fallback.
+export function memberName(u) {
+  if (!u) return '';
+  return [u.firstName, u.lastName].filter(Boolean).join(' ')
+    || u.fullName || u.name || u.username || u.id || '';
+}
+
 // ---- User Management ----
 export function getUser() {
   const data = localStorage.getItem('golfup_user');
@@ -528,7 +537,7 @@ export async function proposeTnHoleChange(tnId, matchId, hole, value, user) {
   await set(ref(db, `${base}/pending/${hole}`), {
     value,
     by: user?.id || null,
-    byName: user?.fullName || user?.name || user?.username || '',
+    byName: memberName(user),
     at: Date.now()
   });
   push(ref(db, `tournaments/${tnId}/mp/audit`), {
