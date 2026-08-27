@@ -1,5 +1,41 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Casual games: group scorecards, WHS handicap, GHIN-ready rounds)
+
+Players in a casual game's group can now enter stroke scores in the app —
+their own and their group-mates' (marker practice) — and a completed card
+feeds a WHS handicap index, stored in a shape ready for a future USGA GHIN
+API connection (GHIN is a closed API requiring USGA authorisation, so only
+the adapter stub ships now).
+
+- **Scorer** (`src/game-score.js`, new): `#/gscore/:gameId/:groupIdx` —
+  per-hole stroke stepper for every player in the group, hole strip with
+  per-hole entry counts, auto-advance to the group's first open hole.
+  Follows the M Cup scorer's construction: no local scoring state, every
+  tap is a path-scoped write (`games/{id}/scores/{playerId}/holes/{n}`,
+  keyed by member id so regrouping never detaches a card) and the
+  `onGameChanged` listener repaints. Permission: admin/marshal, the game's
+  creator, yourself, or a member of the same group.
+- **Store** (`src/store.js`): `saveGameScoreHole()` (+ `scoreAudit` push),
+  `upsertRound`/`loadRounds` under `rounds/{ghinNumber}/{gameId}`,
+  `saveUserHcp()`, `loadUserById()`. `saveGame()` now writes with a
+  scores-sparing `update()` instead of a whole-record `set()`, so
+  join/leave edits can no longer clobber a concurrent score tap.
+- **Handicap** (`src/handicap.js`, new): WHS score differential
+  `(113/slope) × (AGS − rating)`, best-8-of-20 index with the small-sample
+  table (3–19 rounds), course handicap, and `roundFromGame()` building a
+  GHIN-shaped round record. Computed fire-and-forget when a player's card
+  completes; index cached on `users/{id}.hcpIndex`.
+- **GHIN prep** (`src/ghin.js`, new): payload mapper + config stub only —
+  wired to nothing until USGA credentials exist. Profile gains a validated
+  7-8 digit GHIN number field (rounds are keyed by it) and an HCP tile.
+- **Game page** (`src/app.js`): "⛳ Оноо оруулах" button on group cards
+  (visible to anyone who may score in that group, not gated on start
+  time), live gross/net standings card, optional course rating/slope/par
+  fields on the create and edit forms.
+- i18n: `gs*` keys in mn/en/kr; `database.rules.json` opens the new
+  `rounds` path (games/users were already open).
+
 ## 2026-08-27 (Three formats: Stroke / Match play (1v1) / Ryder Cup)
 
 The team M Cup system is now the **Ryder Cup** format (`format: 'ryder'`),

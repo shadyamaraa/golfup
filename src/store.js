@@ -89,6 +89,21 @@ export async function loadAllUsers() {
   return [];
 }
 
+export async function loadUserById(id) {
+  if (!id) return null;
+  if (useFirebase && db) {
+    try {
+      const snap = await get(ref(db, 'users/' + id));
+      return snap.exists() ? snap.val() : null;
+    } catch (error) {
+      console.error('Failed to load user:', error);
+      return null;
+    }
+  }
+  const me = getUser();
+  return me && me.id === id ? me : null;
+}
+
 export async function findUserByName(name) {
   const users = await loadAllUsers();
   return users.find(u => u.name && u.name.toLowerCase() === name.toLowerCase());
@@ -117,12 +132,98 @@ function setLocalGames(games) {
 
 export async function saveGame(game) {
   if (useFirebase && db) {
-    await set(ref(db, 'games/' + game.id), game);
+    // update(), not set(): a whole-record set would silently overwrite a
+    // group member's concurrent score tap (scores/scoreAudit live under the
+    // same game). Every caller passes the full record, so the named top-level
+    // keys are still replaced wholesale — only the score branches are spared.
+    const { scores, scoreAudit, ...rest } = game;
+    await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
     games[game.id] = game;
     setLocalGames(games);
   }
+}
+
+// One score tap on the casual-game scorecard — strokes for one player on one
+// hole, or null to clear it. Mirrors saveTnMatchHole(): path-scoped write plus
+// a fire-and-forget audit push, so concurrent scorers in the same group never
+// clobber each other and offline taps queue in RTDB.
+export async function saveGameScoreHole(gameId, playerId, hole, strokes, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/scores/${playerId}/holes/${hole}`);
+    // The previous value is only for the audit trail — offline (where get()
+    // rejects without a warm cache) the write itself must still go through.
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (strokes === null || strokes === undefined) {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, strokes);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, playerId, hole, value: strokes ?? null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.scores = game.scores || {};
+  game.scores[playerId] = game.scores[playerId] || { holes: {} };
+  game.scores[playerId].holes = game.scores[playerId].holes || {};
+  if (strokes === null || strokes === undefined) delete game.scores[playerId].holes[hole];
+  else game.scores[playerId].holes[hole] = strokes;
+  setLocalGames(games);
+  // No listener fires in localStorage mode — the caller repaints from this.
+  return game;
+}
+
+// ---- Handicap rounds ----
+// rounds/{ghinNumber}/{gameId} — one finished scorecard per game, keyed by the
+// player's GHIN number so a future GHIN API sync posts records as-is. The
+// record already carries every field GHIN score posting wants (played_at,
+// course rating/slope, 9/18 holes, adjusted gross, hole-by-hole).
+
+function getLocalRounds() {
+  const data = localStorage.getItem('golfup_rounds');
+  return data ? JSON.parse(data) : {};
+}
+
+export async function upsertRound(ghinNumber, round) {
+  if (!ghinNumber || !round?.gameId) return;
+  if (useFirebase && db) {
+    await set(ref(db, `rounds/${ghinNumber}/${round.gameId}`), round);
+  } else {
+    const rounds = getLocalRounds();
+    rounds[ghinNumber] = rounds[ghinNumber] || {};
+    rounds[ghinNumber][round.gameId] = round;
+    localStorage.setItem('golfup_rounds', JSON.stringify(rounds));
+  }
+}
+
+export async function loadRounds(ghinNumber) {
+  if (!ghinNumber) return [];
+  let map = null;
+  if (useFirebase && db) {
+    try {
+      const snap = await get(ref(db, 'rounds/' + ghinNumber));
+      map = snap.exists() ? snap.val() : null;
+    } catch (error) {
+      console.error('Failed to load rounds:', error);
+    }
+  } else {
+    map = getLocalRounds()[ghinNumber] || null;
+  }
+  if (!map) return [];
+  return Object.values(map).sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
+}
+
+// The player's handicap index is derived from their rounds; the value is
+// cached on users/{id} so lists can show it without reading every round.
+export async function saveUserHcp(userId, hcpIndex) {
+  if (!useFirebase || !db || !userId) return;
+  await update(ref(db, 'users/' + userId), { hcpIndex: hcpIndex ?? null, hcpUpdatedAt: Date.now() });
 }
 
 export async function loadGame(gameId) {

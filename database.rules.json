@@ -1,6 +1,7 @@
 {
   "rules": {
     "games": { ".read": true, ".write": true, ".indexOn": ["bookingId"] },
+    "rounds": { ".read": true, ".write": true },
     "mtbogdDeliveries": { ".read": false, ".write": false },
     "users": { ".read": true, ".write": true },
     "follows": { ".read": true, ".write": true },
