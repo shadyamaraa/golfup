@@ -1,5 +1,53 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — what an adversarial read of the branch found)
+
+An independent review of the whole feature turned up three ways it could lose
+or misreport a result. Each is fixed with a regression test (46 total).
+
+**A finished match with a stale suspension scored nothing.** `matchState()`
+checked the suspension flag before asking whether the holes had already
+decided the match, and `matchPoints()` only pays a COMPLETED match. Suspend at
+dusk, resume next morning, keep tapping without pressing Resume — the match
+closes out, sits under LIVE forever, and its point never reaches the
+scoreboard. The holes now settle the state first; a suspension only holds a
+match that is genuinely unfinished.
+
+**Saving the setup could resurrect deleted scores.** The merge took the
+scorer's fields from the live record only when the live record *had* them, so
+absence never propagated: a hole the scorer had just undone, or a suspension
+they had just cleared, came back from the draft's snapshot — the second of
+those combining with the bug above to silently delete a match's point.
+Scorer-owned fields (`holes`, `stateOverride`) are now never written by this
+editor at all. Two more in the same code: `mp/matches` and `mp/sessions` were
+replaced wholesale, deleting anything another admin had created since the
+draft was cloned, and deletions were inferred from absence rather than
+recorded — both now write one key per record, from an explicit record of what
+this editor removed. Drafts are also dropped when the editor closes, so an
+hour-old snapshot cannot come back to overwrite newer work.
+
+**Undo could void a whole match.** The handler settled from the match as it
+was when the buttons were wired, so with a second scorer on the same match it
+could clear a hole that was no longer the last one — and since the engine
+treats a gap as the end of play, every hole after it stopped counting. Taps
+now read the match as it stands at that moment.
+
+Also fixed: the scorer screen told you to pick a hole to correct on a
+completed match and then did nothing (the keypad was gated on the match being
+unfinished); the screen gave up with "tournament not found" when opened
+offline, where it should wait for the listener; a session switched to a
+smaller format stranded players in slots nothing rendered; `lineupIssues()`
+waved through an unrecognized format entirely, mis-attributed a wrong-team
+player's place, and described two slots of one match as "plays twice in one
+session"; `settleMatch()` never finished if `totalHoles` arrived as a string;
+upcoming cards read "AS" before anyone had teed off; suspended matches were
+counted under the LIVE heading; a match with no session held points that no
+row showed; the Match Center tab needed a reload to appear when the first
+match arrived; and an open match detail was a frozen snapshot.
+
+The review found no XSS or escaping gaps, no missing i18n keys, and no arity
+or runtime-throw problems.
+
 ## 2026-08-27 (M Cup match play — a sample tournament to review it against)
 
 `src/matchplay-demo.js` (new) is an M Cup shaped like the real one: both teams

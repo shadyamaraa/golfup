@@ -82,7 +82,13 @@ screen updates immediately either way, because it paints from the database's
 own local answer rather than waiting for the network.
 
 Two scorers on the same match cannot diverge: neither screen keeps scoring
-state of its own, so both show whatever the database holds.
+state of its own, and each tap reads the match as it stands at that moment
+rather than as it looked when the screen was drawn.
+
+One caveat worth telling the scoring crew: **open the screen before you lose
+signal**. A screen already open keeps working through a dead spot, but one
+opened cold with no connection has nothing to show until the connection
+returns — it waits rather than failing, but it cannot score in the meantime.
 
 ## What spectators see
 
@@ -124,7 +130,15 @@ values, so a halved hole stored as null would be indistinguishable from a hole
 nobody has played.
 
 Setup saves and scoring writes never touch the same paths, so an admin fixing
-a tee time cannot erase a hole a scorer entered a second earlier.
+a tee time cannot erase a hole a scorer entered a second earlier. The setup
+editor writes one key per field and never writes `holes` or `stateOverride` at
+all; deletions come from what the editor actually removed, so a match created
+by someone else while the editor was open survives the save.
+
+A suspension is the only stored state, and it never outranks the holes: a
+match the holes have decided is COMPLETED whatever the flag says, so play that
+resumes without anyone pressing Resume still finishes and still scores its
+point.
 
 ## Known limitation: scorer access is not enforced server-side
 

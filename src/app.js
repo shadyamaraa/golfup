@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
-import { mountMpAdmin } from './matchplay-admin.js';
+import { mountMpAdmin, discardMpDraft } from './matchplay-admin.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderMatchCenter, stripSummary } from './matchplay-view.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -1506,8 +1506,13 @@ async function renderTournamentPage(id) {
   paintTournamentPage(await tnWithLiveEntries(tn));
 
   // Repaint the list alone while a search is in progress, so an incoming score
-  // never steals the caret.
+  // never steals the caret. The tab bar is built by paintTournamentPage, so a
+  // change that adds or removes a tab — the first match of an M Cup arriving,
+  // for one — needs the whole page rather than just the board.
+  let tabsShown = tnTabsFor(tn).join();
   const repaint = () => {
+    const tabs = tnTabsFor(tnPageData).join();
+    if (tabs !== tabsShown) { tabsShown = tabs; paintTournamentPage(tnPageData); return; }
     if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
   };
 
@@ -1639,7 +1644,7 @@ function renderTnBoard() {
   }
 
   if (tnPageTab === 'match') {
-    renderMatchCenter(host, tn, { showModal: showMatchModal });
+    renderMatchCenter(host, tn, { showModal: showMatchModal, refreshModal: refreshMatchModal });
     return;
   }
 
@@ -3209,14 +3214,17 @@ async function renderJoinPay(gameId) {
 }
 
 // Match detail (spec §11) — the card's hole-by-hole story, in the app's own
-// modal chrome so it matches every other overlay.
-function showMatchModal(title, bodyHTML) {
+// modal chrome so it matches every other overlay. Tagged with its match id so
+// an incoming score can refresh it in place: a spectator who opens a live
+// match and leaves it open should watch it change, not read a snapshot.
+function showMatchModal(title, bodyHTML, matchId) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
+  modal.dataset.mpMatch = matchId || '';
   modal.innerHTML = `
     <div class="modal-content glass-card" style="max-width:460px;">
       <h3 class="modal-title">${esc(title)}</h3>
-      ${bodyHTML}
+      <div data-mp-body>${bodyHTML}</div>
       <div class="modal-actions" style="margin-top:14px;">
         <button class="btn btn-secondary" data-close="1">${t('tnClose')}</button>
       </div>
@@ -3224,6 +3232,19 @@ function showMatchModal(title, bodyHTML) {
   document.body.appendChild(modal);
   modal.querySelector('[data-close]').onclick = () => modal.remove();
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+// Re-render an open match modal from the latest data. `render(matchId)`
+// returns fresh body HTML, or null when that match no longer exists — in
+// which case the modal closes rather than showing a match that was deleted.
+function refreshMatchModal(render) {
+  const modal = document.querySelector('.modal-overlay[data-mp-match]');
+  const id = modal?.dataset.mpMatch;
+  if (!id) return;
+  const html = render(id);
+  if (html === null || html === undefined) { modal.remove(); return; }
+  const body = modal.querySelector('[data-mp-body]');
+  if (body) body.innerHTML = html;
 }
 
 // ---- Game Actions ----
@@ -7365,6 +7386,10 @@ async function renderAdminTournamentsTab() {
   // Both the row's name and its Засах button open the same editor.
   el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
     const id = b.dataset.tn;
+    // Closing the editor drops any unsaved match play draft. Keeping it would
+    // let an hour-old snapshot sit around and then overwrite newer work the
+    // next time somebody opened that tournament and pressed Save.
+    if (adminOpenTn === id) discardMpDraft(id);
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
     // The form renders below the row's actions, which on a long list can land

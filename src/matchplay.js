@@ -70,7 +70,10 @@ const other = (k) => (k === 'a' ? 'b' : 'a');
  *   result: string|null        // '4 & 3' | '2 UP' | 'AS' — finished only
  * }}
  */
-export function settleMatch(holes, totalHoles = DEFAULT_HOLES) {
+export function settleMatch(holes, total = DEFAULT_HOLES) {
+  // Coerced because it can arrive from storage: a "18" would compare unequal
+  // to thru forever and the match would never finish.
+  const totalHoles = Number(total) || DEFAULT_HOLES;
   const wins = { a: 0, b: 0 };
   let halved = 0;
   let thru = 0;
@@ -124,9 +127,14 @@ export function statusText(settled) {
 // nobody has to flip a state by hand. An explicit override (suspension is a
 // human decision) wins over everything.
 export function matchState(match) {
-  if (match?.stateOverride === 'SUSPENDED') return 'SUSPENDED';
   const settled = settleMatch(match?.holes, match?.totalHoles || DEFAULT_HOLES);
+  // A decided match is over whatever any flag says. Checking the flag first
+  // would let a suspension nobody cleared — play resumes, the scorer keeps
+  // tapping and never presses Resume — hold a finished match out of
+  // COMPLETED, and matchPoints() only pays completed matches, so the point
+  // would quietly never reach the scoreboard.
   if (settled.finished) return 'COMPLETED';
+  if (match?.stateOverride === 'SUSPENDED') return 'SUSPENDED';
   return settled.thru > 0 ? 'LIVE' : 'UPCOMING';
 }
 
@@ -155,11 +163,15 @@ export function teamTotals(matches) {
   return total;
 }
 
-// Per-session breakdown for the summary page (spec §24).
+// Per-session breakdown for the summary page (spec §24). A match with no
+// session is bucketed under UNGROUPED rather than dropped, so the rows always
+// add up to the overall score even if setup left one behind.
+export const UNGROUPED = '__ungrouped';
+
 export function sessionTotals(matches) {
   const out = {};
   matchList(matches).forEach(m => {
-    const sid = m.sessionId || '';
+    const sid = m.sessionId || UNGROUPED;
     if (!out[sid]) out[sid] = { a: 0, b: 0 };
     const p = matchPoints(m);
     out[sid].a += p.a;
@@ -211,6 +223,7 @@ const rosterTeam = (roster, pid) => roster?.[pid]?.teamId || null;
  * Check one session's lineup. Returns a list of issues; empty = valid.
  * Issue shapes:
  *   { kind: 'duplicate-player', playerId, matches: [matchId, ...] }
+ *   { kind: 'duplicate-in-match', playerId, matches: [matchId] }  // both slots
  *   { kind: 'wrong-team', playerId, matchId }       // not on that side's roster
  *   { kind: 'unknown-player', playerId, matchId }
  *   { kind: 'player-count', teamId, count, required }
@@ -219,33 +232,58 @@ const rosterTeam = (roster, pid) => roster?.[pid]?.teamId || null;
 export function lineupIssues(sessionMatches, roster, { required = SESSION_PLAYERS_REQUIRED } = {}) {
   const issues = [];
   const seen = new Map(); // playerId -> [matchId]
-  const counts = { a: 0, b: 0 };
+  // Unique players fielded per side. A player who (wrongly) appears twice
+  // still occupies one place, so the set is what the twelve-per-team rule
+  // counts — the duplicate is reported separately.
+  const fielded = { a: new Set(), b: new Set() };
 
   matchList(sessionMatches).forEach(m => {
-    const size = FORMAT_TEAM_SIZE[m.format] || null;
+    // A match with no format still has to field the same number on each side,
+    // so an unrecognized one is checked for symmetry rather than waved
+    // through — skipping the rule returned a false all-clear on an obvious
+    // one-against-two.
+    const known = FORMAT_TEAM_SIZE[m.format];
+    const size = known || Math.max(
+      (m.players?.a || []).filter(Boolean).length,
+      (m.players?.b || []).filter(Boolean).length
+    );
     TEAM_KEYS.forEach(teamId => {
       const ids = (m.players?.[teamId] || []).filter(Boolean);
-      if (size !== null && ids.length !== size) {
+      if (size && ids.length !== size) {
         issues.push({ kind: 'match-size', matchId: m.id, teamId, count: ids.length, required: size });
       }
       ids.forEach(pid => {
         const team = rosterTeam(roster, pid);
         if (!team) issues.push({ kind: 'unknown-player', playerId: pid, matchId: m.id });
         else if (team !== teamId) issues.push({ kind: 'wrong-team', playerId: pid, matchId: m.id });
-        if (!seen.has(pid)) { seen.set(pid, []); counts[teamId]++; }
+        // Counted against the side they were FIELDED on, not the side their
+        // roster entry says: a player put out for the wrong team still
+        // occupies one of that team's twelve places, and reporting otherwise
+        // produced a phantom shortfall next to the real wrong-team warning.
+        if (!seen.has(pid)) seen.set(pid, []);
         seen.get(pid).push(m.id);
+        fielded[teamId].add(pid);
       });
     });
   });
 
   seen.forEach((ids, pid) => {
-    if (ids.length > 1) issues.push({ kind: 'duplicate-player', playerId: pid, matches: ids });
+    // Twice in the SAME match is a different mistake from twice in the
+    // session, and saying "plays twice in one session" about it misdescribes
+    // what the admin is looking at.
+    if (ids.length > 1) {
+      const sameMatch = ids.every(id => id === ids[0]);
+      issues.push({
+        kind: sameMatch ? 'duplicate-in-match' : 'duplicate-player',
+        playerId: pid,
+        matches: sameMatch ? [ids[0]] : ids
+      });
+    }
   });
   if (required) {
     TEAM_KEYS.forEach(teamId => {
-      if (counts[teamId] !== required) {
-        issues.push({ kind: 'player-count', teamId, count: counts[teamId], required });
-      }
+      const count = fielded[teamId].size;
+      if (count !== required) issues.push({ kind: 'player-count', teamId, count, required });
     });
   }
   return issues;

@@ -134,7 +134,7 @@ function screenHTML(tn, match) {
         </div>
       </div>
 
-      ${done ? `
+      ${done && viewHole === null ? `
         <div style="text-align:center;margin-top:14px;font-size:0.85rem;color:var(--text-secondary);">
           ${t('mpMatchDone')}
         </div>` : `
@@ -179,30 +179,38 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   resetScorerView();
   host.innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
 
+  // A one-shot read rejects on a cold cache with no signal, which is exactly
+  // where a scorer opening this screen is most likely to be standing. The
+  // listener below answers from whatever the client has and again when the
+  // network returns, so a failed read is a reason to wait, not to give up.
   let tn = null;
   try { tn = await store.loadTournament(tnId); } catch (_) { }
-  const match = tn?.mp?.matches?.[matchId];
-
-  if (!tn || !match) {
-    host.innerHTML = `<div class="detail-container fade-in">
-      <a href="#/" class="back-link">${t('back')}</a>
-      <div class="empty-state" style="padding:40px 20px;"><p>${t('tnNotFound')}</p></div></div>`;
-    return;
-  }
-  if (!canScore(ctx.user, match)) {
-    host.innerHTML = `<div class="detail-container fade-in">
-      <a href="#/tournament/${esc(tn.id)}" class="back-link">${t('back')}</a>
-      <div class="empty-state" style="padding:40px 20px;"><p>${t('mpNoScorerAccess')}</p></div></div>`;
-    return;
-  }
 
   let data = tn;
+  let denied = false;
+
+  const notFound = (msg, back) => {
+    host.innerHTML = `<div class="detail-container fade-in">
+      <a href="${back}" class="back-link">${t('back')}</a>
+      <div class="empty-state" style="padding:40px 20px;"><p>${msg}</p></div></div>`;
+  };
 
   const paint = () => {
     const m = data?.mp?.matches?.[matchId];
-    if (!m) return;
+    if (!m) {
+      // Still nothing to show. With a listener attached this is a waiting
+      // state, not a verdict — it repaints the moment the match arrives.
+      if (!store.isUsingFirebase()) notFound(t('tnNotFound'), '#/');
+      return;
+    }
+    if (!canScore(ctx.user, m)) {
+      denied = true;
+      notFound(t('mpNoScorerAccess'), `#/tournament/${esc(tnId)}`);
+      return;
+    }
+    denied = false;
     host.innerHTML = screenHTML(data, m);
-    wire(m);
+    wire();
   };
 
   // One tap: write the hole, let the listener paint the result. `saving`
@@ -231,16 +239,24 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     }
   };
 
-  const wire = (m) => {
+  const wire = () => {
     host.querySelectorAll('button[data-sc]').forEach(b => b.onclick = () => {
       const kind = b.dataset.sc;
-      const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+      // Read the match at click time rather than closing over the one this
+      // handler was wired against. A second scorer's tap arrives through the
+      // listener, and acting on a stale copy is how an Undo could delete a
+      // hole that is no longer the last one — which, since the engine treats
+      // a gap as the end of play, would discard every hole after it.
+      const m = data?.mp?.matches?.[matchId];
+      if (!m) return;
+      const total = m.totalHoles || DEFAULT_HOLES;
+      const settled = settleMatch(m.holes, total);
       if (kind === 'hole') {
-        const hole = Math.min(viewHole ?? (settled.thru + 1), m.totalHoles || DEFAULT_HOLES);
+        const hole = Math.min(viewHole ?? (settled.thru + 1), total);
         write(hole, b.dataset.value);
       } else if (kind === 'undo') {
-        // Clearing the last hole entered rolls the status back; the engine
-        // re-derives everything from what remains.
+        // Only ever the last hole played: clearing any earlier one would
+        // strand the holes after it.
         if (settled.thru) { viewHole = null; write(settled.thru, null); }
       } else if (kind === 'suspend') {
         const now = matchState(m) === 'SUSPENDED';
@@ -262,13 +278,22 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     });
   };
 
+  // Waiting rather than a blank screen, for the case where the read failed
+  // and the listener has not answered yet.
+  if (!data?.mp?.matches?.[matchId] && store.isUsingFirebase()) {
+    host.innerHTML = `<div class="detail-container fade-in">
+      <a href="#/tournament/${esc(tnId)}" class="back-link">${t('back')}</a>
+      <div class="loading-spinner" style="margin:40px auto;"></div></div>`;
+  }
   paint();
 
   if (store.isUsingFirebase()) {
     const unsub = store.onTournamentChanged(tnId, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
       data = fresh;
-      paint();
+      // A repaint must not silently reinstate a screen access was refused
+      // on — paint() re-checks, so this only guards the ordering.
+      if (!denied || canScore(ctx.user, fresh.mp?.matches?.[matchId])) paint();
     });
     if (unsub) ctx.onUnsub?.(unsub);
   }

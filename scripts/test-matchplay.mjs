@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
-  lineupIssues, participation, HALVED
+  lineupIssues, participation, HALVED, UNGROUPED
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -30,10 +30,7 @@ test('spec §5 walkthrough: win, halve, loss ends all square', () => {
 });
 
 test('spec §6: 4 UP with 3 to play closes out as 4 & 3', () => {
-  // 15 holes: a wins 9, halves 2, loses 4 → wins 9-5? Simpler: a wins first
-  // 4, halves through 14, wins 15th — margin 4... build explicitly:
-  // a wins holes 1-4 (4 UP), halved 5-14 (10 holes, still 4 UP thru 14),
-  // then hole 15 win would be 5 up with 3 left; instead check dormie edge:
+  // A wins the first four, then ten halves: 4 up thru 14 with 4 to play.
   const first14 = ['a', 'a', 'a', 'a', ...Array(10).fill(HALVED)];
   let s = settleMatch(holes(...first14));
   // 4 UP with 4 to play: alive, dormie is margin===remaining
@@ -89,7 +86,7 @@ test('a gap in the sequence stops the count', () => {
   assert.equal(statusText(s), '1 UP');
 });
 
-test('match state derives from holes; suspension overrides', () => {
+test('match state derives from holes; suspension holds an unfinished one', () => {
   assert.equal(matchState({ holes: {} }), 'UPCOMING');
   assert.equal(matchState({}), 'UPCOMING');
   assert.equal(matchState({ holes: holes('a') }), 'LIVE');
@@ -184,4 +181,78 @@ test('holes stored as an RTDB array (index 0 empty) settle identically', () => {
   const s = settleMatch([null, 'a', HALVED, 'b']);
   assert.equal(s.thru, 3);
   assert.equal(statusText(s), 'AS');
+});
+
+// ---- Regressions found in review ----
+
+test('a decided match is COMPLETED even with a stale suspension flag', () => {
+  // Play is suspended at dusk, resumes next morning, and nobody presses
+  // Resume. The match still has to finish and still has to pay its point.
+  const m = { holes: holes(...Array(10).fill('a')), stateOverride: 'SUSPENDED' };
+  assert.equal(matchState(m), 'COMPLETED');
+  assert.deepEqual(matchPoints(m), { a: 1, b: 0 });
+  assert.deepEqual(teamTotals([m]), { a: 1, b: 0 });
+});
+
+test('a suspension still holds an unfinished match', () => {
+  const m = { holes: holes('a', HALVED), stateOverride: 'SUSPENDED' };
+  assert.equal(matchState(m), 'SUSPENDED');
+  assert.deepEqual(matchPoints(m), { a: 0, b: 0 });
+});
+
+test('totalHoles arriving as a string still finishes the match', () => {
+  const s = settleMatch(holes(...Array(18).fill(HALVED)), '18');
+  assert.equal(s.finished, true);
+  assert.equal(statusText(s), 'HALVED');
+});
+
+test('an unrecognized format still catches uneven sides', () => {
+  const roster = { p1: { teamId: 'a' }, q1: { teamId: 'b' }, q2: { teamId: 'b' } };
+  const m = { id: 'm1', players: { a: ['p1'], b: ['q1', 'q2'] } }; // no format
+  const issues = lineupIssues([m], roster, { required: 0 });
+  assert.ok(issues.some(i => i.kind === 'match-size' && i.teamId === 'a' && i.count === 1),
+    'one against two must be reported even with no format');
+});
+
+test('a wrong-team player counts against the side they were fielded on', () => {
+  const roster = {
+    p1: { teamId: 'a' }, p2: { teamId: 'a' },
+    q1: { teamId: 'b' }, q2: { teamId: 'b' }
+  };
+  // q1 is fielded for team a: one wrong-team issue, and no phantom shortfall
+  // for team b, which fielded its full two.
+  const m = { id: 'm1', format: 'FOURSOMES', players: { a: ['p1', 'q1'], b: ['q2', 'p2'] } };
+  const issues = lineupIssues([m], roster, { required: 2 });
+  assert.equal(issues.filter(i => i.kind === 'player-count').length, 0);
+  assert.equal(issues.filter(i => i.kind === 'wrong-team').length, 2);
+});
+
+test('the same player in both slots of one match is its own issue', () => {
+  const roster = { p1: { teamId: 'a' }, q1: { teamId: 'b' }, q2: { teamId: 'b' } };
+  const m = { id: 'm1', format: 'FOURSOMES', players: { a: ['p1', 'p1'], b: ['q1', 'q2'] } };
+  const issues = lineupIssues([m], roster, { required: 0 });
+  const dup = issues.find(i => i.kind === 'duplicate-in-match');
+  assert.ok(dup, 'must be reported as a same-match duplicate');
+  assert.deepEqual(dup.matches, ['m1']);
+  assert.ok(!issues.some(i => i.kind === 'duplicate-player'), 'not a cross-match duplicate');
+});
+
+test('a player twice in one session is still a cross-match duplicate', () => {
+  const roster = { p1: { teamId: 'a' }, q1: { teamId: 'b' } };
+  const ms = [
+    { id: 'm1', format: 'SINGLES', players: { a: ['p1'], b: ['q1'] } },
+    { id: 'm2', format: 'SINGLES', players: { a: ['p1'], b: ['q1'] } }
+  ];
+  const issues = lineupIssues(ms, roster, { required: 0 });
+  assert.equal(issues.filter(i => i.kind === 'duplicate-player').length, 2);
+});
+
+test('a match with no session still reaches the breakdown', () => {
+  // Its points are in the overall, so they must appear in a row too or the
+  // rows silently disagree with the total.
+  const stray = { id: 'x', holes: holes(...Array(10).fill('a')) };
+  const totals = sessionTotals([{ sessionId: 's1', holes: holes(...Array(10).fill('b')) }, stray]);
+  assert.deepEqual(totals[UNGROUPED], { a: 1, b: 0 });
+  const sum = Object.values(totals).reduce((acc, v) => ({ a: acc.a + v.a, b: acc.b + v.b }), { a: 0, b: 0 });
+  assert.deepEqual(sum, teamTotals([{ sessionId: 's1', holes: holes(...Array(10).fill('b')) }, stray]));
 });

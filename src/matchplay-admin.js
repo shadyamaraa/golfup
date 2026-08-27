@@ -5,9 +5,16 @@
 //
 // Editing happens on a local DRAFT (one per tournament id), so typing never
 // writes to Firebase and the tab re-rendering never loses keystrokes. The
-// save button writes the mp/* subtrees via a partial update: hole results,
-// scorer assignments and the audit trail are merged from a fresh read first,
-// so saving the setup can never erase live scoring.
+// draft is dropped when the editor closes, so a stale snapshot cannot sit
+// around and later overwrite newer work.
+//
+// Saving writes one key per field rather than replacing whole nodes, and
+// never writes the fields the scorer owns (holes, suspension) at all. Between
+// them those two rules mean a setup edit cannot erase a hole entered while
+// the editor was open, cannot resurrect one the scorer undid, and cannot
+// delete a match somebody else created in the meantime. Deletions are taken
+// from what this editor actually removed, never inferred from what the draft
+// no longer holds.
 
 import * as store from './store.js';
 import { t } from './i18n.js';
@@ -35,7 +42,17 @@ const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 function draftFor(tn) {
   let d = drafts.get(tn.id);
   if (!d || !d.dirty) {
-    d = { mp: normalizeMp(clone(tn.mp)), dirty: false };
+    // `removed` records what this editor deleted. Deletions cannot be
+    // inferred from what the draft no longer holds: a match another admin
+    // created since the draft was cloned is absent for an entirely different
+    // reason, and treating that as a deletion would take it — and its
+    // scores — with the next save.
+    d = {
+      mp: normalizeMp(clone(tn.mp)),
+      dirty: false,
+      removed: new Set(),
+      removedSessions: new Set()
+    };
     drafts.set(tn.id, d);
   }
   return d;
@@ -121,8 +138,11 @@ function playerSelectHTML(mp, match, teamId, slot) {
     </select>`;
 }
 
-// Scorer assignment (spec §14). Kept as a picker over app members rather than
-// free text, because the id is what the security rule will check.
+// Scorer assignment (spec §14). A picker over app members rather than free
+// text, so what is stored is a member id — which is what a database rule
+// would have to check. No such rule exists yet: access is enforced in the UI
+// only, because the app has no Firebase Auth identity for a rule to read.
+// See docs/mcup-match-play.md.
 function scorerHTML(tn, match, users) {
   const ids = Object.keys(match.scorerIds || {});
   const chip = (id) => {
@@ -177,6 +197,7 @@ function issuesHTML(tn, session) {
   const teamName = (k) => mp.teams[k]?.short || mp.teams[k]?.name || k.toUpperCase();
   const text = (i) => {
     if (i.kind === 'duplicate-player') return `${playerName(mp, i.playerId)} — ${t('mpIssueDup')}`;
+    if (i.kind === 'duplicate-in-match') return `${playerName(mp, i.playerId)} — ${t('mpIssueDupMatch')}`;
     if (i.kind === 'player-count') return `${teamName(i.teamId)}: ${i.count}/${i.required} — ${t('mpIssueCount')}`;
     if (i.kind === 'match-size') return `#${mp.matches[i.matchId]?.number ?? '?'} ${teamName(i.teamId)}: ${i.count}/${i.required} — ${t('mpIssueSize')}`;
     if (i.kind === 'wrong-team') return `${playerName(mp, i.playerId)} — ${t('mpIssueWrongTeam')}`;
@@ -259,38 +280,61 @@ function sectionHTML(tn, users) {
 
 // ---- Saving ----
 
+// Fields under a match that belong to the scorer, never to this editor.
+const SCORER_OWNED = ['holes', 'stateOverride'];
+
 async function saveDraft(tn, ctx) {
-  const mp = draftFor(tn).mp;
-  // Merge live scoring from a fresh read: the scorer may have been tapping
-  // holes the whole time this editor was open.
-  let fresh = null;
-  try { fresh = await store.loadTournament(tn.id); } catch (_) { /* keep local */ }
-  const matches = {};
+  const draft = draftFor(tn);
+  const mp = draft.mp;
+
+  // Written per record rather than by replacing mp/matches and mp/sessions
+  // wholesale: replacing a node deletes anything created elsewhere since this
+  // draft was cloned, and a match taken that way takes its scores with it.
+  // Teams and the roster are edited as whole units here, so they go as units.
+  const patch = { 'mp/teams': mp.teams, 'mp/roster': mp.roster };
+
+  Object.values(mp.sessions).forEach(s => {
+    if (s?.id) patch[`mp/sessions/${s.id}`] = s;
+  });
+  draft.removedSessions.forEach(id => { patch[`mp/sessions/${id}`] = null; });
+
   Object.values(mp.matches).forEach(m => {
     if (!m) return;
     const session = mp.sessions[m.sessionId];
     if (!session) return; // its session was deleted
-    const old = fresh?.mp?.matches?.[m.id] || tn.mp?.matches?.[m.id];
-    // Holes and suspensions belong to the scorer and are merged back from the
-    // live record; scorer assignments are edited HERE, so the draft wins.
-    matches[m.id] = {
-      ...m,
-      format: session.format,
-      players: { a: (m.players?.a || []).slice(), b: (m.players?.b || []).slice() },
-      ...(old?.holes ? { holes: old.holes } : {}),
-      ...(old?.stateOverride ? { stateOverride: old.stateOverride } : {})
+    const size = FORMAT_TEAM_SIZE[session.format] || 2;
+    // The draft's copy of a scorer-owned field is a snapshot from whenever it
+    // was cloned, so it is dropped outright rather than merged: taking it
+    // whenever the live record lacks the field would resurrect a hole the
+    // scorer had just undone, or a suspension they had just cleared — and a
+    // stale suspension on a decided match used to cost that match's point.
+    const setup = { ...m, format: session.format };
+    SCORER_OWNED.forEach(f => { delete setup[f]; });
+    // A session switched to a smaller format leaves players in slots the form
+    // no longer renders, which nothing could then clear.
+    setup.players = {
+      a: (m.players?.a || []).slice(0, size),
+      b: (m.players?.b || []).slice(0, size)
     };
+    Object.entries(setup).forEach(([field, value]) => {
+      patch[`mp/matches/${m.id}/${field}`] = value;
+    });
   });
-  // Multi-path update: mp/audit (and anything else under mp) stays untouched.
-  await store.updateTournament(tn.id, {
-    'mp/teams': mp.teams,
-    'mp/roster': mp.roster,
-    'mp/sessions': mp.sessions,
-    'mp/matches': matches
-  });
+
+  // Only what this editor actually deleted — never merely what the draft
+  // does not hold.
+  draft.removed.forEach(id => { patch[`mp/matches/${id}`] = null; });
+
+  await store.updateTournament(tn.id, patch);
   drafts.delete(tn.id);
   ctx.showToast('✅ ' + t('mpSaved'), 'success');
   await ctx.rerender();
+}
+
+// Drop an unsaved draft — called when the editor closes, so a draft cannot
+// sit for an hour and then overwrite newer work with its stale snapshot.
+export function discardMpDraft(tnId) {
+  drafts.delete(tnId);
 }
 
 // ---- Draft mutations ----
@@ -369,7 +413,8 @@ function handleClick(tn, el, ctx, host) {
     const id = el.dataset.session;
     const hasScores = sessionMatches(mp, id).some(m => Object.keys(m.holes || {}).length);
     if (!confirm(t(hasScores ? 'mpDelSessionScored' : 'mpDelSession'))) return;
-    sessionMatches(mp, id).forEach(m => { delete mp.matches[m.id]; });
+    sessionMatches(mp, id).forEach(m => { d.removed.add(m.id); delete mp.matches[m.id]; });
+    d.removedSessions.add(id);
     delete mp.sessions[id];
   } else if (kind === 'add-match') {
     const sessionId = el.dataset.session;
@@ -385,6 +430,7 @@ function handleClick(tn, el, ctx, host) {
     const m = mp.matches[el.dataset.match];
     if (!m) return;
     if (Object.keys(m.holes || {}).length && !confirm(t('mpDelMatchScored'))) return;
+    d.removed.add(el.dataset.match);
     delete mp.matches[el.dataset.match];
   } else if (kind === 'add-scorer') {
     const m = mp.matches[el.dataset.match];

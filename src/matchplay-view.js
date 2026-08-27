@@ -13,7 +13,7 @@
 import { t } from './i18n.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
-  holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS
+  holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -100,10 +100,14 @@ function cardHTML(mp, match, state) {
     || t('mpUpcoming');
 
   // The one line a viewer reads: who leads and by how much, or the final
-  // result. Always carries the team's name, never colour alone.
-  const lead = settled.leader
-    ? `${teamShort(mp, settled.leader)} ${statusText(settled)}`
-    : (settled.finished ? t('mpTied') : 'AS');
+  // result. Always carries the team's name, never colour alone. A match that
+  // has not teed off is not "all square" — it has no status at all, so it
+  // shows what it is instead.
+  const lead = state === 'UPCOMING'
+    ? stateText
+    : settled.leader
+      ? `${teamShort(mp, settled.leader)} ${statusText(settled)}`
+      : (settled.finished ? t('mpTied') : 'AS');
 
   // Tee time before the off, THRU once under way (spec §17).
   const progress = state === 'UPCOMING'
@@ -209,14 +213,15 @@ function summaryHTML(mp) {
         <span><b>${pts(overall.b)}</b> ${esc(teamShort(mp, 'b'))}</span>
       </div>
       <div style="font-size:0.78rem;font-weight:800;margin-top:12px;">${t('mpSessionResults')}</div>
-      ${sessions.map(s => {
-        const v = totals[s.id] || { a: 0, b: 0 };
-        return `
+      ${sessions.map(s => [sessionLabel(s), totals[s.id]])
+        // A match whose session was lost still holds points, so it gets a row
+        // of its own rather than making the rows disagree with the total.
+        .concat(totals[UNGROUPED] ? [[t('mpUngrouped'), totals[UNGROUPED]]] : [])
+        .map(([label, v]) => `
           <div style="display:flex;gap:8px;align-items:baseline;margin-top:6px;font-size:0.8rem;">
-            <span style="color:var(--text-secondary);">${esc(sessionLabel(s))}</span>
-            <span style="margin-left:auto;font-weight:700;">${pts(v.a)} — ${pts(v.b)}</span>
-          </div>`;
-      }).join('')}
+            <span style="color:var(--text-secondary);">${esc(label)}</span>
+            <span style="margin-left:auto;font-weight:700;">${pts(v?.a || 0)} — ${pts(v?.b || 0)}</span>
+          </div>`).join('')}
     </div>`;
 }
 
@@ -237,8 +242,11 @@ function groupsHTML(mp) {
       </div>
       ${items.map(x => cardHTML(mp, x.match, x.state)).join('')}`;
   };
+  // Suspended matches keep their own heading rather than being counted under
+  // LIVE, where the count would claim more play is under way than there is.
   return [
-    group(t('mpLive'), ['LIVE', 'SUSPENDED']),
+    group(t('mpLive'), ['LIVE']),
+    group(t('mpSuspended'), ['SUSPENDED']),
     group(t('mpFinal'), ['COMPLETED']),
     group(t('mpUpcoming'), ['UPCOMING'])
   ].join('');
@@ -246,7 +254,10 @@ function groupsHTML(mp) {
 
 /**
  * Render the Live Match Center into `host`.
- * ctx: { showModal(title, html) — opens the match detail }
+ * ctx: {
+ *   showModal(title, html, matchId) — opens the match detail,
+ *   refreshModal(render) — re-renders an open detail from fresh data
+ * }
  */
 export function renderMatchCenter(host, tn, ctx = {}) {
   if (!host) return;
@@ -268,8 +279,15 @@ export function renderMatchCenter(host, tn, ctx = {}) {
     if (!match) return;
     ctx.showModal?.(
       `${t('mpMatchNo')}${match.number ?? ''}`,
-      detailHTML(mp, match)
+      detailHTML(mp, match),
+      match.id
     );
+  });
+
+  // This runs on every repaint, so a detail left open follows the match.
+  ctx.refreshModal?.((id) => {
+    const match = mp.matches[id];
+    return match ? detailHTML(mp, match) : null;
   });
 }
 
