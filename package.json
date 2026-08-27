@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:mp": "node --test scripts/test-matchplay.mjs scripts/test-matchplay-view.mjs scripts/test-matchplay-render.mjs"
+    "test:mp": "node --test scripts/test-matchplay.mjs scripts/test-matchplay-view.mjs scripts/test-matchplay-render.mjs scripts/test-device-roles.mjs"
   },
   "dependencies": {
     "firebase": "^11.0.0",

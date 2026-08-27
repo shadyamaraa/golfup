@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Device access is automatic, tiered by member role)
+
+An admin hit PERMISSION_DENIED creating a tournament because their device
+was not in the `mpDevices` allowlist. Requests and approvals are gone:
+a logged-in member's browser now registers itself
+(`store.ensureDeviceAccess`, called from the router and on login), and
+`database.rules.json` verifies the claimed member's role in `users/`
+server-side. Three tiers: member `admin` → full tournament write; member
+`marshal` → only `tournaments/$id/mp/**` ("Marshal / Marker": scores and
+everything inside a tournament, but no creating/deleting tournaments);
+plain member → only matches they play in or are assigned to score
+(`scorerIds` map / `players` slots, checked in the rules). Hand-approved
+devices are never downgraded; the request flow stays as a fallback; the
+empty-registry bootstrap is unchanged. Scorer-screen banner now only
+appears when self-registration could not cover the device. Tests 56.
+Deploy needs `firebase deploy --only database,hosting`.
+
 ## 2026-08-27 (Three formats: Stroke / Match play (1v1) / Ryder Cup)
 
 The team M Cup system is now the **Ryder Cup** format (`format: 'ryder'`),

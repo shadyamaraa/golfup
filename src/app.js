@@ -338,6 +338,10 @@ export async function router() {
     }
 
     currentUser = store.getUser();
+    // Register this browser for the member's tournament rights (admin →
+    // full, marshal → scores and mp edits, member → own matches). Memoized
+    // in the store, so per-route this is a no-op.
+    if (currentUser) store.ensureDeviceAccess(currentUser);
     if (currentUser && followsLoadedForUser !== currentUser.id) {
       const [follows, followerIds] = await Promise.all([
         store.loadFollows(currentUser.id),
@@ -686,6 +690,7 @@ function renderAuth() {
       // Success
       currentUser = user;
       store.saveUser(user);
+      store.ensureDeviceAccess(user);
       initFCM(user);
       showToast(t('welcome') + ' ' + user.name + '!', 'success');
       location.hash = pendingAuthRedirect || '#/';

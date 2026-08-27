@@ -648,13 +648,20 @@ export function mountMpAdmin(host, tn, ctx) {
 
 const shortUid = (uid) => (uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : '');
 
+const devRoleLabel = (role) =>
+  role === 'admin' ? t('mpDevRoleAdmin')
+    : role === 'player' ? t('mpDevRolePlayer') : t('mpDevRoleScorer');
+
 async function deviceAdminHTML() {
+  // Members register their own device by role; by the time this card paints,
+  // an admin or marshal normally already holds their access.
+  await store.ensureDeviceAccess(store.getUser());
   const status = await store.deviceStatus();
   if (!status.uid) return '';
   const { devices, requests } = await store.loadDeviceRegistry();
 
   const mine = status.role
-    ? `<span class="pill-soft">${status.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>`
+    ? `<span class="pill-soft">${devRoleLabel(status.role)}</span>`
     : status.registryEmpty
       ? `<button data-dev="claim" class="btn btn-primary btn-sm">${t('mpDevClaim')}</button>`
       : status.requested
@@ -675,7 +682,7 @@ async function deviceAdminHTML() {
   const deviceRows = Object.entries(devices).map(([uid, d]) => `
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
       <span><b>${esc(d?.name || '?')}</b> <span style="color:var(--text-muted);">${shortUid(uid)}</span></span>
-      <span class="pill-soft" style="font-size:0.68rem;">${d?.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>
+      <span class="pill-soft" style="font-size:0.68rem;">${devRoleLabel(d?.role)}</span>
       ${uid === status.uid ? `<span style="font-size:0.7rem;color:var(--text-secondary);">${t('mpDevThis')}</span>` : ''}
       <span style="margin-left:auto;display:flex;gap:6px;">
         ${d?.role !== 'admin' ? `<button data-dev="promote" data-uid="${esc(uid)}" data-name="${esc(d?.name || '')}" class="btn btn-outline btn-sm">${t('mpDevRoleAdmin')}</button>` : ''}
