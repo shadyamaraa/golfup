@@ -163,3 +163,44 @@ test('rendering escapes player names rather than trusting them', () => {
   assert.ok(!host.innerHTML.includes('<img src=x'), 'raw tag must not reach the DOM');
   assert.match(host.innerHTML, /&lt;img src=x/);
 });
+
+// ---- The shipped sample tournament ----
+// The demo is what anyone reviewing this feature looks at first, so it has to
+// stay internally consistent: no lineup warnings, everyone plays, and every
+// match state represented. A careless edit to it should fail here, not on a
+// reviewer's screen.
+
+const { MP_DEMO } = await import('../src/matchplay-demo.js');
+const { teamTotals, matchState, participation, lineupIssues } =
+  await import('../src/matchplay.js');
+
+test('the sample M Cup passes its own lineup rules', () => {
+  const mp = MP_DEMO.mp;
+  const matches = Object.values(mp.matches);
+  Object.keys(mp.sessions).forEach(sid => {
+    const issues = lineupIssues(matches.filter(m => m.sessionId === sid), mp.roster);
+    assert.deepEqual(issues, [], `session ${sid} must have no lineup issues`);
+  });
+});
+
+test('every sample player gets a match, 14 per team', () => {
+  const part = participation(MP_DEMO.mp.roster, Object.values(MP_DEMO.mp.matches));
+  assert.deepEqual(part.a, { used: 14, total: 14, unused: [] });
+  assert.deepEqual(part.b, { used: 14, total: 14, unused: [] });
+});
+
+test('the sample covers all four match states', () => {
+  const states = new Set(Object.values(MP_DEMO.mp.matches).map(matchState));
+  ['LIVE', 'COMPLETED', 'UPCOMING', 'SUSPENDED']
+    .forEach(s => assert.ok(states.has(s), `sample must include a ${s} match`));
+});
+
+test('the sample renders the whole board', () => {
+  const host = hostStub();
+  renderMatchCenter(host, MP_DEMO);
+  assert.deepEqual(teamTotals(Object.values(MP_DEMO.mp.matches)), { a: 3.5, b: 2.5 });
+  assert.match(host.innerHTML, />3\.5</);
+  assert.match(host.innerHTML, /ALTAI 2 UP/);   // the spec's own example card
+  assert.match(host.innerHTML, /ALTAI 3 &amp; 2/);
+  assert.equal((host.innerHTML.match(/data-mpv="open"/g) || []).length, 24);
+});

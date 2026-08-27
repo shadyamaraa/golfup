@@ -7,6 +7,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin } from './matchplay-admin.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderMatchCenter, stripSummary } from './matchplay-view.js';
+import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -1262,7 +1263,10 @@ async function renderTournamentStrip(list) {
   tnListCache = list;
   tnStripFor = currentUser?.id || null;
   let tn = tnFeatured(list);
-  if (!tn && tnDemoAllowed()) tn = tnDemo();
+  // With no real tournament to feature, preview builds fall back to the M Cup
+  // sample so the strip's team-score row can be reviewed. The stroke play
+  // sample is still reachable directly at #/tournament/demo.
+  if (!tn && tnDemoAllowed()) tn = MP_DEMO;
   if (!tn) {
     host.innerHTML = '';
     host.dataset.has = '0';
@@ -1483,6 +1487,7 @@ async function renderTournamentPage(id) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   let tn = null;
   if (id === TN_DEMO.id && tnDemoAllowed()) tn = tnDemo();
+  else if (id === MP_DEMO_ID && tnDemoAllowed()) tn = MP_DEMO;
   else { try { tn = await store.loadTournament(id); } catch (_) { } }
 
   if (!tn) {
@@ -1506,7 +1511,7 @@ async function renderTournamentPage(id) {
     if (document.activeElement?.id === 'tn-q') renderTnList(); else renderTnBoard();
   };
 
-  if (store.isUsingFirebase() && tn.id !== TN_DEMO.id) {
+  if (store.isUsingFirebase() && tn.id !== TN_DEMO.id && tn.id !== MP_DEMO_ID) {
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
       // Meta edits must not roll the board back to the stored snapshot when a
@@ -1587,7 +1592,7 @@ function paintTournamentPage(tn) {
       </div>
 
       <div id="tn-board"></div>
-      ${tn.id === TN_DEMO.id ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
+      ${tn.id === TN_DEMO.id || tn.id === MP_DEMO_ID ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
 
   document.querySelectorAll('[data-tn-tab]').forEach(btn => {

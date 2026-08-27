@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — a sample tournament to review it against)
+
+`src/matchplay-demo.js` (new) is an M Cup shaped like the real one: both teams
+at 14, three sessions (foursomes finished, fourball running, singles still to
+tee off), 24 matches covering every state the tournament can produce — a
+3 & 2 close-out, a 1 UP decided on the last green, a halved match, a dormie,
+a suspension, and one just teed off. `#/tournament/mcup-demo` opens it, and
+with no real tournament to feature it also takes the home strip so the
+team-score row can be reviewed; the stroke play sample is unchanged at
+`#/tournament/demo`. Confined to localhost and preview channels by the same
+`tnDemoAllowed()` gate as the existing sample.
+
+It doubles as a fixture: four more tests (38 total) assert the sample passes
+its own lineup rules in every session, fields all 14 players per team, covers
+all four states, and renders the board — including the spec's own example
+card, ALTAI 2 UP thru 11. A careless edit to the sample fails there rather
+than on a reviewer's screen.
+
+Also fixed: correcting an earlier hole left the scorer's screen on that hole,
+because `viewHole` was cleared after the database listener had already
+repainted with it still set.
+
 ## 2026-08-27 (M Cup match play — suspension, render tests, docs, phase 5 of 5)
 
 `SUSPENDED` was readable but unreachable: `matchState()` honoured it and

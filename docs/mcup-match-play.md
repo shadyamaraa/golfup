@@ -139,6 +139,14 @@ it is not acceptable, the fix is Firebase Auth, which is a wider decision than
 this feature: the assignment data a rule would need (`matches/{id}/scorerIds`)
 is already stored, so the rule itself is short once identities are real.
 
+## Reviewing it without a real tournament
+
+`#/tournament/mcup-demo` opens a sample M Cup — both teams at 14, three
+sessions, 24 matches covering every state including a dormie and a suspension.
+It also takes the home strip when there is no real tournament to feature. Like
+the stroke play sample at `#/tournament/demo`, it only exists on localhost and
+Firebase preview channels, never on the production hosts.
+
 ## Code map
 
 | File | Responsibility |
@@ -147,6 +155,7 @@ is already stored, so the rule itself is short once identities are real.
 | `src/matchplay-admin.js` | Setup UI: teams, roster, sessions, pairings, validation. |
 | `src/matchplay-score.js` | The scorer screen (`#/score/:tnId/:matchId`). |
 | `src/matchplay-view.js` | Public Live Match Center and the home strip summary. |
+| `src/matchplay-demo.js` | The sample tournament, also used as a test fixture. |
 | `src/store.js` | `updateTournament`, `saveTnMatchHole`, `setTnMatchSuspended`. |
 
 Tests: `npm run test:mp`. They cover the engine against the spec's own worked
