@@ -1,12 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue, off, push } from 'firebase/database';
-import { getAuth } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
 let db = null;
 let auth = null;
 export let firebaseApp = null;
 let useFirebase = false;
+// The anonymous-auth uid of this browser, once sign-in resolves; null before
+// that and null forever when the Anonymous provider is not enabled.
+let deviceUid = null;
 
 export async function initStore() {
   if (isFirebaseConfigured()) {
@@ -16,6 +19,13 @@ export async function initStore() {
       auth = getAuth(firebaseApp);
       useFirebase = true;
       console.log('Firebase connected');
+      // Anonymous auth stamps every request from this browser with a stable
+      // uid, which is what the database rules check before letting a device
+      // write live scores. The app's own sign-in is untouched. If the
+      // Anonymous provider is not enabled in the Firebase console this
+      // rejects and the uid stays null — everything else keeps working.
+      onAuthStateChanged(auth, (u) => { deviceUid = u?.uid || null; });
+      signInAnonymously(auth).catch((e) => console.warn('anon auth unavailable:', e?.code || e));
     } catch (e) {
       console.warn('Firebase init failed, using localStorage', e);
     }
@@ -502,6 +512,70 @@ export async function setTnMatchSuspended(tnId, matchId, suspended, by) {
     at: Date.now(), by: by || null, matchId, action: suspended ? 'suspend' : 'resume'
   }).catch(console.warn);
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
+// ---- Device registry (anonymous-auth allowlist) ----
+// The database rules let only allowlisted anonymous uids write under
+// tournaments/. mpDevices holds the approved devices ({role, name, at} by
+// uid, role 'admin'|'scorer' — only admin devices may edit the registry, and
+// the FIRST device to claim while the registry is empty becomes admin, which
+// is how the owner bootstraps after deploying the rules). mpDeviceRequests
+// holds pending requests a device files for itself. With the Anonymous
+// provider not enabled or the rules not deployed, none of this gates
+// anything — the app behaves exactly as before.
+
+export function getDeviceUid() { return deviceUid; }
+
+export async function deviceStatus() {
+  if (!useFirebase || !db || !deviceUid) return { uid: null, role: null, requested: false, registryEmpty: null };
+  const [dev, req, reg] = await Promise.all([
+    get(ref(db, 'mpDevices/' + deviceUid)),
+    get(ref(db, 'mpDeviceRequests/' + deviceUid)),
+    get(ref(db, 'mpDevices'))
+  ]);
+  return {
+    uid: deviceUid,
+    role: dev.exists() ? (dev.val()?.role || 'scorer') : null,
+    requested: req.exists(),
+    registryEmpty: !reg.exists()
+  };
+}
+
+export async function requestDeviceAccess(name) {
+  if (!useFirebase || !db || !deviceUid) throw new Error('no-device-uid');
+  await set(ref(db, 'mpDeviceRequests/' + deviceUid), { name: name || '', at: Date.now() });
+}
+
+// Bootstrap: claims this device as admin. The rules only allow it while the
+// registry is empty (or from a device that is already admin).
+export async function claimAdminDevice(name) {
+  if (!useFirebase || !db || !deviceUid) throw new Error('no-device-uid');
+  await set(ref(db, 'mpDevices/' + deviceUid), { role: 'admin', name: name || '', at: Date.now() });
+}
+
+export async function loadDeviceRegistry() {
+  if (!useFirebase || !db) return { devices: {}, requests: {} };
+  const [dev, req] = await Promise.all([
+    get(ref(db, 'mpDevices')),
+    get(ref(db, 'mpDeviceRequests'))
+  ]);
+  return { devices: dev.exists() ? dev.val() : {}, requests: req.exists() ? req.val() : {} };
+}
+
+export async function approveDevice(uid, name, role = 'scorer') {
+  if (!useFirebase || !db || !uid) return;
+  await set(ref(db, 'mpDevices/' + uid), { role, name: name || '', at: Date.now() });
+  remove(ref(db, 'mpDeviceRequests/' + uid)).catch(console.warn);
+}
+
+export async function revokeDevice(uid) {
+  if (!useFirebase || !db || !uid) return;
+  await remove(ref(db, 'mpDevices/' + uid));
+}
+
+export async function dismissDeviceRequest(uid) {
+  if (!useFirebase || !db || !uid) return;
+  await remove(ref(db, 'mpDeviceRequests/' + uid));
 }
 
 // ---- Tables (RTDB) ----

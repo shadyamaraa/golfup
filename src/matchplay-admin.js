@@ -139,9 +139,10 @@ function playerSelectHTML(mp, match, teamId, slot) {
 }
 
 // Scorer assignment (spec §14). A picker over app members rather than free
-// text, so what is stored is a member id — which is what a database rule
-// would have to check. No such rule exists yet: access is enforced in the UI
-// only, because the app has no Firebase Auth identity for a rule to read.
+// text, so what is stored is a member id. Server-side, writes are gated per
+// DEVICE (the anonymous-auth allowlist in mpDevices — see the registry card
+// below); which member may score which match stays a UI-level check, since
+// the app's own sign-in carries no Firebase identity a rule could read.
 // See docs/mcup-match-play.md.
 function scorerHTML(tn, match, users) {
   const ids = Object.keys(match.scorerIds || {});
@@ -492,4 +493,109 @@ function wire(host, tn, ctx) {
 export function mountMpAdmin(host, tn, ctx) {
   if (!host || !tn) return;
   paint(host, tn, ctx);
+}
+
+// ---- Device registry (who may write live scores) ----
+// The database rules only let allowlisted anonymous-auth devices write under
+// tournaments/. This card is where the admin approves them: their own device
+// first (the registry's first claim bootstraps as admin), then each scorer's
+// phone as its request comes in. Hidden entirely while anonymous auth is not
+// running — in that state the rules are not gating anything yet.
+
+const shortUid = (uid) => (uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : '');
+
+async function deviceAdminHTML() {
+  const status = await store.deviceStatus();
+  if (!status.uid) return '';
+  const { devices, requests } = await store.loadDeviceRegistry();
+
+  const mine = status.role
+    ? `<span class="pill-soft">${status.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>`
+    : status.registryEmpty
+      ? `<button data-dev="claim" class="btn btn-primary btn-sm">${t('mpDevClaim')}</button>`
+      : status.requested
+        ? `<span style="color:var(--amber);font-size:0.78rem;">${t('mpDevRequested')}</span>`
+        : `<button data-dev="request" class="btn btn-outline btn-sm">${t('mpDevRequest')}</button>`;
+
+  const requestRows = Object.entries(requests)
+    .filter(([uid]) => !devices[uid])
+    .map(([uid, r]) => `
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
+        <span><b>${esc(r?.name || '?')}</b> <span style="color:var(--text-muted);">${shortUid(uid)}</span></span>
+        <span style="margin-left:auto;display:flex;gap:6px;">
+          <button data-dev="approve" data-uid="${esc(uid)}" data-name="${esc(r?.name || '')}" class="btn btn-primary btn-sm">${t('mpDevApprove')}</button>
+          <button data-dev="dismiss" data-uid="${esc(uid)}" class="btn btn-outline-danger btn-sm">✕</button>
+        </span>
+      </div>`).join('');
+
+  const deviceRows = Object.entries(devices).map(([uid, d]) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
+      <span><b>${esc(d?.name || '?')}</b> <span style="color:var(--text-muted);">${shortUid(uid)}</span></span>
+      <span class="pill-soft" style="font-size:0.68rem;">${d?.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>
+      ${uid === status.uid ? `<span style="font-size:0.7rem;color:var(--text-secondary);">${t('mpDevThis')}</span>` : ''}
+      <span style="margin-left:auto;display:flex;gap:6px;">
+        ${d?.role !== 'admin' ? `<button data-dev="promote" data-uid="${esc(uid)}" data-name="${esc(d?.name || '')}" class="btn btn-outline btn-sm">${t('mpDevRoleAdmin')}</button>` : ''}
+        <button data-dev="revoke" data-uid="${esc(uid)}" class="btn btn-outline-danger btn-sm">${t('mpDevRevoke')}</button>
+      </span>
+    </div>`).join('');
+
+  return `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <b style="font-size:0.85rem;">${t('mpDevTitle')}</b>
+        <span style="font-size:0.72rem;color:var(--text-muted);">${t('mpDevThis')}: ${shortUid(status.uid)}</span>
+        <span style="margin-left:auto;">${mine}</span>
+      </div>
+      ${status.registryEmpty && !status.role
+        ? `<p style="font-size:0.74rem;color:var(--amber);margin:8px 0 0;">${t('mpDevBootstrapHint')}</p>` : ''}
+      ${requestRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevRequests')}</div>${requestRows}` : ''}
+      ${deviceRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevApproved')}</div>${deviceRows}` : ''}
+    </div>`;
+}
+
+/**
+ * Render the device-approval card into `host`.
+ * ctx: { showToast(msg, type), adminName — name recorded on claims/requests }
+ */
+export async function mountDeviceAdmin(host, ctx) {
+  if (!host) return;
+  let html = '';
+  try { html = await deviceAdminHTML(); } catch (err) { console.warn('[mp-devices]', err); }
+  host.innerHTML = html;
+  if (!html) return;
+
+  const act = async (fn, okMsg) => {
+    try {
+      await fn();
+      if (okMsg) ctx.showToast('✅ ' + okMsg, 'success');
+    } catch (err) {
+      console.error('[mp-devices]', err);
+      ctx.showToast('⚠️ ' + (/permission[_ ]denied/i.test(String(err?.message || err))
+        ? t('mpDevDenied') : (err?.message || t('mpSaveFailed'))), 'error');
+    }
+    await mountDeviceAdmin(host, ctx);
+  };
+
+  host.querySelectorAll('button[data-dev]').forEach(b => b.onclick = () => {
+    const kind = b.dataset.dev;
+    if (kind === 'claim') act(() => store.claimAdminDevice(ctx.adminName), t('mpDevClaimed'));
+    else if (kind === 'request') act(() => store.requestDeviceAccess(ctx.adminName), t('mpDevRequestSent'));
+    else if (kind === 'approve') act(() => store.approveDevice(b.dataset.uid, b.dataset.name, 'scorer'), t('mpDevApproved'));
+    else if (kind === 'promote') act(() => store.approveDevice(b.dataset.uid, b.dataset.name, 'admin'), t('mpDevApproved'));
+    else if (kind === 'dismiss') act(() => store.dismissDeviceRequest(b.dataset.uid));
+    else if (kind === 'revoke') {
+      act(async () => {
+        // Removing the last admin device would leave a registry nobody can
+        // edit — the rules only let admin devices touch it — so it is
+        // refused here rather than discovered as a lockout later.
+        const { devices } = await store.loadDeviceRegistry();
+        const admins = Object.entries(devices).filter(([, d]) => d?.role === 'admin');
+        if (admins.length === 1 && admins[0][0] === b.dataset.uid) {
+          throw new Error(t('mpDevLastAdmin'));
+        }
+        if (!confirm(t('mpDevRevokeConfirm'))) return;
+        await store.revokeDevice(b.dataset.uid);
+      });
+    }
+  });
 }

@@ -1,5 +1,29 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — the scoreboard stops taking writes from strangers)
+
+Until now the database accepted a tournament write from anyone who could
+reach it — the role checks lived in the UI alone, which is the app's general
+model but a poor fit for a public live scoreboard. Now every browser signs in
+to Firebase anonymously (the app's own member sign-in is untouched) and the
+rules only accept writes under `tournaments/` from device uids allowlisted in
+`mpDevices`. The registry is managed from a card at the top of Admin →
+Тэмцээн: the first claim on an empty registry bootstraps that device as
+admin; scorers request access from the banner the scoring screen shows an
+unapproved device — before the first tap on the course, not as a failed write
+at hole one — and the admin approves, promotes, or revokes each device. The
+last admin device cannot be revoked, so the registry cannot lock itself out.
+Requests can only be filed by a device for itself, and only admin devices
+touch the registry (server-enforced both).
+
+Two console steps turn it on: enable the Anonymous sign-in provider, then
+`firebase deploy --only database`. Until both happen, nothing is gated — the
+card and banner stay hidden and the app behaves exactly as before, so this
+ships safely ahead of the console work. Approval is per device and coarse
+(any approved device may write any tournament); per-match scorer enforcement
+remains UI-level until the full Firebase Auth migration. All spelled out in
+docs/mcup-match-play.md.
+
 ## 2026-08-27 (a tournament board needs no account, and deploys stop hiding for an hour)
 
 A tournament board is a public scoreboard — spec §1's viewer "opens UB Golf

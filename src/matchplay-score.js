@@ -163,6 +163,7 @@ function screenHTML(tn, match, demo) {
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;text-align:center;">
         A = ${esc(teamLabel(mp, 'a'))} · W = ${esc(teamLabel(mp, 'b'))} · – = ${t('mpHalved')}
       </div>
+      <div id="sc-device" style="min-height:0;"></div>
       <div id="sc-note" style="font-size:0.75rem;color:var(--text-secondary);margin-top:10px;text-align:center;min-height:1.2em;"></div>
       ${demo ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
@@ -218,6 +219,8 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     denied = false;
     host.innerHTML = screenHTML(data, m, demoMode);
     wire();
+    // Repainted every time because the screen was just replaced wholesale.
+    paintDeviceBanner();
   };
 
   // One tap: write the hole, let the listener paint the result. `saving`
@@ -298,6 +301,35 @@ export async function renderScorerPage(tnId, matchId, ctx) {
         paint();
       }
     });
+  };
+
+  // Device check: the database only accepts score writes from allowlisted
+  // devices, so an unapproved phone finds out HERE, before the first tap on
+  // the course — not from a failed write at hole one. Silent when anonymous
+  // auth is not running (nothing is gating writes then) and on the demo.
+  const paintDeviceBanner = async () => {
+    if (demoMode || !store.isUsingFirebase()) return;
+    let status = null;
+    try { status = await store.deviceStatus(); } catch (_) { return; }
+    if (!status?.uid || status.role || status.registryEmpty) return;
+    const el = document.getElementById('sc-device');
+    if (!el) return;
+    el.innerHTML = `
+      <div style="background:rgba(221,137,16,0.12);border:1px solid var(--amber);border-radius:9px;padding:10px;margin-top:12px;font-size:0.78rem;">
+        ${status.requested ? t('mpDevRequested') : t('mpDevBanner')}
+        ${status.requested ? '' : `<button id="sc-dev-req" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%;">${t('mpDevRequest')}</button>`}
+      </div>`;
+    const btn = document.getElementById('sc-dev-req');
+    if (btn) btn.onclick = async () => {
+      try {
+        await store.requestDeviceAccess(ctx.user?.fullName || ctx.user?.name || ctx.user?.username || '');
+        ctx.showToast?.('✅ ' + t('mpDevRequestSent'), 'success');
+      } catch (err) {
+        console.error('[scorer]', err);
+        ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+      }
+      paintDeviceBanner();
+    };
   };
 
   // Waiting rather than a blank screen, for the case where the read failed

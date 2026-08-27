@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
-import { mountMpAdmin, discardMpDraft } from './matchplay-admin.js';
+import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderMatchCenter, stripSummary } from './matchplay-view.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -7365,6 +7365,7 @@ async function renderAdminTournamentsTab() {
 
   el.innerHTML = `
     ${errBanner}
+    <div id="tn-devices"></div>
     <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
       <button type="button" id="tn-create-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
         <h3 style="margin:0;">${t('tnCreate')}</h3>
@@ -7442,6 +7443,13 @@ async function renderAdminTournamentsTab() {
     try { await store.deleteTournament(tn.id); }
     catch (err) { tnAdminError(err); return; }
     await renderAdminTournamentsTab();
+  });
+
+  // Device approval card — which phones may write live scores. Renders only
+  // once anonymous auth is running; a no-op before the rules are deployed.
+  mountDeviceAdmin(document.getElementById('tn-devices'), {
+    showToast,
+    adminName: displayUsername(currentUser) || currentUser?.name || ''
   });
 
   // Match play setup lives in its own module; it renders into the open
