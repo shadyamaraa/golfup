@@ -11,7 +11,20 @@
     "ranking": { ".read": true, ".write": true },
     "news": { ".read": true, ".write": true },
     "sponsor": { ".read": true, ".write": true },
-    "tournaments": { ".read": true, ".write": true },
+    "tournaments": {
+      ".read": true,
+      ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists()"
+    },
+    "mpDevices": {
+      ".read": true,
+      ".write": "auth != null && (!root.child('mpDevices').exists() || root.child('mpDevices').child(auth.uid).child('role').val() === 'admin')"
+    },
+    "mpDeviceRequests": {
+      ".read": true,
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('mpDevices').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
     "tables": { ".read": true, ".write": true },
     "orders": { ".read": true, ".write": true }
   }

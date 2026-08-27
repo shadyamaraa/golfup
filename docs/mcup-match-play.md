@@ -140,18 +140,39 @@ match the holes have decided is COMPLETED whatever the flag says, so play that
 resumes without anyone pressing Resume still finishes and still scores its
 point.
 
-## Known limitation: scorer access is not enforced server-side
+## Server-side protection: the device allowlist
 
-The scorer restriction is applied in the UI only. The app signs members in
-through a localStorage session rather than Firebase Auth, so a database rule
-has no identity to check — anyone who can reach the database directly could
-write a hole result regardless of assignment.
+Score writes are enforced per DEVICE. Every browser silently signs in to
+Firebase anonymously and gets a stable uid; the database rules only accept
+writes under `tournaments/` from uids listed in `mpDevices`. Nothing about the
+app's own member sign-in changes.
 
-For a supervised tournament with a known scoring crew this is usually
-acceptable, and the audit trail records who the app believed was scoring. If
-it is not acceptable, the fix is Firebase Auth, which is a wider decision than
-this feature: the assignment data a rule would need (`matches/{id}/scorerIds`)
-is already stored, so the rule itself is short once identities are real.
+Turning it on (one-time):
+
+1. Firebase console → Authentication → Sign-in method → enable **Anonymous**.
+2. `firebase deploy --only database` (the rules in `database.rules.json`).
+3. Open Admin → Тэмцээн. The "Оноо бичих төхөөрөмжүүд" card appears; while
+   the registry is empty, press **"Энэ төхөөрөмжийг админ болгох"** — the
+   first claim bootstraps as admin. Do this from your own device first.
+4. Each scorer opens their match's scoring screen, sees the "not approved"
+   banner, and taps **"Эрх хүсэх"**. Their request appears in the admin card;
+   approve it. From then on their taps save.
+
+Notes:
+
+- A device, not a person: clearing browser data issues a new uid, so that
+  phone must be re-approved. Approve the crew's phones the morning of play.
+- Approval is coarse — an approved device may write any tournament. WHICH
+  member may score WHICH match remains a UI-level check (the app's own
+  sign-in carries no Firebase identity a rule could read); the audit trail
+  records who the app believed was scoring. Finer enforcement is part of the
+  full Firebase Auth migration, a wider decision than this feature.
+- The last admin device cannot be removed from the card, so the registry
+  cannot lock itself out. If it ever does (console mishap), delete the
+  `mpDevices` node in the Firebase console and bootstrap again.
+- Until Anonymous auth is enabled and the rules are deployed, none of this
+  gates anything: the card and banner stay hidden and writes behave as
+  before.
 
 ## Reviewing it without a real tournament
 
