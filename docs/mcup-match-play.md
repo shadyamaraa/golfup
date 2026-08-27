@@ -204,3 +204,27 @@ concerned, only in how many players a side fields — the match play arithmetic
 is identical. To add one, extend `FORMATS` and `FORMAT_TEAM_SIZE` in
 `src/matchplay.js`; the setup UI sizes its selects from that table and the rest
 follows.
+
+## Phase 2: notifications, statistics, history
+
+**Push notifications.** A signed-in member opens the tournament's Match
+Center and taps "Мэдэгдэл авах"; from then on they get a push (and a bell
+entry) each time a match finishes, with the result in the title — and when
+the last match ends, the body carries the tournament's final score. The
+subscription lives in `tnSubs/{tnId}/{userId}`; a Cloud Function
+(`mcupMatchFinished`) watches hole writes, re-settles the match server-side,
+and fans results out through the existing `/notifications` pipeline, so the
+push mechanics are the ones the app already had. What was last announced is
+recorded under `mp/notified/{matchId}` — a correction that changes a final
+result announces again; anything else never repeats. Deploying this needs
+`firebase deploy --only functions,database` once.
+
+**Player statistics** (spec §25). The Match Center gains a collapsed
+"Тоглогчийн статистик" panel: per player Played / W-L-H / Points (each player
+carries their side's match points), sorted by points, plus pair records for
+the two-player formats. Everything is derived from completed matches only,
+by `playerStats()` / `pairStats()` in `src/matchplay.js`.
+
+**Past tournaments.** Below the board, finished match play tournaments are
+listed with their derived final scores, newest first, each linking to its own
+Match Center — the M Cup archive grows by itself as tournaments finish.

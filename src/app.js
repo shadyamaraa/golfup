@@ -6,7 +6,7 @@ import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { renderMatchCenter, stripSummary } from './matchplay-view.js';
+import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -1651,6 +1651,56 @@ function tnInfoHTML(tn) {
     ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
 }
 
+// ---- M Cup notifications & history (below the match board) ----
+
+// Subscription state for the tournament on screen, so live repaints don't
+// re-read it on every incoming hole.
+let tnSubState = { tnId: null, on: false };
+
+function paintTnSubBtn() {
+  const btn = document.getElementById('tn-sub-btn');
+  if (!btn) return;
+  btn.textContent = tnSubState.on ? `🔕 ${t('mpUnsub')}` : `🔔 ${t('mpSub')}`;
+  btn.classList.toggle('btn-primary', !tnSubState.on);
+  btn.classList.toggle('btn-outline', tnSubState.on);
+}
+
+async function wireTnSubscribe(tn) {
+  const btn = document.getElementById('tn-sub-btn');
+  if (!btn || !currentUser) return;
+  if (tnSubState.tnId !== tn.id) {
+    let on = false;
+    try { on = await store.isTnSubscribed(tn.id, currentUser.id); } catch (_) { }
+    tnSubState = { tnId: tn.id, on };
+  }
+  paintTnSubBtn();
+  const el = document.getElementById('tn-sub-btn');
+  if (el) el.onclick = async () => {
+    const next = !tnSubState.on;
+    tnSubState.on = next;
+    paintTnSubBtn();
+    try {
+      await store.setTnSubscribed(tn.id, currentUser.id, next);
+      showToast(next ? '🔔 ' + t('mpSubOn') : t('mpSubOff'), 'success');
+    } catch (err) {
+      tnSubState.on = !next;
+      paintTnSubBtn();
+      tnAdminError(err);
+    }
+  };
+}
+
+async function paintTnHistory(tn) {
+  if (!document.getElementById('tn-mp-history')) return;
+  let list = tnListCache;
+  if (!list) {
+    try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { list = []; }
+  }
+  // Re-fetch the host: the await above may have crossed a repaint.
+  const el = document.getElementById('tn-mp-history');
+  if (el) el.innerHTML = historyHTML(list, tn.id);
+}
+
 // Tab body: the leaderboard's stable chrome (search, filters, own position)
 // plus the #tn-list host that renderTnList() fills.
 function renderTnBoard() {
@@ -1665,6 +1715,14 @@ function renderTnBoard() {
 
   if (tnPageTab === 'match') {
     renderMatchCenter(host, tn, { showModal: showMatchModal, refreshModal: refreshMatchModal });
+    // Below the board: the notification toggle (members only — a push needs
+    // an account to land on) and past match play tournaments.
+    host.insertAdjacentHTML('beforeend', `
+      ${currentUser && store.isUsingFirebase() && tn.id !== MP_DEMO_ID
+        ? `<button id="tn-sub-btn" class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;"></button>` : ''}
+      <div id="tn-mp-history"></div>`);
+    wireTnSubscribe(tn);
+    paintTnHistory(tn);
     return;
   }
 
@@ -1974,6 +2032,24 @@ function renderNotifications(notifs) {
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
+            // M Cup results carry their own text and point at a tournament,
+            // not a game — everything below this branch is game-shaped.
+            if (n.type === 'mcup') {
+              return `
+              <div class="notif-item glass-card">
+                <div class="notif-content">
+                  <span class="notif-icon">${icon('play', { size: 18 })}</span>
+                  <div>
+                    <div class="notif-title">${esc(n.title || 'M Cup')}${n.extraCount > 0 ? ` <span class="notif-badge">+${n.extraCount}</span>` : ''}</div>
+                    <div class="notif-sub">${esc(n.body || '')}</div>
+                  </div>
+                </div>
+                <div class="notif-actions">
+                  ${n.tnId ? `<a href="#/tournament/${esc(n.tnId)}" class="btn btn-primary btn-sm" style="text-decoration:none;">${t('viewDetails')}</a>` : ''}
+                  <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-ids="${n.groupIds.join(',')}">${t('decline')}</button>
+                </div>
+              </div>`;
+            }
             const icName = n.type === 'invite' ? 'play' : n.type === 'player_joined' ? 'members' : n.type === 'player_left' ? 'members' : n.type === 'game_updated' ? 'edit' : n.type === 'game_deleted' ? 'alerts' : 'play';
             const title = n.type === 'invite' ? t('inviteNotif')
               : n.type === 'new_game' ? t('newGameNotif')

@@ -514,6 +514,23 @@ export async function setTnMatchSuspended(tnId, matchId, suspended, by) {
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 
+// ---- Tournament notification subscriptions ----
+// tnSubs/{tnId}/{userId}: {at} — who wants a push when a match in this
+// tournament finishes. The Cloud Function fans results out to these users
+// through the existing /notifications pipeline.
+
+export async function isTnSubscribed(tnId, userId) {
+  if (!useFirebase || !db || !tnId || !userId) return false;
+  return (await get(ref(db, `tnSubs/${tnId}/${userId}`))).exists();
+}
+
+export async function setTnSubscribed(tnId, userId, on) {
+  if (!useFirebase || !db || !tnId || !userId) return;
+  const r = ref(db, `tnSubs/${tnId}/${userId}`);
+  if (on) await set(r, { at: Date.now() });
+  else await remove(r);
+}
+
 // ---- Device registry (anonymous-auth allowlist) ----
 // The database rules let only allowlisted anonymous uids write under
 // tournaments/. mpDevices holds the approved devices ({role, name, at} by

@@ -13,7 +13,8 @@
 import { t } from './i18n.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
-  holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED
+  holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
+  playerStats, pairStats, tournamentComplete
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -225,6 +226,100 @@ function summaryHTML(mp) {
     </div>`;
 }
 
+// ---- Player statistics (spec §25) ----
+
+function statsHTML(mp) {
+  const stats = playerStats(mp);
+  if (!Object.keys(stats).length) return '';
+  const pairs = pairStats(mp);
+
+  const teamTable = (k) => {
+    const rows = Object.entries(stats)
+      .filter(([pid]) => mp.roster?.[pid]?.teamId === k)
+      .map(([pid, s]) => ({ name: mp.roster?.[pid]?.name || pid, ...s }))
+      .sort((x, y) => y.points - x.points || y.w - x.w || x.name.localeCompare(y.name));
+    if (!rows.length) return '';
+    return `
+      <div style="margin-top:12px;">
+        <div style="display:flex;gap:7px;align-items:center;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${teamColor(mp, k)};flex:none;"></span>
+          <b style="font-size:0.78rem;">${esc(teamShort(mp, k))}</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr repeat(3,34px) 44px;gap:2px 6px;margin-top:6px;font-size:0.78rem;">
+          <span></span>
+          <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">P</span>
+          <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">W-L-H</span>
+          <span></span>
+          <span style="text-align:right;color:var(--text-muted);font-size:0.66rem;font-weight:700;">Pts</span>
+          ${rows.map(r => `
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</span>
+            <span style="text-align:center;color:var(--text-secondary);">${r.played}</span>
+            <span style="text-align:center;color:var(--text-secondary);">${r.w}-${r.l}-${r.h}</span>
+            <span></span>
+            <span style="text-align:right;font-weight:700;">${pts(r.points)}</span>`).join('')}
+        </div>
+      </div>`;
+  };
+
+  const pairRows = Object.values(pairs)
+    .sort((x, y) => (y.w - y.l) - (x.w - x.l) || y.played - x.played);
+  const pairsBlock = pairRows.length ? `
+    <div style="font-size:0.74rem;font-weight:800;margin-top:14px;color:var(--text-secondary);">${t('mpPairs')}</div>
+    ${pairRows.map(p => `
+      <div style="display:flex;gap:8px;align-items:baseline;margin-top:5px;font-size:0.78rem;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${teamColor(mp, p.teamId)};flex:none;align-self:center;"></span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${esc(p.players.map(pid => mp.roster?.[pid]?.name || pid).join(' / '))}
+        </span>
+        <span style="margin-left:auto;color:var(--text-secondary);white-space:nowrap;">${p.played} · ${p.w}-${p.l}-${p.h}</span>
+      </div>`).join('')}` : '';
+
+  // Collapsed by default: the spec's priority list (§22) puts the score and
+  // the matches first, and mid-tournament this table is a curiosity, not the
+  // headline.
+  return `
+    <details data-mpv-stats class="surface-card" style="padding:14px;margin-top:12px;">
+      <summary style="font-size:0.8rem;font-weight:800;cursor:pointer;">${t('mpStats')}</summary>
+      ${teamTable('a')}
+      ${teamTable('b')}
+      ${pairsBlock}
+    </details>`;
+}
+
+// ---- Past tournaments (spec Phase 2: historical M Cup results) ----
+
+// Finished match play tournaments other than the one on screen, newest first,
+// each with its derived final score. Rendered by app.js below the board once
+// the tournament list is in hand.
+export function historyHTML(list, currentId) {
+  const past = (Array.isArray(list) ? list : [])
+    .filter(tn => tn && tn.format === 'match' && tn.id !== currentId
+      && tn.mp && tournamentComplete(tn.mp))
+    .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+  if (!past.length) return '';
+
+  const row = (tn) => {
+    const total = teamTotals(Object.values(tn.mp.matches || {}));
+    const winner = total.a > total.b ? 'a' : total.b > total.a ? 'b' : null;
+    const side = (k) => `<span style="${winner === k ? 'font-weight:800;' : ''}">${esc(teamShort(tn.mp, k))} ${pts(total[k])}</span>`;
+    const year = String(tn.startDate || '').slice(0, 4);
+    return `
+      <a href="#/tournament/${esc(tn.id)}" style="display:flex;gap:10px;align-items:baseline;margin-top:8px;
+         text-decoration:none;color:var(--text-primary);font-size:0.82rem;">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${esc(tn.name || '—')}${year ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${year}</span>` : ''}
+        </span>
+        <span style="margin-left:auto;white-space:nowrap;">${side('a')} <span style="color:var(--text-secondary);">—</span> ${side('b')}</span>
+      </a>`;
+  };
+
+  return `
+    <div class="surface-card" style="padding:14px;margin-top:12px;">
+      <div style="font-size:0.8rem;font-weight:800;">${t('mpHistory')}</div>
+      ${past.map(row).join('')}
+    </div>`;
+}
+
 // ---- Board ----
 
 // Matches grouped the way the spec orders them for a phone (§22).
@@ -269,10 +364,21 @@ export function renderMatchCenter(host, tn, ctx = {}) {
     return;
   }
 
+  // A live update replaces the whole board; a stats panel the viewer had
+  // open must not snap shut on every incoming hole. (Optional call: the
+  // render tests drive this with a bare {innerHTML} host.)
+  const statsOpen = host.querySelector?.('details[data-mpv-stats]')?.open;
+
   host.innerHTML = `
     ${scoreboardHTML(mp)}
     ${groupsHTML(mp)}
-    ${summaryHTML(mp)}`;
+    ${summaryHTML(mp)}
+    ${statsHTML(mp)}`;
+
+  if (statsOpen) {
+    const d = host.querySelector?.('details[data-mpv-stats]');
+    if (d) d.open = true;
+  }
 
   host.querySelectorAll('button[data-mpv="open"]').forEach(b => b.onclick = () => {
     const match = mp.matches[b.dataset.match];
