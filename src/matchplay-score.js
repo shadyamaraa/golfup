@@ -214,9 +214,13 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     const note = document.getElementById('sc-note');
     try {
       await store.saveTnMatchHole(tnId, matchId, hole, value, ctx.user?.id);
-      // Entering a hole means moving on; a correction stays where it was so
-      // the scorer can see what they just changed.
-      if (viewHole !== null && value !== null) viewHole = null;
+      // Any entry — a new hole or a correction to an old one — puts the
+      // scorer back on the hole being played. The strip below carries the
+      // change they just made, so nothing is lost by moving on. Repainting
+      // here rather than leaving it to the listener is what actually moves
+      // the screen: the listener already fired while viewHole still pointed
+      // at the corrected hole.
+      if (viewHole !== null) { viewHole = null; paint(); }
       if (note) note.textContent = '';
     } catch (err) {
       console.error('[scorer]', err);
@@ -264,8 +268,6 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     const unsub = store.onTournamentChanged(tnId, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
       data = fresh;
-      // Never repaint over a tap in flight; the write's own listener
-      // callback lands right after and paints the settled truth.
       paint();
     });
     if (unsub) ctx.onUnsub?.(unsub);
