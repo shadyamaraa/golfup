@@ -30,6 +30,26 @@ export const teamColor = (mp, k) => {
   return /^#[0-9a-fA-F]{6}$/.test(c) ? c : (k === 'a' ? '#1f6f43' : '#b3382c');
 };
 
+// A stored logo is only ever accepted as an image data URI — anything else
+// (a URL, markup, garbage) is ignored and the colour dot takes over. That is
+// both the XSS boundary and the graceful fallback for teams with no logo.
+export const teamLogo = (mp, k) => {
+  const l = mp?.teams?.[k]?.logo;
+  return typeof l === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(l)
+    ? l : null;
+};
+
+// The team's visual mark wherever one is shown: the uploaded logo when there
+// is one, the colour dot otherwise. Never the only carrier of meaning — the
+// adjacent text always names the team (spec §23).
+export function teamMark(mp, k, size = 8) {
+  const logo = teamLogo(mp, k);
+  if (logo) {
+    return `<img src="${logo}" alt="" style="width:${size + 8}px;height:${size + 8}px;object-fit:contain;border-radius:4px;flex:none;" />`;
+  }
+  return `<span style="width:${size}px;height:${size}px;border-radius:50%;background:${teamColor(mp, k)};flex:none;"></span>`;
+}
+
 const matchesOf = (mp) => Object.values(mp?.matches || {}).filter(Boolean);
 
 function playerNames(mp, match, k) {
@@ -69,9 +89,11 @@ function scoreboardHTML(mp) {
   const session = currentSession(mp);
   const side = (k) => {
     const lead = total[k] > total[k === 'a' ? 'b' : 'a'];
+    const logo = teamLogo(mp, k);
     return `
       <div style="flex:1;text-align:center;min-width:120px;">
         <div style="height:4px;border-radius:2px;background:${teamColor(mp, k)};margin-bottom:8px;"></div>
+        ${logo ? `<img src="${logo}" alt="" style="width:38px;height:38px;object-fit:contain;display:block;margin:0 auto 5px;border-radius:8px;" />` : ''}
         <div style="font-size:0.82rem;font-weight:700;line-height:1.25;">${esc(teamName(mp, k))}</div>
         <div style="font-size:2.3rem;font-weight:800;line-height:1.1;${lead ? '' : 'opacity:0.72;'}">${pts(total[k])}</div>
       </div>`;
@@ -119,8 +141,8 @@ function cardHTML(mp, match, state) {
     const names = playerNames(mp, match, k);
     const won = settled.finished && settled.winner === k;
     return `
-      <div style="display:flex;gap:7px;align-items:baseline;margin-top:3px;">
-        <span style="width:8px;height:8px;border-radius:50%;background:${teamColor(mp, k)};flex:none;"></span>
+      <div style="display:flex;gap:7px;align-items:center;margin-top:3px;">
+        ${teamMark(mp, k, 8)}
         <span style="font-size:0.86rem;${won ? 'font-weight:800;' : ''}">${esc(names || '—')}</span>
       </div>`;
   };
@@ -177,8 +199,8 @@ function detailHTML(mp, match) {
         ${match.teeTime ? ` · ${esc(match.teeTime)}` : ''}
       </div>
       ${TEAM_KEYS.map(k => `
-        <div style="display:flex;gap:7px;align-items:baseline;margin-top:5px;">
-          <span style="width:9px;height:9px;border-radius:50%;background:${teamColor(mp, k)};flex:none;"></span>
+        <div style="display:flex;gap:7px;align-items:center;margin-top:5px;">
+          ${teamMark(mp, k, 9)}
           <span style="font-size:0.9rem;font-weight:600;">${esc(playerNames(mp, match, k) || '—')}</span>
         </div>`).join('')}
       <div style="text-align:center;margin-top:12px;padding:10px;border-radius:10px;background:var(--bg-card-hover);">
@@ -242,7 +264,7 @@ function statsHTML(mp) {
     return `
       <div style="margin-top:12px;">
         <div style="display:flex;gap:7px;align-items:center;">
-          <span style="width:8px;height:8px;border-radius:50%;background:${teamColor(mp, k)};flex:none;"></span>
+          ${teamMark(mp, k, 8)}
           <b style="font-size:0.78rem;">${esc(teamShort(mp, k))}</b>
         </div>
         <div style="display:grid;grid-template-columns:1fr repeat(3,34px) 44px;gap:2px 6px;margin-top:6px;font-size:0.78rem;">
@@ -266,8 +288,8 @@ function statsHTML(mp) {
   const pairsBlock = pairRows.length ? `
     <div style="font-size:0.74rem;font-weight:800;margin-top:14px;color:var(--text-secondary);">${t('mpPairs')}</div>
     ${pairRows.map(p => `
-      <div style="display:flex;gap:8px;align-items:baseline;margin-top:5px;font-size:0.78rem;">
-        <span style="width:8px;height:8px;border-radius:50%;background:${teamColor(mp, p.teamId)};flex:none;align-self:center;"></span>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:5px;font-size:0.78rem;">
+        ${teamMark(mp, p.teamId, 8)}
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
           ${esc(p.players.map(pid => mp.roster?.[pid]?.name || pid).join(' / '))}
         </span>

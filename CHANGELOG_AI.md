@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup — team logos instead of the colour picker)
+
+The team editor's colour picker gave way to a logo upload. Any picked image
+is shrunk in the browser to a 96px badge and stored as a data URI inside the
+tournament record — a few KB, so no storage bucket, no storage rules, no
+second fetch; the existing per-field team save carries it. Wherever a team
+mark is drawn — the scoreboard, match cards, the detail modal, the stats
+panel, pair records, the scorer screen header — the logo now renders, with
+the old colour dot as the fallback for teams that have none. Colours
+themselves stay stored and keep painting the accent bars, hole cells and
+scorer keypad, so nothing built on them regressed.
+
+A logo is only ever accepted as an image data URI (checked by the same
+regex at every render site — that is the XSS boundary), and the demo teams
+carry tiny inline SVG monograms so the rendering can be reviewed on a
+preview build without uploading anything.
+
 ## 2026-08-27 (M Cup phase 2 — pushes when matches finish, player stats, the archive)
 
 **Pushes.** A member taps "Мэдэгдэл авах" on the Match Center (subscription

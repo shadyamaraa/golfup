@@ -27,9 +27,14 @@ Admin → Тэмцээн → create a tournament with **Format = Тулаан / 
 opens straight into its editor, where the match play section appears under the
 usual fields.
 
-1. **Teams.** Name, short name (what the cards and scoreboard show), colour.
-   Colour is decoration only — every status line names its team in words, so
-   the board still reads correctly in greyscale or to a colour-blind viewer.
+1. **Teams.** Name, short name (what the cards and scoreboard show), and an
+   optional **logo** — pick any image and it is shrunk in the browser to a
+   small badge stored inside the tournament record (no storage bucket
+   involved). Wherever a logo exists it replaces the team's colour dot: the
+   scoreboard, match cards, the detail modal, the scorer screen. Teams
+   without one keep the colour dot. Either way the mark is decoration only —
+   every status line names its team in words, so the board still reads
+   correctly in greyscale or to a colour-blind viewer.
 2. **Roster.** One player name per line, 14 per team. Editing a name in place
    keeps that player's match assignments; a player removed from the list while
    still fielded in a match is kept and flagged rather than silently dropped.
@@ -118,7 +123,7 @@ Under `tournaments/{id}/mp`:
 
 | Path | Holds |
 | --- | --- |
-| `teams/{a\|b}` | name, short, color |
+| `teams/{a\|b}` | name, short, color, logo (small image data URI) |
 | `roster/{playerId}` | teamId, name |
 | `sessions/{sessionId}` | day, number, format, startTime |
 | `matches/{matchId}` | sessionId, number, teeTime, players.{a,b}[], scorerIds, stateOverride |

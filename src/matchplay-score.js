@@ -48,6 +48,18 @@ const teamColor = (mp, k) => {
   const c = mp?.teams?.[k]?.color;
   return /^#[0-9a-fA-F]{6}$/.test(c) ? c : (k === 'a' ? '#1f6f43' : '#b3382c');
 };
+// Same acceptance rule as the public board: an image data URI or nothing.
+const teamLogo = (mp, k) => {
+  const l = mp?.teams?.[k]?.logo;
+  return typeof l === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(l)
+    ? l : null;
+};
+const teamMark = (mp, k) => {
+  const logo = teamLogo(mp, k);
+  return logo
+    ? `<img src="${logo}" alt="" style="width:17px;height:17px;object-fit:contain;border-radius:4px;vertical-align:-3px;" />`
+    : `<span style="width:9px;height:9px;border-radius:50%;background:var(--mp-${k});display:inline-block;"></span>`;
+};
 
 function playerNames(mp, match, k) {
   return (match?.players?.[k] || [])
@@ -114,12 +126,12 @@ function screenHTML(tn, match, demo) {
         <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:700;">
           ${t('mpMatchNo')}${esc(match.number ?? '')} · ${esc(session.format || '')} · ${esc(session.startTime || match.teeTime || '')}
         </div>
-        <div style="display:flex;gap:8px;align-items:baseline;margin-top:6px;">
-          <span style="width:9px;height:9px;border-radius:50%;background:var(--mp-a);display:inline-block;"></span>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+          ${teamMark(mp, 'a')}
           <b>${esc(playerNames(mp, match, 'a'))}</b>
         </div>
-        <div style="display:flex;gap:8px;align-items:baseline;margin-top:3px;">
-          <span style="width:9px;height:9px;border-radius:50%;background:var(--mp-b);display:inline-block;"></span>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:3px;">
+          ${teamMark(mp, 'b')}
           <b>${esc(playerNames(mp, match, 'b'))}</b>
         </div>
       </div>
