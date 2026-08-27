@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Score entry reachable straight from the Match Center)
+
+Entering scores from the Match Center only worked for fielded players —
+tapping a match card opened the detail with no way in, and admins had to
+go through the admin editor's own link. The "⛳ Оноо оруулах" shortcut is
+now gated by the same `canScore` the scorer screen enforces (fielded
+players, assigned scorers, admin/marshal), appears both under the card
+and inside the match detail modal, and the modal closes itself when the
+link navigates to the scorer. `renderMatchCenter` receives the full
+viewer (`ctx.user`) so the role is known; a bare `userId` still works.
+Render tests cover player/admin/spectator visibility (59 total).
+
 ## 2026-08-27 (Legacy names still showed Овог first — one memberName helper)
 
 Flipping the display composition wasn't enough: rosters, pickers and the

@@ -195,6 +195,32 @@ test('the sample covers all four match states', () => {
     .forEach(s => assert.ok(states.has(s), `sample must include a ${s} match`));
 });
 
+// ---- The score-entry shortcut ----
+// Shown to exactly who the scorer screen would let in: fielded players,
+// assigned scorers, and admin/marshal members — never to a spectator, and
+// never on a completed match.
+
+test('a fielded player sees enter-score on their unfinished match only', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'p3' } });
+  // p3 plays m2 (completed) and m4 (upcoming) — only m4 gets the button.
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 1);
+  assert.match(host.innerHTML, new RegExp(`#/score/${TN.id}/m4`));
+});
+
+test('an admin sees enter-score on every unfinished match', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'boss', role: 'admin' } });
+  // m3 live + m4 upcoming; m1/m2 are completed.
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 2);
+});
+
+test('a spectator sees no enter-score buttons', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'stranger' } });
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 0);
+});
+
 // ---- Plain match play (1v1 singles, no teams) ----
 // The Match format reuses the whole engine but must never show team chrome:
 // the board is a standings table plus the match cards, and every side is a

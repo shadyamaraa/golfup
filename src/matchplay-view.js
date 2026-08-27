@@ -16,6 +16,9 @@ import {
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
   playerStats, pairStats, tournamentComplete, tnKind
 } from './matchplay.js';
+// The one definition of who may enter a match's scores — the same check the
+// scorer screen enforces, so a button shown here never leads to a dead end.
+import { canScore } from './matchplay-score.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -130,7 +133,19 @@ function sideLabel(mp, match, k, singles) {
   return playerNames(mp, match, k) || (k === 'a' ? 'A' : 'B');
 }
 
-function cardHTML(mp, match, state, tnId, viewerId, singles) {
+// The score-entry shortcut under a card / in the detail: shown to whoever the
+// scorer screen would actually let in — the match's own players, its assigned
+// scorers, and admin/marshal members.
+function enterScoreHTML(mp, match, state, tnId, viewer) {
+  if (!tnId || state === 'COMPLETED' || !canScore(viewer, match, mp.roster)) return '';
+  return `
+    <a href="#/score/${esc(tnId)}/${esc(match.id)}" data-mpv-go="1" class="btn btn-primary btn-sm"
+       style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
+      ⛳ ${t('mpEnterScore')}
+    </a>`;
+}
+
+function cardHTML(mp, match, state, tnId, viewer, singles) {
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
   const session = mp.sessions?.[match.sessionId] || {};
@@ -181,16 +196,12 @@ function cardHTML(mp, match, state, tnId, viewerId, singles) {
         ${progress ? `<span style="font-size:0.76rem;color:var(--text-secondary);margin-left:auto;">${esc(progress)}</span>` : ''}
       </div>
     </button>
-    ${isPlayerInMatch(viewerId, match, mp.roster) && state !== 'COMPLETED' ? `
-      <a href="#/score/${esc(tnId)}/${esc(match.id)}" class="btn btn-primary btn-sm"
-         style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
-        ⛳ ${t('mpEnterScore')}
-      </a>` : ''}`;
+    ${enterScoreHTML(mp, match, state, tnId, viewer)}`;
 }
 
 // ---- Detail modal (spec §11) ----
 
-function detailHTML(mp, match, singles) {
+function detailHTML(mp, match, singles, tnId, viewer) {
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
   const session = mp.sessions?.[match.sessionId] || {};
@@ -237,6 +248,7 @@ function detailHTML(mp, match, singles) {
         · W = ${esc(singles ? (playerNames(mp, match, 'b') || 'B') : teamShort(mp, 'b'))}
         · – = ${t('mpHalved')}
       </div>
+      ${enterScoreHTML(mp, match, state, tnId, viewer)}
     </div>`;
 }
 
@@ -394,7 +406,7 @@ export function historyHTML(list, currentId) {
 // ---- Board ----
 
 // Matches grouped the way the spec orders them for a phone (§22).
-function groupsHTML(mp, tnId, viewerId, singles) {
+function groupsHTML(mp, tnId, viewer, singles) {
   const sorted = sortMatchesForDisplay(matchesOf(mp));
   if (!sorted.length) {
     return `<div class="empty-state" style="padding:30px 20px;"><p>${t('mpNoMatches')}</p></div>`;
@@ -406,7 +418,7 @@ function groupsHTML(mp, tnId, viewerId, singles) {
       <div class="section-head" style="margin-top:14px;">
         <h2 style="font-size:0.86rem;">${esc(label)} <span style="color:var(--text-secondary);font-weight:500;">(${items.length})</span></h2>
       </div>
-      ${items.map(x => cardHTML(mp, x.match, x.state, tnId, viewerId, singles)).join('')}`;
+      ${items.map(x => cardHTML(mp, x.match, x.state, tnId, viewer, singles)).join('')}`;
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.
@@ -439,6 +451,11 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   // records — its headline is the player standings.
   const singles = tnKind(tn) === 'match';
 
+  // Who is looking decides which matches carry a score-entry shortcut. The
+  // full user (with role) covers admin/marshal; a bare id still covers "am I
+  // fielded / an assigned scorer".
+  const viewer = ctx.user || (ctx.userId ? { id: ctx.userId } : null);
+
   // A live update replaces the whole board; a stats panel the viewer had
   // open must not snap shut on every incoming hole. (Optional call: the
   // render tests drive this with a bare {innerHTML} host.)
@@ -447,10 +464,10 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   host.innerHTML = singles
     ? `
       ${standingsHTML(mp)}
-      ${groupsHTML(mp, tn?.id, ctx.userId, true)}`
+      ${groupsHTML(mp, tn?.id, viewer, true)}`
     : `
       ${scoreboardHTML(mp)}
-      ${groupsHTML(mp, tn?.id, ctx.userId, false)}
+      ${groupsHTML(mp, tn?.id, viewer, false)}
       ${summaryHTML(mp)}
       ${statsHTML(mp)}`;
 
@@ -464,7 +481,7 @@ export function renderMatchCenter(host, tn, ctx = {}) {
     if (!match) return;
     ctx.showModal?.(
       `${t('mpMatchNo')}${match.number ?? ''}`,
-      detailHTML(mp, match, singles),
+      detailHTML(mp, match, singles, tn?.id, viewer),
       match.id
     );
   });
@@ -472,7 +489,7 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   // This runs on every repaint, so a detail left open follows the match.
   ctx.refreshModal?.((id) => {
     const match = mp.matches[id];
-    return match ? detailHTML(mp, match, singles) : null;
+    return match ? detailHTML(mp, match, singles, tn?.id, viewer) : null;
   });
 }
 

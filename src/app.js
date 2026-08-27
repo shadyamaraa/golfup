@@ -1736,7 +1736,10 @@ function renderTnBoard() {
     renderMatchCenter(host, tn, {
       showModal: showMatchModal,
       refreshModal: refreshMatchModal,
-      // Players in a match get their "enter score" shortcut on its card.
+      // Whoever may score — a fielded player, an assigned scorer, an
+      // admin/marshal — gets the "enter score" shortcut on the card and in
+      // the detail; the full user carries the role that decides it.
+      user: currentUser || null,
       userId: currentUser?.id || null
     });
     // Below the board: the notification toggle (members only — a push needs
@@ -3359,7 +3362,12 @@ function showMatchModal(title, bodyHTML, matchId) {
     </div>`;
   document.body.appendChild(modal);
   modal.querySelector('[data-close]').onclick = () => modal.remove();
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.remove();
+    // The detail's score-entry link navigates away — the overlay must not
+    // stay parked on top of the scorer screen.
+    if (e.target.closest?.('a[data-mpv-go]')) modal.remove();
+  });
 }
 
 // Re-render an open match modal from the latest data. `render(matchId)`
