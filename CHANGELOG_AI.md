@@ -1,6 +1,25 @@
 # CHANGELOG_AI.md
 
-## 2026-08-27 (M Cup match play — the scorer screen scores the demo too)
+## 2026-08-27 (a tournament board needs no account, and deploys stop hiding for an hour)
+
+A tournament board is a public scoreboard — spec §1's viewer "opens UB Golf
+and just sees it" — but the router sent every signed-out visitor to the login
+card, so a shared M Cup link demanded an account before showing a score. Now
+`#/tournament/…` renders for guests: the board, the match cards, the detail
+modal, all read-only. Guests get a Нэвтрэх button in the header on those
+pages, and the home route shows the sign-in card with the tournament strip
+above it, so a visitor landing on the site sees the live team score first and
+the way in second. Everything else — games, orders, member lists, admin, and
+the scorer screen — still requires signing in, and the strip rebuilds when
+identity changes, guests counting as an identity of their own. Verified in a
+browser with no stored user: board and detail render, the scorer route
+bounces to the sign-in card, the strip links to the board.
+
+Separately, the reason "deploy went out, phones still show the old app" kept
+happening: firebase.json gave `no-cache` to `/index.html`, but hash routing
+means browsers request `/` — which matched no header rule and got the CDN
+default of an hour. `/` now carries the same `no-cache, must-revalidate`, so
+the next visit after any deploy picks up the new version at once.
 
 The whole flow was driven end to end in a real browser against a local
 preview build: the Match Center (dark and light, mobile and desktop), the

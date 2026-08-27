@@ -358,7 +358,13 @@ export async function router() {
     }
     clearActiveListeners();
 
-    if (!currentUser && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
+    // A tournament board is a public scoreboard (spec §1: a viewer opens UB
+    // Golf and just sees it), so it renders without an account. Everything
+    // else — games, orders, the scorer screen — still requires signing in.
+    // Guests landing on home get the sign-in card with the tournament strip
+    // above it, so a live M Cup is one tap away.
+    const guestOk = hash.startsWith('#/tournament/');
+    if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
     }
@@ -422,6 +428,15 @@ function updateHeader() {
   } else if (userInfo) {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
+  }
+  // Guests on a public page (a tournament board) get a way into the app;
+  // on the auth screen itself the button would only point at the page
+  // they are already on.
+  const guestLogin = document.getElementById('guest-login');
+  if (guestLogin) {
+    guestLogin.textContent = t('guestLogin');
+    guestLogin.classList.toggle('hidden',
+      !!currentUser || !(location.hash || '#/').startsWith('#/tournament/'));
   }
 }
 
@@ -1237,12 +1252,14 @@ function updateTournamentStripVisibility(hash) {
   // signed in — so rebuild it whenever the identity changes, or the member's
   // own line and avatar would never appear. Guarded by tnStripFor, and the
   // rebuild ends by calling back into here with the ids already equal.
-  if (onHome && !isKiosk && currentUser && tnStripFor !== currentUser.id) {
+  // Guests count as an identity of their own (null): the strip shows over
+  // the sign-in card too, so a visitor sees the live tournament first.
+  if (onHome && !isKiosk && tnStripFor !== (currentUser?.id || null)) {
     renderTournamentStrip(tnListCache ?? undefined);
     return;
   }
 
-  const hide = isKiosk || !currentUser || !onHome || host.dataset.has !== '1';
+  const hide = isKiosk || !onHome || host.dataset.has !== '1';
   const wasHidden = host.classList.contains('hidden');
   host.classList.toggle('hidden', hide);
   if (hide) return;
