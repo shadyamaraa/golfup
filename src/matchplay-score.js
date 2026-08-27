@@ -150,7 +150,14 @@ function screenHTML(tn, match) {
           ${t('mpUndo')}
         </button>
         ${viewHole !== null ? `<button data-sc="follow" class="btn btn-outline btn-sm" style="flex:1;">${t('mpFollowLive')}</button>` : ''}
+        ${done ? '' : `<button data-sc="suspend" class="btn btn-outline btn-sm" style="flex:1;">
+          ${state === 'SUSPENDED' ? t('mpResume') : t('mpSuspend')}
+        </button>`}
       </div>
+      ${state === 'SUSPENDED' ? `
+        <div style="text-align:center;margin-top:8px;font-size:0.78rem;font-weight:700;color:var(--amber);">
+          ${t('mpSuspended')}
+        </div>` : ''}
 
       ${stripHTML(match, hole)}
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;text-align:center;">
@@ -231,6 +238,13 @@ export async function renderScorerPage(tnId, matchId, ctx) {
         // Clearing the last hole entered rolls the status back; the engine
         // re-derives everything from what remains.
         if (settled.thru) { viewHole = null; write(settled.thru, null); }
+      } else if (kind === 'suspend') {
+        const now = matchState(m) === 'SUSPENDED';
+        store.setTnMatchSuspended(tnId, matchId, !now, ctx.user?.id)
+          .catch(err => {
+            console.error('[scorer]', err);
+            ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+          });
       } else if (kind === 'goto') {
         const h = Number(b.dataset.hole);
         // Only holes already played (or the next one) are worth opening —

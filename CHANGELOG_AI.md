@@ -1,5 +1,29 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — suspension, render tests, docs, phase 5 of 5)
+
+`SUSPENDED` was readable but unreachable: `matchState()` honoured it and
+nothing could ever set it. The scorer screen now has a suspend/resume button
+(weather and darkness being the usual reasons) writing through
+`setTnMatchSuspended()`, audited like a hole entry. It is the one match state
+a human sets rather than the holes deriving, so resuming simply clears it.
+
+Render smoke tests (`scripts/test-matchplay-render.mjs`, 11 cases, 34 total)
+push a full M Cup-shaped tournament — two teams, two sessions, a match in
+every state — through the Match Center and check the HTML for what a
+spectator must be able to read: both team names and their derived points, the
+running session, a card per match, `ALTAI 2 UP` with `Thru 11` on the live
+one, `3 & 2` on the closed-out one, a tee time on the upcoming one, group
+order, the session breakdown, and that a player name containing a tag is
+escaped rather than rendered. They catch template crashes and silently empty
+sections the pure engine tests cannot see.
+
+`docs/mcup-match-play.md` documents the feature for whoever runs the
+tournament and whoever maintains it next — setup, the scorer flow, the data
+model, why halved holes store `'h'` rather than null, and the scorer-access
+limitation, which is now also a backlog item. Dropped `mpScorerHint`, an i18n
+key nothing used.
+
 ## 2026-08-27 (M Cup match play — the public Live Match Center, phase 4 of 5)
 
 `src/matchplay-view.js` (new) is what a spectator opens: the team scoreboard

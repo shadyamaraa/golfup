@@ -489,6 +489,21 @@ export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 
+// Suspend or resume a match (spec §10) — weather and darkness are the usual
+// reasons. Suspension is a human call, so unlike every other match state it
+// is stored rather than derived; `suspended: false` clears it and the state
+// goes back to whatever the holes say.
+export async function setTnMatchSuspended(tnId, matchId, suspended, by) {
+  if (!useFirebase || !db) return;
+  const r = ref(db, `tournaments/${tnId}/mp/matches/${matchId}/stateOverride`);
+  if (suspended) await set(r, 'SUSPENDED');
+  else await remove(r);
+  push(ref(db, `tournaments/${tnId}/mp/audit`), {
+    at: Date.now(), by: by || null, matchId, action: suspended ? 'suspend' : 'resume'
+  }).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
 // ---- Tables (RTDB) ----
 export async function loadTables() {
   if (!useFirebase || !db) return [];
