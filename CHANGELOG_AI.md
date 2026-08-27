@@ -1,6 +1,35 @@
 # CHANGELOG_AI.md
 
-## 2026-08-21 (a CUT written in the sheet frees its place)
+## 2026-08-27 (M Cup match play — the scoring engine, phase 1 of 5)
+
+Groundwork for the M Cup Live Match Center (Ryder Cup-style team match play),
+integrated into the existing tournament model rather than built beside it: the
+`format` field a tournament already carries becomes the switch, and a
+match-play tournament keeps everything else — dates, status, the strip — as is.
+
+`src/matchplay.js` (new) is the whole rulebook as pure functions, mirroring how
+`tournament-sheet.js` keeps the stroke play ranking testable without a browser.
+Hole results are the ONLY stored scoring fact (`'a' | 'b' | 'h'` per hole —
+halved needs a real sentinel because RTDB deletes nulls); status lines
+(AS / 2 UP), dormie, close-outs (4 & 3), match states, points (1 / ½ / 0), team
+and session totals, the hole-by-hole timeline, lineup validation (12 unique
+players per team per session, no double-booking, roster/side checks) and the
+14-player participation indicator are all derived, so a correction to any hole
+re-settles everything downstream by itself. The replay walks holes strictly in
+order, stops at a gap or a close-out — a stray entry past either can never
+change a result, and undoing the hole that caused a close-out brings later
+entries back into play.
+
+`src/store.js` gains `updateTournament()` (partial update — `saveTournament()`
+sets the whole record, which would clobber a scorer's concurrent write) and
+`saveTnMatchHole()`: one scorer tap or its undo, with an audit entry (who,
+when, what it replaced) pushed alongside every write. RTDB queues writes while
+offline, which is what the on-course dead spots need.
+
+Tests: `npm run test:mp` (node's built-in runner, no new dependency) — 15
+cases walking the spec's own examples. Nothing is wired into the UI yet; the
+admin setup screens, scorer interface and the public Live Match Center are the
+next phases.
 
 The organisers asked whether the app's cut updates their sheet. It does not —
 the data only travels `Sheet → App`, so their Position column and the PDF they

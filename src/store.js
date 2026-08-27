@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, update, remove, onValue, off } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, off, push } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -457,6 +457,33 @@ export function onTournamentChanged(id, callback) {
   const r = ref(db, 'tournaments/' + id);
   const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
   return () => off(r, 'value', handler);
+}
+
+// ---- Match play (M Cup) ----
+// The match play state lives under tournaments/{id}/mp — see src/matchplay.js
+// for the model. Writes here are PARTIAL on purpose: saveTournament() sets the
+// whole record, which would silently overwrite a scorer's concurrent hole
+// entry, so match play admin edits and scoring go through update() instead.
+
+export async function updateTournament(id, patch) {
+  if (!useFirebase || !db || !id) return;
+  await update(ref(db, 'tournaments/' + id), { ...patch, updatedAt: Date.now() });
+}
+
+// One scorer tap (spec §12) — or its undo (spec §13). `value` is the team key
+// 'a' | 'b', 'h' for a halved hole, or null to clear the hole entirely. Every
+// write leaves an audit entry (who, when, what it replaced), and RTDB queues
+// the writes locally while the course has no signal, so nothing is lost to a
+// dead spot (spec §21).
+export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
+  if (!useFirebase || !db) return;
+  const holeRef = ref(db, `tournaments/${tnId}/mp/matches/${matchId}/holes/${hole}`);
+  const prev = (await get(holeRef)).val() ?? null;
+  const audit = { at: Date.now(), by: by || null, matchId, hole, value: value ?? null, prev };
+  if (value === null || value === undefined) await remove(holeRef);
+  else await set(holeRef, value);
+  push(ref(db, `tournaments/${tnId}/mp/audit`), audit).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 
 // ---- Tables (RTDB) ----
