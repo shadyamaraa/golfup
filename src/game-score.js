@@ -121,12 +121,15 @@ function stripHTML(game, players, hole) {
     const entered = players.filter(p => game?.scores?.[p.id]?.holes?.[n]).length;
     const full = players.length > 0 && entered >= players.length;
     const on = n === hole;
+    // Gold bg + navy ink for a completed hole — the app's on-gold convention
+    // (.filter-tab.active), legible in both themes; #fff would wash out on
+    // the cream light theme.
     cells.push(`
       <button data-gs="goto" data-hole="${n}"
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
                border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
-               background:${full ? 'var(--accent-color)' : 'transparent'};
-               color:${full ? '#fff' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
+               background:${full ? 'var(--gold)' : 'transparent'};
+               color:${full ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
         <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${entered || '·'}
       </button>`);
   }
@@ -257,8 +260,8 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       const entered = players.filter(p => data.scores?.[p.id]?.holes?.[n]).length;
       const full = players.length > 0 && entered >= players.length;
       cell.style.border = n === hole ? '2px solid var(--text-primary)' : '1px solid var(--border-color)';
-      cell.style.background = full ? 'var(--accent-color)' : 'transparent';
-      cell.style.color = full ? '#fff' : 'var(--text-secondary)';
+      cell.style.background = full ? 'var(--gold)' : 'transparent';
+      cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
       cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${entered || '·'}`;
     }
   };
