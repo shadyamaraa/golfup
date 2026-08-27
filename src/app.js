@@ -3058,6 +3058,13 @@ function waitlistBannerText(pos, ahead) {
   return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
 }
 
+// "(гишүүний үнэ)" / "(зочны үнэ)" suffix for a booking price, from the
+// customerType MTBogd reported; empty when the rate kind is unknown.
+function bookingRateLabel(customerType) {
+  return customerType === 'member' ? ` (${t('bookPriceMember')})`
+    : customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
+}
+
 function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
@@ -3128,6 +3135,8 @@ function renderGameView(game) {
             <div id="booking-price-check" style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
               ${game.bookingPaid && game.paidAmount
                 ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.paidAmount.toLocaleString()}₮</strong>`
+                : game.bookingQuote?.amount
+                ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.bookingQuote.amount.toLocaleString()}₮</strong>${bookingRateLabel(game.bookingQuote.customerType)}`
                 : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
             </div>
           </div>` : ''}
@@ -3182,15 +3191,21 @@ function renderGameView(game) {
   // no member/guest context, so it can be wrong — this call happens *after*
   // confirmBooking already sent the creator's phone, so its `amount` reflects
   // whatever rate MTBogd actually matched (member or guest).
-  if (game.bookingId && !game.bookingPaid) {
+  // Ran ONCE per booking: the answer is cached on the game (bookingQuote), so
+  // reopening the page renders the stored price instead of re-querying MTBogd.
+  if (game.bookingId && !game.bookingPaid && !game.bookingQuote?.amount) {
     mtbogd.getQpayStatus(game.bookingId)
       .then(s => {
         if (!s) return;
         if (s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount);
+        else if (s.amount) {
+          store.saveBookingQuote(game.id, {
+            amount: s.amount, customerType: s.customerType || null, at: Date.now()
+          }).catch(() => {});
+        }
         const priceEl = document.getElementById('booking-price-check');
         if (priceEl && s.amount) {
-          const rateLabel = s.customerType === 'member' ? ` (${t('bookPriceMember')})` : s.customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
-          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${rateLabel}`;
+          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${bookingRateLabel(s.customerType)}`;
         }
       })
       .catch(() => {});

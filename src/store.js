@@ -312,6 +312,17 @@ export async function markBookingPaid(id, amount) {
   });
 }
 
+// The real MTBogd price for a booking, cached on the game after the first
+// qpay-status call so later visits render it without re-querying MTBogd.
+export async function saveBookingQuote(id, quote) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), { bookingQuote: quote });
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].bookingQuote = quote; setLocalGames(games); }
+  }
+}
+
 export function onGameChanged(id, callback) {
   if (useFirebase && db) {
     const gameRef = ref(db, 'games/' + id);
