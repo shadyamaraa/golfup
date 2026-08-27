@@ -110,8 +110,16 @@ export const MP_DEMO = {
   entries: [],
   mp: {
     teams: {
-      a: { name: 'Altai Eagles', short: 'ALTAI', color: '#1f6f43' },
-      b: { name: 'Wellcom Diesels', short: 'WELLCOM', color: '#b3382c' }
+      // Tiny inline SVG monograms, so the logo rendering can be reviewed on
+      // preview builds without uploading anything.
+      a: {
+        name: 'Altai Eagles', short: 'ALTAI', color: '#1f6f43',
+        logo: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9IiMxZjZmNDMiLz48cGF0aCBkPSJNMTggNDAgTDMyIDE4IEw0NiA0MCBMMzggNDAgTDMyIDMwIEwyNiA0MCBaIiBmaWxsPSIjZjNlZmU0Ii8+PC9zdmc+'
+      },
+      b: {
+        name: 'Wellcom Diesels', short: 'WELLCOM', color: '#b3382c',
+        logo: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9IiNiMzM4MmMiLz48cmVjdCB4PSIxNiIgeT0iMjYiIHdpZHRoPSIyMCIgaGVpZ2h0PSIxNCIgcng9IjIiIGZpbGw9IiNmM2VmZTQiLz48cmVjdCB4PSIzNiIgeT0iMzAiIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIgcng9IjIiIGZpbGw9IiNmM2VmZTQiLz48Y2lyY2xlIGN4PSIyNCIgY3k9IjQzIiByPSI0IiBmaWxsPSIjYjMzODJjIiBzdHJva2U9IiNmM2VmZTQiIHN0cm9rZS13aWR0aD0iMiIvPjxjaXJjbGUgY3g9IjQwIiBjeT0iNDMiIHI9IjQiIGZpbGw9IiNiMzM4MmMiIHN0cm9rZT0iI2YzZWZlNCIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+'
+      }
     },
     roster,
     sessions: {

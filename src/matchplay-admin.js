@@ -103,27 +103,72 @@ function withFormat(mp, matches) {
 
 // ---- Rendering ----
 
+// A logo the UI will actually accept later: an image data URI, nothing else.
+const validLogo = (l) =>
+  typeof l === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(l);
+
 function teamBoxHTML(tn, teamId) {
   const mp = draftFor(tn).mp;
   const team = mp.teams[teamId];
   const roster = rosterOf(mp, teamId);
   const names = roster.map(p => p.name).join('\n');
   const over = roster.length > ROSTER_SIZE;
+  const logo = validLogo(team.logo) ? team.logo : null;
   return `
     <div style="flex:1;min-width:230px;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;">
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;">
         <div><span style="${LABEL}">${t('mpTeamName')} ${teamId.toUpperCase()}</span>
           <input data-mp="team" data-team="${teamId}" data-f="name" value="${esc(team.name)}" placeholder="${teamId === 'a' ? 'Altai Eagles' : 'Wellcom Diesels'}" style="${INPUT}width:100%;" /></div>
         <div><span style="${LABEL}">${t('mpTeamShort')}</span>
           <input data-mp="team" data-team="${teamId}" data-f="short" value="${esc(team.short)}" placeholder="${teamId === 'a' ? 'ALTAI' : 'WELLCOM'}" maxlength="10" style="${INPUT}width:100%;" /></div>
-        <div><span style="${LABEL}">${t('mpTeamColor')}</span>
-          <input data-mp="team" data-team="${teamId}" data-f="color" type="color" value="${/^#[0-9a-fA-F]{6}$/.test(team.color) ? team.color : (teamId === 'a' ? '#1f6f43' : '#b3382c')}" style="${INPUT}width:100%;padding:3px;height:35px;" /></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <span style="${LABEL}margin:0;">${t('mpTeamLogo')}</span>
+        ${logo
+          ? `<img src="${logo}" alt="" style="width:34px;height:34px;object-fit:contain;border-radius:6px;border:1px solid var(--border-color);" />`
+          : `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
+        <button data-mp="logo-pick" data-team="${teamId}" class="btn btn-outline btn-sm" style="margin-left:auto;">${logo ? t('mpLogoChange') : t('mpLogoUpload')}</button>
+        ${logo ? `<button data-mp="logo-clear" data-team="${teamId}" class="btn btn-outline-danger btn-sm">✕</button>` : ''}
+        <input data-mp-logo-input="${teamId}" type="file" accept="image/*" style="display:none;" />
       </div>
       <div style="margin-top:8px;">
         <span style="${LABEL}">${t('mpRoster')} — ${roster.length}/${ROSTER_SIZE}${over ? ' ⚠' : ''}</span>
         <textarea data-mp="roster" data-team="${teamId}" rows="6" placeholder="${t('mpRosterHint')}" style="${INPUT}width:100%;resize:vertical;">${esc(names)}</textarea>
       </div>
     </div>`;
+}
+
+// Read a picked image and shrink it to a small square-ish data URI. 96px is
+// plenty for the marks the board draws (8–38px), and at that size a webp
+// data URI is a few KB — small enough to live inside the tournament record,
+// which spares us a whole storage bucket, its rules, and a second fetch.
+const LOGO_PX = 96;
+const LOGO_MAX_CHARS = 80000; // ~60KB decoded — far above any real 96px logo
+
+function readLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) { reject(new Error('not-image')); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, LOGO_PX / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      // webp keeps transparency and compresses far better than png; fall
+      // back to png only if the browser cannot encode webp.
+      let out = canvas.toDataURL('image/webp', 0.85);
+      if (!out.startsWith('data:image/webp')) out = canvas.toDataURL('image/png');
+      if (out.length > LOGO_MAX_CHARS) { reject(new Error('too-big')); return; }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad-image')); };
+    img.src = url;
+  });
 }
 
 function playerSelectHTML(mp, match, teamId, slot) {
@@ -427,6 +472,13 @@ function handleClick(tn, el, ctx, host) {
       teeTime: '',
       players: { a: [], b: [] }
     };
+  } else if (kind === 'logo-pick') {
+    // Just opens the hidden file picker; the draft only changes when the
+    // picked file lands in the input's onchange.
+    host.querySelector(`input[data-mp-logo-input="${el.dataset.team}"]`)?.click();
+    return;
+  } else if (kind === 'logo-clear') {
+    delete mp.teams[el.dataset.team].logo;
   } else if (kind === 'del-match') {
     const m = mp.matches[el.dataset.match];
     if (!m) return;
@@ -482,6 +534,22 @@ function wire(host, tn, ctx) {
   });
   host.querySelectorAll('button[data-mp]').forEach(el => {
     el.onclick = () => handleClick(tn, el, ctx, host);
+  });
+  host.querySelectorAll('input[data-mp-logo-input]').forEach(inp => {
+    inp.onchange = async () => {
+      const file = inp.files && inp.files[0];
+      inp.value = '';
+      if (!file) return;
+      const d = draftFor(tn);
+      try {
+        d.mp.teams[inp.dataset.mpLogoInput].logo = await readLogoFile(file);
+      } catch (err) {
+        ctx.showToast('⚠️ ' + t(err?.message === 'too-big' ? 'mpLogoTooBig' : 'mpLogoBad'), 'error');
+        return;
+      }
+      d.dirty = true;
+      paint(host, tn, ctx);
+    };
   });
 }
 
