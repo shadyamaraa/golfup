@@ -114,11 +114,6 @@ function teamBoxHTML(tn, teamId, users) {
   const over = roster.length > ROSTER_SIZE;
   const logo = validLogo(team.logo) ? team.logo : null;
 
-  // Everyone already on EITHER roster is out of the picker — one member,
-  // one team.
-  const taken = new Set(Object.keys(mp.roster));
-  Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
-
   const chip = (p) => `
     <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name || p.id)}
       <button data-mp="del-player" data-pid="${esc(p.id)}" data-team="${teamId}"
@@ -147,11 +142,7 @@ function teamBoxHTML(tn, teamId, users) {
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
           ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
         </div>
-        <select data-mp="add-player" data-team="${teamId}" style="${INPUT}width:100%;margin-top:6px;">
-          <option value="">+ ${t('mpPickMember')}</option>
-          ${(users || []).filter(u => u && u.id && !taken.has(u.id))
-            .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-        </select>
+        <div style="margin-top:6px;">${pickerHTML('add-player', { team: teamId })}</div>
       </div>
     </div>`;
 }
@@ -189,20 +180,40 @@ function readLogoFile(file) {
   });
 }
 
-function playerSelectHTML(mp, match, teamId, slot, anyPlayer) {
-  // Team formats pick from that team's roster; singles from everyone.
-  const roster = anyPlayer
-    ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    : rosterOf(mp, teamId);
-  const cur = match.players?.[teamId]?.[slot] || '';
-  const known = !cur || roster.some(p => p.id === cur);
+// ---- Type-to-search picker ----
+// Replaces the <select> pickers: an input that filters candidates as the
+// admin types (the same look as the app's player-search modal), with a
+// dropdown of hits underneath. The input deliberately does NOT carry
+// data-mp — the generic wire() onchange would treat typed text as a pick.
+// Candidates are resolved on focus rather than at render time, so they
+// always reflect the current draft.
+function pickerHTML(kind, dataset, { current = '', clearable = false, width = '' } = {}) {
+  const attrs = Object.entries(dataset)
+    .map(([k, v]) => `data-${k}="${esc(v ?? '')}"`).join(' ');
   return `
-    <select data-mp="player" data-match="${esc(match.id)}" data-team="${teamId}" data-slot="${slot}" style="${INPUT}max-width:100%;">
-      <option value="">${t('mpPickPlayer')}</option>
-      ${roster.map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
-      ${known ? '' : `<option value="${esc(cur)}" selected>${esc(playerName(mp, cur))} ⚠</option>`}
-    </select>`;
+    <div style="position:relative;flex:1;min-width:0;${width ? `max-width:${width};` : ''}">
+      <input data-mpp="input" data-mpp-kind="${kind}" ${attrs} value="${esc(current)}"
+        placeholder="🔍 ${esc(t('mpTypeName'))}" autocomplete="off"
+        style="${INPUT}width:100%;box-sizing:border-box;${clearable && current ? 'padding-right:26px;' : ''}" />
+      ${clearable && current ? `
+        <button data-mpp="clear" tabindex="-1" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);
+          background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:2px 6px;">✕</button>` : ''}
+      <div data-mpp="list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
+        max-height:220px;overflow-y:auto;border:1px solid var(--border-color);
+        background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
+    </div>`;
+}
+
+function playerSelectHTML(mp, match, teamId, slot, anyPlayer) {
+  const cur = match.players?.[teamId]?.[slot] || '';
+  // A pick that survives from a bigger roster or another team keeps its
+  // warning marker so the admin sees it needs re-picking.
+  const known = !cur || (anyPlayer
+    ? !!mp.roster[cur]
+    : rosterOf(mp, teamId).some(p => p.id === cur));
+  return pickerHTML('player',
+    { match: match.id, team: teamId, slot },
+    { current: cur ? playerName(mp, cur) + (known ? '' : ' ⚠') : '', clearable: !!cur });
 }
 
 // Scorer assignment (spec §14). A picker over app members rather than free
@@ -222,11 +233,7 @@ function scorerHTML(tn, match, users) {
     <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
       <span style="font-size:0.7rem;color:var(--text-secondary);font-weight:700;">${t('mpScorer')}:</span>
       ${ids.map(chip).join('') || `<span style="font-size:0.7rem;color:var(--text-muted);">—</span>`}
-      <select data-mp="add-scorer" data-match="${esc(match.id)}" style="${INPUT}max-width:170px;font-size:0.78rem;">
-        <option value="">+ ${t('mpScorer')}</option>
-        ${users.filter(u => !ids.includes(u.id))
-          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-      </select>
+      ${pickerHTML('add-scorer', { match: match.id }, { width: '190px' })}
     </div>`;
 }
 
@@ -332,7 +339,6 @@ function participationHTML(tn) {
 // Plain match play: one participants list instead of two team boxes.
 function participantsBoxHTML(tn, users) {
   const mp = draftFor(tn).mp;
-  const taken = new Set(Object.keys(mp.roster));
   const roster = Object.entries(mp.roster)
     .map(([id, p]) => ({ id, name: p?.name || id }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -347,11 +353,7 @@ function participantsBoxHTML(tn, users) {
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
         ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
       </div>
-      <select data-mp="add-player" data-team="" style="${INPUT}width:100%;margin-top:6px;">
-        <option value="">+ ${t('mpPickMember')}</option>
-        ${(users || []).filter(u => u && u.id && !taken.has(u.id))
-          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-      </select>
+      <div style="margin-top:6px;">${pickerHTML('add-player', { team: '' })}</div>
     </div>`;
 }
 
@@ -589,7 +591,88 @@ function paint(host, tn, ctx) {
   wire(host, tn, ctx);
 }
 
+// Wire every type-to-search picker: focus shows all candidates (a tap-only
+// admin can still just scroll and pick, like the old selects), typing
+// filters them, pointerdown on a hit applies it through the same mutation
+// paths the selects used — which repaint, closing the dropdown.
+function wirePickers(host, tn, ctx) {
+  host.querySelectorAll('input[data-mpp="input"]').forEach(inp => {
+    const list = inp.parentElement.querySelector('[data-mpp="list"]');
+    const kind = inp.dataset.mppKind;
+    const original = inp.value;
+
+    const candidates = () => {
+      const mp = draftFor(tn).mp;
+      if (kind === 'player') {
+        // Team formats pick from that team's roster; singles from everyone.
+        const pool = tnKind(tn) === 'match'
+          ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          : rosterOf(mp, inp.dataset.team);
+        return pool.map(p => ({ id: p.id, label: p.name || p.id, sub: '' }));
+      }
+      const taken = kind === 'add-scorer'
+        ? new Set(Object.keys(mp.matches[inp.dataset.match]?.scorerIds || {}))
+        : new Set(Object.keys(mp.roster));
+      // One member, one roster entry — legacy entries may key by userId.
+      if (kind === 'add-player') {
+        Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
+      }
+      return (ctx.users || [])
+        .filter(u => u && u.id && !taken.has(u.id))
+        .map(u => {
+          const label = u.fullName || u.name || u.username || u.id;
+          return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
+        });
+    };
+
+    const pick = (id) => {
+      if (kind === 'player') {
+        handleEdit(tn, { dataset: { mp: 'player', match: inp.dataset.match, team: inp.dataset.team, slot: inp.dataset.slot }, value: id });
+        paint(host, tn, ctx);
+      } else {
+        handleClick(tn, { dataset: { mp: kind, team: inp.dataset.team, match: inp.dataset.match }, value: id }, ctx, host);
+      }
+    };
+
+    const show = () => {
+      const q = inp.value.trim().toLowerCase();
+      const all = candidates();
+      const hits = q && inp.value !== original
+        ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q))
+        : all;
+      list.innerHTML = hits.length
+        ? hits.slice(0, 60).map(c => `
+          <div data-mpp-id="${esc(c.id)}" style="padding:8px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid var(--border-color);">
+            ${esc(c.label)}${c.sub ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${esc(c.sub)}</span>` : ''}
+          </div>`).join('')
+        : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+      list.hidden = false;
+      list.querySelectorAll('[data-mpp-id]').forEach(item => {
+        // pointerdown fires before the input's blur, so the pick wins.
+        item.onpointerdown = (e) => { e.preventDefault(); pick(item.dataset.mppId); };
+      });
+    };
+
+    inp.onfocus = () => { if (inp.value) inp.select(); show(); };
+    inp.oninput = show;
+    inp.onblur = () => setTimeout(() => {
+      // A pick repaints and replaces this node; only an abandoned edit
+      // needs its current value put back.
+      if (!document.body.contains(inp)) return;
+      inp.value = original;
+      list.hidden = true;
+    }, 150);
+
+    inp.parentElement.querySelector('[data-mpp="clear"]')?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      pick('');
+    });
+  });
+}
+
 function wire(host, tn, ctx) {
+  wirePickers(host, tn, ctx);
   host.querySelectorAll('input[data-mp], select[data-mp], textarea[data-mp]').forEach(el => {
     // Rosters and player picks reshape the section, so they repaint; plain
     // fields only mark the draft dirty and repaint nothing — no lost focus.

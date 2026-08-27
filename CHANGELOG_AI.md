@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Type-to-search player pickers; names read Нэр Овог)
+
+The four `<select>` pickers in the match play editor — team roster add,
+singles participants add, match player slots, scorer assignment — are now
+type-to-search comboboxes (`pickerHTML`/`wirePickers` in
+`src/matchplay-admin.js`, the same look as the app's player-search modal).
+Focus shows the full candidate list so tap-only picking still works;
+typing filters by name/username; a pick goes through the exact same
+mutation paths the selects used, and a filled player slot clears with ✕.
+Candidates are resolved on focus so they always reflect the current
+draft (members already rostered, scorers already assigned are excluded).
+
+Name order flipped everywhere a surname+name pair is composed:
+`displayFullName` and the stored `fullName` on admin create/edit and
+profile save now read **firstName lastName** (Нэр Овог), and the three
+forms put the Нэр input first. Sheet-name matching is unaffected
+(`nameKey` sorts tokens, so order never mattered there).
+
 ## 2026-08-27 (Device access is automatic, tiered by member role)
 
 An admin hit PERMISSION_DENIED creating a tournament because their device

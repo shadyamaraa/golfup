@@ -78,7 +78,7 @@ function displayUsername(user) {
 
 function displayFullName(user) {
   if (!user) return '-';
-  if (user.lastName || user.firstName) return esc([user.lastName, user.firstName].filter(Boolean).join(' '));
+  if (user.lastName || user.firstName) return esc([user.firstName, user.lastName].filter(Boolean).join(' '));
   return esc(user.fullName || user.name || '-');
 }
 
@@ -1010,7 +1010,7 @@ function tnDemoAllowed() {
 function tnDemo() {
   if (!currentUser) return TN_DEMO;
   const seat = 9;
-  const name = [currentUser.lastName, currentUser.firstName].filter(Boolean).join(' ')
+  const name = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ')
     || currentUser.fullName || currentUser.name || currentUser.username;
   const entries = TN_DEMO.entries.map((e, i) => i === seat
     ? { ...e, name: name || e.name, userId: currentUser.id }
@@ -3689,8 +3689,8 @@ async function renderAdminPanel() {
             </button>
             <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
               <input type="text" id="new-user-name" placeholder="${t('usernameLabel')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-              <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-firstname" placeholder="${t('firstName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-ghin" placeholder="${t('ghinNumber')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-memberid" placeholder="${t('ubgolfMemberId')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
@@ -3995,7 +3995,7 @@ async function renderAdminPanel() {
 
     await store.adminCreateUser(name, pass, phone, 'user', communities, {
       lastName, firstName,
-      fullName: [lastName, firstName].filter(Boolean).join(' '),
+      fullName: [firstName, lastName].filter(Boolean).join(' '),
       ghin, ubgolfMemberId,
     });
     showToast(t('userCreated'), 'success');
@@ -4125,12 +4125,12 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
         <div class="input-group">
-          <label>Овог</label>
-          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
-        </div>
-        <div class="input-group">
           <label>Нэр</label>
           <input type="text" id="ae-firstname" value="${user.firstName || ''}" placeholder="Нэр" />
+        </div>
+        <div class="input-group">
+          <label>Овог</label>
+          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
         </div>
         <div class="input-group">
           <label>${t('ghinNumber')}</label>
@@ -4222,7 +4222,7 @@ function showAdminEditUserModal(user, onSaved) {
     user.username = username;
     user.lastName = lastName;
     user.firstName = firstName;
-    user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
+    user.fullName = [firstName, lastName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
     user.ghin = document.getElementById('ae-ghin').value.trim();
     user.ubgolfMemberId = document.getElementById('ae-memberid').value.trim();
@@ -5531,12 +5531,12 @@ function profileFormInner(user) {
 
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
         <div class="input-group">
-          <label>${t('lastName')} *</label>
-          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="${t('lastName')}" />
-        </div>
-        <div class="input-group">
           <label>${t('firstName')} *</label>
           <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="${t('firstName')}" />
+        </div>
+        <div class="input-group">
+          <label>${t('lastName')} *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="${t('lastName')}" />
         </div>
       </div>
 
@@ -5640,7 +5640,7 @@ function wireProfileForm(scope, user, afterSave) {
     user.username = newUsername;
     user.lastName = newLastName;
     user.firstName = newFirstName;
-    user.fullName = newLastName + ' ' + newFirstName;
+    user.fullName = [newFirstName, newLastName].filter(Boolean).join(' ');
     user.name = newUsername;
     user.avatar = selectedAvatar;
     if (newPass && newPass.length >= 1) user.password = newPass;
