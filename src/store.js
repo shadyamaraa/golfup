@@ -478,7 +478,10 @@ export async function updateTournament(id, patch) {
 export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
   if (!useFirebase || !db) return;
   const holeRef = ref(db, `tournaments/${tnId}/mp/matches/${matchId}/holes/${hole}`);
-  const prev = (await get(holeRef)).val() ?? null;
+  // The previous value is only for the audit trail — offline (where get()
+  // rejects without a warm cache) the write itself must still go through.
+  let prev = null;
+  try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
   const audit = { at: Date.now(), by: by || null, matchId, hole, value: value ?? null, prev };
   if (value === null || value === undefined) await remove(holeRef);
   else await set(holeRef, value);

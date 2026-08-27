@@ -5,6 +5,7 @@ import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin } from './matchplay-admin.js';
+import { renderScorerPage } from './matchplay-score.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -369,6 +370,13 @@ export async function router() {
     else if (hash === '#/users') await renderUsersList();
     else if (hash === '#/ranking') await renderRankingPage();
     else if (hash.startsWith('#/tournament/')) await renderTournamentPage(hash.split('#/tournament/')[1]);
+    else if (hash.startsWith('#/score/')) {
+      const [tnId, matchId] = hash.split('#/score/')[1].split('/');
+      await renderScorerPage(tnId, matchId, {
+        main, user: currentUser, showToast,
+        onUnsub: (fn) => activeUnsubs.push(fn)
+      });
+    }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -7329,7 +7337,15 @@ async function renderAdminTournamentsTab() {
   if (adminOpenTn) {
     const tn = list.find(x => x.id === adminOpenTn);
     const host = tn && document.getElementById(`mp-adm-${tn.id}`);
-    if (host) mountMpAdmin(host, tn, { showToast, rerender: renderAdminTournamentsTab });
+    if (host) {
+      // Members are only needed for the scorer picker, so they are read when
+      // a match play editor actually opens rather than on every tab render.
+      let users = [];
+      try { users = await store.loadAllUsers(); } catch (_) { }
+      users = users.filter(u => u && u.id && u.status !== 'deleted')
+        .sort((a, b) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
+      mountMpAdmin(host, tn, { showToast, users, rerender: renderAdminTournamentsTab });
+    }
   }
 
   // Upload

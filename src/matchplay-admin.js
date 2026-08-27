@@ -121,7 +121,28 @@ function playerSelectHTML(mp, match, teamId, slot) {
     </select>`;
 }
 
-function matchRowHTML(tn, match) {
+// Scorer assignment (spec §14). Kept as a picker over app members rather than
+// free text, because the id is what the security rule will check.
+function scorerHTML(tn, match, users) {
+  const ids = Object.keys(match.scorerIds || {});
+  const chip = (id) => {
+    const u = users.find(x => x.id === id);
+    return `<span class="pill-soft" style="font-size:0.68rem;">${esc(u ? (u.fullName || u.name || u.username) : id)}
+      <button data-mp="del-scorer" data-match="${esc(match.id)}" data-user="${esc(id)}" style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button></span>`;
+  };
+  return `
+    <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+      <span style="font-size:0.7rem;color:var(--text-secondary);font-weight:700;">${t('mpScorer')}:</span>
+      ${ids.map(chip).join('') || `<span style="font-size:0.7rem;color:var(--text-muted);">—</span>`}
+      <select data-mp="add-scorer" data-match="${esc(match.id)}" style="${INPUT}max-width:170px;font-size:0.78rem;">
+        <option value="">+ ${t('mpScorer')}</option>
+        ${users.filter(u => !ids.includes(u.id))
+          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+function matchRowHTML(tn, match, users) {
   const mp = draftFor(tn).mp;
   const session = mp.sessions[match.sessionId] || {};
   const size = FORMAT_TEAM_SIZE[session.format] || 2;
@@ -136,6 +157,7 @@ function matchRowHTML(tn, match) {
         <input data-mp="match" data-match="${esc(match.id)}" data-f="number" type="number" min="1" value="${esc(match.number ?? '')}" title="${t('mpMatchNo')}" style="${INPUT}width:58px;" />
         <input data-mp="match" data-match="${esc(match.id)}" data-f="teeTime" type="time" value="${esc(match.teeTime || '')}" title="${t('mpTee')}" style="${INPUT}width:100px;" />
         ${live ? `<span class="pill-soft" style="font-size:0.68rem;">${t('mpHasScores')}</span>` : ''}
+        <a href="#/score/${esc(tn.id)}/${esc(match.id)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('mpOpenScorer')}</a>
         <button data-mp="del-match" data-match="${esc(match.id)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
@@ -143,6 +165,7 @@ function matchRowHTML(tn, match) {
         <b style="font-size:0.72rem;color:var(--text-secondary);">vs</b>
         ${sideHTML('b')}
       </div>
+      ${scorerHTML(tn, match, users)}
     </div>`;
 }
 
@@ -171,7 +194,7 @@ function issuesHTML(tn, session) {
     </div>`;
 }
 
-function sessionBoxHTML(tn, session) {
+function sessionBoxHTML(tn, session, users) {
   const mp = draftFor(tn).mp;
   const matches = sessionMatches(mp, session.id);
   return `
@@ -189,7 +212,7 @@ function sessionBoxHTML(tn, session) {
           <input data-mp="session" data-session="${esc(session.id)}" data-f="startTime" type="time" value="${esc(session.startTime || '')}" style="${INPUT}" /></div>
         <button data-mp="del-session" data-session="${esc(session.id)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
       </div>
-      ${matches.map(m => matchRowHTML(tn, m)).join('')}
+      ${matches.map(m => matchRowHTML(tn, m, users)).join('')}
       <button data-mp="add-match" data-session="${esc(session.id)}" class="btn btn-outline btn-sm" style="margin-top:8px;">+ ${t('mpAddMatch')}</button>
       ${issuesHTML(tn, session)}
     </div>`;
@@ -212,7 +235,7 @@ function participationHTML(tn) {
     </div>`;
 }
 
-function sectionHTML(tn) {
+function sectionHTML(tn, users) {
   const mp = draftFor(tn).mp;
   const dirty = drafts.get(tn.id)?.dirty;
   return `
@@ -225,7 +248,7 @@ function sectionHTML(tn) {
         <b style="font-size:0.85rem;">${t('mpSessions')}</b>
         <button data-mp="add-session" class="btn btn-outline btn-sm">+ ${t('mpAddSession')}</button>
       </div>
-      ${sessionList(mp).map(s => sessionBoxHTML(tn, s)).join('')
+      ${sessionList(mp).map(s => sessionBoxHTML(tn, s, users)).join('')
         || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoSessions')}</p>`}
       ${participationHTML(tn)}
       <button data-mp="save" class="btn ${dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
@@ -248,12 +271,13 @@ async function saveDraft(tn, ctx) {
     const session = mp.sessions[m.sessionId];
     if (!session) return; // its session was deleted
     const old = fresh?.mp?.matches?.[m.id] || tn.mp?.matches?.[m.id];
+    // Holes and suspensions belong to the scorer and are merged back from the
+    // live record; scorer assignments are edited HERE, so the draft wins.
     matches[m.id] = {
       ...m,
       format: session.format,
       players: { a: (m.players?.a || []).slice(), b: (m.players?.b || []).slice() },
       ...(old?.holes ? { holes: old.holes } : {}),
-      ...(old?.scorerIds ? { scorerIds: old.scorerIds } : {}),
       ...(old?.stateOverride ? { stateOverride: old.stateOverride } : {})
     };
   });
@@ -362,6 +386,14 @@ function handleClick(tn, el, ctx, host) {
     if (!m) return;
     if (Object.keys(m.holes || {}).length && !confirm(t('mpDelMatchScored'))) return;
     delete mp.matches[el.dataset.match];
+  } else if (kind === 'add-scorer') {
+    const m = mp.matches[el.dataset.match];
+    if (!m || !el.value) return;
+    m.scorerIds = { ...(m.scorerIds || {}), [el.value]: true };
+  } else if (kind === 'del-scorer') {
+    const m = mp.matches[el.dataset.match];
+    if (!m?.scorerIds) return;
+    delete m.scorerIds[el.dataset.user];
   } else if (kind === 'save') {
     saveDraft(tn, ctx).catch(err => {
       console.error('[matchplay-admin]', err);
@@ -378,7 +410,7 @@ function handleClick(tn, el, ctx, host) {
 // ---- Mount ----
 
 function paint(host, tn, ctx) {
-  host.innerHTML = sectionHTML(tn);
+  host.innerHTML = sectionHTML(tn, ctx.users || []);
   wire(host, tn, ctx);
 }
 
@@ -387,6 +419,10 @@ function wire(host, tn, ctx) {
     // Rosters and player picks reshape the section, so they repaint; plain
     // fields only mark the draft dirty and repaint nothing — no lost focus.
     el.onchange = () => {
+      if (el.dataset.mp === 'add-scorer') {
+        if (el.value) { handleClick(tn, el, ctx, host); }
+        return;
+      }
       const changed = handleEdit(tn, el);
       if (!changed) return;
       if (el.dataset.mp === 'roster' || el.dataset.mp === 'player'
@@ -404,7 +440,8 @@ function wire(host, tn, ctx) {
 
 /**
  * Render the match play setup section into `host`.
- * ctx: { showToast(msg, type), rerender() — re-renders the admin tab }
+ * ctx: { showToast(msg, type), rerender() — re-renders the admin tab,
+ *        users — app members, for the scorer picker }
  */
 export function mountMpAdmin(host, tn, ctx) {
   if (!host || !tn) return;

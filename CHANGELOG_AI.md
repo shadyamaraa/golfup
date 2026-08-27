@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — the scorer screen, phase 3 of 5)
+
+`#/score/:tnId/:matchId` (`src/matchplay-score.js`, new) is the on-course
+screen: three big buttons — team A, HALVED, team B — under the match's current
+status, sized for a thumb and labelled with team names rather than colour
+alone (spec §23). The hole advances by itself after each tap, UNDO clears the
+last hole entered, and the 18-hole strip below doubles as the correction
+affordance: tapping a played hole edits it, and the engine re-settles
+everything after it (spec §13).
+
+The screen holds no scoring state of its own — every tap writes the hole and
+the RTDB listener paints what came back. Two scorers on the same match
+therefore cannot diverge, and offline it still feels instant because RTDB
+answers its own listener from the pending write before the network sees it.
+`saveTnMatchHole()` no longer lets the audit read block the write for the same
+reason. Admins assign scorers per match from a member picker in the setup
+section (spec §14), and each match row links straight to its scorer screen.
+
+Access is currently enforced in the UI only: admins and marshals score any
+match, others only where assigned. Server-side enforcement is not possible as
+things stand — the app authenticates through a localStorage session rather
+than Firebase Auth, so a database rule has no identity to check. Worth
+deciding separately before the tournament; the assignment data the rule would
+need is already stored.
+
 ## 2026-08-27 (M Cup match play — admin setup, phase 2 of 5)
 
 The admin side of a match play tournament: `src/matchplay-admin.js` (new)
