@@ -107,13 +107,24 @@ function withFormat(mp, matches) {
 const validLogo = (l) =>
   typeof l === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(l);
 
-function teamBoxHTML(tn, teamId) {
+function teamBoxHTML(tn, teamId, users) {
   const mp = draftFor(tn).mp;
   const team = mp.teams[teamId];
   const roster = rosterOf(mp, teamId);
-  const names = roster.map(p => p.name).join('\n');
   const over = roster.length > ROSTER_SIZE;
   const logo = validLogo(team.logo) ? team.logo : null;
+
+  // Everyone already on EITHER roster is out of the picker — one member,
+  // one team.
+  const taken = new Set(Object.keys(mp.roster));
+  Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
+
+  const chip = (p) => `
+    <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name || p.id)}
+      <button data-mp="del-player" data-pid="${esc(p.id)}" data-team="${teamId}"
+        style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
+    </span>`;
+
   return `
     <div style="flex:1;min-width:230px;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;">
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;">
@@ -133,7 +144,14 @@ function teamBoxHTML(tn, teamId) {
       </div>
       <div style="margin-top:8px;">
         <span style="${LABEL}">${t('mpRoster')} — ${roster.length}/${ROSTER_SIZE}${over ? ' ⚠' : ''}</span>
-        <textarea data-mp="roster" data-team="${teamId}" rows="6" placeholder="${t('mpRosterHint')}" style="${INPUT}width:100%;resize:vertical;">${esc(names)}</textarea>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
+          ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
+        </div>
+        <select data-mp="add-player" data-team="${teamId}" style="${INPUT}width:100%;margin-top:6px;">
+          <option value="">+ ${t('mpPickMember')}</option>
+          ${(users || []).filter(u => u && u.id && !taken.has(u.id))
+            .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
+        </select>
       </div>
     </div>`;
 }
@@ -309,7 +327,7 @@ function sectionHTML(tn, users) {
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
       <h4 style="margin:0 0 8px;">${t('mpSetup')}</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        ${TEAM_KEYS.map(k => teamBoxHTML(tn, k)).join('')}
+        ${TEAM_KEYS.map(k => teamBoxHTML(tn, k, users)).join('')}
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
         <b style="font-size:0.85rem;">${t('mpSessions')}</b>
@@ -385,29 +403,6 @@ export function discardMpDraft(tnId) {
 
 // ---- Draft mutations ----
 
-// Reconcile a roster textarea against the draft: names keep their ids, new
-// lines get fresh ids, and a removed player who is still fielded in a match
-// is kept (and surfaces as a lineup warning) rather than silently dangling.
-function reconcileRoster(mp, teamId, text) {
-  const lines = [...new Set(String(text).split('\n').map(s => s.trim()).filter(Boolean))];
-  const existing = rosterOf(mp, teamId);
-  const used = new Set();
-  Object.values(mp.matches).forEach(m =>
-    TEAM_KEYS.forEach(k => (m?.players?.[k] || []).forEach(pid => pid && used.add(pid))));
-
-  const keep = {};
-  lines.forEach(name => {
-    const hit = existing.find(p => p.name === name && !keep[p.id]);
-    keep[hit ? hit.id : newId('p')] = { teamId, name };
-  });
-  existing.forEach(p => {
-    if (!keep[p.id] && used.has(p.id)) keep[p.id] = { teamId, name: p.name };
-  });
-
-  existing.forEach(p => { delete mp.roster[p.id]; });
-  Object.assign(mp.roster, keep);
-}
-
 function handleEdit(tn, el) {
   const d = draftFor(tn);
   const mp = d.mp;
@@ -415,8 +410,6 @@ function handleEdit(tn, el) {
 
   if (kind === 'team') {
     mp.teams[el.dataset.team][el.dataset.f] = el.value.trim();
-  } else if (kind === 'roster') {
-    reconcileRoster(mp, el.dataset.team, el.value);
   } else if (kind === 'session') {
     const s = mp.sessions[el.dataset.session];
     if (!s) return false;
@@ -485,6 +478,23 @@ function handleClick(tn, el, ctx, host) {
     if (Object.keys(m.holes || {}).length && !confirm(t('mpDelMatchScored'))) return;
     d.removed.add(el.dataset.match);
     delete mp.matches[el.dataset.match];
+  } else if (kind === 'add-player') {
+    // A roster entry is the member themselves: keyed by their userId, which
+    // is what lets the scorer screen recognise "this signed-in member plays
+    // in this match". The display name is a snapshot; the id is the truth.
+    const u = (ctx.users || []).find(x => x.id === el.value);
+    if (!u) return;
+    mp.roster[u.id] = {
+      teamId: el.dataset.team,
+      name: u.fullName || u.name || u.username || u.id,
+      userId: u.id
+    };
+  } else if (kind === 'del-player') {
+    const pid = el.dataset.pid;
+    const fielded = Object.values(mp.matches).some(m =>
+      TEAM_KEYS.some(k => (m?.players?.[k] || []).includes(pid)));
+    if (fielded && !confirm(t('mpDelPlayerFielded'))) return;
+    delete mp.roster[pid];
   } else if (kind === 'add-scorer') {
     const m = mp.matches[el.dataset.match];
     if (!m || !el.value) return;
@@ -518,13 +528,13 @@ function wire(host, tn, ctx) {
     // Rosters and player picks reshape the section, so they repaint; plain
     // fields only mark the draft dirty and repaint nothing — no lost focus.
     el.onchange = () => {
-      if (el.dataset.mp === 'add-scorer') {
+      if (el.dataset.mp === 'add-scorer' || el.dataset.mp === 'add-player') {
         if (el.value) { handleClick(tn, el, ctx, host); }
         return;
       }
       const changed = handleEdit(tn, el);
       if (!changed) return;
-      if (el.dataset.mp === 'roster' || el.dataset.mp === 'player'
+      if (el.dataset.mp === 'player'
         || (el.dataset.mp === 'session' && el.dataset.f === 'format')) {
         paint(host, tn, ctx);
       } else {

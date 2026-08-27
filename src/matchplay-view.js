@@ -115,7 +115,15 @@ function scoreboardHTML(mp) {
 
 // ---- Match cards (spec §9) ----
 
-function cardHTML(mp, match, state) {
+// Does this member play in this match? Modern roster entries are keyed by
+// the member's userId; older ones carry it in the record.
+export function isPlayerInMatch(userId, match, roster) {
+  if (!userId || !match) return false;
+  return TEAM_KEYS.some(k => (match.players?.[k] || [])
+    .some(pid => pid === userId || roster?.[pid]?.userId === userId));
+}
+
+function cardHTML(mp, match, state, tnId, viewerId) {
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
   const session = mp.sessions?.[match.sessionId] || {};
@@ -165,7 +173,12 @@ function cardHTML(mp, match, state) {
         <b style="font-size:0.95rem;">${esc(lead)}</b>
         ${progress ? `<span style="font-size:0.76rem;color:var(--text-secondary);margin-left:auto;">${esc(progress)}</span>` : ''}
       </div>
-    </button>`;
+    </button>
+    ${isPlayerInMatch(viewerId, match, mp.roster) && state !== 'COMPLETED' ? `
+      <a href="#/score/${esc(tnId)}/${esc(match.id)}" class="btn btn-primary btn-sm"
+         style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
+        ⛳ ${t('mpEnterScore')}
+      </a>` : ''}`;
 }
 
 // ---- Detail modal (spec §11) ----
@@ -345,7 +358,7 @@ export function historyHTML(list, currentId) {
 // ---- Board ----
 
 // Matches grouped the way the spec orders them for a phone (§22).
-function groupsHTML(mp) {
+function groupsHTML(mp, tnId, viewerId) {
   const sorted = sortMatchesForDisplay(matchesOf(mp));
   if (!sorted.length) {
     return `<div class="empty-state" style="padding:30px 20px;"><p>${t('mpNoMatches')}</p></div>`;
@@ -357,7 +370,7 @@ function groupsHTML(mp) {
       <div class="section-head" style="margin-top:14px;">
         <h2 style="font-size:0.86rem;">${esc(label)} <span style="color:var(--text-secondary);font-weight:500;">(${items.length})</span></h2>
       </div>
-      ${items.map(x => cardHTML(mp, x.match, x.state)).join('')}`;
+      ${items.map(x => cardHTML(mp, x.match, x.state, tnId, viewerId)).join('')}`;
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.
@@ -393,7 +406,7 @@ export function renderMatchCenter(host, tn, ctx = {}) {
 
   host.innerHTML = `
     ${scoreboardHTML(mp)}
-    ${groupsHTML(mp)}
+    ${groupsHTML(mp, tn?.id, ctx.userId)}
     ${summaryHTML(mp)}
     ${statsHTML(mp)}`;
 

@@ -487,15 +487,69 @@ export async function updateTournament(id, patch) {
 // dead spot (spec §21).
 export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
   if (!useFirebase || !db) return;
-  const holeRef = ref(db, `tournaments/${tnId}/mp/matches/${matchId}/holes/${hole}`);
+  const base = `tournaments/${tnId}/mp/matches/${matchId}`;
+  const holeRef = ref(db, `${base}/holes/${hole}`);
   // The previous value is only for the audit trail — offline (where get()
   // rejects without a warm cache) the write itself must still go through.
   let prev = null;
   try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
   const audit = { at: Date.now(), by: by || null, matchId, hole, value: value ?? null, prev };
-  if (value === null || value === undefined) await remove(holeRef);
-  else await set(holeRef, value);
+  if (value === null || value === undefined) {
+    await remove(holeRef);
+    remove(ref(db, `${base}/holeMeta/${hole}`)).catch(console.warn);
+  } else {
+    await set(holeRef, value);
+    // Who entered the hole — what the correction-consent rule reads. Never
+    // blocks the score itself.
+    if (by) set(ref(db, `${base}/holeMeta/${hole}`), { by }).catch(console.warn);
+  }
   push(ref(db, `tournaments/${tnId}/mp/audit`), audit).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
+// ---- Correction consent ----
+// A player changing a hole SOMEBODY ELSE entered does not overwrite it: the
+// proposal parks under pending/{hole} and only the original enterer (or an
+// official) applies or rejects it. `value` is 'a' | 'b' | 'h', or 'clear' to
+// propose removing the hole (RTDB cannot store null).
+
+export async function proposeTnHoleChange(tnId, matchId, hole, value, user) {
+  if (!useFirebase || !db) return;
+  const base = `tournaments/${tnId}/mp/matches/${matchId}`;
+  await set(ref(db, `${base}/pending/${hole}`), {
+    value,
+    by: user?.id || null,
+    byName: user?.fullName || user?.name || user?.username || '',
+    at: Date.now()
+  });
+  push(ref(db, `tournaments/${tnId}/mp/audit`), {
+    at: Date.now(), by: user?.id || null, matchId, hole, action: 'propose', value
+  }).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
+export async function resolveTnHoleChange(tnId, matchId, hole, approve, user) {
+  if (!useFirebase || !db) return;
+  const base = `tournaments/${tnId}/mp/matches/${matchId}`;
+  const pendingRef = ref(db, `${base}/pending/${hole}`);
+  const pending = (await get(pendingRef)).val();
+  if (!pending) return;
+  if (approve) {
+    if (pending.value === 'clear') {
+      await remove(ref(db, `${base}/holes/${hole}`));
+      remove(ref(db, `${base}/holeMeta/${hole}`)).catch(console.warn);
+    } else {
+      await set(ref(db, `${base}/holes/${hole}`), pending.value);
+      // Ownership passes to the proposer: it is their entry now, and the
+      // next correction to it will come back to them for consent.
+      if (pending.by) set(ref(db, `${base}/holeMeta/${hole}`), { by: pending.by }).catch(console.warn);
+    }
+  }
+  await remove(pendingRef);
+  push(ref(db, `tournaments/${tnId}/mp/audit`), {
+    at: Date.now(), by: user?.id || null, matchId, hole,
+    action: approve ? 'approve' : 'reject', value: pending.value ?? null, proposedBy: pending.by || null
+  }).catch(console.warn);
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 

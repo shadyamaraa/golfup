@@ -15,7 +15,8 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import {
-  settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED
+  settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED,
+  holeChangeAction, canResolveHoleChange
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -33,12 +34,20 @@ export function resetScorerView() {
 
 // ---- Access (spec §14) ----
 
-// Super Admin edits anything; a Scorer only the matches assigned to them.
-// Marshals run the day on the course, so they score too.
-export function canScore(user, match) {
+// Admin and marshal edit anything; an assigned scorer their matches; and the
+// players IN a match score their own match — modern roster entries are keyed
+// by the member's userId, older ones carry it in the record.
+export function isFielded(userId, match, roster) {
+  if (!userId || !match) return false;
+  return ['a', 'b'].some(k => (match.players?.[k] || [])
+    .some(pid => pid === userId || roster?.[pid]?.userId === userId));
+}
+
+export function canScore(user, match, roster) {
   if (!user) return false;
   if (user.role === 'admin' || user.role === 'marshal') return true;
-  return !!match?.scorerIds?.[user.id];
+  if (match?.scorerIds?.[user.id]) return true;
+  return isFielded(user.id, match, roster);
 }
 
 // ---- Rendering ----
@@ -94,7 +103,9 @@ function stripHTML(match, hole) {
     const on = r.hole === hole;
     const bg = r.result === 'a' ? 'var(--mp-a)' : r.result === 'b' ? 'var(--mp-b)' : 'transparent';
     const fg = r.result === 'a' || r.result === 'b' ? '#fff' : 'var(--text-secondary)';
-    const mark = r.result === 'a' ? 'A' : r.result === 'b' ? 'W' : r.result === HALVED ? '–' : '';
+    // A pending correction marks its hole, whoever it is waiting on.
+    const pend = !!match.pending?.[r.hole];
+    const mark = pend ? '⏳' : r.result === 'a' ? 'A' : r.result === 'b' ? 'W' : r.result === HALVED ? '–' : '';
     return `
       <button data-sc="goto" data-hole="${r.hole}"
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
@@ -106,7 +117,49 @@ function stripHTML(match, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:12px;">${rows.map(cell).join('')}</div>`;
 }
 
-function screenHTML(tn, match, demo) {
+// The label a proposal shows for each side of "W → A".
+function valueLabel(mp, v) {
+  if (v === 'a' || v === 'b') return teamLabel(mp, v);
+  if (v === HALVED) return t('mpHalved');
+  if (v === 'clear') return t('mpPendingClear');
+  return '—';
+}
+
+// Pending corrections, split by what this user can do about them: the ones
+// waiting on THEIR consent get approve/reject buttons; their own outgoing
+// proposals just show as waiting.
+function pendingHTML(mp, match, user) {
+  const entries = Object.entries(match.pending || {})
+    .map(([hole, p]) => ({ hole: Number(hole), ...p }))
+    .filter(p => p && p.value)
+    .sort((x, y) => x.hole - y.hole);
+  if (!entries.length) return '';
+
+  const row = (p) => {
+    const from = valueLabel(mp, match.holes?.[p.hole] ?? null);
+    const to = valueLabel(mp, p.value);
+    const mine = p.by === user?.id;
+    const canResolve = !mine && canResolveHoleChange(user, match, p.hole);
+    return `
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:0.8rem;flex-wrap:wrap;">
+        <span><b>${esc(p.byName || '?')}</b> · ${t('mpHole')} ${p.hole}: ${esc(from)} → <b>${esc(to)}</b></span>
+        ${canResolve ? `
+          <span style="margin-left:auto;display:flex;gap:6px;">
+            <button data-sc="resolve" data-hole="${p.hole}" data-ok="1" class="btn btn-primary btn-sm">${t('mpApprove')}</button>
+            <button data-sc="resolve" data-hole="${p.hole}" data-ok="0" class="btn btn-outline-danger btn-sm">${t('mpReject')}</button>
+          </span>`
+        : `<span style="margin-left:auto;font-size:0.72rem;color:var(--amber);">⏳ ${mine ? t('mpProposeSent') : t('mpPendingWaiting')}</span>`}
+      </div>`;
+  };
+
+  return `
+    <div style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:10px;padding:10px;margin-top:12px;">
+      <b style="font-size:0.76rem;">${t('mpPendingTitle')}</b>
+      ${entries.map(row).join('')}
+    </div>`;
+}
+
+function screenHTML(tn, match, demo, user) {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
@@ -146,6 +199,7 @@ function screenHTML(tn, match, demo) {
         </div>
       </div>
 
+      ${pendingHTML(mp, match, user)}
       ${done && viewHole === null ? `
         <div style="text-align:center;margin-top:14px;font-size:0.85rem;color:var(--text-secondary);">
           ${t('mpMatchDone')}
@@ -223,13 +277,13 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       if (!store.isUsingFirebase()) notFound(t('tnNotFound'), '#/');
       return;
     }
-    if (!canScore(ctx.user, m)) {
+    if (!canScore(ctx.user, m, data?.mp?.roster)) {
       denied = true;
       notFound(t('mpNoScorerAccess'), `#/tournament/${esc(tnId)}`);
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, m, demoMode);
+    host.innerHTML = screenHTML(data, m, demoMode, ctx.user);
     wire();
     // Repainted every time because the screen was just replaced wholesale.
     paintDeviceBanner();
@@ -253,7 +307,17 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     saving = true;
     const note = document.getElementById('sc-note');
     try {
-      await store.saveTnMatchHole(tnId, matchId, hole, value, ctx.user?.id);
+      // Correction consent: changing a hole somebody else entered does not
+      // overwrite it — it files a proposal the original enterer approves.
+      // Officials, your own entries, and unowned holes write straight through.
+      const m = data?.mp?.matches?.[matchId];
+      if (holeChangeAction(ctx.user, m, hole) === 'propose') {
+        await store.proposeTnHoleChange(tnId, matchId, hole,
+          value === null ? 'clear' : value, ctx.user);
+        ctx.showToast?.('⏳ ' + t('mpProposeSent'), 'info');
+      } else {
+        await store.saveTnMatchHole(tnId, matchId, hole, value, ctx.user?.id);
+      }
       // Any entry — a new hole or a correction to an old one — puts the
       // scorer back on the hole being played. The strip below carries the
       // change they just made, so nothing is lost by moving on. Repainting
@@ -298,6 +362,15 @@ export async function renderScorerPage(tnId, matchId, ctx) {
           return;
         }
         store.setTnMatchSuspended(tnId, matchId, !now, ctx.user?.id)
+          .catch(err => {
+            console.error('[scorer]', err);
+            ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+          });
+      } else if (kind === 'resolve') {
+        const h = Number(b.dataset.hole);
+        const ok = b.dataset.ok === '1';
+        store.resolveTnHoleChange(tnId, matchId, h, ok, ctx.user)
+          .then(() => ctx.showToast?.(ok ? '✅ ' + t('mpApproved') : t('mpRejected'), ok ? 'success' : 'info'))
           .catch(err => {
             console.error('[scorer]', err);
             ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
@@ -359,7 +432,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       data = fresh;
       // A repaint must not silently reinstate a screen access was refused
       // on — paint() re-checks, so this only guards the ordering.
-      if (!denied || canScore(ctx.user, fresh.mp?.matches?.[matchId])) paint();
+      if (!denied || canScore(ctx.user, fresh.mp?.matches?.[matchId], fresh.mp?.roster)) paint();
     });
     if (unsub) ctx.onUnsub?.(unsub);
   }

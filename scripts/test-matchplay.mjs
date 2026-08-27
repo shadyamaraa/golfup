@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
-  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete
+  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -296,4 +296,34 @@ test('tournamentComplete: every match decided, and never vacuously', () => {
   assert.equal(tournamentComplete({ matches: { m1: done, m2: live } }), false);
   assert.equal(tournamentComplete({ matches: {} }), false);
   assert.equal(tournamentComplete(null), false);
+});
+
+// ---- Correction consent ----
+
+test('consent: who writes directly and who must propose', () => {
+  const me = { id: 'u1', role: 'user' };
+  const other = { id: 'u2', role: 'user' };
+  const admin = { id: 'boss', role: 'admin' };
+  const match = {
+    holes: { 1: 'a', 2: 'b' },
+    holeMeta: { 1: { by: 'u1' } } // hole 2 predates ownership
+  };
+  // An empty hole is open to anyone.
+  assert.equal(holeChangeAction(me, match, 3), 'direct');
+  // Your own entry stays yours to correct.
+  assert.equal(holeChangeAction(me, match, 1), 'direct');
+  // Somebody else's entry needs their consent…
+  assert.equal(holeChangeAction(other, match, 1), 'propose');
+  // …unless you are an official.
+  assert.equal(holeChangeAction(admin, match, 1), 'direct');
+  // A hole with no recorded owner is open (legacy data).
+  assert.equal(holeChangeAction(other, match, 2), 'direct');
+});
+
+test('consent: who may settle a pending change', () => {
+  const match = { holeMeta: { 5: { by: 'u1' } } };
+  assert.equal(canResolveHoleChange({ id: 'u1', role: 'user' }, match, 5), true);
+  assert.equal(canResolveHoleChange({ id: 'u2', role: 'user' }, match, 5), false);
+  assert.equal(canResolveHoleChange({ id: 'm', role: 'marshal' }, match, 5), true);
+  assert.equal(canResolveHoleChange(null, match, 5), false);
 });

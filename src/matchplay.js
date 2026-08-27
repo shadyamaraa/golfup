@@ -21,7 +21,9 @@
 //       players: { a: [playerId, ...], b: [playerId, ...] },
 //       scorerIds: { [userId]: true },
 //       stateOverride?: 'SUSPENDED',
-//       holes: { [holeNumber]: 'a'|'b'|'h' }
+//       holes: { [holeNumber]: 'a'|'b'|'h' },
+//       holeMeta: { [holeNumber]: { by: userId } },   // who entered it
+//       pending: { [holeNumber]: { value: 'a'|'b'|'h'|'clear', by, byName, at } }
 //     } },
 //     audit: { [pushId]: { at, by, matchId, hole, value, prev } }
 //   }
@@ -361,4 +363,28 @@ export function pairStats(mp) {
 export function tournamentComplete(mp) {
   const list = matchList(mp?.matches);
   return list.length > 0 && list.every(m => matchState(m) === 'COMPLETED');
+}
+
+// ---- Correction consent ----
+
+// What entering `hole` should do for this user: write straight through, or
+// file a proposal the original enterer has to approve. Officials and the
+// person who entered the hole write directly; a hole nobody owns (entered
+// before ownership was recorded, or still empty) is open; anything else is
+// somebody else's entry and needs their consent.
+export function holeChangeAction(user, match, hole) {
+  if (!user) return 'propose';
+  if (user.role === 'admin' || user.role === 'marshal') return 'direct';
+  const existing = match?.holes?.[hole];
+  if (existing !== 'a' && existing !== 'b' && existing !== HALVED) return 'direct';
+  const owner = match?.holeMeta?.[hole]?.by;
+  if (!owner || owner === user.id) return 'direct';
+  return 'propose';
+}
+
+// May this user settle (approve/reject) the pending change on `hole`?
+export function canResolveHoleChange(user, match, hole) {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'marshal') return true;
+  return match?.holeMeta?.[hole]?.by === user.id;
 }

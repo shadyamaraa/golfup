@@ -5,6 +5,7 @@ import * as mtbogd from './booking.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
+import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -1714,7 +1715,12 @@ function renderTnBoard() {
   }
 
   if (tnPageTab === 'match') {
-    renderMatchCenter(host, tn, { showModal: showMatchModal, refreshModal: refreshMatchModal });
+    renderMatchCenter(host, tn, {
+      showModal: showMatchModal,
+      refreshModal: refreshMatchModal,
+      // Players in a match get their "enter score" shortcut on its card.
+      userId: currentUser?.id || null
+    });
     // Below the board: the notification toggle (members only — a push needs
     // an account to land on) and past match play tournaments.
     host.insertAdjacentHTML('beforeend', `
@@ -7288,9 +7294,12 @@ function tnAnalysisHTML(a) {
     </div>`;
 }
 
-// Shared field set for both the create form and each row's editor.
+// The row editor's field set. Match play never sees the stroke play
+// questions — PAR, rounds, the cut and the scoring sheet mean nothing where
+// only hole winners score and sessions replace rounds.
 function tnAdminFormHTML(p, tn = {}) {
   const sel = (v, cur) => v === cur ? ' selected' : '';
+  const isMatch = tn.format === 'match';
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
       <input id="${p}-name" type="text" placeholder="${t('tnFName')} *" value="${esc(tn.name || '')}" style="${TN_INPUT}" />
@@ -7298,16 +7307,17 @@ function tnAdminFormHTML(p, tn = {}) {
       <input id="${p}-city" type="text" placeholder="${t('tnFCity')}" value="${esc(tn.city || '')}" style="${TN_INPUT}" />
       <input id="${p}-start" type="date" value="${esc(tn.startDate || '')}" style="${TN_INPUT}" />
       <input id="${p}-end" type="date" value="${esc(tn.endDate || '')}" style="${TN_INPUT}" />
-      <input id="${p}-rounds" type="number" min="1" max="8" placeholder="${t('tnFRounds')}" value="${tn.rounds || ''}" style="${TN_INPUT}" />
-      <input id="${p}-round-now" type="number" min="1" max="8" placeholder="${t('tnFCurrentRound')}" value="${tn.currentRound || ''}" style="${TN_INPUT}" />
-      <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
-      <input id="${p}-cut-after" type="number" min="1" max="8" placeholder="${t('tnFCutAfter')}" value="${tn.cutAfterRound || ''}" style="${TN_INPUT}" />
-      <input id="${p}-cut-size" type="number" min="1" max="500" placeholder="${t('tnFCutSize')}" value="${tn.cutSize || ''}" style="${TN_INPUT}" />
+      ${isMatch ? '' : `
+        <input id="${p}-rounds" type="number" min="1" max="8" placeholder="${t('tnFRounds')}" value="${tn.rounds || ''}" style="${TN_INPUT}" />
+        <input id="${p}-round-now" type="number" min="1" max="8" placeholder="${t('tnFCurrentRound')}" value="${tn.currentRound || ''}" style="${TN_INPUT}" />
+        <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
+        <input id="${p}-cut-after" type="number" min="1" max="8" placeholder="${t('tnFCutAfter')}" value="${tn.cutAfterRound || ''}" style="${TN_INPUT}" />
+        <input id="${p}-cut-size" type="number" min="1" max="500" placeholder="${t('tnFCutSize')}" value="${tn.cutSize || ''}" style="${TN_INPUT}" />`}
       <select id="${p}-format" style="${TN_INPUT}">
         <option value=""${sel('', tn.format || '')}>${t('gameFormat')}</option>
         <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
         <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
-        <option value="scramble"${sel('scramble', tn.format)}>${t('fmtScramble')}</option>
+        ${tn.format === 'scramble' ? `<option value="scramble" selected>${t('fmtScramble')}</option>` : ''}
       </select>
       <select id="${p}-status" style="${TN_INPUT}">
         <option value=""${sel('', tn.status || '')}>${t('tnFStatusAuto')}</option>
@@ -7316,11 +7326,12 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value="final"${sel('final', tn.status)}>${t('tnFinal')}</option>
       </select>
     </div>
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:8px;">
-      <input id="${p}-sheet" type="url" placeholder="${t('tnFSheetUrl')}" value="${esc(tn.sheetUrl || '')}" style="${TN_INPUT}" />
-      <input id="${p}-tab" type="text" placeholder="${t('tnFSheetTab')}" value="${esc(tn.sheetTab || '')}" style="${TN_INPUT}" />
-    </div>
-    <p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('tnFSheetHint')}</p>`;
+    ${isMatch ? '' : `
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:8px;">
+        <input id="${p}-sheet" type="url" placeholder="${t('tnFSheetUrl')}" value="${esc(tn.sheetUrl || '')}" style="${TN_INPUT}" />
+        <input id="${p}-tab" type="text" placeholder="${t('tnFSheetTab')}" value="${esc(tn.sheetTab || '')}" style="${TN_INPUT}" />
+      </div>
+      <p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('tnFSheetHint')}</p>`}`;
 }
 
 function tnAdminReadForm(p) {
@@ -7416,23 +7427,24 @@ async function renderAdminTournamentsTab() {
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">
           ${esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '))}
         </div>
-        <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
-          ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
-          ${fileWins && tn.sheetUrl ? `<div style="color:var(--amber);margin-top:3px;">${t('tnFileOverridesSheet')}</div>` : ''}
-        </div>
+        ${tn.format === 'match' ? '' : `
+          <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
+            ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
+            ${fileWins && tn.sheetUrl ? `<div style="color:var(--amber);margin-top:3px;">${t('tnFileOverridesSheet')}</div>` : ''}
+          </div>`}
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
           <button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-sm tn-adm-toggle" data-tn="${esc(tn.id)}" style="gap:5px;">
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
-          ${tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
-          <button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>
+          ${tn.format !== 'match' && tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
+          ${tn.format === 'match' ? '' : `<button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>`}
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
-        ${tn.lastSync ? tnAnalysisHTML(tn.lastSync) : ''}
+        ${tn.lastSync && tn.format !== 'match' ? tnAnalysisHTML(tn.lastSync) : ''}
         ${open ? `
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
-            ${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}
+            <div id="tn-e-${esc(tn.id)}-formwrap">${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}</div>
             <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
             ${tn.format === 'match' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
           </div>` : ''}
@@ -7447,36 +7459,32 @@ async function renderAdminTournamentsTab() {
         <h3 style="margin:0;">${t('tnCreate')}</h3>
         <span id="tn-create-chevron" style="color:var(--text-secondary);font-size:0.9rem;">▼</span>
       </button>
-      <div id="tn-create-form" style="display:none;margin-top:14px;">
-        ${tnAdminFormHTML('tn-n')}
-        <button id="tn-create-btn" class="btn btn-primary btn-sm" style="margin-top:10px;">${t('tnCreate')}</button>
-      </div>
+      <div id="tn-create-form" style="display:none;margin-top:14px;"></div>
     </div>
     ${list.length === 0
       ? `<p style="color:var(--text-secondary);">${t('tnAdminEmpty')}</p>`
       : list.map(rowHTML).join('')}
     <input type="file" id="tn-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />`;
 
-  // Create
+  // Create — the Squabbit-style wizard: pick the type early, and only that
+  // type's questions follow. Its draft lives in the module, so toggling or
+  // re-rendering this tab never loses a half-filled step.
   const form = document.getElementById('tn-create-form');
+  mountTnWizard(form, {
+    showToast,
+    onCreated: async (id, data) => {
+      // A link given at creation time is only useful once it has been read.
+      if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
+      // A match play tournament is set up in its editor (roster, sessions,
+      // pairings), so a fresh one opens straight into it.
+      adminOpenTn = data.format === 'match' ? id : null;
+      await renderAdminTournamentsTab();
+    }
+  });
   document.getElementById('tn-create-toggle').onclick = () => {
     const open = form.style.display !== 'none';
     form.style.display = open ? 'none' : 'block';
     document.getElementById('tn-create-chevron').textContent = open ? '▼' : '▲';
-  };
-  document.getElementById('tn-create-btn').onclick = async () => {
-    const data = tnAdminReadForm('tn-n');
-    if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
-    let id;
-    try { id = await store.saveTournament({ ...data, entries: [], createdAt: Date.now() }); }
-    catch (err) { tnAdminError(err); return; }
-    showToast('✅ ' + t('tnCreated'), 'success');
-    // A link given at creation time is only useful once it has been read.
-    if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
-    // A match play tournament is set up in its editor (teams, sessions,
-    // pairings), so a fresh one opens straight into it.
-    adminOpenTn = data.format === 'match' ? id : null;
-    await renderAdminTournamentsTab();
   };
 
   // Row actions
@@ -7520,6 +7528,30 @@ async function renderAdminTournamentsTab() {
     catch (err) { tnAdminError(err); return; }
     await renderAdminTournamentsTab();
   });
+
+  // Switching the type in an open editor swaps which fields it shows —
+  // stroke play's PAR/rounds/cut/sheet mean nothing in match play. Values
+  // already typed into the shared fields survive; the format select reads
+  // whatever is on screen when saving.
+  if (adminOpenTn) {
+    const fmtSel = document.getElementById(`tn-e-${adminOpenTn}-format`);
+    const wrap = document.getElementById(`tn-e-${adminOpenTn}-formwrap`);
+    const tn = list.find(x => x.id === adminOpenTn);
+    if (fmtSel && wrap && tn) {
+      fmtSel.onchange = () => {
+        // Only what is actually on screen overrides the stored record, so
+        // toggling match → stroke brings the stored PAR and rounds back
+        // instead of blanking them.
+        const current = Object.fromEntries(
+          Object.entries(tnAdminReadForm(`tn-e-${tn.id}`))
+            .filter(([, v]) => v !== null && v !== ''));
+        wrap.innerHTML = tnAdminFormHTML(`tn-e-${tn.id}`, { ...tn, ...current });
+        // Re-arm: the select was just replaced with a fresh element.
+        const again = document.getElementById(`tn-e-${tn.id}-format`);
+        if (again) again.onchange = fmtSel.onchange;
+      };
+    }
+  }
 
   // Device approval card — which phones may write live scores. Renders only
   // once anonymous auth is running; a no-op before the rules are deployed.
