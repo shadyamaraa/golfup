@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — the scorer screen scores the demo too)
+
+The whole flow was driven end to end in a real browser against a local
+preview build: the Match Center (dark and light, mobile and desktop), the
+match detail modal, the home strip, and the scorer screen — where tapping
+ALTAI took the demo fourball 2 UP → 3 UP → 4 UP → 5 & 4 with the keypad
+withdrawing itself, Undo brought it back to 4 UP, and correcting hole 6
+re-settled the match to 6 & 5. One gap found: the scorer screen was the only
+piece of the feature the sample tournament did not reach — it read straight
+from the database, so a reviewer on a preview channel had nothing to try.
+
+`renderScorerPage` now takes the demo the same way the tournament page does
+(localhost and preview hosts only): taps land on a local copy, nothing is
+written anywhere, the screen carries the same "sample data" note, and a
+reload resets it.
+
 ## 2026-08-27 (M Cup match play — what an adversarial read of the branch found)
 
 An independent review of the whole feature turned up three ways it could lose

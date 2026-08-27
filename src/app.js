@@ -376,7 +376,10 @@ export async function router() {
       const [tnId, matchId] = hash.split('#/score/')[1].split('/');
       await renderScorerPage(tnId, matchId, {
         main, user: currentUser, showToast,
-        onUnsub: (fn) => activeUnsubs.push(fn)
+        onUnsub: (fn) => activeUnsubs.push(fn),
+        // The sample M Cup can be scored on preview builds: taps stay local,
+        // nothing is written, and the demo resets on reload.
+        demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
       });
     }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);

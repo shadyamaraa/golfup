@@ -94,7 +94,7 @@ function stripHTML(match, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:12px;">${rows.map(cell).join('')}</div>`;
 }
 
-function screenHTML(tn, match) {
+function screenHTML(tn, match, demo) {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
@@ -164,6 +164,7 @@ function screenHTML(tn, match) {
         A = ${esc(teamLabel(mp, 'a'))} · W = ${esc(teamLabel(mp, 'b'))} · – = ${t('mpHalved')}
       </div>
       <div id="sc-note" style="font-size:0.75rem;color:var(--text-secondary);margin-top:10px;text-align:center;min-height:1.2em;"></div>
+      ${demo ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
 }
 
@@ -172,19 +173,25 @@ function screenHTML(tn, match) {
 /**
  * Render the scorer screen.
  * ctx: { main() → the page element, user, showToast(msg, type),
- *        onUnsub(fn) — register a listener teardown }
+ *        onUnsub(fn) — register a listener teardown,
+ *        demo — the sample tournament: taps mutate a local copy and nothing
+ *               is written anywhere, so the screen can be tried on a preview
+ *               channel against the demo data }
  */
 export async function renderScorerPage(tnId, matchId, ctx) {
   const host = ctx.main();
   resetScorerView();
   host.innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
 
+  const demoMode = !!ctx.demo;
+
   // A one-shot read rejects on a cold cache with no signal, which is exactly
   // where a scorer opening this screen is most likely to be standing. The
   // listener below answers from whatever the client has and again when the
   // network returns, so a failed read is a reason to wait, not to give up.
   let tn = null;
-  try { tn = await store.loadTournament(tnId); } catch (_) { }
+  if (demoMode) tn = JSON.parse(JSON.stringify(ctx.demo));
+  else try { tn = await store.loadTournament(tnId); } catch (_) { }
 
   let data = tn;
   let denied = false;
@@ -209,7 +216,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, m);
+    host.innerHTML = screenHTML(data, m, demoMode);
     wire();
   };
 
@@ -218,6 +225,16 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   // network — the RTDB write resolves locally while offline.
   const write = async (hole, value) => {
     if (saving) return;
+    // Demo: the tap lands on the local copy only — nothing reaches the
+    // database, which is the whole point of trying this on a preview.
+    if (demoMode) {
+      const m = data.mp.matches[matchId];
+      if (value === null) delete m.holes[hole];
+      else { m.holes = m.holes || {}; m.holes[hole] = value; }
+      if (viewHole !== null) viewHole = null;
+      paint();
+      return;
+    }
     saving = true;
     const note = document.getElementById('sc-note');
     try {
@@ -260,6 +277,11 @@ export async function renderScorerPage(tnId, matchId, ctx) {
         if (settled.thru) { viewHole = null; write(settled.thru, null); }
       } else if (kind === 'suspend') {
         const now = matchState(m) === 'SUSPENDED';
+        if (demoMode) {
+          if (now) delete m.stateOverride; else m.stateOverride = 'SUSPENDED';
+          paint();
+          return;
+        }
         store.setTnMatchSuspended(tnId, matchId, !now, ctx.user?.id)
           .catch(err => {
             console.error('[scorer]', err);
@@ -287,7 +309,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   }
   paint();
 
-  if (store.isUsingFirebase()) {
+  if (!demoMode && store.isUsingFirebase()) {
     const unsub = store.onTournamentChanged(tnId, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
       data = fresh;
