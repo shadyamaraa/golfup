@@ -6,6 +6,7 @@ import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin } from './matchplay-admin.js';
 import { renderScorerPage } from './matchplay-score.js';
+import { renderMatchCenter, stripSummary } from './matchplay-view.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
 
@@ -1311,14 +1312,32 @@ function paintTournamentStrip(host, tn) {
   const me = ranked.find(tnIsMe);
   const shown = (me && !top.includes(me)) ? [me, ...top] : top;
 
+  // A match play tournament's third row is the team score, never a player
+  // list: "who is winning" is the whole question the strip has to answer
+  // (spec §22/§28). Team names ride along with the numbers, so the strip
+  // never depends on colour alone (§23).
+  const mpSummary = stripSummary(tn);
+  const mpBody = mpSummary ? `
+    <div class="tn-meta">
+      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.a.color};">
+        ${esc(mpSummary.a.name)} ${esc(String(mpSummary.a.points))}
+      </span>
+      <span class="tn-sep"></span>
+      <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.b.color};">
+        ${esc(String(mpSummary.b.points))} ${esc(mpSummary.b.name)}
+      </span>
+      ${mpSummary.liveCount ? `<span class="tn-sep"></span><span class="tn-meta-txt">${mpSummary.liveCount} ${t('mpLive')}</span>` : ''}
+      ${mpSummary.session ? `<span class="tn-sep"></span><span class="tn-meta-txt">${esc(mpSummary.session)}</span>` : ''}
+    </div>` : '';
+
   // With scores, the third row is the players; without them (an upcoming
   // tournament, or one nobody has posted to yet) it carries the essentials.
-  const body = ranked.length
+  const body = mpBody || (ranked.length
     ? `<div class="tn-players">${shown.map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
     : `<div class="tn-meta">
          <span class="tn-meta-txt">${esc(tn.venue || '')}${tn.startTime ? ` · ${esc(tn.startTime)}` : ''}</span>
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
-       </div>`;
+       </div>`);
 
   host.innerHTML = `
     <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
@@ -1475,7 +1494,8 @@ async function renderTournamentPage(id) {
     return;
   }
 
-  tnPageTab = 'board';
+  // paintTournamentPage() settles the tab against what this tournament has.
+  tnPageTab = isMatchPlay(tn) ? 'match' : 'board';
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
   paintTournamentPage(await tnWithLiveEntries(tn));
@@ -1512,8 +1532,26 @@ async function renderTournamentPage(id) {
   }
 }
 
+// A match play tournament (M Cup) shows the Live Match Center instead of a
+// stroke leaderboard. Both can coexist: a tournament that carries entries as
+// well as matches keeps its board tab.
+function isMatchPlay(tn) {
+  return tn?.format === 'match' && !!Object.keys(tn?.mp?.matches || {}).length;
+}
+
+function tnTabsFor(tn) {
+  const tabs = [];
+  if (isMatchPlay(tn)) tabs.push('match');
+  if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
+  tabs.push('info');
+  return tabs;
+}
+
 function paintTournamentPage(tn) {
   tnPageData = tn;
+  // The tab the page opens on has to exist for this tournament.
+  const tabs = tnTabsFor(tn);
+  if (!tabs.includes(tnPageTab)) tnPageTab = tabs[0];
   const state = tnStatus(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
@@ -1542,8 +1580,10 @@ function paintTournamentPage(tn) {
       </div>
 
       <div class="seg-tabs tn-tabs">
-        <button class="seg-tab active" data-tn-tab="board">${t('tnLeaderboard')}</button>
-        <button class="seg-tab" data-tn-tab="info">${t('tnInfo')}</button>
+        ${tnTabsFor(tn).map(tab => `
+          <button class="seg-tab${tnPageTab === tab ? ' active' : ''}" data-tn-tab="${tab}">
+            ${tab === 'match' ? t('mpMatchCenter') : tab === 'board' ? t('tnLeaderboard') : t('tnInfo')}
+          </button>`).join('')}
       </div>
 
       <div id="tn-board"></div>
@@ -1590,6 +1630,11 @@ function renderTnBoard() {
 
   if (tnPageTab === 'info') {
     host.innerHTML = tnInfoHTML(tn);
+    return;
+  }
+
+  if (tnPageTab === 'match') {
+    renderMatchCenter(host, tn, { showModal: showMatchModal });
     return;
   }
 
@@ -3156,6 +3201,24 @@ async function renderJoinPay(gameId) {
     const method = document.querySelector('#jp-pay-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
     await handleJoin(game, method);
   };
+}
+
+// Match detail (spec §11) — the card's hole-by-hole story, in the app's own
+// modal chrome so it matches every other overlay.
+function showMatchModal(title, bodyHTML) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="max-width:460px;">
+      <h3 class="modal-title">${esc(title)}</h3>
+      ${bodyHTML}
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn btn-secondary" data-close="1">${t('tnClose')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-close]').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 // ---- Game Actions ----

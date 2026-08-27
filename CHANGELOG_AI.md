@@ -1,5 +1,31 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (M Cup match play — the public Live Match Center, phase 4 of 5)
+
+`src/matchplay-view.js` (new) is what a spectator opens: the team scoreboard
+(ALTAI 8.5 — 7.5 WELLCOM) with the running session under it, then match cards
+grouped LIVE → FINAL → UPCOMING, then the session-by-session breakdown. Each
+card answers the spec's two-second question on one line — who leads and by how
+much, and how far the match has got: THRU before the off becomes the tee time
+instead. Tapping a card opens the hole-by-hole detail (A / W / – across 18,
+with the running status behind it). Every status line names its team, so
+nothing depends on colour alone.
+
+The tournament page grows a Match Center tab, first and selected by default
+when the tournament's format is 'match' and it has matches; a match play
+tournament with no stroke entries drops the leaderboard tab entirely rather
+than showing an empty board. On the home strip a match play tournament shows
+the team score, the live match count and the session in place of the player
+list — the strip's job there is "who is winning", not "where am I".
+
+Live updates need no new machinery: the page's existing RTDB listener already
+repaints the board on every change, so a scorer's tap reaches every spectator
+without the polling the spec allowed as a fallback (§20).
+
+Tests: 8 more cases (23 total) covering which session a viewer is shown —
+including a suspended match holding its session — and what the strip
+summarizes.
+
 ## 2026-08-27 (M Cup match play — the scorer screen, phase 3 of 5)
 
 `#/score/:tnId/:matchId` (`src/matchplay-score.js`, new) is the on-course
