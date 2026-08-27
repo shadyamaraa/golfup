@@ -7,6 +7,8 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
+import { renderGameScorePage, canScoreGamePlayer, gameScoreTotals } from './game-score.js';
+import { gameHoleCount, courseHandicap } from './handicap.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
@@ -389,6 +391,13 @@ export async function router() {
         // The sample M Cup can be scored on preview builds: taps stay local,
         // nothing is written, and the demo resets on reload.
         demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
+      });
+    }
+    else if (hash.startsWith('#/gscore/')) {
+      const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
+      await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
+        main, user: currentUser, showToast,
+        onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
@@ -2503,6 +2512,16 @@ async function renderCreateGame() {
           </div>
 
           <div class="create-section">
+            <div class="cs-label">${t('gsCourseInfo')}</div>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="game-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" style="flex:1;min-width:0;" />
+              <input type="number" id="game-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" style="flex:1;min-width:0;" />
+              <input type="number" id="game-course-par" min="27" max="80" placeholder="${t('gsPar')}" style="flex:1;min-width:0;" />
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsCourseHint')}</p>
+          </div>
+
+          <div class="create-section">
             <div class="cs-label">${t('gameVisibility')}</div>
             <input type="hidden" id="game-visibility" value="${myCommunities.length === 0 ? 'public' : 'my-circles'}">
             <div class="chip-row chip-wrap" id="vis-chips">
@@ -2923,6 +2942,16 @@ async function renderCreateGame() {
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
       holes: selectedHoles,
+      ...(() => {
+        // Course rating/slope/par power the handicap math; a game without them
+        // still scores fine, it just produces no differential.
+        const rating = parseFloat(document.getElementById('game-course-rating').value);
+        const slope = parseInt(document.getElementById('game-course-slope').value, 10);
+        const par = parseInt(document.getElementById('game-course-par').value, 10);
+        return rating && slope && par
+          ? { course: { name: document.getElementById('game-location').value.trim(), rating, slope, par } }
+          : {};
+      })(),
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
@@ -3029,6 +3058,13 @@ function waitlistBannerText(pos, ahead) {
   return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
 }
 
+// "(гишүүний үнэ)" / "(зочны үнэ)" suffix for a booking price, from the
+// customerType MTBogd reported; empty when the rate kind is unknown.
+function bookingRateLabel(customerType) {
+  return customerType === 'member' ? ` (${t('bookPriceMember')})`
+    : customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
+}
+
 function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
@@ -3099,6 +3135,8 @@ function renderGameView(game) {
             <div id="booking-price-check" style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
               ${game.bookingPaid && game.paidAmount
                 ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.paidAmount.toLocaleString()}₮</strong>`
+                : game.bookingQuote?.amount
+                ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.bookingQuote.amount.toLocaleString()}₮</strong>${bookingRateLabel(game.bookingQuote.customerType)}`
                 : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
             </div>
           </div>` : ''}
@@ -3115,6 +3153,8 @@ function renderGameView(game) {
             </div>
           </div>` : ''}
       </div>
+
+      ${gameScoreboardHTML(game)}
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
 
@@ -3151,15 +3191,21 @@ function renderGameView(game) {
   // no member/guest context, so it can be wrong — this call happens *after*
   // confirmBooking already sent the creator's phone, so its `amount` reflects
   // whatever rate MTBogd actually matched (member or guest).
-  if (game.bookingId && !game.bookingPaid) {
+  // Ran ONCE per booking: the answer is cached on the game (bookingQuote), so
+  // reopening the page renders the stored price instead of re-querying MTBogd.
+  if (game.bookingId && !game.bookingPaid && !game.bookingQuote?.amount) {
     mtbogd.getQpayStatus(game.bookingId)
       .then(s => {
         if (!s) return;
         if (s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount);
+        else if (s.amount) {
+          store.saveBookingQuote(game.id, {
+            amount: s.amount, customerType: s.customerType || null, at: Date.now()
+          }).catch(() => {});
+        }
         const priceEl = document.getElementById('booking-price-check');
         if (priceEl && s.amount) {
-          const rateLabel = s.customerType === 'member' ? ` (${t('bookPriceMember')})` : s.customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
-          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${rateLabel}`;
+          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${bookingRateLabel(s.customerType)}`;
         }
       })
       .catch(() => {});
@@ -3257,6 +3303,45 @@ function renderGroupCard(players, groupIndex, game, isPast) {
         </div>
       </div>
       <div class="player-list">${slots.join('')}</div>
+      ${players.length && players.some(p => canScoreGamePlayer(currentUser, game, p.id)) ? `
+        <a href="#/gscore/${game.id}/${groupIndex}" class="btn btn-primary btn-sm"
+           style="width:100%;margin-top:10px;gap:6px;">⛳ ${t('mpEnterScore')}</a>` : ''}
+    </div>`;
+}
+
+// Live gross/net standings for a game where somebody has started a scorecard.
+// Rows are the players currently fielded in groups; net only shows when the
+// game carries course rating/slope/par AND the player has a handicap index.
+function gameScoreboardHTML(game) {
+  const totals = gameScoreTotals(game);
+  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(p => p && totals[p.id]);
+  if (!players.length) return '';
+  const c = game.course || {};
+  const rows = players
+    .map(p => {
+      const tot = totals[p.id];
+      const hcp = courseHandicap(allUsersMap[p.id]?.hcpIndex, c.slope, c.rating, c.par);
+      return { p, ...tot, net: hcp !== null ? tot.total - hcp : null };
+    })
+    .sort((a, b) => a.total - b.total);
+  const holeCount = gameHoleCount(game);
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
+      </div>
+      <div class="player-list">
+        ${rows.map((r, i) => `
+          <div class="player-row filled">
+            <span class="player-order">${i + 1}</span>
+            <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:12px;font-variant-numeric:tabular-nums;">
+              <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:var(--text-primary);">${r.net}</b></span>` : ''}
+              <b style="font-size:1.05rem;">${r.total}</b>
+            </div>
+          </div>`).join('')}
+      </div>
     </div>`;
 }
 
@@ -4520,6 +4605,15 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('gsCourseInfo')}</label>
+            <div style="display:flex; gap:8px;">
+              <input type="number" id="edit-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" value="${game.course?.rating ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+              <input type="number" id="edit-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" value="${game.course?.slope ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+              <input type="number" id="edit-course-par" min="27" max="80" placeholder="${t('gsPar')}" value="${game.course?.par ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsCourseHint')}</p>
+          </div>
+          <div class="input-group">
             <label for="edit-desc">${t('description')}</label>
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
@@ -4633,6 +4727,14 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
+    {
+      const rating = parseFloat(document.getElementById('edit-course-rating').value);
+      const slope = parseInt(document.getElementById('edit-course-slope').value, 10);
+      const par = parseInt(document.getElementById('edit-course-par').value, 10);
+      // null, not delete: saveGame writes with update(), and RTDB only clears
+      // a key when it is explicitly null.
+      game.course = rating && slope && par ? { name: game.location, rating, slope, par } : null;
+    }
 
     const changes = [];
     if (oldDate !== game.date) changes.push(`Огноо: ${oldDate} → ${game.date}`);
@@ -5569,6 +5671,11 @@ function profileFormInner(user) {
           <label>${t('clubCodeMtbogd')}</label>
           <input type="text" id="profile-mtbogd-code" value="${user.mtbogdCode || ''}" />
         </div>
+        <div class="input-group" style="margin-top: 10px;">
+          <label>${t('gsGhinNumber')}</label>
+          <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" />
+          <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('gsGhinHint')}</div>
+        </div>
       </div>
 
       <div class="input-group" style="margin-top: 16px;">
@@ -5643,6 +5750,13 @@ function wireProfileForm(scope, user, afterSave) {
     user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
     user.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
+    {
+      // GHIN numbers are 7-8 digits; rounds/{ghinNumber} is keyed by it, so a
+      // malformed value is refused rather than silently stored.
+      const ghin = document.getElementById('profile-ghin-number').value.replace(/\D/g, '');
+      if (ghin && !/^\d{7,8}$/.test(ghin)) { showToast(t('gsGhinInvalid'), 'error'); return; }
+      user.ghinNumber = ghin;
+    }
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
     if (user.notifyWeb) initFCM(user);
@@ -5721,6 +5835,10 @@ async function renderProfile() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   let games = [];
   try { games = await store.loadAllGames(); } catch (_) {}
+  // The cached WHS index lives on users/{id} (written by the scorer), not in
+  // the localStorage session copy — read it fresh.
+  let hcpIndex = null;
+  try { hcpIndex = (await store.loadUserById(u.id))?.hcpIndex ?? u.hcpIndex ?? null; } catch (_) {}
   const myGames = games.filter(isMyGame);
   const created = games.filter(g => g.createdBy === u.id).length;
   const invited = games.filter(g => Array.isArray(g.invitedIds) && g.invitedIds.includes(u.id)).length;
@@ -5756,6 +5874,7 @@ async function renderProfile() {
         <div class="profile-summary">
           <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myGames.length}</div></div>
           <div class="stat-tile"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></div>
+          ${hcpIndex !== null ? `<div class="stat-tile"><div class="st-label">${t('gsHcpIndex')}</div><div class="st-value">${hcpIndex}</div></div>` : ''}
         </div>
 
         <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>
