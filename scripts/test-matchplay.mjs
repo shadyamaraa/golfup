@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
-  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind
+  lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind,
+  addMinutesHHMM, cascadeTeeTimes
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -340,4 +341,54 @@ test('tnKind: ryder, plain match, legacy match-with-teams, stroke', () => {
   assert.equal(tnKind({ format: 'stroke' }), 'stroke');
   assert.equal(tnKind({ format: 'scramble' }), 'stroke');
   assert.equal(tnKind(null), 'stroke');
+});
+
+// ---- Tee times ----
+
+test('addMinutesHHMM: plain add, midnight wrap, bad input', () => {
+  assert.equal(addMinutesHHMM('09:40', 10), '09:50');
+  assert.equal(addMinutesHHMM('9:55', 10), '10:05');
+  assert.equal(addMinutesHHMM('23:55', 10), '00:05');
+  assert.equal(addMinutesHHMM('', 10), '');
+  assert.equal(addMinutesHHMM('morning', 10), '');
+  assert.equal(addMinutesHHMM(null, 10), '');
+});
+
+test('cascadeTeeTimes: empty later matches follow at 10-minute steps', () => {
+  const ms = [
+    { id: 'm1', number: 1, teeTime: '09:40' },
+    { id: 'm2', number: 2, teeTime: '' },
+    { id: 'm3', number: 3 }
+  ];
+  assert.deepEqual(cascadeTeeTimes(ms, 'm1'), [
+    { id: 'm2', teeTime: '09:50' },
+    { id: 'm3', teeTime: '10:00' }
+  ]);
+  // Pure: the inputs were not touched.
+  assert.equal(ms[1].teeTime, '');
+});
+
+test('cascadeTeeTimes: a hand-set time is kept and becomes the new base', () => {
+  const ms = [
+    { id: 'm1', number: 1, teeTime: '09:00' },
+    { id: 'm2', number: 2, teeTime: '10:30' },
+    { id: 'm3', number: 3, teeTime: '' }
+  ];
+  assert.deepEqual(cascadeTeeTimes(ms, 'm1'), [{ id: 'm3', teeTime: '10:40' }]);
+});
+
+test('cascadeTeeTimes: no base time, or matches before the edit, change nothing', () => {
+  const ms = [
+    { id: 'm1', number: 1, teeTime: '' },
+    { id: 'm2', number: 2, teeTime: '' }
+  ];
+  assert.deepEqual(cascadeTeeTimes(ms, 'm1'), []);
+  const later = [
+    { id: 'm1', number: 1, teeTime: '' },
+    { id: 'm2', number: 2, teeTime: '11:00' },
+    { id: 'm3', number: 3, teeTime: '' }
+  ];
+  // Editing m2 fills only m3; m1 above it stays untouched.
+  assert.deepEqual(cascadeTeeTimes(later, 'm2'), [{ id: 'm3', teeTime: '11:10' }]);
+  assert.deepEqual(cascadeTeeTimes(later, 'ghost'), []);
 });

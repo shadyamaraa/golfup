@@ -20,7 +20,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
-  lineupIssues, participation, matchState, tnKind
+  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -484,6 +484,15 @@ function handleEdit(tn, el) {
     if (!m) return false;
     const f = el.dataset.f;
     m[f] = f === 'number' ? (parseInt(el.value, 10) || null) : el.value;
+    // The first tee time given by hand paces the rest of the draw: every
+    // later match with no time yet falls in 10 minutes behind, and a time
+    // the admin set themselves is kept as the chain's new base.
+    if (f === 'teeTime' && m.teeTime) {
+      const pool = m.sessionId
+        ? Object.values(mp.matches).filter(x => x && x.sessionId === m.sessionId)
+        : Object.values(mp.matches).filter(Boolean);
+      cascadeTeeTimes(pool, m.id).forEach(c => { mp.matches[c.id].teeTime = c.teeTime; });
+    }
   } else if (kind === 'player') {
     const m = mp.matches[el.dataset.match];
     if (!m) return false;
@@ -527,11 +536,16 @@ function handleClick(tn, el, ctx, host) {
       : Object.values(mp.matches).filter(Boolean);
     const nums = pool.map(m => Number(m.number) || 0);
     const id = newId('m');
+    // A new match tees off 10 minutes behind the previous one, once the
+    // draw has a clock to follow.
+    const last = pool.length
+      ? pool.reduce((a, b) => ((Number(a.number) || 0) >= (Number(b.number) || 0) ? a : b))
+      : null;
     mp.matches[id] = {
       id,
       ...(sessionId ? { sessionId } : { format: 'SINGLES' }),
       number: (nums.length ? Math.max(...nums) : 0) + 1,
-      teeTime: '',
+      teeTime: last?.teeTime ? addMinutesHHMM(last.teeTime, 10) : '',
       players: { a: [], b: [] }
     };
   } else if (kind === 'logo-pick') {
@@ -714,7 +728,10 @@ function wire(host, tn, ctx) {
       }
       const changed = handleEdit(tn, el);
       if (!changed) return;
+      // A tee time repaints too: the cascade may have just filled the
+      // times of the matches below, and those inputs must show it.
       if (el.dataset.mp === 'player'
+        || (el.dataset.mp === 'match' && el.dataset.f === 'teeTime')
         || (el.dataset.mp === 'session' && el.dataset.f === 'format')) {
         paint(host, tn, ctx);
       } else {

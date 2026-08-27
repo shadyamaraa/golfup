@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-08-27 (Tee times pace themselves at 10-minute intervals)
+
+The admin gives the first match its tee time by hand and the rest of the
+draw follows: setting any match's time fills every later match in that
+session (singles: in the flat list) whose time is still empty, 10
+minutes apart, and "+ Match нэмэх" creates the new match 10 minutes
+behind the previous one. A hand-set time is never overwritten — the
+chain adopts it as its new base. Pure engine functions
+`addMinutesHHMM` / `cascadeTeeTimes` in `src/matchplay.js` (midnight
+wraps handled), applied from the editor's teeTime edit and add-match
+paths; committing a tee time now repaints the section so the filled
+times show at once. Tests 65.
+
 ## 2026-08-27 (Cards name their day and session)
 
 Match cards on the board and the detail modal header showed only the
