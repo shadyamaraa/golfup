@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-08-28 (fix green pull-to-refresh strip)
+
+The pull-to-refresh indicator still used the pre-redesign hardcoded
+dark-green background (`rgba(15,36,26,0.9)` in style.css). Added a
+re-skin override in tokens-redesign.css (same glass-chrome pattern as
+the header/bottom-nav) so it now follows the theme: cream in light,
+navy in dark, gold text.
+
 ## 2026-08-28 (Scorecard: par/SI from the Mt. Bogd card, to-par, manual handicap & net)
 
 - **Course data** (`src/courses.js`, new): per-hole par and stroke index for
