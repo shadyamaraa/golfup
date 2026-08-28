@@ -199,6 +199,20 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   return game;
 }
 
+// Switch a game's scoring mode (normal 18 ↔ competition 9/9) after it has
+// started — path-scoped so it never touches scores.
+export async function saveGameScoreMode(gameId, mode) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + gameId), { scoreMode: mode });
+    return null;
+  }
+  const games = getLocalGames();
+  if (!games[gameId]) return null;
+  games[gameId].scoreMode = mode;
+  setLocalGames(games);
+  return games[gameId];
+}
+
 // ---- Handicap rounds ----
 // rounds/{ghinNumber}/{gameId} — one finished scorecard per game, keyed by the
 // player's GHIN number so a future GHIN API sync posts records as-is. The
