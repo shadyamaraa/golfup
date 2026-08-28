@@ -10,6 +10,9 @@ import { renderScorerPage } from './matchplay-score.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer } from './strokeplay-score.js';
+import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
+import { gameHoleCount } from './handicap.js';
+import { courseTees, coursePar } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
@@ -406,6 +409,13 @@ export async function router() {
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
+    }
+    else if (hash.startsWith('#/gscore/')) {
+      const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
+      await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
+        main, user: currentUser, showToast,
+        onUnsub: (fn) => activeUnsubs.push(fn)
+      });
     }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
@@ -2421,6 +2431,7 @@ async function renderCreateGame() {
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
   let selectedHoles = 'full18';
+  let selectedScoreMode = 'normal';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -2478,6 +2489,25 @@ async function renderCreateGame() {
               <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
               <button type="button" class="seg-chip" data-holes="back9" style="display:none;">${t('holesBack9')}</button>
             </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('gsMode')}</div>
+            <div class="chip-row" id="mode-chips">
+              <button type="button" class="seg-chip active" data-mode="normal">${t('gsModeNormal')}</button>
+              <button type="button" class="seg-chip" data-mode="comp">${t('gsModeComp')}</button>
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('gsCourseInfo')}</div>
+            <div class="chip-row chip-wrap" id="tee-chips" style="margin-bottom:8px;"></div>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="game-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" style="flex:1;min-width:0;" />
+              <input type="number" id="game-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" style="flex:1;min-width:0;" />
+              <input type="number" id="game-course-par" min="27" max="80" placeholder="${t('gsPar')}" style="flex:1;min-width:0;" />
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsCourseHint')}</p>
           </div>
 
           <div class="create-section">
@@ -2720,6 +2750,22 @@ async function renderCreateGame() {
   });
   updateMtbogdSectionVisibility();
 
+  const renderTeeChips = wireTeeChips('tee-chips',
+    () => document.getElementById('game-location').value,
+    'game-course-rating', 'game-course-slope', 'game-course-par');
+  renderTeeChips();
+  document.getElementById('game-location').addEventListener('change', renderTeeChips);
+
+  // Scoring mode: normal 18, or the club's competition format (front 9,
+  // back 9, and the 18 counted as three separate contests).
+  document.querySelectorAll('#mode-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedScoreMode = chip.dataset.mode;
+    });
+  });
+
   // Holes chips set both the game's holes field and the tee-time API holes.
   document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -2901,6 +2947,18 @@ async function renderCreateGame() {
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
       holes: selectedHoles,
+      scoreMode: selectedScoreMode,
+      ...(() => {
+        // Course rating/slope/par power the handicap math; a game without them
+        // still scores fine, it just produces no differential.
+        const rating = parseFloat(document.getElementById('game-course-rating').value);
+        const slope = parseInt(document.getElementById('game-course-slope').value, 10);
+        const par = parseInt(document.getElementById('game-course-par').value, 10);
+        const tee = document.getElementById('tee-chips')?.dataset.active || null;
+        return rating && slope && par
+          ? { course: { name: document.getElementById('game-location').value.trim(), rating, slope, par, tee } }
+          : {};
+      })(),
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
       waitingList: [],
       createdAt: Date.now(),
@@ -3007,6 +3065,48 @@ function waitlistBannerText(pos, ahead) {
   return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
 }
 
+// Tee chips for the course-info block: picking a tee off the club's card
+// fills rating/slope/par, so nobody types them by hand. Hand-editing an
+// input clears the active chip — the values are no longer that tee's.
+// Returns a render function so location changes can rebuild the chips.
+function wireTeeChips(containerId, getLocation, ratingId, slopeId, parId, initialTee) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return () => {};
+  if (initialTee) wrap.dataset.active = initialTee;
+  const render = () => {
+    const loc = getLocation();
+    const tees = courseTees(loc);
+    wrap.style.display = tees.length ? '' : 'none';
+    wrap.innerHTML = tees.map(tee => `
+      <button type="button" class="seg-chip ${wrap.dataset.active === tee.key ? 'active' : ''}" data-tee="${tee.key}"
+        style="flex:1 1 calc(33% - 6px);min-width:0;padding:8px 4px;font-size:0.78rem;line-height:1.25;">
+        ${tee.label}<br><span style="font-size:0.66rem;opacity:0.8;">${tee.rating}/${tee.slope}</span>
+      </button>`).join('');
+    wrap.querySelectorAll('button[data-tee]').forEach(b => b.onclick = () => {
+      const tee = courseTees(getLocation()).find(x => x.key === b.dataset.tee);
+      if (!tee) return;
+      wrap.dataset.active = tee.key;
+      document.getElementById(ratingId).value = tee.rating;
+      document.getElementById(slopeId).value = tee.slope;
+      const par = coursePar(getLocation());
+      if (par) document.getElementById(parId).value = par;
+      wrap.querySelectorAll('button[data-tee]').forEach(x => x.classList.toggle('active', x === b));
+    });
+  };
+  [ratingId, slopeId, parId].forEach(id => document.getElementById(id)?.addEventListener('input', () => {
+    delete wrap.dataset.active;
+    wrap.querySelectorAll('button[data-tee]').forEach(x => x.classList.remove('active'));
+  }));
+  return render;
+}
+
+// "(гишүүний үнэ)" / "(зочны үнэ)" suffix for a booking price, from the
+// customerType MTBogd reported; empty when the rate kind is unknown.
+function bookingRateLabel(customerType) {
+  return customerType === 'member' ? ` (${t('bookPriceMember')})`
+    : customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
+}
+
 function renderGameView(game) {
   const isCreator = currentUser && game.createdBy === currentUser.id;
   const isJoined = currentUser && isPlayerInGame(game, currentUser.id);
@@ -3077,6 +3177,8 @@ function renderGameView(game) {
             <div id="booking-price-check" style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
               ${game.bookingPaid && game.paidAmount
                 ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.paidAmount.toLocaleString()}₮</strong>`
+                : game.bookingQuote?.amount
+                ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.bookingQuote.amount.toLocaleString()}₮</strong>${bookingRateLabel(game.bookingQuote.customerType)}`
                 : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
             </div>
           </div>` : ''}
@@ -3093,6 +3195,8 @@ function renderGameView(game) {
             </div>
           </div>` : ''}
       </div>
+
+      ${gameScoreboardHTML(game)}
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
 
@@ -3129,19 +3233,34 @@ function renderGameView(game) {
   // no member/guest context, so it can be wrong — this call happens *after*
   // confirmBooking already sent the creator's phone, so its `amount` reflects
   // whatever rate MTBogd actually matched (member or guest).
-  if (game.bookingId && !game.bookingPaid) {
+  // Ran ONCE per booking: the answer is cached on the game (bookingQuote), so
+  // reopening the page renders the stored price instead of re-querying MTBogd.
+  if (game.bookingId && !game.bookingPaid && !game.bookingQuote?.amount) {
     mtbogd.getQpayStatus(game.bookingId)
       .then(s => {
         if (!s) return;
         if (s.paymentStatus === 'paid') store.markBookingPaid(game.id, s.amount);
+        else if (s.amount) {
+          store.saveBookingQuote(game.id, {
+            amount: s.amount, customerType: s.customerType || null, at: Date.now()
+          }).catch(() => {});
+        }
         const priceEl = document.getElementById('booking-price-check');
         if (priceEl && s.amount) {
-          const rateLabel = s.customerType === 'member' ? ` (${t('bookPriceMember')})` : s.customerType === 'guest' ? ` (${t('bookPriceGuest')})` : '';
-          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${rateLabel}`;
+          priceEl.innerHTML = `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${s.amount.toLocaleString()}₮</strong>${bookingRateLabel(s.customerType)}`;
         }
       })
       .catch(() => {});
   }
+
+  // Flip normal 18 ↔ competition 9/9 mid-round; the Firebase listener
+  // repaints every open screen, localStorage mode repaints from the return.
+  document.getElementById('score-mode-toggle')?.addEventListener('click', () => {
+    const next = game.scoreMode === 'comp' ? 'normal' : 'comp';
+    store.saveGameScoreMode(game.id, next)
+      .then(local => { if (local) renderGameView(local); })
+      .catch(() => showToast('⚠️ ' + t('mpSaveFailed'), 'error'));
+  });
 
   // One-click join for casual games; games with a paid tee-time booking route
   // through a payment page first so the joiner sees the fee + payment method.
@@ -3235,6 +3354,87 @@ function renderGroupCard(players, groupIndex, game, isPast) {
         </div>
       </div>
       <div class="player-list">${slots.join('')}</div>
+      ${players.length && players.some(p => canScoreGamePlayer(currentUser, game, p.id)) ? `
+        <a href="#/gscore/${game.id}/${groupIndex}" class="btn btn-primary btn-sm"
+           style="width:100%;margin-top:10px;gap:6px;">⛳ ${t('mpEnterScore')}</a>` : ''}
+    </div>`;
+}
+
+// Live standings for a game where somebody has started a scorecard. Rows are
+// the players currently fielded in groups. Gross always shows, with to-par
+// where the course card is known; net (from the per-game hand-entered
+// handicap, or the profile index) shows per player, and once EVERY row has a
+// net the board ranks by net — that is the game being "played on handicap".
+function gameScoreboardHTML(game) {
+  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
+  const rows = players
+    .map(p => {
+      const hcp = gamePlayingHcp(game, p.id, allUsersMap[p.id]);
+      const line = gameScoreLine(game, p.id, hcp);
+      return { p, hcp, ...line };
+    })
+    .filter(r => r.thru > 0);
+  if (!rows.length) return '';
+  const byNet = rows.every(r => r.net !== null);
+  // Rank by net-to-par where possible — with mixed thru counts the absolute
+  // net misleads, the par-relative one doesn't.
+  rows.sort((a, b) => (byNet ? (a.netToPar ?? a.net) - (b.netToPar ?? b.net) : a.total - b.total));
+  const holeCount = gameHoleCount(game);
+  const comp = isCompMode(game);
+  const netColor = (v) => v !== null && v < 0 ? 'var(--red)' : 'var(--text-primary)';
+
+  // Competition: front 9, back 9, and the 18 are three separate contests —
+  // name the current leader of each (ties share it).
+  let winnersHTML = '';
+  if (comp) {
+    const shortName = (r) => allUsersMap[r.p.id]?.firstName || r.p.name || '?';
+    const leader = (key) => {
+      const c = rows.filter(r => r[key] !== null);
+      if (!c.length) return '—';
+      const best = Math.min(...c.map(r => r[key]));
+      return `${c.filter(r => r[key] === best).map(shortName).map(esc).join(', ')} <b style="color:${netColor(best)};">${fmtToPar(best)}</b>`;
+    };
+    winnersHTML = `
+      <div style="font-size:0.76rem;color:var(--text-secondary);padding:2px 0 8px;border-bottom:1px solid var(--border-color);margin-bottom:6px;">
+        🏆 F9: ${leader('netF')} · B9: ${leader('netB')} · 18: ${leader('netToPar')}
+      </div>`;
+  }
+
+  const figuresHTML = (r) => comp ? `
+              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netF)};">${r.netF !== null ? `F${fmtToPar(r.netF)}` : ''}</span>
+              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netB)};">${r.netB !== null ? `B${fmtToPar(r.netB)}` : ''}</span>
+              <b style="width:44px;text-align:right;font-size:1.05rem;color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.total}</b>` : `
+              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              <span style="width:68px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">${r.net !== null ? `${t('gsNet')} <b style="color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
+              <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
+              <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>`;
+
+  // The game's creator (or an official) can flip the scoring mode mid-round —
+  // groups often decide on the course that today is a competition.
+  const canToggleMode = currentUser && (game.createdBy === currentUser.id
+    || currentUser.role === 'admin' || currentUser.role === 'marshal');
+  const modeLabel = comp ? t('gsModeComp') : t('gsModeNormal');
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
+        ${canToggleMode
+          ? `<button id="score-mode-toggle" class="group-count" style="cursor:pointer;border:1px solid var(--border-color);background:transparent;font-family:var(--font);">${modeLabel} ⇄</button>`
+          : comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
+      </div>
+      ${winnersHTML}
+      <div class="player-list">
+        ${rows.map((r, i) => `
+          <div class="player-row filled">
+            <span class="player-order">${i + 1}</span>
+            <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}
+              ${typeof r.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${r.hcp}</span>` : ''}
+            </span>
+            <div style="margin-left:auto;display:flex;align-items:baseline;font-variant-numeric:tabular-nums;">${figuresHTML(r)}
+            </div>
+          </div>`).join('')}
+      </div>
     </div>`;
 }
 
@@ -3961,8 +4161,15 @@ async function renderAdminPanel() {
     const communities = selectedCommunities('new-user-communities');
     const lastName = document.getElementById('new-user-lastname').value.trim();
     const firstName = document.getElementById('new-user-firstname').value.trim();
-    const ghin = document.getElementById('new-user-ghin').value.trim();
+    // Same field + rule as the profile settings page: rounds/{ghinNumber} is
+    // keyed by it, so only a clean 7-8 digit number may be stored.
+    const ghinNumber = document.getElementById('new-user-ghin').value.replace(/\D/g, '');
     const ubgolfMemberId = document.getElementById('new-user-memberid').value.trim();
+    if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) {
+      showToast(t('gsGhinInvalid'), 'error');
+      submitBtn.disabled = false;
+      return;
+    }
 
     const existing = await store.findUserByPhone(phone);
     if (existing) {
@@ -3974,7 +4181,7 @@ async function renderAdminPanel() {
     await store.adminCreateUser(name, pass, phone, 'user', communities, {
       lastName, firstName,
       fullName: [firstName, lastName].filter(Boolean).join(' '),
-      ghin, ubgolfMemberId,
+      ghinNumber, ubgolfMemberId,
     });
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
@@ -4112,7 +4319,7 @@ function showAdminEditUserModal(user, onSaved) {
         </div>
         <div class="input-group">
           <label>${t('ghinNumber')}</label>
-          <input type="text" id="ae-ghin" value="${user.ghin || ''}" />
+          <input type="text" id="ae-ghin" value="${user.ghinNumber || user.ghin || ''}" inputmode="numeric" />
         </div>
         <div class="input-group">
           <label>${t('ubgolfMemberId')}</label>
@@ -4202,7 +4409,10 @@ function showAdminEditUserModal(user, onSaved) {
     user.firstName = firstName;
     user.fullName = [firstName, lastName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
-    user.ghin = document.getElementById('ae-ghin').value.trim();
+    const ghinNumber = document.getElementById('ae-ghin').value.replace(/\D/g, '');
+    if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) { showToast(t('gsGhinInvalid'), 'error'); return; }
+    user.ghinNumber = ghinNumber;
+    delete user.ghin; // legacy field, unified on ghinNumber (used to key rounds/{ghinNumber})
     user.ubgolfMemberId = document.getElementById('ae-memberid').value.trim();
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
@@ -4503,6 +4713,23 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('gsMode')}</label>
+            <div class="chip-row" id="edit-mode-chips" style="margin-top:6px;">
+              <button type="button" class="seg-chip ${(game.scoreMode || 'normal') === 'normal' ? 'active' : ''}" data-mode="normal">${t('gsModeNormal')}</button>
+              <button type="button" class="seg-chip ${game.scoreMode === 'comp' ? 'active' : ''}" data-mode="comp">${t('gsModeComp')}</button>
+            </div>
+          </div>
+          <div class="input-group">
+            <label>${t('gsCourseInfo')}</label>
+            <div class="chip-row chip-wrap" id="edit-tee-chips" style="margin:6px 0 8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <input type="number" id="edit-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" value="${game.course?.rating ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+              <input type="number" id="edit-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" value="${game.course?.slope ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+              <input type="number" id="edit-course-par" min="27" max="80" placeholder="${t('gsPar')}" value="${game.course?.par ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsCourseHint')}</p>
+          </div>
+          <div class="input-group">
             <label for="edit-desc">${t('description')}</label>
             <textarea id="edit-desc" placeholder="${t('descriptionPlaceholder')}" rows="2" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem; resize:vertical; box-sizing:border-box;">${game.description || ''}</textarea>
           </div>
@@ -4553,6 +4780,19 @@ async function renderEditGame(gameId) {
           </div>` : ''}
       </div>
     </div>`;
+
+  const renderEditTeeChips = wireTeeChips('edit-tee-chips',
+    () => document.getElementById('edit-location').value,
+    'edit-course-rating', 'edit-course-slope', 'edit-course-par', game.course?.tee);
+  renderEditTeeChips();
+  document.getElementById('edit-location').addEventListener('change', renderEditTeeChips);
+
+  document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
 
   const editSizeInput = document.getElementById('edit-group-size');
   document.getElementById('edit-size-minus').addEventListener('click', () => {
@@ -4616,6 +4856,16 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
+    game.scoreMode = document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal';
+    {
+      const rating = parseFloat(document.getElementById('edit-course-rating').value);
+      const slope = parseInt(document.getElementById('edit-course-slope').value, 10);
+      const par = parseInt(document.getElementById('edit-course-par').value, 10);
+      // null, not delete: saveGame writes with update(), and RTDB only clears
+      // a key when it is explicitly null.
+      const tee = document.getElementById('edit-tee-chips')?.dataset.active || null;
+      game.course = rating && slope && par ? { name: game.location, rating, slope, par, tee } : null;
+    }
 
     const changes = [];
     if (oldDate !== game.date) changes.push(`Огноо: ${oldDate} → ${game.date}`);
@@ -5552,6 +5802,11 @@ function profileFormInner(user) {
           <label>${t('clubCodeMtbogd')}</label>
           <input type="text" id="profile-mtbogd-code" value="${user.mtbogdCode || ''}" />
         </div>
+        <div class="input-group" style="margin-top: 10px;">
+          <label>${t('gsGhinNumber')}</label>
+          <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" />
+          <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('gsGhinHint')}</div>
+        </div>
       </div>
 
       <div class="input-group" style="margin-top: 16px;">
@@ -5626,6 +5881,13 @@ function wireProfileForm(scope, user, afterSave) {
     user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('profile-bank-iban').value.trim();
     user.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
+    {
+      // GHIN numbers are 7-8 digits; rounds/{ghinNumber} is keyed by it, so a
+      // malformed value is refused rather than silently stored.
+      const ghin = document.getElementById('profile-ghin-number').value.replace(/\D/g, '');
+      if (ghin && !/^\d{7,8}$/.test(ghin)) { showToast(t('gsGhinInvalid'), 'error'); return; }
+      user.ghinNumber = ghin;
+    }
     user.notifyWeb = document.getElementById('notify-web-toggle').checked;
     user.notifySms = document.getElementById('notify-sms-toggle').checked;
     if (user.notifyWeb) initFCM(user);
@@ -5704,6 +5966,10 @@ async function renderProfile() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   let games = [];
   try { games = await store.loadAllGames(); } catch (_) {}
+  // The cached WHS index lives on users/{id} (written by the scorer), not in
+  // the localStorage session copy — read it fresh.
+  let hcpIndex = null;
+  try { hcpIndex = (await store.loadUserById(u.id))?.hcpIndex ?? u.hcpIndex ?? null; } catch (_) {}
   const myGames = games.filter(isMyGame);
   const created = games.filter(g => g.createdBy === u.id).length;
   const invited = games.filter(g => Array.isArray(g.invitedIds) && g.invitedIds.includes(u.id)).length;
@@ -5739,6 +6005,7 @@ async function renderProfile() {
         <div class="profile-summary">
           <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myGames.length}</div></div>
           <div class="stat-tile"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></div>
+          ${hcpIndex !== null ? `<div class="stat-tile"><div class="st-label">${t('gsHcpIndex')}</div><div class="st-value">${hcpIndex}</div></div>` : ''}
         </div>
 
         <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>

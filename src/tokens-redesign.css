@@ -134,6 +134,14 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 #app-header   { background: color-mix(in srgb, var(--bg-primary) 86%, transparent); }
 .bottom-nav   { background: color-mix(in srgb, var(--bg-primary) 92%, transparent); }
 
+/* Pull-to-refresh strip follows the theme (was hardcoded old-green) */
+.ptr-indicator {
+  background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  color: var(--gold-dark);
+}
+[data-theme="dark"] .ptr-indicator { color: var(--gold); }
+
 /* ============================================================
    REDESIGN — component layer (loads after style.css, so wins)
    Re-skins the existing classes for the cream/navy look and adds

@@ -133,6 +133,102 @@ devices are never downgraded; the request flow stays as a fallback; the
 empty-registry bootstrap is unchanged. Scorer-screen banner now only
 appears when self-registration could not cover the device. Tests 56.
 Deploy needs `firebase deploy --only database,hosting`.
+## 2026-08-28 (fix green pull-to-refresh strip)
+
+The pull-to-refresh indicator still used the pre-redesign hardcoded
+dark-green background (`rgba(15,36,26,0.9)` in style.css). Added a
+re-skin override in tokens-redesign.css (same glass-chrome pattern as
+the header/bottom-nav) so it now follows the theme: cream in light,
+navy in dark, gold text.
+
+## 2026-08-28 (Scorecard: par/SI from the Mt. Bogd card, to-par, manual handicap & net)
+
+- **Course data** (`src/courses.js`, new): per-hole par and stroke index for
+  Sky Resort (= Mt. Bogd Golf Club, from the club's official scorecard) plus
+  the six tee rating/slope pairs. `physicalHole()` maps a back9 game's card
+  holes 1–9 onto physical holes 10–18.
+- **Scorer** (`src/game-score.js`): hole header now reads
+  "3-р Нүх · Пар 4 · SI 9" (per-language phrasing) with a small "3 / 18"
+  under it where the course card is known; a hole's score colors by golf
+  reading (under par red, par muted); each player's line shows to-par
+  ("Нийт 17 (+4)") and net.
+- **Manual handicap until GHIN** : `games/{id}/hcp/{playerId}` (0–54),
+  entered via an HCP chip on the scorer row by anyone who may score that
+  player; falls back to the profile WHS index → course handicap. Net
+  allocates strokes per hole by SI (`strokesReceived`), evenly where SI is
+  unknown, so partial rounds net correctly. `saveGame()` now also spares
+  the `hcp` branch; `saveGamePlayerHcp()` in store.js.
+- **Standings** (`gameScoreboardHTML`): to-par column; when every player has
+  a net the board ranks by net (the game is "played on handicap"), else by
+  gross.
+- **Handicap math** (`src/handicap.js`): AGS for the differential caps each
+  hole at par + 5 where par is known (stored strokes stay real).
+- i18n: mn `gsPar` → "Пар", kr → "파", new `gsHcpPrompt` ×3.
+- **Chinggis Khaan** (= Riverside Golf Club, Terelj) added to `COURSE_DATA`
+  from its official scorecard: per-hole par/SI (par 72) and four tee
+  rating/slope pairs — every location-keyed feature (hole header, to-par,
+  SI net allocation, AGS cap) works there with no further code.
+
+## 2026-08-27 (GHIN roster import: merge GHIN numbers into user profiles)
+
+Matched the club's GHIN roster export (golfers_20260730, 332 golfers)
+against the app's users and stored each match on
+`users/{id}.ghinNumber` — the field `rounds/{ghinNumber}` and the WHS
+handicap machinery key on. 88 of 105 profiles received their number
+(87 automatic name matches + 1 manually confirmed transliteration
+variant); ambiguous or roster-missing users were left untouched and
+reported for admin follow-up.
+
+- **Importer** (`scripts/import-ghin.mjs`, new): repeatable CLI. Reads a
+  roster CSV (name + GHIN columns), fetches `users` over the RTDB REST
+  API, matches firstName/lastName against given/surname in either order
+  with Mongolian-Latin spelling folds (kh/h, double vowels, ...) and
+  Cyrillic transliteration. Dry run by default; `--apply` PATCHes only
+  the `ghinNumber` key; `--set userId=GHIN` applies a manual decision;
+  ambiguous matches (two roster rows or two users competing for one
+  number, duplicate roster names) are never auto-applied. Existing
+  different values are skipped unless `--force`.
+- **Admin forms** (`src/app.js`): the admin create-user and edit-user
+  forms now read and write `ghinNumber` instead of the parallel legacy
+  `ghin` field (which the scoring code never read), with the same 7-8
+  digit validation as the profile settings page; a user's legacy `ghin`
+  key is dropped on the next admin save.
+
+## 2026-08-27 (Casual games: group scorecards, WHS handicap, GHIN-ready rounds)
+
+Players in a casual game's group can now enter stroke scores in the app —
+their own and their group-mates' (marker practice) — and a completed card
+feeds a WHS handicap index, stored in a shape ready for a future USGA GHIN
+API connection (GHIN is a closed API requiring USGA authorisation, so only
+the adapter stub ships now).
+
+- **Scorer** (`src/game-score.js`, new): `#/gscore/:gameId/:groupIdx` —
+  per-hole stroke stepper for every player in the group, hole strip with
+  per-hole entry counts, auto-advance to the group's first open hole.
+  Follows the M Cup scorer's construction: no local scoring state, every
+  tap is a path-scoped write (`games/{id}/scores/{playerId}/holes/{n}`,
+  keyed by member id so regrouping never detaches a card) and the
+  `onGameChanged` listener repaints. Permission: admin/marshal, the game's
+  creator, yourself, or a member of the same group.
+- **Store** (`src/store.js`): `saveGameScoreHole()` (+ `scoreAudit` push),
+  `upsertRound`/`loadRounds` under `rounds/{ghinNumber}/{gameId}`,
+  `saveUserHcp()`, `loadUserById()`. `saveGame()` now writes with a
+  scores-sparing `update()` instead of a whole-record `set()`, so
+  join/leave edits can no longer clobber a concurrent score tap.
+- **Handicap** (`src/handicap.js`, new): WHS score differential
+  `(113/slope) × (AGS − rating)`, best-8-of-20 index with the small-sample
+  table (3–19 rounds), course handicap, and `roundFromGame()` building a
+  GHIN-shaped round record. Computed fire-and-forget when a player's card
+  completes; index cached on `users/{id}.hcpIndex`.
+- **GHIN prep** (`src/ghin.js`, new): payload mapper + config stub only —
+  wired to nothing until USGA credentials exist. Profile gains a validated
+  7-8 digit GHIN number field (rounds are keyed by it) and an HCP tile.
+- **Game page** (`src/app.js`): "⛳ Оноо оруулах" button on group cards
+  (visible to anyone who may score in that group, not gated on start
+  time), live gross/net standings card, optional course rating/slope/par
+  fields on the create and edit forms.
+- i18n: `gs*` keys in mn/en/kr; `database.rules.json` opens the new
+  `rounds` path (games/users were already open).
 
 ## 2026-08-27 (Three formats: Stroke / Match play (1v1) / Ryder Cup)
 
