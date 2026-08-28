@@ -23,6 +23,10 @@
 - **Handicap math** (`src/handicap.js`): AGS for the differential caps each
   hole at par + 5 where par is known (stored strokes stay real).
 - i18n: mn `gsPar` → "Пар", kr → "파", new `gsHcpPrompt` ×3.
+- **Chinggis Khaan** (= Riverside Golf Club, Terelj) added to `COURSE_DATA`
+  from its official scorecard: per-hole par/SI (par 72) and four tee
+  rating/slope pairs — every location-keyed feature (hole header, to-par,
+  SI net allocation, AGS cap) works there with no further code.
 
 ## 2026-08-27 (Casual games: group scorecards, WHS handicap, GHIN-ready rounds)
 

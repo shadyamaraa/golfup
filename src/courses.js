@@ -20,6 +20,17 @@ export const COURSE_DATA = {
       red: { rating: 69.1, slope: 122 },
     },
   },
+  'Chinggis Khaan Golf Course': {   // Riverside Golf Club (Terelj) official scorecard
+    par: 72,
+    pars: { 1: 4, 2: 4, 3: 3, 4: 5, 5: 4, 6: 4, 7: 3, 8: 5, 9: 4, 10: 4, 11: 5, 12: 3, 13: 4, 14: 4, 15: 5, 16: 3, 17: 4, 18: 4 },
+    si:   { 1: 17, 2: 15, 3: 7, 4: 3, 5: 13, 6: 1, 7: 9, 8: 11, 9: 5, 10: 10, 11: 2, 12: 18, 13: 6, 14: 12, 15: 16, 16: 8, 17: 14, 18: 4 },
+    tees: {
+      professional: { rating: 74.1, slope: 137 },
+      regular: { rating: 71.1, slope: 135 },
+      senior: { rating: 68.3, slope: 126 },
+      lady: { rating: 70.5, slope: 138 },
+    },
+  },
 };
 
 // Scorer hole n (1..9 or 1..18) → the course's physical hole. A back9 game
