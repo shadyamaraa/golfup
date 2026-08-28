@@ -218,14 +218,16 @@ function stripHTML(game, players, hole) {
     const on = n === hole;
     // Gold bg + navy ink for a completed hole — the app's on-gold convention
     // (.filter-tab.active), legible in both themes; #fff would wash out on
-    // the cream light theme.
+    // the cream light theme. The cell's big figure is the hole's PAR (the
+    // group reads the next tee off the strip); completion already shows as
+    // the gold fill. Courses without a card fall back to the entered count.
     cells.push(`
       <button data-gs="goto" data-hole="${n}"
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
                border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
                background:${full ? 'var(--gold)' : 'transparent'};
                color:${full ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
-        <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${entered || '·'}
+        <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${holePar(game, n) ?? (entered || '·')}
       </button>`);
   }
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">${cells.join('')}</div>`;
@@ -383,7 +385,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       cell.style.border = n === hole ? '2px solid var(--text-primary)' : '1px solid var(--border-color)';
       cell.style.background = full ? 'var(--gold)' : 'transparent';
       cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
-      cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${entered || '·'}`;
+      cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${holePar(data, n) ?? (entered || '·')}`;
     }
   };
 
