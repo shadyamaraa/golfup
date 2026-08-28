@@ -9,6 +9,7 @@ import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { gameHoleCount } from './handicap.js';
+import { courseTees, coursePar } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
@@ -2522,6 +2523,7 @@ async function renderCreateGame() {
 
           <div class="create-section">
             <div class="cs-label">${t('gsCourseInfo')}</div>
+            <div class="chip-row chip-wrap" id="tee-chips" style="margin-bottom:8px;"></div>
             <div style="display:flex;gap:8px;">
               <input type="number" id="game-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" style="flex:1;min-width:0;" />
               <input type="number" id="game-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" style="flex:1;min-width:0;" />
@@ -2770,6 +2772,12 @@ async function renderCreateGame() {
   });
   updateMtbogdSectionVisibility();
 
+  const renderTeeChips = wireTeeChips('tee-chips',
+    () => document.getElementById('game-location').value,
+    'game-course-rating', 'game-course-slope', 'game-course-par');
+  renderTeeChips();
+  document.getElementById('game-location').addEventListener('change', renderTeeChips);
+
   // Scoring mode: normal 18, or the club's competition format (front 9,
   // back 9, and the 18 counted as three separate contests).
   document.querySelectorAll('#mode-chips .seg-chip').forEach(chip => {
@@ -2968,8 +2976,9 @@ async function renderCreateGame() {
         const rating = parseFloat(document.getElementById('game-course-rating').value);
         const slope = parseInt(document.getElementById('game-course-slope').value, 10);
         const par = parseInt(document.getElementById('game-course-par').value, 10);
+        const tee = document.getElementById('tee-chips')?.dataset.active || null;
         return rating && slope && par
-          ? { course: { name: document.getElementById('game-location').value.trim(), rating, slope, par } }
+          ? { course: { name: document.getElementById('game-location').value.trim(), rating, slope, par, tee } }
           : {};
       })(),
       groups: [[{ id: currentUser.id, name: displayUsername(currentUser), joinedAt: Date.now() }]],
@@ -3076,6 +3085,41 @@ function waitlistBannerText(pos, ahead) {
   if (l === 'en') return `You are #${pos} on the waitlist${ahead ? ` — ${ahead} ahead of you` : ''}`;
   if (l === 'kr') return `대기자 목록 ${pos}번째${ahead ? ` — 앞에 ${ahead}명` : ''}`;
   return `Та хүлээлгийн жагсаалтын ${pos}-р байранд${ahead ? ` — ${ahead} хүн таны өмнө байна` : ''}`;
+}
+
+// Tee chips for the course-info block: picking a tee off the club's card
+// fills rating/slope/par, so nobody types them by hand. Hand-editing an
+// input clears the active chip — the values are no longer that tee's.
+// Returns a render function so location changes can rebuild the chips.
+function wireTeeChips(containerId, getLocation, ratingId, slopeId, parId, initialTee) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return () => {};
+  if (initialTee) wrap.dataset.active = initialTee;
+  const render = () => {
+    const loc = getLocation();
+    const tees = courseTees(loc);
+    wrap.style.display = tees.length ? '' : 'none';
+    wrap.innerHTML = tees.map(tee => `
+      <button type="button" class="seg-chip ${wrap.dataset.active === tee.key ? 'active' : ''}" data-tee="${tee.key}"
+        style="flex:1 1 calc(33% - 6px);min-width:0;padding:8px 4px;font-size:0.78rem;line-height:1.25;">
+        ${tee.label}<br><span style="font-size:0.66rem;opacity:0.8;">${tee.rating}/${tee.slope}</span>
+      </button>`).join('');
+    wrap.querySelectorAll('button[data-tee]').forEach(b => b.onclick = () => {
+      const tee = courseTees(getLocation()).find(x => x.key === b.dataset.tee);
+      if (!tee) return;
+      wrap.dataset.active = tee.key;
+      document.getElementById(ratingId).value = tee.rating;
+      document.getElementById(slopeId).value = tee.slope;
+      const par = coursePar(getLocation());
+      if (par) document.getElementById(parId).value = par;
+      wrap.querySelectorAll('button[data-tee]').forEach(x => x.classList.toggle('active', x === b));
+    });
+  };
+  [ratingId, slopeId, parId].forEach(id => document.getElementById(id)?.addEventListener('input', () => {
+    delete wrap.dataset.active;
+    wrap.querySelectorAll('button[data-tee]').forEach(x => x.classList.remove('active'));
+  }));
+  return render;
 }
 
 // "(гишүүний үнэ)" / "(зочны үнэ)" suffix for a booking price, from the
@@ -4678,6 +4722,7 @@ async function renderEditGame(gameId) {
           </div>
           <div class="input-group">
             <label>${t('gsCourseInfo')}</label>
+            <div class="chip-row chip-wrap" id="edit-tee-chips" style="margin:6px 0 8px;"></div>
             <div style="display:flex; gap:8px;">
               <input type="number" id="edit-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" value="${game.course?.rating ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
               <input type="number" id="edit-course-slope" min="55" max="155" placeholder="${t('gsSlope')}" value="${game.course?.slope ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
@@ -4736,6 +4781,12 @@ async function renderEditGame(gameId) {
           </div>` : ''}
       </div>
     </div>`;
+
+  const renderEditTeeChips = wireTeeChips('edit-tee-chips',
+    () => document.getElementById('edit-location').value,
+    'edit-course-rating', 'edit-course-slope', 'edit-course-par', game.course?.tee);
+  renderEditTeeChips();
+  document.getElementById('edit-location').addEventListener('change', renderEditTeeChips);
 
   document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -4813,7 +4864,8 @@ async function renderEditGame(gameId) {
       const par = parseInt(document.getElementById('edit-course-par').value, 10);
       // null, not delete: saveGame writes with update(), and RTDB only clears
       // a key when it is explicitly null.
-      game.course = rating && slope && par ? { name: game.location, rating, slope, par } : null;
+      const tee = document.getElementById('edit-tee-chips')?.dataset.active || null;
+      game.course = rating && slope && par ? { name: game.location, rating, slope, par, tee } : null;
     }
 
     const changes = [];
