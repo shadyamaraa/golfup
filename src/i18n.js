@@ -88,7 +88,7 @@ const T = {
     mpApprove: 'Зөвшөөрөх', mpReject: 'Татгалзах', mpApproved: 'Зөвшөөрөгдлөө', mpRejected: 'Татгалзлаа',
     mpSubOn: 'Match дуусах бүрд мэдэгдэл очно', mpSubOff: 'Мэдэгдэл цуцлагдлаа',
     mpIssueDupMatch: 'нэг match дотор хоёр удаа орсон',
-    gsTitle: 'Онооны хуудас', gsLeaderboard: 'Онооны нэгтгэл', gsTotal: 'Нийт', gsNet: 'Цэвэр',
+    gsTitle: 'Онооны хуудас', gsLeaderboard: 'Онооны нэгтгэл', gsTotal: 'Нийт', gsNet: 'Нет',
     gsNoAccess: 'Танд энэ группын оноо оруулах эрх алга.', gsGameNotFound: 'Тоглолт олдсонгүй',
     gsCourseInfo: 'Талбайн мэдээлэл (handicap)', gsCourseRating: 'Rating', gsSlope: 'Slope', gsPar: 'Пар',
     gsHcpPrompt: 'Handicap (0-54) оруулна уу — хоосон бол арилгана',

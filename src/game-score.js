@@ -106,10 +106,13 @@ export function gameScoreLine(game, playerId, hcp) {
       received += si ? strokesReceived(hcp, si) : hcp / holeCount;
     }
   }
+  const toPar = thru && parHoles === thru ? total - parSum : null;
+  const net = thru && typeof hcp === 'number' ? total - Math.round(received) : null;
   return {
-    total, thru,
-    toPar: thru && parHoles === thru ? total - parSum : null,
-    net: thru && typeof hcp === 'number' ? total - Math.round(received) : null,
+    total, thru, toPar, net,
+    // Net against par — what golfers actually read ("Нет +2"), only possible
+    // where every entered hole has a known par.
+    netToPar: toPar !== null && net !== null ? net - parSum : null,
   };
 }
 
@@ -139,7 +142,7 @@ function totalsLineText(game, pid, hcp) {
   if (!line.thru) return '—';
   let s = `${t('gsTotal')} ${line.total}`;
   if (line.toPar !== null) s += ` (${fmtToPar(line.toPar)})`;
-  if (line.net !== null) s += ` · ${t('gsNet')} ${line.net}`;
+  if (line.net !== null) s += ` · ${t('gsNet')} ${line.netToPar !== null ? fmtToPar(line.netToPar) : line.net}`;
   return s + ` · ${t('mpThru')} ${line.thru}`;
 }
 
