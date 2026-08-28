@@ -192,29 +192,38 @@ point.
 
 Score writes are enforced per DEVICE. Every browser silently signs in to
 Firebase anonymously and gets a stable uid; the database rules only accept
-writes under `tournaments/` from uids listed in `mpDevices`. Nothing about the
-app's own member sign-in changes.
+writes under `tournaments/` from uids registered in `mpDevices`. Nothing
+about the app's own member sign-in changes.
 
-Turning it on (one-time):
+**Registration is automatic.** A logged-in member's browser registers itself
+in `mpDevices` with a role derived from their member role, and the rules
+verify the claimed member's role in `users/` before accepting it — nobody
+files requests any more:
 
-1. Firebase console → Authentication → Sign-in method → enable **Anonymous**.
-2. `firebase deploy --only database` (the rules in `database.rules.json`).
-3. Open Admin → Тэмцээн. The "Оноо бичих төхөөрөмжүүд" card appears; while
-   the registry is empty, press **"Энэ төхөөрөмжийг админ болгох"** — the
-   first claim bootstraps as admin. Do this from your own device first.
-4. Each scorer opens their match's scoring screen, sees the "not approved"
-   banner, and taps **"Эрх хүсэх"**. Their request appears in the admin card;
-   approve it. From then on their taps save.
+| Member role (`users/{id}/role`) | Device role | May write |
+|---|---|---|
+| `admin` | `admin` | everything under `tournaments/$id` — create, edit, delete |
+| `marshal` | `scorer` | only `tournaments/$id/mp/**` — scores, rosters, matches, sessions |
+| `user` | `player` | only matches they play in or are assigned to score (`scorerIds`, `players`) |
+
+A device an admin approved by hand at a higher tier keeps that grant — the
+automatic registration never downgrades. The old **"Эрх хүсэх"** request →
+approve flow remains as the fallback for a device that cannot self-register
+(not signed in as a member). Bootstrap while the registry is empty is
+unchanged: the first claim becomes admin.
+
+One-time setup remains: enable **Anonymous** sign-in in the Firebase console
+and `firebase deploy --only database`.
 
 Notes:
 
-- A device, not a person: clearing browser data issues a new uid, so that
-  phone must be re-approved. Approve the crew's phones the morning of play.
-- Approval is coarse — an approved device may write any tournament. WHICH
-  member may score WHICH match remains a UI-level check (the app's own
-  sign-in carries no Firebase identity a rule could read); the audit trail
-  records who the app believed was scoring. Finer enforcement is part of the
-  full Firebase Auth migration, a wider decision than this feature.
+- A device, not a person: clearing browser data issues a new uid — but the
+  next app load re-registers it automatically, so there is nothing to
+  re-approve.
+- The role check anchors on `users/{id}/role`, which today is writable like
+  the rest of the app's data — this is honest-club-level protection, not
+  hostile-attacker protection. Hard enforcement is part of the full
+  Firebase Auth migration, a wider decision than this feature.
 - The last admin device cannot be removed from the card, so the registry
   cannot lock itself out. If it ever does (console mishap), delete the
   `mpDevices` node in the Firebase console and bootstrap again.

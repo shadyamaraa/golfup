@@ -14,11 +14,34 @@
     "sponsor": { ".read": true, ".write": true },
     "tournaments": {
       ".read": true,
-      ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists()"
+      "$tnId": {
+        ".write": "auth != null && root.child('mpDevices').child(auth.uid).child('role').val() === 'admin'",
+        "sp": {
+          ".write": "auth != null && root.child('mpDevices').child(auth.uid).child('role').val() === 'scorer'",
+          "audit": {
+            ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists()"
+          },
+          "scores": {
+            "$pid": {
+              ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists() && (root.child('mpDevices').child(auth.uid).child('userId').val() === $pid || root.child('tournaments').child($tnId).child('sp').child('players').child($pid).child('userId').val() === root.child('mpDevices').child(auth.uid).child('userId').val())"
+            }
+          }
+        },
+        "mp": {
+          ".write": "auth != null && root.child('mpDevices').child(auth.uid).child('role').val() === 'scorer'",
+          "matches": {
+            "$mid": {
+              ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists() && (data.child('scorerIds').child(root.child('mpDevices').child(auth.uid).child('userId').val()).exists() || data.child('players').child('a').child('0').val() === root.child('mpDevices').child(auth.uid).child('userId').val() || data.child('players').child('a').child('1').val() === root.child('mpDevices').child(auth.uid).child('userId').val() || data.child('players').child('b').child('0').val() === root.child('mpDevices').child(auth.uid).child('userId').val() || data.child('players').child('b').child('1').val() === root.child('mpDevices').child(auth.uid).child('userId').val())"
+            }
+          }
+        }
+      }
     },
     "mpDevices": {
       ".read": true,
-      ".write": "auth != null && (!root.child('mpDevices').exists() || root.child('mpDevices').child(auth.uid).child('role').val() === 'admin')"
+      "$uid": {
+        ".write": "auth != null && (!root.child('mpDevices').exists() || root.child('mpDevices').child(auth.uid).child('role').val() === 'admin' || (auth.uid === $uid && newData.exists() && newData.child('userId').isString() && ((newData.child('role').val() === 'admin' && root.child('users').child(newData.child('userId').val()).child('role').val() === 'admin') || (newData.child('role').val() === 'scorer' && (root.child('users').child(newData.child('userId').val()).child('role').val() === 'marshal' || root.child('users').child(newData.child('userId').val()).child('role').val() === 'admin')) || (newData.child('role').val() === 'player' && root.child('users').child(newData.child('userId').val()).exists()))))"
+      }
     },
     "tnSubs": { ".read": true, ".write": true },
     "mpDeviceRequests": {

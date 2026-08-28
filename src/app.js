@@ -7,6 +7,9 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp } from './strokeplay.js';
+import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
+import { renderSpScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar } from './courses.js';
@@ -81,8 +84,7 @@ function displayUsername(user) {
 
 function displayFullName(user) {
   if (!user) return '-';
-  if (user.lastName || user.firstName) return esc([user.lastName, user.firstName].filter(Boolean).join(' '));
-  return esc(user.fullName || user.name || '-');
+  return esc(store.memberName(user) || '-');
 }
 
 function needsProfileCompletion(user) {
@@ -341,6 +343,10 @@ export async function router() {
     }
 
     currentUser = store.getUser();
+    // Register this browser for the member's tournament rights (admin →
+    // full, marshal → scores and mp edits, member → own matches). Memoized
+    // in the store, so per-route this is a no-op.
+    if (currentUser) store.ensureDeviceAccess(currentUser);
     if (currentUser && followsLoadedForUser !== currentUser.id) {
       const [follows, followerIds] = await Promise.all([
         store.loadFollows(currentUser.id),
@@ -393,6 +399,16 @@ export async function router() {
         // nothing is written, and the demo resets on reload.
         demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
       });
+    }
+    else if (hash.startsWith('#/spscore/')) {
+      const [tnId, pid] = hash.split('#/spscore/')[1].split('/');
+      // Local mode has no live listener; hand the screen the loaded record.
+      const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
+      const off = renderSpScorer(main(), tnId, pid, {
+        user: currentUser, showToast, tn: tnOnce,
+        backHash: `#/tournament/${tnId}`
+      });
+      activeUnsubs.push(off);
     }
     else if (hash.startsWith('#/gscore/')) {
       const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
@@ -696,6 +712,7 @@ function renderAuth() {
       // Success
       currentUser = user;
       store.saveUser(user);
+      store.ensureDeviceAccess(user);
       initFCM(user);
       showToast(t('welcome') + ' ' + user.name + '!', 'success');
       location.hash = pendingAuthRedirect || '#/';
@@ -1015,7 +1032,7 @@ function tnDemoAllowed() {
 function tnDemo() {
   if (!currentUser) return TN_DEMO;
   const seat = 9;
-  const name = [currentUser.lastName, currentUser.firstName].filter(Boolean).join(' ')
+  const name = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ')
     || currentUser.fullName || currentUser.name || currentUser.username;
   const entries = TN_DEMO.entries.map((e, i) => i === seat
     ? { ...e, name: name || e.name, userId: currentUser.id }
@@ -1084,9 +1101,12 @@ function tnStateLabel(tn) {
 // be checked against a hand-made result sheet without a browser. Here it only
 // gains the movement arrows, which need the rendered list.
 function tnRanked(tn) {
-  return tnWithDeltas(tsheet.rankEntries(tn?.entries, {
-    cutAfterRound: tn?.cutAfterRound,
-    cutSize: tn?.cutSize
+  // In-app scoring recomputes its entries from tn.sp on every call; a
+  // legacy record ranks its stored snapshot.
+  const b = tnForBoard(tn);
+  return tnWithDeltas(tsheet.rankEntries(b?.entries, {
+    cutAfterRound: b?.cutAfterRound,
+    cutSize: b?.cutSize
   }));
 }
 
@@ -1095,7 +1115,7 @@ function tnRanked(tn) {
 // yet, so nobody has to remember to bump it each morning — the board can never
 // read "R1" while round three is on the course.
 function tnActiveRound(tn) {
-  return tsheet.activeRound(tn?.entries, tn?.currentRound);
+  return tsheet.activeRound(tnForBoard(tn)?.entries, tn?.currentRound);
 }
 
 // Movement since the previous round. Every entry carries a per-round score, so
@@ -1141,68 +1161,25 @@ function tnDeltaHTML(e) {
   return `<span class="rk-delta rk-same">–</span>`;
 }
 
-// ---- Linked Google Sheet as the live source ----
-// The sheet stays the source of truth: the browser reads its published CSV
-// directly. One short-lived cache serves the strip and the leaderboard page so
-// they never double-fetch, and any failure falls back to the stored snapshot.
-const TN_SHEET_TTL_MS = 45000;
-const tnSheetCache = new Map();
+// ---- The board's entries ----
+// Scores live in the app now (tn.sp — see src/strokeplay.js); the Google
+// Sheet / Excel import era is over. A legacy record that still carries
+// sheet-era entries keeps displaying them as a static snapshot.
 // Last tournament list the strip was built from, and the member it was built
 // for — a rebuild on sign-in reuses the list instead of re-reading it.
 let tnListCache = null;
 let tnStripFor;
 
-function tnEntryFromSheet(e) {
-  return {
-    name: e.name,
-    total: e.total,
-    thru: e.thru || '',
-    status: e.status || '',
-    rounds: e.rounds,
-    gross: e.gross
-  };
-}
+// Which metric the stroke board ranks by. Gross is the default; the toggle
+// only appears once somebody has an HCP.
+let tnSpMetric = 'gross';
 
-// Which tab to ask for. A link that carries a gid already names its tab, and
-// that link is the most recent thing the admin pointed at, so it wins — the tab
-// field is for links without one. Without this rule a tab name saved by an
-// earlier sync keeps hijacking a freshly pasted link, and clearing the field by
-// hand does not stick: any page still holding the old record writes it back.
-function tnSheetTabFor(tn) {
-  if (!tn?.sheetTab) return undefined;
-  return tsheet.parseSheetUrl(tn.sheetUrl)?.gid ? undefined : tn.sheetTab;
-}
-
-async function tnLoadSheet(tn, { force = false } = {}) {
-  if (!tn?.sheetUrl) return null;
-  const hit = tnSheetCache.get(tn.id);
-  if (!force && hit && Date.now() - hit.at < TN_SHEET_TTL_MS) return hit;
-  let rec;
-  try {
-    const res = await tsheet.fetchSheet(tn.sheetUrl, {
-      sheet: tnSheetTabFor(tn),
-      par: tn.par || undefined
-    });
-    rec = { at: Date.now(), ok: res.ok, entries: res.entries.map(tnEntryFromSheet), rounds: res.rounds, error: null };
-  } catch (err) {
-    rec = { at: Date.now(), ok: false, entries: [], rounds: 0, error: err?.message || 'fetch failed' };
-  }
-  tnSheetCache.set(tn.id, rec);
-  return rec;
-}
-
-// Overlay the live sheet on the stored record. Sharing revoked, offline phone,
-// Google having a bad day — all land on the last saved snapshot instead of an
-// empty board.
-async function tnWithLiveEntries(tn) {
-  if (!tn?.sheetUrl) return tn;
-  // An uploaded file is a deliberate override: without this the linked sheet
-  // would silently win on every render and the upload would look like it did
-  // nothing. Syncing switches the source back.
-  if (tn.entriesSource === 'file') return tn;
-  const rec = await tnLoadSheet(tn);
-  if (!rec?.ok || !rec.entries.length) return tn;
-  return { ...tn, entries: rec.entries, rounds: tn.rounds || rec.rounds, sheetAt: rec.at };
+// The record the board renders: in-app scoring computes its entries from the
+// per-hole truth on every paint; anything else shows its stored snapshot.
+function tnForBoard(tn) {
+  if (!spActive(tn)) return tn;
+  const metric = tnSpMetric === 'net' && spHasHcp(tn) ? 'net' : 'gross';
+  return { ...tn, entries: spEntries(tn, metric) };
 }
 
 // ---- Matching a leaderboard name to a member ----
@@ -1307,17 +1284,9 @@ async function renderTournamentStrip(list) {
     return;
   }
 
-  // Paint from the stored snapshot at once, then upgrade when the linked sheet
-  // answers. Awaiting the fetch first left the strip blank for as long as the
-  // network took to fail — the worst place to stall is the top of home during
-  // a live round on venue wifi.
-  paintTournamentStrip(host, tn);
-  if (tn.sheetUrl && tn.entriesSource !== 'file') {
-    const rec = await tnLoadSheet(tn);
-    if (rec?.ok && rec.entries.length) {
-      paintTournamentStrip(host, { ...tn, entries: rec.entries, sheetAt: rec.at });
-    }
-  }
+  // In-app scoring derives the strip's entries from the stored per-hole
+  // truth — no fetch, nothing to wait for.
+  paintTournamentStrip(host, tnForBoard(tn));
 }
 
 function paintTournamentStrip(host, tn) {
@@ -1538,7 +1507,7 @@ async function renderTournamentPage(id) {
   tnPageTab = isMatchPlay(tn) ? 'match' : 'board';
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
-  paintTournamentPage(await tnWithLiveEntries(tn));
+  paintTournamentPage(tn);
 
   // Repaint the list alone while a search is in progress, so an incoming score
   // never steals the caret. The tab bar is built by paintTournamentPage, so a
@@ -1552,28 +1521,14 @@ async function renderTournamentPage(id) {
   };
 
   if (store.isUsingFirebase() && tn.id !== TN_DEMO.id && tn.id !== MP_DEMO_ID) {
+    // Every score — a match play hole or a stroke card stroke — lands on the
+    // tournament record, so this one listener is the whole live feed.
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
       if (!fresh || fresh.status === 'deleted') return;
-      // Meta edits must not roll the board back to the stored snapshot when a
-      // newer sheet read is already in hand.
-      const cached = tnSheetCache.get(fresh.id);
-      tnPageData = (cached?.ok && cached.entries.length)
-        ? { ...fresh, entries: cached.entries }
-        : fresh;
+      tnPageData = fresh;
       repaint();
     });
     if (unsub) activeUnsubs.push(unsub);
-  }
-
-  // A linked sheet has no change feed, so poll it while play is under way.
-  if (tn.sheetUrl && tnStatus(tn) === 'live') {
-    const timer = setInterval(async () => {
-      const rec = await tnLoadSheet(tnPageData, { force: true });
-      if (!rec?.ok || !rec.entries.length) return;
-      tnPageData = { ...tnPageData, entries: rec.entries, sheetAt: rec.at };
-      repaint();
-    }, 60000);
-    activeUnsubs.push(() => clearInterval(timer));
   }
 }
 
@@ -1742,7 +1697,10 @@ function renderTnBoard() {
     renderMatchCenter(host, tn, {
       showModal: showMatchModal,
       refreshModal: refreshMatchModal,
-      // Players in a match get their "enter score" shortcut on its card.
+      // Whoever may score — a fielded player, an assigned scorer, an
+      // admin/marshal — gets the "enter score" shortcut on the card and in
+      // the detail; the full user carries the role that decides it.
+      user: currentUser || null,
       userId: currentUser?.id || null
     });
     // Below the board: the notification toggle (members only — a push needs
@@ -1771,8 +1729,24 @@ function renderTnBoard() {
   }
 
   const me = ranked.find(tnIsMe);
+  // A member playing in an in-app-scored tournament gets a straight path to
+  // their own card; the board itself is everyone's.
+  const myPid = spActive(tn) && currentUser
+    ? Object.keys(tn.sp.players).find(pid =>
+      pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id)
+    : null;
 
   host.innerHTML = `
+    ${spActive(tn) && spHasHcp(tn) ? `
+      <div class="seg-tabs" style="margin-bottom:10px;">
+        <button class="seg-tab${tnSpMetric !== 'net' ? ' active' : ''}" data-sp-metric="gross">${t('spGross')}</button>
+        <button class="seg-tab${tnSpMetric === 'net' ? ' active' : ''}" data-sp-metric="net">${t('spNet')}</button>
+      </div>` : ''}
+    ${myPid ? `
+      <a href="#/spscore/${esc(tn.id)}/${esc(myPid)}" class="btn btn-primary btn-sm"
+         style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
+        ⛳ ${t('mpEnterScore')}
+      </a>` : ''}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
@@ -1801,6 +1775,10 @@ function renderTnBoard() {
     tnPageQuery = input.value;
     tnPageLimit = TN_PAGE_SIZE;
     renderTnList();
+  });
+  host.querySelectorAll('[data-sp-metric]').forEach(b => b.onclick = () => {
+    tnSpMetric = b.dataset.spMetric;
+    renderTnBoard();
   });
   renderTnList();
 }
@@ -2938,7 +2916,7 @@ async function renderCreateGame() {
       const submitBtn = document.getElementById('create-submit-btn');
       submitBtn.textContent = t('bookingInProgress');
       try {
-        const playerName = currentUser.fullName || displayUsername(currentUser);
+        const playerName = store.memberName(currentUser) || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
@@ -3555,7 +3533,12 @@ function showMatchModal(title, bodyHTML, matchId) {
     </div>`;
   document.body.appendChild(modal);
   modal.querySelector('[data-close]').onclick = () => modal.remove();
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.remove();
+    // The detail's score-entry link navigates away — the overlay must not
+    // stay parked on top of the scorer screen.
+    if (e.target.closest?.('a[data-mpv-go]')) modal.remove();
+  });
 }
 
 // Re-render an open match modal from the latest data. `render(matchId)`
@@ -3884,8 +3867,8 @@ async function renderAdminPanel() {
             </button>
             <form id="create-user-form" style="display:none; gap:10px; flex-wrap: wrap; margin-top:14px;">
               <input type="text" id="new-user-name" placeholder="${t('usernameLabel')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-              <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-firstname" placeholder="${t('firstName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-ghin" placeholder="${t('ghinNumber')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-memberid" placeholder="${t('ubgolfMemberId')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
@@ -4197,7 +4180,7 @@ async function renderAdminPanel() {
 
     await store.adminCreateUser(name, pass, phone, 'user', communities, {
       lastName, firstName,
-      fullName: [lastName, firstName].filter(Boolean).join(' '),
+      fullName: [firstName, lastName].filter(Boolean).join(' '),
       ghinNumber, ubgolfMemberId,
     });
     showToast(t('userCreated'), 'success');
@@ -4327,12 +4310,12 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
         <div class="input-group">
-          <label>Овог</label>
-          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
-        </div>
-        <div class="input-group">
           <label>Нэр</label>
           <input type="text" id="ae-firstname" value="${user.firstName || ''}" placeholder="Нэр" />
+        </div>
+        <div class="input-group">
+          <label>Овог</label>
+          <input type="text" id="ae-lastname" value="${user.lastName || ''}" placeholder="Овог" />
         </div>
         <div class="input-group">
           <label>${t('ghinNumber')}</label>
@@ -4424,7 +4407,7 @@ function showAdminEditUserModal(user, onSaved) {
     user.username = username;
     user.lastName = lastName;
     user.firstName = firstName;
-    user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
+    user.fullName = [firstName, lastName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
     const ghinNumber = document.getElementById('ae-ghin').value.replace(/\D/g, '');
     if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) { showToast(t('gsGhinInvalid'), 'error'); return; }
@@ -5061,7 +5044,7 @@ async function handleBookTeeTime(game) {
     confirmBtn.textContent = t('bookLoading');
     const errEl = document.getElementById('bt-error');
     try {
-      const playerName = currentUser.fullName || displayUsername(currentUser);
+      const playerName = store.memberName(currentUser) || displayUsername(currentUser);
       const hold = await mtbogd.createHold(btSlot.slotId, groupSize, btHoles);
       const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
       const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '', ...(currentUser.mtbogdCode ? { clubCode: currentUser.mtbogdCode } : {}) }, playerList);
@@ -5776,12 +5759,12 @@ function profileFormInner(user) {
 
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
         <div class="input-group">
-          <label>${t('lastName')} *</label>
-          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="${t('lastName')}" />
-        </div>
-        <div class="input-group">
           <label>${t('firstName')} *</label>
           <input type="text" id="profile-firstname-input" value="${user.firstName || ''}" required minlength="1" placeholder="${t('firstName')}" />
+        </div>
+        <div class="input-group">
+          <label>${t('lastName')} *</label>
+          <input type="text" id="profile-lastname-input" value="${user.lastName || ''}" required minlength="1" placeholder="${t('lastName')}" />
         </div>
       </div>
 
@@ -5890,7 +5873,7 @@ function wireProfileForm(scope, user, afterSave) {
     user.username = newUsername;
     user.lastName = newLastName;
     user.firstName = newFirstName;
-    user.fullName = newLastName + ' ' + newFirstName;
+    user.fullName = [newFirstName, newLastName].filter(Boolean).join(' ');
     user.name = newUsername;
     user.avatar = selectedAvatar;
     if (newPass && newPass.length >= 1) user.password = newPass;
@@ -7516,79 +7499,14 @@ function tnAdminError(err) {
   showToast('⚠️ ' + (/permission[_ ]denied/i.test(msg) ? t('tnErrRules') : (msg || t('tnErrSave'))), 'error');
 }
 
-// Read a tournament sheet out of an uploaded workbook. A live-scoring file
-// carries setup, instructions and broadcast-output tabs alongside the scores,
-// so every sheet is analyzed and the one yielding the most players wins.
-async function parseTournamentFile(file, par) {
-  const fname = (file.name || '').toLowerCase();
-  if (fname.endsWith('.csv')) {
-    return { ...tsheet.analyzeSheet(tsheet.parseCsv(await file.text()), { par }), sheet: null };
-  }
-  const XLSX = await import('xlsx');
-  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  let best = null;
-  for (const name of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' })
-      .map(r => r.map(c => String(c ?? '').trim()));
-    const res = tsheet.analyzeSheet(rows, { par });
-    if (res.ok && (!best || res.entries.length > best.res.entries.length)) best = { name, res };
-  }
-  return best ? { ...best.res, sheet: best.name } : { ok: false, entries: [], rounds: 0, warnings: ['no-rows'], columns: null, sheet: null };
-}
-
-// What the importer understood, in the admin's words — the point is that a bad
-// mapping is visible BEFORE it reaches the leaderboard.
-function tnAnalysisHTML(a) {
-  if (!a) return '';
-  const cols = a.columns || {};
-  // Records written before columns carried labels stored plain booleans.
-  const col = (v) => (typeof v === 'string' && v ? v : null);
-  // A title row merged into the header makes for a very long label, and the
-  // part that matched sits at its end — so keep the tail.
-  const short = (s) => (s.length > 30 ? '…' + s.slice(-29) : s);
-  const rounds = (list, suffix) => (Array.isArray(list) ? list : [])
-    .filter(r => r && r.column)
-    .map(r => [`${t('tnRoundShort')}${r.round} ${suffix}`, r.column]);
-
-  const map = [
-    [t('tnPlayer'), col(cols.name)],
-    [t('tnTotal'), col(cols.toPar)],
-    [t('tnColGross'), col(cols.gross)],
-    [t('tnThru'), col(cols.thru)],
-    [t('tnPos'), col(cols.position)],
-    [t('tnColStatus'), col(cols.status)],
-    ...rounds(cols.roundToPar, t('tnTotal')),
-    ...rounds(cols.roundGross, t('tnColGross'))
-  ].filter(([, v]) => v);
-
-  const warn = {
-    'no-to-par-column': t('tnWarnNoToPar'),
-    'no-player-column': t('tnWarnNoPlayer'),
-    'no-rows': t('tnWarnNoRows'),
-    'no-scores-found': t('tnWarnNoScores')
-  };
-
-  return `
-    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:10px;font-size:0.8rem;">
-      <div><b>${a.count ?? a.entries?.length ?? 0}</b> ${t('tnPlayers')} · <b>${a.rounds || 1}</b> ${t('tnRounds')}${a.sheet ? ` · ${esc(a.sheet)}` : ''}</div>
-      ${map.length ? `
-        <div style="color:var(--text-secondary);margin-top:7px;font-size:0.74rem;font-weight:700;">${t('tnColsFound')}${cols.headerRow ? ` · ${t('tnHeaderRow')} ${cols.headerRow}` : ''}</div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin-top:4px;font-size:0.76rem;">
-          ${map.map(([field, column]) => `
-            <span style="color:var(--text-secondary);white-space:nowrap;">${esc(field)}</span>
-            <span style="color:var(--text-primary);font-weight:600;">← ${esc(short(column))}</span>
-          `).join('')}
-        </div>` : ''}
-      ${(a.warnings || []).map(w => warn[w] ? `<div style="color:var(--amber);margin-top:6px;">⚠ ${warn[w]}</div>` : '').join('')}
-    </div>`;
-}
-
 // The row editor's field set. Match play never sees the stroke play
-// questions — PAR, rounds, the cut and the scoring sheet mean nothing where
-// only hole winners score and sessions replace rounds.
+// questions — PAR, rounds and the cut mean nothing where only hole winners
+// score and sessions replace rounds. Stroke play's fixed values are picks,
+// not typed numbers: a course fills PAR, rounds and the cut are dropdowns.
 function tnAdminFormHTML(p, tn = {}) {
-  const sel = (v, cur) => v === cur ? ' selected' : '';
+  const sel = (v, cur) => String(v) === String(cur ?? '') ? ' selected' : '';
   const isMatch = tnKind(tn) !== 'stroke';
+  const rounds = Number(tn.rounds) || 1;
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
       <input id="${p}-name" type="text" placeholder="${t('tnFName')} *" value="${esc(tn.name || '')}" style="${TN_INPUT}" />
@@ -7597,10 +7515,21 @@ function tnAdminFormHTML(p, tn = {}) {
       <input id="${p}-start" type="date" value="${esc(tn.startDate || '')}" style="${TN_INPUT}" />
       <input id="${p}-end" type="date" value="${esc(tn.endDate || '')}" style="${TN_INPUT}" />
       ${isMatch ? '' : `
-        <input id="${p}-rounds" type="number" min="1" max="8" placeholder="${t('tnFRounds')}" value="${tn.rounds || ''}" style="${TN_INPUT}" />
-        <input id="${p}-round-now" type="number" min="1" max="8" placeholder="${t('tnFCurrentRound')}" value="${tn.currentRound || ''}" style="${TN_INPUT}" />
+        <select id="${p}-course" title="${t('spCourse')}" style="${TN_INPUT}">
+          ${COURSES.map(c => `<option value="${c.key}"${sel(c.key, tn.course)}>${esc(c.name)} · PAR ${c.par}</option>`).join('')}
+          <option value=""${sel('', tn.course)}>${t('spCourseCustom')}</option>
+        </select>
         <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
-        <input id="${p}-cut-after" type="number" min="1" max="8" placeholder="${t('tnFCutAfter')}" value="${tn.cutAfterRound || ''}" style="${TN_INPUT}" />
+        <select id="${p}-rounds" title="${t('tnFRounds')}" style="${TN_INPUT}">
+          ${[1, 2, 3, 4].map(n => `<option value="${n}"${sel(n, rounds)}>${t('tnFRounds')}: ${n}</option>`).join('')}
+        </select>
+        <select id="${p}-round-now" title="${t('tnFCurrentRound')}" style="${TN_INPUT}">
+          ${Array.from({ length: rounds }, (_, i) => `<option value="${i + 1}"${sel(i + 1, tn.currentRound || 1)}>${t('tnFCurrentRound')}: R${i + 1}</option>`).join('')}
+        </select>
+        <select id="${p}-cut-after" title="${t('tnFCutAfter')}" style="${TN_INPUT}">
+          <option value=""${sel('', tn.cutAfterRound ?? '')}>${t('spCutNone')}</option>
+          ${Array.from({ length: Math.max(0, rounds - 1) }, (_, i) => `<option value="${i + 1}"${sel(i + 1, tn.cutAfterRound)}>R${i + 1} ${t('spCutAfterR')}</option>`).join('')}
+        </select>
         <input id="${p}-cut-size" type="number" min="1" max="500" placeholder="${t('tnFCutSize')}" value="${tn.cutSize || ''}" style="${TN_INPUT}" />`}
       <select id="${p}-format" style="${TN_INPUT}">
         <option value=""${sel('', tn.format || '')}>${t('gameFormat')}</option>
@@ -7615,13 +7544,7 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value="live"${sel('live', tn.status)}>${t('tnLive')}</option>
         <option value="final"${sel('final', tn.status)}>${t('tnFinal')}</option>
       </select>
-    </div>
-    ${isMatch ? '' : `
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:8px;">
-        <input id="${p}-sheet" type="url" placeholder="${t('tnFSheetUrl')}" value="${esc(tn.sheetUrl || '')}" style="${TN_INPUT}" />
-        <input id="${p}-tab" type="text" placeholder="${t('tnFSheetTab')}" value="${esc(tn.sheetTab || '')}" style="${TN_INPUT}" />
-      </div>
-      <p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('tnFSheetHint')}</p>`}`;
+    </div>`;
 }
 
 function tnAdminReadForm(p) {
@@ -7633,52 +7556,15 @@ function tnAdminReadForm(p) {
     city: val('city'),
     startDate: val('start'),
     endDate: val('end'),
+    course: val('course'),
     rounds: num('rounds'),
     currentRound: num('round-now'),
     par: num('par'),
     format: val('format'),
     status: val('status'),
-    sheetUrl: val('sheet'),
-    sheetTab: val('tab'),
     cutAfterRound: num('cut-after'),
     cutSize: num('cut-size')
   };
-}
-
-// Pull the linked sheet and store what came back. The stored copy is the
-// fallback the app shows when Google is unreachable; the live read still goes
-// straight to the sheet.
-async function tnAdminSync(tn, { silent = false } = {}) {
-  if (!tn.sheetUrl) { showToast(t('tnNoSheet'), 'warning'); return null; }
-  if (!silent) showToast(t('tnSyncing'), 'info');
-  let res;
-  try {
-    res = await tsheet.fetchSheet(tn.sheetUrl, { sheet: tnSheetTabFor(tn), par: tn.par || undefined });
-  } catch (err) {
-    showToast('⚠️ ' + t('tnSyncFailed') + ' — ' + (err?.message || ''), 'error');
-    return null;
-  }
-  if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return null; }
-  try {
-    await store.saveTournament({
-      ...tn,
-      entries: res.entries.map(tnEntryFromSheet),
-      rounds: tn.rounds || res.rounds,
-      entriesSource: 'sheet',
-      // A link with a gid steers itself, so any tab name is dropped here rather
-      // than carried forward — that is how a 4-day tab kept being read as the
-      // 2-day one. Without a gid the tab that answered is kept, so a typo in
-      // the field corrects itself on the first sync.
-      sheetTab: tsheet.parseSheetUrl(tn.sheetUrl)?.gid ? '' : (res.sheet || ''),
-      lastSync: {
-        at: Date.now(), count: res.entries.length, rounds: res.rounds,
-        warnings: res.warnings, columns: res.columns, sheet: res.sheet || null, source: 'sheet'
-      }
-    });
-  } catch (err) { tnAdminError(err); return null; }
-  tnSheetCache.delete(tn.id);
-  showToast('✅ ' + t('tnSynced') + ` (${res.entries.length})`, 'success');
-  return res;
 }
 
 async function renderAdminTournamentsTab() {
@@ -7702,9 +7588,9 @@ async function renderAdminTournamentsTab() {
   const rowHTML = (tn) => {
     const open = adminOpenTn === tn.id;
     const state = tnStatus(tn);
-    const count = (tn.entries || []).length;
-    const fileWins = tn.entriesSource === 'file';
-    const src = fileWins ? t('tnSrcFile') : (tn.sheetUrl ? t('tnSrcSheet') : t('tnSrcNone'));
+    const count = spActive(tn)
+      ? Object.keys(tn.sp.players).length
+      : (tn.entries || []).length;
     return `
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -7717,26 +7603,20 @@ async function renderAdminTournamentsTab() {
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">
           ${esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '))}
         </div>
-        ${tnKind(tn) !== 'stroke' ? '' : `
-          <div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px;">
-            ${t('tnSource')}: ${esc(src)}${tn.lastSync?.at ? ` · ${timeAgo(tn.lastSync.at)}` : ''}
-            ${fileWins && tn.sheetUrl ? `<div style="color:var(--amber);margin-top:3px;">${t('tnFileOverridesSheet')}</div>` : ''}
-          </div>`}
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
           <button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-sm tn-adm-toggle" data-tn="${esc(tn.id)}" style="gap:5px;">
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
-          ${tnKind(tn) === 'stroke' && tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
-          ${tnKind(tn) !== 'stroke' ? '' : `<button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>`}
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
-        ${tn.lastSync && tnKind(tn) === 'stroke' ? tnAnalysisHTML(tn.lastSync) : ''}
         ${open ? `
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
             <div id="tn-e-${esc(tn.id)}-formwrap">${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}</div>
             <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
-            ${tnKind(tn) !== 'stroke' ? `<div id="mp-adm-${esc(tn.id)}"></div>` : ''}
+            ${tnKind(tn) !== 'stroke'
+              ? `<div id="mp-adm-${esc(tn.id)}"></div>`
+              : `<div id="sp-adm-${esc(tn.id)}"></div>`}
           </div>` : ''}
       </div>`;
   };
@@ -7753,8 +7633,7 @@ async function renderAdminTournamentsTab() {
     </div>
     ${list.length === 0
       ? `<p style="color:var(--text-secondary);">${t('tnAdminEmpty')}</p>`
-      : list.map(rowHTML).join('')}
-    <input type="file" id="tn-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />`;
+      : list.map(rowHTML).join('')}`;
 
   // Create — the Squabbit-style wizard: pick the type early, and only that
   // type's questions follow. Its draft lives in the module, so toggling or
@@ -7762,12 +7641,11 @@ async function renderAdminTournamentsTab() {
   const form = document.getElementById('tn-create-form');
   mountTnWizard(form, {
     showToast,
-    onCreated: async (id, data) => {
-      // A link given at creation time is only useful once it has been read.
-      if (id && data.sheetUrl) await tnAdminSync({ ...data, id }, { silent: true });
-      // A match play tournament is set up in its editor (roster, sessions,
-      // pairings), so a fresh one opens straight into it.
-      adminOpenTn = data.format === 'match' || data.format === 'ryder' ? id : null;
+    onCreated: async (id) => {
+      // Every format finishes its setup in the editor now — match play its
+      // rosters and pairings, stroke play its player list and HCPs — so a
+      // fresh tournament opens straight into it.
+      adminOpenTn = id || null;
       await renderAdminTournamentsTab();
     }
   });
@@ -7781,10 +7659,10 @@ async function renderAdminTournamentsTab() {
   // Both the row's name and its Засах button open the same editor.
   el.querySelectorAll('.tn-adm-toggle').forEach(b => b.onclick = async () => {
     const id = b.dataset.tn;
-    // Closing the editor drops any unsaved match play draft. Keeping it would
+    // Closing the editor drops any unsaved setup draft. Keeping it would
     // let an hour-old snapshot sit around and then overwrite newer work the
     // next time somebody opened that tournament and pressed Save.
-    if (adminOpenTn === id) discardMpDraft(id);
+    if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); }
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
     // The form renders below the row's actions, which on a long list can land
@@ -7800,16 +7678,11 @@ async function renderAdminTournamentsTab() {
     const data = tnAdminReadForm(`tn-e-${tn.id}`);
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
     // Partial update on purpose: a whole-record set would silently overwrite
-    // whatever a match play scorer wrote under mp/ while this form was open.
+    // whatever a scorer wrote under mp/ or sp/ while this form was open.
     try { await store.updateTournament(tn.id, data); }
     catch (err) { tnAdminError(err); return; }
-    tnSheetCache.delete(tn.id);
     showToast('✅ ' + t('saved'), 'success');
     await renderAdminTournamentsTab();
-  });
-  el.querySelectorAll('.tn-adm-sync').forEach(b => b.onclick = async () => {
-    const tn = list.find(x => x.id === b.dataset.tn);
-    if (tn && await tnAdminSync(tn)) await renderAdminTournamentsTab();
   });
   el.querySelectorAll('.tn-adm-del').forEach(b => b.onclick = async () => {
     const tn = list.find(x => x.id === b.dataset.tn);
@@ -7850,55 +7723,39 @@ async function renderAdminTournamentsTab() {
     adminName: displayUsername(currentUser) || currentUser?.name || ''
   });
 
-  // Match play setup lives in its own module; it renders into the open
-  // editor's host div and keeps its own draft, so this tab re-rendering
-  // (saves, syncs) never loses in-progress lineup edits.
+  // The open editor's format-specific setup lives in its own module — match
+  // play rosters/sessions or the stroke play player list — rendered into the
+  // row's host div with its own draft, so this tab re-rendering never loses
+  // in-progress edits.
   if (adminOpenTn) {
     const tn = list.find(x => x.id === adminOpenTn);
-    const host = tn && document.getElementById(`mp-adm-${tn.id}`);
-    if (host) {
-      // Members are only needed for the scorer picker, so they are read when
-      // a match play editor actually opens rather than on every tab render.
+    const mpHost = tn && document.getElementById(`mp-adm-${tn.id}`);
+    const spHost = tn && document.getElementById(`sp-adm-${tn.id}`);
+    if (mpHost || spHost) {
+      // Members back the player pickers, so they are read when an editor
+      // actually opens rather than on every tab render.
       let users = [];
       try { users = await store.loadAllUsers(); } catch (_) { }
       users = users.filter(u => u && u.id && u.status !== 'deleted')
-        .sort((a, b) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
-      mountMpAdmin(host, tn, { showToast, users, rerender: renderAdminTournamentsTab });
+        .sort((a, b) => store.memberName(a).localeCompare(store.memberName(b)));
+      const ctx = { showToast, users, rerender: renderAdminTournamentsTab };
+      if (mpHost) mountMpAdmin(mpHost, tn, ctx);
+      if (spHost) mountSpAdmin(spHost, tn, ctx);
     }
+    // Picking a course fills PAR (and blank venue/city) on the spot.
+    const courseSel = document.getElementById(`tn-e-${adminOpenTn}-course`);
+    if (courseSel) courseSel.onchange = () => {
+      const c = courseByKey(courseSel.value);
+      if (!c) return;
+      const set = (id, v, always) => {
+        const inp = document.getElementById(`tn-e-${adminOpenTn}-${id}`);
+        if (inp && (always || !inp.value.trim())) inp.value = v;
+      };
+      set('par', c.par, true);
+      set('venue', c.name, false);
+      set('city', c.city, false);
+    };
   }
-
-  // Upload
-  const fileInput = document.getElementById('tn-file-input');
-  let uploadTarget = null;
-  el.querySelectorAll('.tn-adm-upload').forEach(b => b.onclick = () => {
-    uploadTarget = list.find(x => x.id === b.dataset.tn) || null;
-    if (uploadTarget) fileInput.click();
-  });
-  fileInput.onchange = async () => {
-    const file = fileInput.files && fileInput.files[0];
-    fileInput.value = '';
-    if (!file || !uploadTarget) return;
-    let res;
-    try { res = await parseTournamentFile(file, uploadTarget.par || undefined); }
-    catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
-    if (!res.ok) { showToast('⚠️ ' + t('tnSyncEmpty'), 'warning'); return; }
-    if (!confirm(`${res.entries.length} ${t('tnPlayers')} — ${t('tnConfirmImport')}`)) return;
-    try {
-      await store.saveTournament({
-        ...uploadTarget,
-        entries: res.entries.map(tnEntryFromSheet),
-        rounds: uploadTarget.rounds || res.rounds,
-        entriesSource: 'file',
-        lastSync: {
-          at: Date.now(), count: res.entries.length, rounds: res.rounds,
-          warnings: res.warnings, columns: res.columns, sheet: res.sheet, source: 'file'
-        }
-      });
-    } catch (err) { tnAdminError(err); return; }
-    tnSheetCache.delete(uploadTarget.id);
-    showToast('✅ ' + t('tnImported'), 'success');
-    await renderAdminTournamentsTab();
-  };
 }
 
 // Admin → Статистик: per-player game stats + overall app stats.

@@ -217,6 +217,43 @@ export function sortMatchesForDisplay(matches) {
       || (Number(x.match.number) || 0) - (Number(y.match.number) || 0));
 }
 
+// ---- Tee times ----
+
+// "09:40" + 10 → "09:50"; wraps midnight ("23:55" + 10 → "00:05").
+// Anything that is not HH:MM comes back as ''.
+export function addMinutesHHMM(hhmm, mins) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!m) return '';
+  const total = ((Number(m[1]) * 60 + Number(m[2]) + Number(mins || 0)) % 1440 + 1440) % 1440;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+/**
+ * The admin gives the first match its tee time by hand; the rest of the
+ * draw follows at a fixed interval. Walks the matches AFTER `fromId` (in
+ * match-number order) keeping a running clock from that match's time, and
+ * returns [{id, teeTime}] assignments for the ones whose time is empty.
+ * A hand-set time is never overwritten — it becomes the new base the chain
+ * continues from. Pure: the input list is not touched.
+ */
+export function cascadeTeeTimes(matches, fromId, stepMin = 10) {
+  const sorted = matchList(matches)
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+  const at = sorted.findIndex(m => m.id === fromId);
+  if (at < 0) return [];
+  let clock = sorted[at].teeTime;
+  if (!/^\d{1,2}:\d{2}$/.test(String(clock || ''))) return [];
+  const changes = [];
+  for (let i = at + 1; i < sorted.length; i++) {
+    const m = sorted[i];
+    if (m.teeTime) { clock = m.teeTime; continue; }
+    clock = addMinutesHHMM(clock, stepMin);
+    changes.push({ id: m.id, teeTime: clock });
+  }
+  return changes;
+}
+
 // ---- Validation (spec §26) ----
 
 const rosterTeam = (roster, pid) => roster?.[pid]?.teamId || null;

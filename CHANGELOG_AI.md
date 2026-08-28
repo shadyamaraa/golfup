@@ -1,5 +1,138 @@
 # CHANGELOG_AI.md
 
+## 2026-08-28 (Stroke play scores live in the app — sheets are gone)
+
+The stroke play tournament stops reading a Google Sheet and stops
+importing Excel; everything happens in the app:
+
+- **Engine** (`src/strokeplay.js`, new, pure, tested): per-hole strokes
+  under `tournaments/{id}/sp` are the only stored fact; `spEntries()`
+  recomputes the leaderboard entries the existing pure ranking
+  (`rankEntries`/`cutSet` in tournament-sheet.js) already consumes. A
+  round posts to-par once complete; a running round shows its thru.
+  **Net = Gross − HCP** per completed round.
+- **Wizard**: the stroke step is picks, not typing — a course dropdown
+  (`COURSES`: Sky Resort, Chinggis Khaan; picking one fills venue, city
+  and PAR), rounds 1–4, the cut as a dropdown; currentRound starts at 1;
+  no sheet fields. The editor's stroke fields match (course/rounds/
+  currentRound/cut dropdowns) and picking a course fills PAR there too.
+- **Players** (`src/strokeplay-admin.js`, new): picked from the members
+  with the same type-to-search picker as match play (entries keyed by
+  the member's id — `tnIsMe` stops needing name matching), non-members
+  added by typing a name (generated pid, no self-scoring), each player
+  with an HCP number and a WD/DQ status. Draft + per-field save, never
+  touching `sp/scores`.
+- **Scorecard** (`src/strokeplay-score.js`, new; route
+  `#/spscore/{tnId}/{pid}`): 18 numeric hole inputs per round with a
+  live total, per-hole writes (`store.saveTnSpScore`) that queue
+  offline, an audit trail, and the same access ladder as match play
+  (the player themself + admin/marshal — enforced client-side by
+  `canScoreSp` and server-side by new `sp` rules in
+  database.rules.json).
+- **Board**: computes entries from `sp` on every paint (one
+  `onTournamentChanged` listener is the whole live feed), a Gross/Net
+  toggle appears once anyone has an HCP, and a player sees an
+  "Оноо оруулах" shortcut to their own card. Legacy records that carry
+  sheet-era entries keep displaying them as a static snapshot.
+- **Removed**: sheet fetch/cache/polling, Sync/Excel buttons, the file
+  importer and analysis panel, the wizard/editor sheet fields. The club
+  ranking Excel importer is untouched (xlsx stays). Tests: 76.
+
+Deploy needs `firebase deploy --only database,hosting` (new sp rules).
+
+## 2026-08-27 (Tee times pace themselves at 10-minute intervals)
+
+The admin gives the first match its tee time by hand and the rest of the
+draw follows: setting any match's time fills every later match in that
+session (singles: in the flat list) whose time is still empty, 10
+minutes apart, and "+ Match нэмэх" creates the new match 10 minutes
+behind the previous one. A hand-set time is never overwritten — the
+chain adopts it as its new base. Pure engine functions
+`addMinutesHHMM` / `cascadeTeeTimes` in `src/matchplay.js` (midnight
+wraps handled), applied from the editor's teeTime edit and add-match
+paths; committing a tee time now repaints the section so the filled
+times show at once. Tests 65.
+
+## 2026-08-27 (Cards name their day and session)
+
+Match cards on the board and the detail modal header showed only the
+format (FOURSOMES / FOURBALL / SINGLES), so with several sessions set up
+nothing said which day a match belongs to. Both now carry the session's
+full label ("Өдөр 1 — FOURSOMES") via the existing `sessionLabel`;
+sessionless singles matches fall back to their own format text.
+
+## 2026-08-27 (Score entry reachable straight from the Match Center)
+
+Entering scores from the Match Center only worked for fielded players —
+tapping a match card opened the detail with no way in, and admins had to
+go through the admin editor's own link. The "⛳ Оноо оруулах" shortcut is
+now gated by the same `canScore` the scorer screen enforces (fielded
+players, assigned scorers, admin/marshal), appears both under the card
+and inside the match detail modal, and the modal closes itself when the
+link navigates to the scorer. `renderMatchCenter` receives the full
+viewer (`ctx.user`) so the role is known; a bare `userId` still works.
+Render tests cover player/admin/spectator visibility (59 total).
+
+## 2026-08-27 (Legacy names still showed Овог first — one memberName helper)
+
+Flipping the display composition wasn't enough: rosters, pickers and the
+scorer chips were built straight from stored `fullName` strings, which
+predate the rename and read "Овог Нэр". A single `store.memberName(u)`
+now defines how a member is named — split firstName/lastName fields win
+(first name first), stored `fullName` is only the legacy fallback — and
+every label site uses it: the match play pickers, roster entries, scorer
+chips, `displayFullName`, the editor's member sort, booking names, and
+the audit `byName`. The editor also refreshes stale roster snapshots
+from the live member records on paint (on both `tn.mp` and the draft —
+a clean draft re-clones from `tn.mp`, so the source must carry the fix),
+and the next save persists them. Members with only a single `fullName`
+string and no split fields keep it unchanged — the order of a plain
+string can't be known.
+
+## 2026-08-27 (Session pickers only offer the remaining players)
+
+Within a session, once a match's players are placed the next match's
+player picker no longer lists them — only whoever remains unfielded in
+that session (a player fields once per session; `lineupIssues` already
+flagged the duplicates, now the picker prevents them). The slot's own
+pick stays visible so it can be re-chosen, and singles is untouched
+except that a match's picker hides that same match's own picks (nobody
+plays themselves).
+
+## 2026-08-27 (Type-to-search player pickers; names read Нэр Овог)
+
+The four `<select>` pickers in the match play editor — team roster add,
+singles participants add, match player slots, scorer assignment — are now
+type-to-search comboboxes (`pickerHTML`/`wirePickers` in
+`src/matchplay-admin.js`, the same look as the app's player-search modal).
+Focus shows the full candidate list so tap-only picking still works;
+typing filters by name/username; a pick goes through the exact same
+mutation paths the selects used, and a filled player slot clears with ✕.
+Candidates are resolved on focus so they always reflect the current
+draft (members already rostered, scorers already assigned are excluded).
+
+Name order flipped everywhere a surname+name pair is composed:
+`displayFullName` and the stored `fullName` on admin create/edit and
+profile save now read **firstName lastName** (Нэр Овог), and the three
+forms put the Нэр input first. Sheet-name matching is unaffected
+(`nameKey` sorts tokens, so order never mattered there).
+
+## 2026-08-27 (Device access is automatic, tiered by member role)
+
+An admin hit PERMISSION_DENIED creating a tournament because their device
+was not in the `mpDevices` allowlist. Requests and approvals are gone:
+a logged-in member's browser now registers itself
+(`store.ensureDeviceAccess`, called from the router and on login), and
+`database.rules.json` verifies the claimed member's role in `users/`
+server-side. Three tiers: member `admin` → full tournament write; member
+`marshal` → only `tournaments/$id/mp/**` ("Marshal / Marker": scores and
+everything inside a tournament, but no creating/deleting tournaments);
+plain member → only matches they play in or are assigned to score
+(`scorerIds` map / `players` slots, checked in the rules). Hand-approved
+devices are never downgraded; the request flow stays as a fallback; the
+empty-registry bootstrap is unchanged. Scorer-screen banner now only
+appears when self-registration could not cover the device. Tests 56.
+Deploy needs `firebase deploy --only database,hosting`.
 ## 2026-08-28 (fix green pull-to-refresh strip)
 
 The pull-to-refresh indicator still used the pre-redesign hardcoded
