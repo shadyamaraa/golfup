@@ -1,5 +1,45 @@
 # CHANGELOG_AI.md
 
+## 2026-08-28 (Stroke play scores live in the app — sheets are gone)
+
+The stroke play tournament stops reading a Google Sheet and stops
+importing Excel; everything happens in the app:
+
+- **Engine** (`src/strokeplay.js`, new, pure, tested): per-hole strokes
+  under `tournaments/{id}/sp` are the only stored fact; `spEntries()`
+  recomputes the leaderboard entries the existing pure ranking
+  (`rankEntries`/`cutSet` in tournament-sheet.js) already consumes. A
+  round posts to-par once complete; a running round shows its thru.
+  **Net = Gross − HCP** per completed round.
+- **Wizard**: the stroke step is picks, not typing — a course dropdown
+  (`COURSES`: Sky Resort, Chinggis Khaan; picking one fills venue, city
+  and PAR), rounds 1–4, the cut as a dropdown; currentRound starts at 1;
+  no sheet fields. The editor's stroke fields match (course/rounds/
+  currentRound/cut dropdowns) and picking a course fills PAR there too.
+- **Players** (`src/strokeplay-admin.js`, new): picked from the members
+  with the same type-to-search picker as match play (entries keyed by
+  the member's id — `tnIsMe` stops needing name matching), non-members
+  added by typing a name (generated pid, no self-scoring), each player
+  with an HCP number and a WD/DQ status. Draft + per-field save, never
+  touching `sp/scores`.
+- **Scorecard** (`src/strokeplay-score.js`, new; route
+  `#/spscore/{tnId}/{pid}`): 18 numeric hole inputs per round with a
+  live total, per-hole writes (`store.saveTnSpScore`) that queue
+  offline, an audit trail, and the same access ladder as match play
+  (the player themself + admin/marshal — enforced client-side by
+  `canScoreSp` and server-side by new `sp` rules in
+  database.rules.json).
+- **Board**: computes entries from `sp` on every paint (one
+  `onTournamentChanged` listener is the whole live feed), a Gross/Net
+  toggle appears once anyone has an HCP, and a player sees an
+  "Оноо оруулах" shortcut to their own card. Legacy records that carry
+  sheet-era entries keep displaying them as a static snapshot.
+- **Removed**: sheet fetch/cache/polling, Sync/Excel buttons, the file
+  importer and analysis panel, the wizard/editor sheet fields. The club
+  ranking Excel importer is untouched (xlsx stays). Tests: 76.
+
+Deploy needs `firebase deploy --only database,hosting` (new sp rules).
+
 ## 2026-08-27 (Tee times pace themselves at 10-minute intervals)
 
 The admin gives the first match its tee time by hand and the rest of the

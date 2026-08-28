@@ -525,6 +525,25 @@ export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 
+// ---- Stroke play scorecard ----
+// One hole's strokes on a player's card. Same discipline as the match play
+// hole write: each hole is its own path (two people on two cards never
+// clobber each other), null clears, RTDB queues the write offline, and an
+// audit line records who put what where.
+export async function saveTnSpScore(tnId, pid, round, hole, strokes, by) {
+  if (!useFirebase || !db) return;
+  const holeRef = ref(db, `tournaments/${tnId}/sp/scores/${pid}/${round}/${hole}`);
+  if (strokes === null || strokes === undefined) {
+    await remove(holeRef);
+  } else {
+    await set(holeRef, Number(strokes));
+  }
+  push(ref(db, `tournaments/${tnId}/sp/audit`), {
+    at: Date.now(), by: by || null, pid, round, hole, strokes: strokes ?? null
+  }).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
 // ---- Correction consent ----
 // A player changing a hole SOMEBODY ELSE entered does not overwrite it: the
 // proposal parks under pending/{hole} and only the original enterer (or an

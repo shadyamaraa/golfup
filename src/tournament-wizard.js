@@ -12,6 +12,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
+import { COURSES, courseByKey } from './strokeplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,8 +26,7 @@ const blank = () => ({
   step: 1,
   name: '', format: '',
   startDate: '', endDate: '', venue: '', city: '',
-  rounds: '', currentRound: '', par: '', cutAfterRound: '', cutSize: '',
-  sheetUrl: '', sheetTab: '',
+  course: '', rounds: '1', par: '72', cutAfterRound: '', cutSize: '',
   teamAName: '', teamAShort: '', teamBName: '', teamBShort: ''
 });
 
@@ -114,20 +114,29 @@ function stepHTML() {
         <h4 style="margin:0 0 10px;">${t('wzTypeSettings')}</h4>
         <p style="margin:0;font-size:0.8rem;color:var(--text-secondary);">${t('wzMatchHint')}</p>`;
     }
+    // Stroke play: pick the course (venue, city and PAR fill themselves),
+    // pick the round count, decide the cut. No free-number guessing, and no
+    // scoring sheet — scores are entered in the app.
+    const select = (key, options) => `
+      <select data-wz="${key}" style="${INPUT}">
+        ${options.map(([v, label]) => `<option value="${esc(v)}"${String(draft[key]) === String(v) ? ' selected' : ''}>${esc(label)}</option>`).join('')}
+      </select>`;
+    const rounds = Number(draft.rounds) || 1;
+    const cutOptions = [['', t('spCutNone')],
+      ...Array.from({ length: Math.max(0, rounds - 1) }, (_, i) => [String(i + 1), `R${i + 1} ${t('spCutAfterR')}`])];
     return `
       <h4 style="margin:0 0 10px;">${t('wzTypeSettings')}</h4>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-        ${field(t('tnFRounds'), input('rounds', 'number'))}
-        ${field(t('tnFCurrentRound'), input('currentRound', 'number'))}
+        ${field(t('spCourse'), select('course', [
+          ...COURSES.map(c => [c.key, `${c.name} · PAR ${c.par}`]),
+          ['', t('spCourseCustom')]
+        ]))}
         ${field(t('tnFPar'), input('par', 'number'))}
-        ${field(t('tnFCutAfter'), input('cutAfterRound', 'number'))}
-        ${field(t('tnFCutSize'), input('cutSize', 'number'))}
+        ${field(t('tnFRounds'), select('rounds', [1, 2, 3, 4].map(n => [String(n), String(n)])))}
+        ${field(t('tnFCutAfter'), select('cutAfterRound', cutOptions))}
+        ${draft.cutAfterRound ? field(t('tnFCutSize'), input('cutSize', 'number')) : ''}
       </div>
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:8px;">
-        ${field(t('tnFSheetUrl'), input('sheetUrl', 'url'))}
-        ${field(t('tnFSheetTab'), input('sheetTab', 'text'))}
-      </div>
-      <p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('tnFSheetHint')}</p>`;
+      <p style="margin:8px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spWizardHint')}</p>`;
   }
 
   // Step 5 — summary.
@@ -143,7 +152,11 @@ function stepHTML() {
     ${line(t('tnFVenue'), [draft.venue, draft.city].filter(Boolean).join(' · '))}
     ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
-      : draft.format === 'stroke' ? line(t('tnFPar'), draft.par) : ''}`;
+      : draft.format === 'stroke'
+        ? line(t('spCourse'), courseByKey(draft.course)?.name || draft.venue || '—')
+          + line(t('tnFRounds'), draft.rounds)
+          + line(t('tnFPar'), draft.par)
+        : ''}`;
 }
 
 // A step's gate: what must be filled before Үргэлжлүүлэх works.
@@ -175,10 +188,13 @@ async function create(ctx) {
   } else if (draft.format === 'match') {
     // Participants and matches are added in the editor; nothing to seed.
   } else {
+    // Scores are entered in the app (sp node); the round being played starts
+    // at 1 and the admin advances it from the editor.
     Object.assign(data, {
-      rounds: num(draft.rounds), currentRound: num(draft.currentRound),
-      par: num(draft.par), cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize),
-      sheetUrl: draft.sheetUrl.trim(), sheetTab: draft.sheetTab.trim()
+      course: draft.course,
+      rounds: num(draft.rounds) || 1, currentRound: 1,
+      par: num(draft.par) || 72,
+      cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize)
     });
   }
   const id = await store.saveTournament(data);
@@ -211,6 +227,28 @@ function paint(host, ctx) {
       // Only the gate button reacts while typing; repainting would drop focus.
       const btn = host.querySelector('button[data-wz-nav="next"], button[data-wz-nav="create"]');
       if (btn) btn.disabled = !stepValid();
+    };
+  });
+
+  host.querySelectorAll('select[data-wz]').forEach(sel => {
+    sel.onchange = () => {
+      draft[sel.dataset.wz] = sel.value;
+      // Picking a course fills PAR, venue and city in one go (typed values
+      // are respected — only blanks are filled). Round count reshapes the
+      // cut options, so both repaint; a select loses nothing to that.
+      if (sel.dataset.wz === 'course') {
+        const c = courseByKey(sel.value);
+        if (c) {
+          draft.par = String(c.par);
+          if (!draft.venue.trim()) draft.venue = c.name;
+          if (!draft.city.trim()) draft.city = c.city;
+        }
+      }
+      if (sel.dataset.wz === 'rounds'
+        && Number(draft.cutAfterRound) >= Number(draft.rounds || 1)) {
+        draft.cutAfterRound = '';
+      }
+      paint(host, ctx);
     };
   });
 
