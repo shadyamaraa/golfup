@@ -33,6 +33,26 @@ export const COURSE_DATA = {
   },
 };
 
+const TEE_LABELS = {
+  black: 'Black', blue: 'Blue', white: 'White', gold: 'Gold',
+  goldLadies: 'Gold (L)', red: 'Red',
+  professional: 'Professional', regular: 'Regular', senior: 'Senior', lady: 'Lady',
+};
+
+// The card's tee options for a location — what the create/edit forms offer
+// so rating/slope need not be typed by hand. Empty for unknown locations.
+export function courseTees(location) {
+  const tees = COURSE_DATA[location]?.tees;
+  if (!tees) return [];
+  return Object.entries(tees).map(([key, t]) => ({
+    key, label: TEE_LABELS[key] || key, rating: t.rating, slope: t.slope,
+  }));
+}
+
+export function coursePar(location) {
+  return COURSE_DATA[location]?.par ?? null;
+}
+
 // Scorer hole n (1..9 or 1..18) → the course's physical hole. A back9 game
 // numbers its holes 1..9 on the card but plays 10..18 on the ground.
 export function physicalHole(game, n) {
