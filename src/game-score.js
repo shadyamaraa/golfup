@@ -15,7 +15,7 @@
 
 import * as store from './store.js';
 import { t, getLang } from './i18n.js';
-import { gameHoleCount, roundFromGame, handicapIndex, strokesReceived, courseHandicap } from './handicap.js';
+import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './handicap.js';
 import { holePar, holeSI } from './courses.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -87,13 +87,15 @@ export function gamePlayingHcp(game, playerId, userRec) {
 }
 
 // Gross total, holes entered, to-par (null without course pars), and net
-// (null without a handicap) — net allocates the handicap per hole by stroke
-// index where the course has one, evenly otherwise, so a round in progress
-// nets correctly hole by hole.
+// (null without a handicap). Net subtracts the FULL playing handicap up
+// front — an HCP 12 player opening with a par stands at "Нет −12" and each
+// bogey walks it up one — the reading the club asked for. (WHS's per-hole SI
+// allocation — strokesReceived in handicap.js — is kept for the handicap
+// engine, but not for this display; both meet at the same number on 18.)
 export function gameScoreLine(game, playerId, hcp) {
   const holeCount = gameHoleCount(game);
   const holes = game?.scores?.[playerId]?.holes || {};
-  let total = 0, thru = 0, parSum = 0, parHoles = 0, received = 0;
+  let total = 0, thru = 0, parSum = 0, parHoles = 0;
   for (let n = 1; n <= holeCount; n++) {
     const s = holes[n];
     if (!s) continue;
@@ -101,18 +103,14 @@ export function gameScoreLine(game, playerId, hcp) {
     thru++;
     const par = holePar(game, n);
     if (par) { parSum += par; parHoles++; }
-    if (typeof hcp === 'number') {
-      const si = holeSI(game, n);
-      received += si ? strokesReceived(hcp, si) : hcp / holeCount;
-    }
   }
   const toPar = thru && parHoles === thru ? total - parSum : null;
-  const net = thru && typeof hcp === 'number' ? total - Math.round(received) : null;
+  const net = thru && typeof hcp === 'number' ? total - hcp : null;
   return {
     total, thru, toPar, net,
-    // Net against par — what golfers actually read ("Нет +2"), only possible
-    // where every entered hole has a known par.
-    netToPar: toPar !== null && net !== null ? net - parSum : null,
+    // Net against par — "Нет −6" — only possible where every entered hole
+    // has a known par.
+    netToPar: toPar !== null && typeof hcp === 'number' ? toPar - hcp : null,
   };
 }
 
