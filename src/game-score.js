@@ -504,6 +504,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       if (kind === 'plus' || kind === 'minus') {
         const pid = b.dataset.pid;
         if (!canScoreGamePlayer(ctx.user, data, pid)) return;
+        // Pin the hole being entered: without this, the last player's FIRST
+        // tap completes the hole and the follow-mode repaint jumps to the
+        // next one before their score can be adjusted. Auto-advance still
+        // lands on the first open hole when the scorer is (re)opened; moving
+        // on mid-session is the › arrow or the strip.
+        viewHole = hole;
         const cur = data.scores?.[pid]?.holes?.[hole] ?? null;
         let next;
         if (kind === 'plus') next = cur === null ? DEFAULT_STROKES : Math.min(MAX_STROKES, cur + 1);
