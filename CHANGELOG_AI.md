@@ -28,6 +28,31 @@
   rating/slope pairs — every location-keyed feature (hole header, to-par,
   SI net allocation, AGS cap) works there with no further code.
 
+## 2026-08-27 (GHIN roster import: merge GHIN numbers into user profiles)
+
+Matched the club's GHIN roster export (golfers_20260730, 332 golfers)
+against the app's users and stored each match on
+`users/{id}.ghinNumber` — the field `rounds/{ghinNumber}` and the WHS
+handicap machinery key on. 88 of 105 profiles received their number
+(87 automatic name matches + 1 manually confirmed transliteration
+variant); ambiguous or roster-missing users were left untouched and
+reported for admin follow-up.
+
+- **Importer** (`scripts/import-ghin.mjs`, new): repeatable CLI. Reads a
+  roster CSV (name + GHIN columns), fetches `users` over the RTDB REST
+  API, matches firstName/lastName against given/surname in either order
+  with Mongolian-Latin spelling folds (kh/h, double vowels, ...) and
+  Cyrillic transliteration. Dry run by default; `--apply` PATCHes only
+  the `ghinNumber` key; `--set userId=GHIN` applies a manual decision;
+  ambiguous matches (two roster rows or two users competing for one
+  number, duplicate roster names) are never auto-applied. Existing
+  different values are skipped unless `--force`.
+- **Admin forms** (`src/app.js`): the admin create-user and edit-user
+  forms now read and write `ghinNumber` instead of the parallel legacy
+  `ghin` field (which the scoring code never read), with the same 7-8
+  digit validation as the profile settings page; a user's legacy `ghin`
+  key is dropped on the next admin save.
+
 ## 2026-08-27 (Casual games: group scorecards, WHS handicap, GHIN-ready rounds)
 
 Players in a casual game's group can now enter stroke scores in the app —

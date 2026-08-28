@@ -4066,8 +4066,15 @@ async function renderAdminPanel() {
     const communities = selectedCommunities('new-user-communities');
     const lastName = document.getElementById('new-user-lastname').value.trim();
     const firstName = document.getElementById('new-user-firstname').value.trim();
-    const ghin = document.getElementById('new-user-ghin').value.trim();
+    // Same field + rule as the profile settings page: rounds/{ghinNumber} is
+    // keyed by it, so only a clean 7-8 digit number may be stored.
+    const ghinNumber = document.getElementById('new-user-ghin').value.replace(/\D/g, '');
     const ubgolfMemberId = document.getElementById('new-user-memberid').value.trim();
+    if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) {
+      showToast(t('gsGhinInvalid'), 'error');
+      submitBtn.disabled = false;
+      return;
+    }
 
     const existing = await store.findUserByPhone(phone);
     if (existing) {
@@ -4079,7 +4086,7 @@ async function renderAdminPanel() {
     await store.adminCreateUser(name, pass, phone, 'user', communities, {
       lastName, firstName,
       fullName: [lastName, firstName].filter(Boolean).join(' '),
-      ghin, ubgolfMemberId,
+      ghinNumber, ubgolfMemberId,
     });
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
@@ -4217,7 +4224,7 @@ function showAdminEditUserModal(user, onSaved) {
         </div>
         <div class="input-group">
           <label>${t('ghinNumber')}</label>
-          <input type="text" id="ae-ghin" value="${user.ghin || ''}" />
+          <input type="text" id="ae-ghin" value="${user.ghinNumber || user.ghin || ''}" inputmode="numeric" />
         </div>
         <div class="input-group">
           <label>${t('ubgolfMemberId')}</label>
@@ -4307,7 +4314,10 @@ function showAdminEditUserModal(user, onSaved) {
     user.firstName = firstName;
     user.fullName = [lastName, firstName].filter(Boolean).join(' ') || user.fullName;
     user.name = username;
-    user.ghin = document.getElementById('ae-ghin').value.trim();
+    const ghinNumber = document.getElementById('ae-ghin').value.replace(/\D/g, '');
+    if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) { showToast(t('gsGhinInvalid'), 'error'); return; }
+    user.ghinNumber = ghinNumber;
+    delete user.ghin; // legacy field, unified on ghinNumber (used to key rounds/{ghinNumber})
     user.ubgolfMemberId = document.getElementById('ae-memberid').value.trim();
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
