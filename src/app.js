@@ -3325,7 +3325,9 @@ function gameScoreboardHTML(game) {
     .filter(r => r.thru > 0);
   if (!rows.length) return '';
   const byNet = rows.every(r => r.net !== null);
-  rows.sort((a, b) => (byNet ? a.net - b.net : a.total - b.total));
+  // Rank by net-to-par where possible — with mixed thru counts the absolute
+  // net misleads, the par-relative one doesn't.
+  rows.sort((a, b) => (byNet ? (a.netToPar ?? a.net) - (b.netToPar ?? b.net) : a.total - b.total));
   const holeCount = gameHoleCount(game);
   return `
     <div class="group-card glass-card">
@@ -3342,7 +3344,7 @@ function gameScoreboardHTML(game) {
             </span>
             <div style="margin-left:auto;display:flex;align-items:center;gap:12px;font-variant-numeric:tabular-nums;">
               <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
-              ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:var(--text-primary);">${r.net}</b></span>` : ''}
+              ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:${r.netToPar !== null && r.netToPar < 0 ? 'var(--red)' : 'var(--text-primary)'};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b></span>` : ''}
               <b style="font-size:1.05rem;">${r.total}</b>
               ${r.toPar !== null ? `<span style="font-size:0.8rem;font-weight:800;color:${r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${fmtToPar(r.toPar)}</span>` : ''}
             </div>
