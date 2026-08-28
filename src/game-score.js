@@ -148,9 +148,30 @@ function hcpChipLabel(game, pid, userRec) {
   return typeof hcp === 'number' ? `HCP ${hcp}` : 'HCP —';
 }
 
+// First name only — the row also carries the running score, HCP chip, and
+// stepper, so the full "Овог Нэр" doesn't fit on a phone.
+function shortName(p, userRec) {
+  return userRec?.firstName || p.name || '?';
+}
+
+// The score the player is "walking on" right now, shown beside their name:
+// to-par where the course card is known ("+4"/"E"/"−2"), gross otherwise.
+function runningScore(game, pid, hcp) {
+  const line = gameScoreLine(game, pid, hcp);
+  if (!line.thru) return { text: '', color: 'var(--text-secondary)' };
+  if (line.toPar !== null) {
+    return {
+      text: fmtToPar(line.toPar),
+      color: line.toPar < 0 ? 'var(--red)' : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+    };
+  }
+  return { text: String(line.total), color: 'var(--text-primary)' };
+}
+
 function playerRowHTML(game, p, hole, editable, userRec) {
   const strokes = game?.scores?.[p.id]?.holes?.[hole] ?? null;
   const hcp = gamePlayingHcp(game, p.id, userRec);
+  const run = runningScore(game, p.id, hcp);
   const stepBtn = (kind, label, disabled) => `
     <button data-gs="${kind}" data-pid="${esc(p.id)}" ${disabled ? 'disabled' : ''}
       style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
@@ -169,7 +190,8 @@ function playerRowHTML(game, p, hole, editable, userRec) {
     <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || '?')}</span>
+          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(shortName(p, userRec))}</span>
+          <b data-gs-run="${esc(p.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
           ${hcpChip}
         </div>
         <div data-gs-tot="${esc(p.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
@@ -341,6 +363,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       const hcp = gamePlayingHcp(data, p.id, usersById[p.id]);
       const tot = host.querySelector(`[data-gs-tot="${p.id}"]`);
       if (tot) tot.textContent = totalsLineText(data, p.id, hcp);
+      const run = host.querySelector(`[data-gs-run="${p.id}"]`);
+      if (run) {
+        const rs = runningScore(data, p.id, hcp);
+        run.textContent = rs.text;
+        run.style.color = rs.color;
+      }
       const chip = host.querySelector(`button[data-gs="hcp"][data-pid="${p.id}"]`);
       if (chip) chip.textContent = hcpChipLabel(data, p.id, usersById[p.id]);
       setStep(host.querySelector(`button[data-gs="minus"][data-pid="${p.id}"]`), strokes === null);
