@@ -86,31 +86,63 @@ export function gamePlayingHcp(game, playerId, userRec) {
   return courseHandicap(userRec?.hcpIndex, c.slope, c.rating, c.par);
 }
 
+// Is this game scored as the club's competition format — front 9, back 9,
+// and the 18 counted as three separate contests? Chosen at game creation;
+// only meaningful on an 18-hole game (a 9-hole game has one segment anyway).
+export function isCompMode(game) {
+  return game?.scoreMode === 'comp' && gameHoleCount(game) === 18;
+}
+
+// Competition handicap split across the nines: even halves evenly (12 → 6/6),
+// an odd handicap puts the bigger half on the front nine (11 → 6/5).
+export function splitHcp(hcp) {
+  return { front: Math.ceil(hcp / 2), back: Math.floor(hcp / 2) };
+}
+
 // Gross total, holes entered, to-par (null without course pars), and net
-// (null without a handicap). Net subtracts the FULL playing handicap up
-// front — an HCP 12 player opening with a par stands at "Нет −12" and each
-// bogey walks it up one — the reading the club asked for. (WHS's per-hole SI
-// allocation — strokesReceived in handicap.js — is kept for the handicap
-// engine, but not for this display; both meet at the same number on 18.)
+// (null without a handicap). Net subtracts the playing handicap up front —
+// an HCP 12 player opening with a par stands at "Нет −12" and each bogey
+// walks it up one — the reading the club asked for. In competition mode the
+// front and back nines net separately against their handicap halves
+// (netF/netB), and netToPar is their sum — the 18-hole contest.
 export function gameScoreLine(game, playerId, hcp) {
   const holeCount = gameHoleCount(game);
   const holes = game?.scores?.[playerId]?.holes || {};
-  let total = 0, thru = 0, parSum = 0, parHoles = 0;
-  for (let n = 1; n <= holeCount; n++) {
-    const s = holes[n];
-    if (!s) continue;
-    total += s;
-    thru++;
-    const par = holePar(game, n);
-    if (par) { parSum += par; parHoles++; }
+  const comp = isCompMode(game);
+  const segHcp = comp && typeof hcp === 'number' ? splitHcp(hcp) : null;
+  // seg[0] = the whole round (normal), or the front nine; seg[1] = back nine.
+  const segs = comp
+    ? [{ from: 1, to: 9, hcp: segHcp?.front }, { from: 10, to: 18, hcp: segHcp?.back }]
+    : [{ from: 1, to: holeCount, hcp: typeof hcp === 'number' ? hcp : null }];
+  let total = 0, thru = 0, toPar = 0, parsKnown = true;
+  const segNets = [];
+  for (const seg of segs) {
+    let segTotal = 0, segThru = 0, segParSum = 0, segParHoles = 0;
+    for (let n = seg.from; n <= seg.to; n++) {
+      const s = holes[n];
+      if (!s) continue;
+      segTotal += s;
+      segThru++;
+      const par = holePar(game, n);
+      if (par) { segParSum += par; segParHoles++; }
+    }
+    total += segTotal;
+    thru += segThru;
+    if (segParHoles !== segThru) parsKnown = false;
+    const segToPar = segThru && segParHoles === segThru ? segTotal - segParSum : null;
+    toPar += segToPar ?? 0;
+    segNets.push(segThru && segToPar !== null && seg.hcp !== null && seg.hcp !== undefined
+      ? segToPar - seg.hcp : null);
   }
-  const toPar = thru && parHoles === thru ? total - parSum : null;
-  const net = thru && typeof hcp === 'number' ? total - hcp : null;
+  const netToPar = segNets.some(n => n !== null)
+    ? segNets.reduce((s, n) => s + (n ?? 0), 0) : null;
   return {
-    total, thru, toPar, net,
-    // Net against par — "Нет −6" — only possible where every entered hole
-    // has a known par.
-    netToPar: toPar !== null && typeof hcp === 'number' ? toPar - hcp : null,
+    total, thru,
+    toPar: thru && parsKnown ? toPar : null,
+    net: thru && typeof hcp === 'number' ? total - hcp : null,
+    netF: comp ? segNets[0] : null,
+    netB: comp ? segNets[1] : null,
+    netToPar: thru && parsKnown ? netToPar : null,
   };
 }
 
@@ -140,13 +172,24 @@ function totalsLineText(game, pid, hcp) {
   if (!line.thru) return '—';
   let s = `${t('gsTotal')} ${line.total}`;
   if (line.toPar !== null) s += ` (${fmtToPar(line.toPar)})`;
-  if (line.net !== null) s += ` · ${t('gsNet')} ${line.netToPar !== null ? fmtToPar(line.netToPar) : line.net}`;
+  if (isCompMode(game)) {
+    // Each nine is its own contest — show whichever have started.
+    if (line.netF !== null) s += ` · ${t('gsNet')} F${fmtToPar(line.netF)}`;
+    if (line.netB !== null) s += ` · B${fmtToPar(line.netB)}`;
+  } else if (line.net !== null) {
+    s += ` · ${t('gsNet')} ${line.netToPar !== null ? fmtToPar(line.netToPar) : line.net}`;
+  }
   return s + ` · ${t('mpThru')} ${line.thru}`;
 }
 
 function hcpChipLabel(game, pid, userRec) {
   const hcp = gamePlayingHcp(game, pid, userRec);
-  return typeof hcp === 'number' ? `HCP ${hcp}` : 'HCP —';
+  if (typeof hcp !== 'number') return 'HCP —';
+  if (isCompMode(game)) {
+    const { front, back } = splitHcp(hcp);
+    return `HCP ${hcp} (${front}/${back})`;
+  }
+  return `HCP ${hcp}`;
 }
 
 // First name only — the row also carries the running score, HCP chip, and
