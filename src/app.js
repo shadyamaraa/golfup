@@ -7,7 +7,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar } from './game-score.js';
+import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { gameHoleCount } from './handicap.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
@@ -2452,6 +2452,7 @@ async function renderCreateGame() {
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
   let selectedHoles = 'full18';
+  let selectedScoreMode = 'normal';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -2508,6 +2509,14 @@ async function renderCreateGame() {
               <button type="button" class="seg-chip active" data-holes="full18">${t('holesFull18')}</button>
               <button type="button" class="seg-chip" data-holes="front9">${t('holesFront9')}</button>
               <button type="button" class="seg-chip" data-holes="back9" style="display:none;">${t('holesBack9')}</button>
+            </div>
+          </div>
+
+          <div class="create-section">
+            <div class="cs-label">${t('gsMode')}</div>
+            <div class="chip-row" id="mode-chips">
+              <button type="button" class="seg-chip active" data-mode="normal">${t('gsModeNormal')}</button>
+              <button type="button" class="seg-chip" data-mode="comp">${t('gsModeComp')}</button>
             </div>
           </div>
 
@@ -2761,6 +2770,16 @@ async function renderCreateGame() {
   });
   updateMtbogdSectionVisibility();
 
+  // Scoring mode: normal 18, or the club's competition format (front 9,
+  // back 9, and the 18 counted as three separate contests).
+  document.querySelectorAll('#mode-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedScoreMode = chip.dataset.mode;
+    });
+  });
+
   // Holes chips set both the game's holes field and the tee-time API holes.
   document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -2942,6 +2961,7 @@ async function renderCreateGame() {
       description: document.getElementById('game-desc').value.trim(),
       groupSize: groupSize,
       holes: selectedHoles,
+      scoreMode: selectedScoreMode,
       ...(() => {
         // Course rating/slope/par power the handicap math; a game without them
         // still scores fine, it just produces no differential.
@@ -3329,12 +3349,43 @@ function gameScoreboardHTML(game) {
   // net misleads, the par-relative one doesn't.
   rows.sort((a, b) => (byNet ? (a.netToPar ?? a.net) - (b.netToPar ?? b.net) : a.total - b.total));
   const holeCount = gameHoleCount(game);
+  const comp = isCompMode(game);
+  const netColor = (v) => v !== null && v < 0 ? 'var(--red)' : 'var(--text-primary)';
+
+  // Competition: front 9, back 9, and the 18 are three separate contests —
+  // name the current leader of each (ties share it).
+  let winnersHTML = '';
+  if (comp) {
+    const shortName = (r) => allUsersMap[r.p.id]?.firstName || r.p.name || '?';
+    const leader = (key) => {
+      const c = rows.filter(r => r[key] !== null);
+      if (!c.length) return '—';
+      const best = Math.min(...c.map(r => r[key]));
+      return `${c.filter(r => r[key] === best).map(shortName).map(esc).join(', ')} <b style="color:${netColor(best)};">${fmtToPar(best)}</b>`;
+    };
+    winnersHTML = `
+      <div style="font-size:0.76rem;color:var(--text-secondary);padding:2px 0 8px;border-bottom:1px solid var(--border-color);margin-bottom:6px;">
+        🏆 F9: ${leader('netF')} · B9: ${leader('netB')} · 18: ${leader('netToPar')}
+      </div>`;
+  }
+
+  const figuresHTML = (r) => comp ? `
+              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netF)};">${r.netF !== null ? `F${fmtToPar(r.netF)}` : ''}</span>
+              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netB)};">${r.netB !== null ? `B${fmtToPar(r.netB)}` : ''}</span>
+              <b style="width:44px;text-align:right;font-size:1.05rem;color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.total}</b>` : `
+              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              <span style="width:68px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">${r.net !== null ? `${t('gsNet')} <b style="color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
+              <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
+              <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>`;
+
   return `
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
-        ${byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
+        ${comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
       </div>
+      ${winnersHTML}
       <div class="player-list">
         ${rows.map((r, i) => `
           <div class="player-row filled">
@@ -3342,11 +3393,7 @@ function gameScoreboardHTML(game) {
             <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}
               ${typeof r.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${r.hcp}</span>` : ''}
             </span>
-            <div style="margin-left:auto;display:flex;align-items:baseline;font-variant-numeric:tabular-nums;">
-              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
-              <span style="width:68px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">${r.net !== null ? `${t('gsNet')} <b style="color:${r.netToPar !== null && r.netToPar < 0 ? 'var(--red)' : 'var(--text-primary)'};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
-              <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
-              <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>
+            <div style="margin-left:auto;display:flex;align-items:baseline;font-variant-numeric:tabular-nums;">${figuresHTML(r)}
             </div>
           </div>`).join('')}
       </div>
@@ -4623,6 +4670,13 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('gsMode')}</label>
+            <div class="chip-row" id="edit-mode-chips" style="margin-top:6px;">
+              <button type="button" class="seg-chip ${(game.scoreMode || 'normal') === 'normal' ? 'active' : ''}" data-mode="normal">${t('gsModeNormal')}</button>
+              <button type="button" class="seg-chip ${game.scoreMode === 'comp' ? 'active' : ''}" data-mode="comp">${t('gsModeComp')}</button>
+            </div>
+          </div>
+          <div class="input-group">
             <label>${t('gsCourseInfo')}</label>
             <div style="display:flex; gap:8px;">
               <input type="number" id="edit-course-rating" step="0.1" min="50" max="90" placeholder="${t('gsCourseRating')}" value="${game.course?.rating ?? ''}" style="flex:1; min-width:0; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
@@ -4682,6 +4736,13 @@ async function renderEditGame(gameId) {
           </div>` : ''}
       </div>
     </div>`;
+
+  document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
 
   const editSizeInput = document.getElementById('edit-group-size');
   document.getElementById('edit-size-minus').addEventListener('click', () => {
@@ -4745,6 +4806,7 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
+    game.scoreMode = document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal';
     {
       const rating = parseFloat(document.getElementById('edit-course-rating').value);
       const slope = parseInt(document.getElementById('edit-course-slope').value, 10);
