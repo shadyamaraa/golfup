@@ -7,8 +7,8 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { renderGameScorePage, canScoreGamePlayer, gameScoreTotals } from './game-score.js';
-import { gameHoleCount, courseHandicap } from './handicap.js';
+import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar } from './game-score.js';
+import { gameHoleCount } from './handicap.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
@@ -3309,26 +3309,28 @@ function renderGroupCard(players, groupIndex, game, isPast) {
     </div>`;
 }
 
-// Live gross/net standings for a game where somebody has started a scorecard.
-// Rows are the players currently fielded in groups; net only shows when the
-// game carries course rating/slope/par AND the player has a handicap index.
+// Live standings for a game where somebody has started a scorecard. Rows are
+// the players currently fielded in groups. Gross always shows, with to-par
+// where the course card is known; net (from the per-game hand-entered
+// handicap, or the profile index) shows per player, and once EVERY row has a
+// net the board ranks by net — that is the game being "played on handicap".
 function gameScoreboardHTML(game) {
-  const totals = gameScoreTotals(game);
-  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(p => p && totals[p.id]);
-  if (!players.length) return '';
-  const c = game.course || {};
+  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
   const rows = players
     .map(p => {
-      const tot = totals[p.id];
-      const hcp = courseHandicap(allUsersMap[p.id]?.hcpIndex, c.slope, c.rating, c.par);
-      return { p, ...tot, net: hcp !== null ? tot.total - hcp : null };
+      const line = gameScoreLine(game, p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id]));
+      return { p, ...line };
     })
-    .sort((a, b) => a.total - b.total);
+    .filter(r => r.thru > 0);
+  if (!rows.length) return '';
+  const byNet = rows.every(r => r.net !== null);
+  rows.sort((a, b) => (byNet ? a.net - b.net : a.total - b.total));
   const holeCount = gameHoleCount(game);
   return `
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
+        ${byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
       </div>
       <div class="player-list">
         ${rows.map((r, i) => `
@@ -3339,6 +3341,7 @@ function gameScoreboardHTML(game) {
               <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
               ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:var(--text-primary);">${r.net}</b></span>` : ''}
               <b style="font-size:1.05rem;">${r.total}</b>
+              ${r.toPar !== null ? `<span style="font-size:0.8rem;font-weight:800;color:${r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${fmtToPar(r.toPar)}</span>` : ''}
             </div>
           </div>`).join('')}
       </div>
