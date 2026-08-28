@@ -3318,8 +3318,9 @@ function gameScoreboardHTML(game) {
   const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
   const rows = players
     .map(p => {
-      const line = gameScoreLine(game, p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id]));
-      return { p, ...line };
+      const hcp = gamePlayingHcp(game, p.id, allUsersMap[p.id]);
+      const line = gameScoreLine(game, p.id, hcp);
+      return { p, hcp, ...line };
     })
     .filter(r => r.thru > 0);
   if (!rows.length) return '';
@@ -3336,7 +3337,9 @@ function gameScoreboardHTML(game) {
         ${rows.map((r, i) => `
           <div class="player-row filled">
             <span class="player-order">${i + 1}</span>
-            <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}</span>
+            <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}
+              ${typeof r.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${r.hcp}</span>` : ''}
+            </span>
             <div style="margin-left:auto;display:flex;align-items:center;gap:12px;font-variant-numeric:tabular-nums;">
               <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
               ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:var(--text-primary);">${r.net}</b></span>` : ''}
