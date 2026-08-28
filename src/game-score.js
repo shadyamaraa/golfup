@@ -512,7 +512,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         viewHole = hole;
         const cur = data.scores?.[pid]?.holes?.[hole] ?? null;
         let next;
-        if (kind === 'plus') next = cur === null ? DEFAULT_STROKES : Math.min(MAX_STROKES, cur + 1);
+        // An empty hole starts at its par — most scores land around it, so
+        // that is the fewest taps; 4 stays the fallback where no card exists.
+        if (kind === 'plus') next = cur === null ? (holePar(data, hole) ?? DEFAULT_STROKES) : Math.min(MAX_STROKES, cur + 1);
         else next = cur === null ? null : (cur <= 1 ? null : cur - 1);
         if (next !== cur) write(pid, hole, next);
       } else if (kind === 'hcp') {
