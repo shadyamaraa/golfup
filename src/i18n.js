@@ -50,7 +50,7 @@ const T = {
     mpDelSession: 'Session-ийг устгах уу? Дотор нь буй match-ууд хамт устна.',
     mpDelSessionScored: 'Энэ session-ийн match-уудад оноо орсон байна! Устгавал оноо хамт устна. Үргэлжлүүлэх үү?',
     mpDelMatchScored: 'Энэ match-д оноо орсон байна! Устгавал оноо хамт устна. Үргэлжлүүлэх үү?',
-    mpHole: 'НҮХ', mpHalved: 'ТЭНЦСЭН', mpThru: 'Явц', mpFinal: 'Дууссан', mpDormie: 'dormie',
+    mpHole: 'НҮХ', mpHalved: 'ТЭНЦСЭН', mpThru: 'Thru', mpFinal: 'Дууссан', mpDormie: 'dormie',
     mpUndo: 'Сүүлийн нүхийг буцаах', mpFollowLive: 'Одоогийн нүх рүү', mpEditing: 'засаж байна',
     mpMatchDone: 'Энэ match дууссан. Засах бол доорх нүхнүүдээс сонгоно уу.',
     mpNoScorerAccess: 'Танд энэ match-ийн оноо оруулах эрх алга.',
