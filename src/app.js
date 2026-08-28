@@ -3275,6 +3275,15 @@ function renderGameView(game) {
       .catch(() => {});
   }
 
+  // Flip normal 18 ↔ competition 9/9 mid-round; the Firebase listener
+  // repaints every open screen, localStorage mode repaints from the return.
+  document.getElementById('score-mode-toggle')?.addEventListener('click', () => {
+    const next = game.scoreMode === 'comp' ? 'normal' : 'comp';
+    store.saveGameScoreMode(game.id, next)
+      .then(local => { if (local) renderGameView(local); })
+      .catch(() => showToast('⚠️ ' + t('mpSaveFailed'), 'error'));
+  });
+
   // One-click join for casual games; games with a paid tee-time booking route
   // through a payment page first so the joiner sees the fee + payment method.
   document.getElementById('join-btn')?.addEventListener('click', () => {
@@ -3423,11 +3432,18 @@ function gameScoreboardHTML(game) {
               <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
               <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>`;
 
+  // The game's creator (or an official) can flip the scoring mode mid-round —
+  // groups often decide on the course that today is a competition.
+  const canToggleMode = currentUser && (game.createdBy === currentUser.id
+    || currentUser.role === 'admin' || currentUser.role === 'marshal');
+  const modeLabel = comp ? t('gsModeComp') : t('gsModeNormal');
   return `
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
-        ${comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
+        ${canToggleMode
+          ? `<button id="score-mode-toggle" class="group-count" style="cursor:pointer;border:1px solid var(--border-color);background:transparent;font-family:var(--font);">${modeLabel} ⇄</button>`
+          : comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
       </div>
       ${winnersHTML}
       <div class="player-list">
