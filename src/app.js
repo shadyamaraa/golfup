@@ -3342,11 +3342,11 @@ function gameScoreboardHTML(game) {
             <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}
               ${typeof r.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${r.hcp}</span>` : ''}
             </span>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:12px;font-variant-numeric:tabular-nums;">
-              <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
-              ${r.net !== null ? `<span style="font-size:0.8rem;color:var(--text-secondary);">${t('gsNet')} <b style="color:${r.netToPar !== null && r.netToPar < 0 ? 'var(--red)' : 'var(--text-primary)'};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b></span>` : ''}
-              <b style="font-size:1.05rem;">${r.total}</b>
-              ${r.toPar !== null ? `<span style="font-size:0.8rem;font-weight:800;color:${r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${fmtToPar(r.toPar)}</span>` : ''}
+            <div style="margin-left:auto;display:flex;align-items:baseline;font-variant-numeric:tabular-nums;">
+              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+              <span style="width:68px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">${r.net !== null ? `${t('gsNet')} <b style="color:${r.netToPar !== null && r.netToPar < 0 ? 'var(--red)' : 'var(--text-primary)'};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
+              <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
+              <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>
             </div>
           </div>`).join('')}
       </div>
