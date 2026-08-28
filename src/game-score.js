@@ -14,8 +14,9 @@
 // see src/handicap.js and src/ghin.js.
 
 import * as store from './store.js';
-import { t } from './i18n.js';
-import { gameHoleCount, roundFromGame, handicapIndex } from './handicap.js';
+import { t, getLang } from './i18n.js';
+import { gameHoleCount, roundFromGame, handicapIndex, strokesReceived, courseHandicap } from './handicap.js';
+import { holePar, holeSI } from './courses.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -60,19 +61,56 @@ export function canScoreGamePlayer(user, game, playerId) {
 
 // ---- Derived scoring ----
 
-export function gameScoreTotals(game) {
+// "3-р Нүх" / "Hole #3" / "3번 홀" — each language shapes the phrase
+// differently, so this is a function rather than an i18n key.
+function holeTitle(n) {
+  const l = getLang();
+  if (l === 'en') return `Hole #${n}`;
+  if (l === 'kr') return `${n}번 홀`;
+  return `${n}-р Нүх`;
+}
+
+// "+4" / "E" / "−2" — golf's to-par notation.
+export function fmtToPar(d) {
+  if (d === 0) return 'E';
+  return d > 0 ? `+${d}` : `−${-d}`;
+}
+
+// The playing handicap in force for a player in this game: the hand-entered
+// per-game value wins; otherwise it is derived from the player's cached WHS
+// index and the game's course rating/slope/par. null = no handicap known.
+export function gamePlayingHcp(game, playerId, userRec) {
+  const manual = game?.hcp?.[playerId];
+  if (typeof manual === 'number') return manual;
+  const c = game?.course || {};
+  return courseHandicap(userRec?.hcpIndex, c.slope, c.rating, c.par);
+}
+
+// Gross total, holes entered, to-par (null without course pars), and net
+// (null without a handicap) — net allocates the handicap per hole by stroke
+// index where the course has one, evenly otherwise, so a round in progress
+// nets correctly hole by hole.
+export function gameScoreLine(game, playerId, hcp) {
   const holeCount = gameHoleCount(game);
-  const out = {};
-  for (const [pid, rec] of Object.entries(game?.scores || {})) {
-    const holes = rec?.holes || {};
-    let total = 0, thru = 0;
-    for (let n = 1; n <= holeCount; n++) {
-      const s = holes[n];
-      if (s) { total += s; thru++; }
+  const holes = game?.scores?.[playerId]?.holes || {};
+  let total = 0, thru = 0, parSum = 0, parHoles = 0, received = 0;
+  for (let n = 1; n <= holeCount; n++) {
+    const s = holes[n];
+    if (!s) continue;
+    total += s;
+    thru++;
+    const par = holePar(game, n);
+    if (par) { parSum += par; parHoles++; }
+    if (typeof hcp === 'number') {
+      const si = holeSI(game, n);
+      received += si ? strokesReceived(hcp, si) : hcp / holeCount;
     }
-    if (thru) out[pid] = { total, thru };
   }
-  return out;
+  return {
+    total, thru,
+    toPar: thru && parHoles === thru ? total - parSum : null,
+    net: thru && typeof hcp === 'number' ? total - Math.round(received) : null,
+  };
 }
 
 // The first hole somebody in the group has not entered yet — where a group
@@ -87,25 +125,81 @@ function followHole(game, players) {
 
 // ---- Rendering ----
 
-function playerRowHTML(game, p, hole, editable) {
+// Golf reading for one hole's score against par: under par red, par muted,
+// over par plain ink (same convention as the tournament board's tn-sc-*).
+function strokeColor(strokes, par) {
+  if (!strokes || !par) return 'var(--text-primary)';
+  if (strokes < par) return 'var(--red)';
+  if (strokes === par) return 'var(--text-secondary)';
+  return 'var(--text-primary)';
+}
+
+function totalsLineText(game, pid, hcp) {
+  const line = gameScoreLine(game, pid, hcp);
+  if (!line.thru) return '—';
+  let s = `${t('gsTotal')} ${line.total}`;
+  if (line.toPar !== null) s += ` (${fmtToPar(line.toPar)})`;
+  if (line.net !== null) s += ` · ${t('gsNet')} ${line.net}`;
+  return s + ` · ${t('mpThru')} ${line.thru}`;
+}
+
+function hcpChipLabel(game, pid, userRec) {
+  const hcp = gamePlayingHcp(game, pid, userRec);
+  return typeof hcp === 'number' ? `HCP ${hcp}` : 'HCP —';
+}
+
+// First name only — the row also carries the running score, HCP chip, and
+// stepper, so the full "Овог Нэр" doesn't fit on a phone.
+function shortName(p, userRec) {
+  return userRec?.firstName || p.name || '?';
+}
+
+// The score the player is "walking on" right now, shown beside their name:
+// to-par where the course card is known ("+4"/"E"/"−2"), gross otherwise.
+function runningScore(game, pid, hcp) {
+  const line = gameScoreLine(game, pid, hcp);
+  if (!line.thru) return { text: '', color: 'var(--text-secondary)' };
+  if (line.toPar !== null) {
+    return {
+      text: fmtToPar(line.toPar),
+      color: line.toPar < 0 ? 'var(--red)' : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+    };
+  }
+  return { text: String(line.total), color: 'var(--text-primary)' };
+}
+
+function playerRowHTML(game, p, hole, editable, userRec) {
   const strokes = game?.scores?.[p.id]?.holes?.[hole] ?? null;
-  const totals = gameScoreTotals(game)[p.id];
+  const hcp = gamePlayingHcp(game, p.id, userRec);
+  const run = runningScore(game, p.id, hcp);
   const stepBtn = (kind, label, disabled) => `
     <button data-gs="${kind}" data-pid="${esc(p.id)}" ${disabled ? 'disabled' : ''}
       style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
              border:2px solid var(--border-color);background:var(--bg-card-hover);
              color:var(--text-primary);font-size:1.35rem;font-weight:800;
              ${disabled ? 'opacity:0.35;cursor:default;' : ''}">${label}</button>`;
+  // The hand-entered per-game handicap chip; markers tap it to set or fix a
+  // player's playing handicap until GHIN can supply one.
+  const hcpChip = editable ? `
+    <button data-gs="hcp" data-pid="${esc(p.id)}"
+      style="border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);
+             border-radius:999px;padding:1px 8px;font-size:0.66rem;font-weight:700;cursor:pointer;
+             font-family:var(--font);flex-shrink:0;">${hcpChipLabel(game, p.id, userRec)}</button>`
+    : (typeof hcp === 'number' ? `<span style="font-size:0.66rem;color:var(--text-secondary);flex-shrink:0;">HCP ${hcp}</span>` : '');
   return `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || '?')}</div>
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(shortName(p, userRec))}</span>
+          <b data-gs-run="${esc(p.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
+          ${hcpChip}
+        </div>
         <div data-gs-tot="${esc(p.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
-          ${totals ? `${t('gsTotal')} ${totals.total} · ${t('mpThru')} ${totals.thru}` : '—'}
+          ${totalsLineText(game, p.id, hcp)}
         </div>
       </div>
       ${editable ? stepBtn('minus', '−', strokes === null) : ''}
-      <div data-gs-val="${esc(p.id)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;">
+      <div data-gs-val="${esc(p.id)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;color:${strokeColor(strokes, holePar(game, hole))};">
         ${strokes ?? '·'}
       </div>
       ${editable ? stepBtn('plus', '+', strokes !== null && strokes >= MAX_STROKES) : ''}
@@ -136,7 +230,17 @@ function stripHTML(game, players, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">${cells.join('')}</div>`;
 }
 
-function screenHTML(game, groupIdx, user, fade) {
+// The hole header: "3-р Нүх · Пар 4 · SI 9" over a small "3 / 18" where the
+// course card is known; the plain "НҮХ 3 / 18" otherwise.
+function holeHeaderHTML(game, hole, holeCount) {
+  const par = holePar(game, hole);
+  const si = holeSI(game, hole);
+  if (!par) return `${t('mpHole')} ${hole} / ${holeCount}`;
+  return `${holeTitle(hole)} · ${t('gsPar')} ${par}${si ? ` · SI ${si}` : ''}
+    <div style="font-size:0.68rem;font-weight:700;color:var(--text-secondary);letter-spacing:0.06em;">${hole} / ${holeCount}</div>`;
+}
+
+function screenHTML(game, groupIdx, user, fade, usersById) {
   const players = groupsOf(game)[groupIdx] || [];
   const holeCount = gameHoleCount(game);
   const hole = Math.min(viewHole ?? followHole(game, players), holeCount);
@@ -156,13 +260,13 @@ function screenHTML(game, groupIdx, user, fade) {
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
         <button data-gs="prev" ${hole <= 1 ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">‹</button>
         <div id="gs-hole-label" style="flex:1;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
-          ${t('mpHole')} ${hole} / ${holeCount}
+          ${holeHeaderHTML(game, hole, holeCount)}
         </div>
         <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">›</button>
       </div>
 
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:4px 14px;margin-top:10px;">
-        ${players.map(p => playerRowHTML(game, p, hole, canScoreGamePlayer(user, game, p.id))).join('')
+        ${players.map(p => playerRowHTML(game, p, hole, canScoreGamePlayer(user, game, p.id), usersById?.[p.id])).join('')
           || `<div style="padding:14px 0;color:var(--text-secondary);">${t('emptySlot')}</div>`}
       </div>
 
@@ -208,6 +312,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   let data = null;
   try { data = await store.loadGame(gameId); } catch (_) { }
   let denied = false;
+  // User records back the profile-index → course-handicap fallback for
+  // players with no hand-entered game handicap. Loaded once; best-effort.
+  let usersById = {};
+  try {
+    usersById = Object.fromEntries((await store.loadAllUsers()).map(u => [u.id, u]));
+  } catch (_) { }
   // What the current DOM was built for. While it matches, paints update the
   // existing elements in place instead of replacing the whole screen —
   // replacing it re-ran the fade-in animation on every tap and listener
@@ -238,19 +348,29 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     const holeCount = gameHoleCount(data);
     const hole = Math.min(viewHole ?? followHole(data, players), holeCount);
     const label = host.querySelector('#gs-hole-label');
-    if (label) label.textContent = `${t('mpHole')} ${hole} / ${holeCount}`;
+    if (label) label.innerHTML = holeHeaderHTML(data, hole, holeCount);
     const prev = host.querySelector('button[data-gs="prev"]');
     if (prev) prev.disabled = hole <= 1;
     const next = host.querySelector('button[data-gs="next"]');
     if (next) next.disabled = hole >= holeCount;
-    const totals = gameScoreTotals(data);
     for (const p of players) {
       const strokes = data.scores?.[p.id]?.holes?.[hole] ?? null;
       const val = host.querySelector(`[data-gs-val="${p.id}"]`);
-      if (val) val.textContent = strokes ?? '·';
+      if (val) {
+        val.textContent = strokes ?? '·';
+        val.style.color = strokeColor(strokes, holePar(data, hole));
+      }
+      const hcp = gamePlayingHcp(data, p.id, usersById[p.id]);
       const tot = host.querySelector(`[data-gs-tot="${p.id}"]`);
-      if (tot) tot.textContent = totals[p.id]
-        ? `${t('gsTotal')} ${totals[p.id].total} · ${t('mpThru')} ${totals[p.id].thru}` : '—';
+      if (tot) tot.textContent = totalsLineText(data, p.id, hcp);
+      const run = host.querySelector(`[data-gs-run="${p.id}"]`);
+      if (run) {
+        const rs = runningScore(data, p.id, hcp);
+        run.textContent = rs.text;
+        run.style.color = rs.color;
+      }
+      const chip = host.querySelector(`button[data-gs="hcp"][data-pid="${p.id}"]`);
+      if (chip) chip.textContent = hcpChipLabel(data, p.id, usersById[p.id]);
       setStep(host.querySelector(`button[data-gs="minus"][data-pid="${p.id}"]`), strokes === null);
       setStep(host.querySelector(`button[data-gs="plus"][data-pid="${p.id}"]`), strokes !== null && strokes >= MAX_STROKES);
     }
@@ -287,7 +407,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     }
     // Full render only when the screen's structure changed (first paint, or
     // the group's members/permissions did); fade-in only the very first time.
-    host.innerHTML = screenHTML(data, groupIdx, ctx.user, paintedKey === null);
+    host.innerHTML = screenHTML(data, groupIdx, ctx.user, paintedKey === null, usersById);
     paintedKey = key;
     wire();
   };
@@ -343,6 +463,30 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         if (kind === 'plus') next = cur === null ? DEFAULT_STROKES : Math.min(MAX_STROKES, cur + 1);
         else next = cur === null ? null : (cur <= 1 ? null : cur - 1);
         if (next !== cur) write(pid, hole, next);
+      } else if (kind === 'hcp') {
+        const pid = b.dataset.pid;
+        if (!canScoreGamePlayer(ctx.user, data, pid)) return;
+        const cur = data.hcp?.[pid];
+        const raw = prompt(t('gsHcpPrompt'), typeof cur === 'number' ? String(cur) : '');
+        if (raw === null) return;                      // cancelled
+        const trimmed = raw.trim();
+        const next = trimmed === '' ? null : parseInt(trimmed, 10);
+        if (next !== null && (isNaN(next) || next < 0 || next > 54)) {
+          ctx.showToast?.('⚠️ ' + t('gsHcpPrompt'), 'error');
+          return;
+        }
+        store.saveGamePlayerHcp(gameId, pid, next).then(local => {
+          if (local) data = local;
+          else {
+            data.hcp = data.hcp || {};
+            if (next === null) delete data.hcp[pid];
+            else data.hcp[pid] = next;
+          }
+          paint();
+        }).catch(err => {
+          console.error('[gscore]', err);
+          ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+        });
       } else if (kind === 'prev') {
         viewHole = Math.max(1, hole - 1);
         paint();

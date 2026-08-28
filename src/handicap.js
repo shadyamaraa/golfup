@@ -10,6 +10,8 @@
 // 1..15 at entry — the net-double-bogey hole cap needs per-hole par and a
 // stroke index and is deferred until games carry them.
 
+import { holePar } from './courses.js';
+
 export const MAX_HCP_INDEX = 54.0;
 
 // How many of the most recent N differentials count, and the flat adjustment
@@ -49,6 +51,14 @@ export function courseHandicap(index, slope, rating, par) {
   return Math.round(index * (slope / 113) + (rating - par));
 }
 
+// Handicap strokes a player receives on one hole, allocated by stroke index:
+// everyone gets floor(hcp/18) on every hole, and the remainder lands on the
+// holes with the lowest (hardest) SI first.
+export function strokesReceived(hcp, si) {
+  if (!hcp || hcp < 0 || !si) return 0;
+  return Math.floor(hcp / 18) + (si <= hcp % 18 ? 1 : 0);
+}
+
 // game.holes is 'full18' | 'back9' (older games may miss it → 18).
 export function gameHoleCount(game) {
   return !game?.holes || game.holes === 'full18' ? 18 : 9;
@@ -67,7 +77,13 @@ export function roundFromGame(game, playerId) {
   for (let n = 1; n <= holeCount; n++) {
     const s = holes[n];
     if (!s) return null;
-    total += s;
+    // AGS cap: where the hole's par is known, a blow-up hole counts as at
+    // most par + 5 for handicap purposes (the WHS maximum for a player
+    // without an established index; the per-player net-double-bogey cap
+    // needs a course handicap at entry time and stays v2). The stored
+    // scorecard keeps the real strokes — only the AGS/differential is capped.
+    const par = holePar(game, n);
+    total += par ? Math.min(s, par + 5) : s;
     holeScores[n] = s;
   }
   const c = game.course || {};

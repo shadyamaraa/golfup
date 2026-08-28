@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-08-28 (Scorecard: par/SI from the Mt. Bogd card, to-par, manual handicap & net)
+
+- **Course data** (`src/courses.js`, new): per-hole par and stroke index for
+  Sky Resort (= Mt. Bogd Golf Club, from the club's official scorecard) plus
+  the six tee rating/slope pairs. `physicalHole()` maps a back9 game's card
+  holes 1–9 onto physical holes 10–18.
+- **Scorer** (`src/game-score.js`): hole header now reads
+  "3-р Нүх · Пар 4 · SI 9" (per-language phrasing) with a small "3 / 18"
+  under it where the course card is known; a hole's score colors by golf
+  reading (under par red, par muted); each player's line shows to-par
+  ("Нийт 17 (+4)") and net.
+- **Manual handicap until GHIN** : `games/{id}/hcp/{playerId}` (0–54),
+  entered via an HCP chip on the scorer row by anyone who may score that
+  player; falls back to the profile WHS index → course handicap. Net
+  allocates strokes per hole by SI (`strokesReceived`), evenly where SI is
+  unknown, so partial rounds net correctly. `saveGame()` now also spares
+  the `hcp` branch; `saveGamePlayerHcp()` in store.js.
+- **Standings** (`gameScoreboardHTML`): to-par column; when every player has
+  a net the board ranks by net (the game is "played on handicap"), else by
+  gross.
+- **Handicap math** (`src/handicap.js`): AGS for the differential caps each
+  hole at par + 5 where par is known (stored strokes stay real).
+- i18n: mn `gsPar` → "Пар", kr → "파", new `gsHcpPrompt` ×3.
+- **Chinggis Khaan** (= Riverside Golf Club, Terelj) added to `COURSE_DATA`
+  from its official scorecard: per-hole par/SI (par 72) and four tee
+  rating/slope pairs — every location-keyed feature (hole header, to-par,
+  SI net allocation, AGS cap) works there with no further code.
+
 ## 2026-08-27 (GHIN roster import: merge GHIN numbers into user profiles)
 
 Matched the club's GHIN roster export (golfers_20260730, 332 golfers)

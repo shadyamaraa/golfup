@@ -133,10 +133,11 @@ function setLocalGames(games) {
 export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
-    // group member's concurrent score tap (scores/scoreAudit live under the
-    // same game). Every caller passes the full record, so the named top-level
-    // keys are still replaced wholesale — only the score branches are spared.
-    const { scores, scoreAudit, ...rest } = game;
+    // group member's concurrent score tap (scores/scoreAudit/hcp live under
+    // the same game). Every caller passes the full record, so the named
+    // top-level keys are still replaced wholesale — only the scoring
+    // branches are spared.
+    const { scores, scoreAudit, hcp, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -176,6 +177,25 @@ export async function saveGameScoreHole(gameId, playerId, hole, strokes, by) {
   else game.scores[playerId].holes[hole] = strokes;
   setLocalGames(games);
   // No listener fires in localStorage mode — the caller repaints from this.
+  return game;
+}
+
+// A player's playing handicap for ONE game, entered by hand until the GHIN
+// connection exists. Path-scoped like score taps; null clears it.
+export async function saveGamePlayerHcp(gameId, playerId, hcp) {
+  if (useFirebase && db) {
+    const r = ref(db, `games/${gameId}/hcp/${playerId}`);
+    if (hcp === null || hcp === undefined) await remove(r);
+    else await set(r, hcp);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.hcp = game.hcp || {};
+  if (hcp === null || hcp === undefined) delete game.hcp[playerId];
+  else game.hcp[playerId] = hcp;
+  setLocalGames(games);
   return game;
 }
 
