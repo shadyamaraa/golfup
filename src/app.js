@@ -1751,25 +1751,37 @@ function renderTnBoard() {
     ? `#/spgroup/${esc(tn.id)}/${spRound}/${esc(myGid)}`
     : myPid ? `#/spscore/${esc(tn.id)}/${esc(myPid)}` : null;
 
-  // The day's schedule: every flight with its tee time. The card link shows
+  // The day's schedule: every flight with its tee time. Laid out as a fixed
+  // grid under a header row (group №, tee time, start hole, players) so a
+  // spectator can read the columns without guessing what each pill means;
+  // the start-hole column only exists on shotgun draws. The card link shows
   // for the flight's own members and the officials the rules would let in.
   const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
+  const schedHasHole = spGroups.some(g => g.startHole);
+  const schedGrid = `display:grid;grid-template-columns:34px 56px ${schedHasHole ? '52px ' : ''}1fr auto;gap:8px;align-items:center;`;
   const scheduleHTML = spGroups.length ? `
     <details style="margin-bottom:10px;" ${tnStatus(tn) !== 'live' ? 'open' : ''}>
       <summary style="cursor:pointer;font-size:0.8rem;font-weight:800;">🕐 ${t('spSchedule')} — R${spRound}</summary>
+      <div style="${schedGrid}padding:8px 10px 2px;font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">
+        <span>${t('spGroup')} №</span>
+        <span>${t('spTeeTime')}</span>
+        ${schedHasHole ? `<span>⛳ ${t('spStartHole')}</span>` : ''}
+        <span>${t('spPlayers')}</span>
+        <span></span>
+      </div>
       ${spGroups.map(g => {
         const pids = Object.keys(g.players || {});
         const canIn = currentUser && (['admin', 'marshal'].includes(currentUser.role)
           || (myPid && g.players?.[myPid]));
         return `
-        <div class="surface-card" style="padding:10px;margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <b style="font-size:0.8rem;">${esc(g.number ?? '')}</b>
-          <span class="pill-soft" style="font-size:0.7rem;">${esc(g.teeTime || '–')}</span>
-          ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">⛳ ${esc(g.startHole)}</span>` : ''}
-          <span style="flex:1;min-width:140px;font-size:0.8rem;">
+        <div class="surface-card" style="padding:10px;margin-top:6px;${schedGrid}">
+          <b style="font-size:0.8rem;text-align:center;">${esc(g.number ?? '')}</b>
+          <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
+          ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? `⛳ ${esc(g.startHole)}` : '–'}</span>` : ''}
+          <span style="min-width:0;font-size:0.8rem;">
             ${esc(pids.map(pid => tn.sp.players[pid]?.name || pid).join(' · '))}
           </span>
-          ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">⛳ ${t('spGroupCard')}</a>` : ''}
+          ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">⛳ ${t('spGroupCard')}</a>` : '<span></span>'}
         </div>`;
       }).join('')}
     </details>` : '';
