@@ -101,7 +101,7 @@ export async function renderGameSchedulePage(gameId, ctx) {
     }).join('');
 
     host.innerHTML = `
-      <div class="detail-container fade-in">
+      <div class="detail-container fade-in sc-clip">
         ${printStyleHTML()}
         <style>
           .sc-sheet .sched-table { width: 100%; font-size: 0.82rem; }
@@ -149,7 +149,7 @@ export async function renderGameSchedulePage(gameId, ctx) {
             </div>
             <div style="text-align:center;flex:0 0 auto;">
               <canvas id="sch-qr" width="120" height="120"></canvas>
-              <div style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
+              <div class="sc-url" style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
             </div>
           </div>
           <div class="sc-scroll" style="margin-top:12px;">
@@ -346,7 +346,7 @@ export async function renderTnSchedulePage(tnId, ctx) {
 function renderTnScheduleShell(host, tn, tnId, ctx, body) {
   const url = pageUrl(`#/tnschedule/${tnId}`);
   host.innerHTML = `
-    <div class="detail-container fade-in">
+    <div class="detail-container fade-in sc-clip">
       ${printStyleHTML()}
       <style>
         .sc-sheet .sched-table th { background: #efe9db; }
@@ -366,7 +366,7 @@ function renderTnScheduleShell(host, tn, tnId, ctx, body) {
           </div>
           <div style="text-align:center;flex:0 0 auto;">
             <canvas id="tsch-qr" width="120" height="120"></canvas>
-            <div style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
+            <div class="sc-url" style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
           </div>
         </div>
         ${body}

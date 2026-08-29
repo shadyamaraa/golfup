@@ -210,7 +210,7 @@ function headerHTML(game, url) {
       </div>
       <div style="text-align:center;flex:0 0 auto;">
         <canvas id="sc-qr" width="120" height="120"></canvas>
-        <div style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
+        <div class="sc-url" style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
       </div>
     </div>`;
 }
@@ -255,7 +255,7 @@ export async function renderScorecardPage(gameId, ctx) {
   `).join('');
 
   host.innerHTML = `
-    <div class="detail-container fade-in">
+    <div class="detail-container fade-in sc-clip">
       ${printStyleHTML()}
       <style>
         .sc-sheet .sc-lbl { min-width: 42px; background: #efe9db; text-align: left; padding-left: 6px; }
