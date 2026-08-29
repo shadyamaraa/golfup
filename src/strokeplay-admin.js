@@ -119,6 +119,9 @@ function sectionHTML(tn, users) {
           </div>
           <input data-sp="manual" placeholder="✍ ${t('spAddManual')}"
             style="${INPUT}width:100%;box-sizing:border-box;margin-top:6px;" />
+          <button data-sp="add-all" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
+            👥 ${t('spAddAll')}
+          </button>
         </div>
       </details>
       ${groupsHTML(tn, d)}
@@ -289,6 +292,19 @@ function wire(host, tn, ctx) {
   });
 
   wireGroups(host, tn, ctx, d, markDirty);
+
+  // The whole membership in one tap — every active member not already on
+  // the roster. Names come through memberName so they read first-name-first.
+  const addAll = host.querySelector('button[data-sp="add-all"]');
+  if (addAll) addAll.onclick = () => {
+    const adds = (ctx.users || []).filter(u =>
+      u && u.id && u.status !== 'hold' && !d.players[u.id]);
+    if (!adds.length) { ctx.showToast(t('spAddAllNone'), 'info'); return; }
+    if (!confirm(`${adds.length} ${t('spAddAllConfirm')}`)) return;
+    adds.forEach(u => { d.players[u.id] = { name: store.memberName(u), userId: u.id }; });
+    d.dirty = true;
+    paint(host, tn, ctx);
+  };
 
   // Manual (non-member) player: type a name, press Enter.
   const manual = host.querySelector('input[data-sp="manual"]');
