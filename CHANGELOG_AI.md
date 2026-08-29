@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Manual flights: empty groups by count, type-to-search adds)
+
+The draw isn't the only way to build flights any more: "Хоосон групп" —
+give a count and that many empty groups appear, numbered after the last
+and continuing the 10-minute tee procession (from the first-tee field
+when the round is empty). Each group's add control is now the same
+type-to-search picker as everywhere else — focus lists every unassigned
+player, typing filters, a tap moves the player in (and out of their old
+group); players already in a flight never show in another's search.
+
 ## 2026-08-29 (Stroke play flights: auto draw, tee-time procession, group card)
 
 Stroke tournaments get per-round groups, following the real draw
