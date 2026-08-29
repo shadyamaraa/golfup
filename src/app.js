@@ -1221,7 +1221,9 @@ function tnIsMe(entry) {
 // Same-day starts tie-break newest-created first, so the latest announcement
 // sits on top. Capped so the strip never swallows the page.
 function tnFeaturedList(list) {
-  const all = Array.isArray(list) ? list : [];
+  // homeHidden is the admin's per-tournament "don't show on home" toggle;
+  // the tournament stays fully reachable from its own page/links.
+  const all = (Array.isArray(list) ? list : []).filter(tn => !tn.homeHidden);
   const now = Date.now();
   const createdMs = (tn) => tn.createdAt || parseInt((tn.id || '').split('_')[1], 10) || 0;
   const byStart = (a, b) =>
@@ -7789,6 +7791,9 @@ async function renderAdminTournamentsTab() {
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+          <button class="btn ${tn.homeHidden ? 'btn-outline-danger' : 'btn-outline'} btn-sm tn-adm-vis" data-tn="${esc(tn.id)}" title="${t('tnHomeVisTitle')}">
+            ${tn.homeHidden ? '⊘ ' + t('tnHomeHidden') : '◉ ' + t('tnHomeShown')}
+          </button>
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
         ${open ? `
@@ -7875,6 +7880,15 @@ async function renderAdminTournamentsTab() {
     if (!tn || !confirm(`${tn.name} — ${t('delete')}?`)) return;
     try { await store.deleteTournament(tn.id); }
     catch (err) { tnAdminError(err); return; }
+    await renderAdminTournamentsTab();
+  });
+  // Home-strip visibility toggle — path-scoped so open scorecards are safe.
+  el.querySelectorAll('.tn-adm-vis').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (!tn) return;
+    try { await store.updateTournament(tn.id, { homeHidden: !tn.homeHidden }); }
+    catch (err) { tnAdminError(err); return; }
+    renderTournamentStrip();
     await renderAdminTournamentsTab();
   });
 
