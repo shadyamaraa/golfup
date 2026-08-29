@@ -36,7 +36,7 @@ export function resetGameScorerView() {
 
 // ---- Group helpers (same array/object tolerance as app.js ensureGroups) ----
 
-function groupsOf(game) {
+export function groupsOf(game) {
   const g = game?.groups;
   if (!g) return [[]];
   const arr = Array.isArray(g) ? g : Object.values(g);

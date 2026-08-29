@@ -8,6 +8,8 @@ import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admi
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
+import { renderScorecardPage } from './scorecard.js';
+import { renderGameSchedulePage, renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -369,7 +371,8 @@ export async function router() {
     // else — games, orders, the scorer screen — still requires signing in.
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
-    const guestOk = hash.startsWith('#/tournament/');
+    const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
+      || hash.startsWith('#/schedule/') || hash.startsWith('#/tnschedule/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -401,6 +404,15 @@ export async function router() {
         onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
+    else if (hash.startsWith('#/scorecard/')) await renderScorecardPage(hash.split('#/scorecard/')[1], {
+      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+    });
+    else if (hash.startsWith('#/tnschedule/')) await renderTnSchedulePage(hash.split('#/tnschedule/')[1], {
+      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+    });
+    else if (hash.startsWith('#/schedule/')) await renderGameSchedulePage(hash.split('#/schedule/')[1], {
+      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+    });
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -442,14 +454,16 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
-  // Guests on a public page (a tournament board) get a way into the app;
-  // on the auth screen itself the button would only point at the page
-  // they are already on.
+  // Guests on a public page (a tournament board, a scorecard or a start
+  // list opened from a QR) get a way into the app; on the auth screen
+  // itself the button would only point at the page they are already on.
   const guestLogin = document.getElementById('guest-login');
   if (guestLogin) {
     guestLogin.textContent = t('guestLogin');
+    const h = location.hash || '#/';
     guestLogin.classList.toggle('hidden',
-      !!currentUser || !(location.hash || '#/').startsWith('#/tournament/'));
+      !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
+        || h.startsWith('#/schedule/') || h.startsWith('#/tnschedule/')));
   }
 }
 
@@ -3179,6 +3193,18 @@ function renderGameView(game) {
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
           ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn" style="gap:6px;">${icon('members', { size: 16 })} ${t('inviteBtn')}</button>` : ''}
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
+          ${(() => {
+            // The printable pages: the scorecard once anyone has scored (or
+            // the game is over — a blank card still prints), the marshal
+            // start list for whoever runs the day.
+            const hasScores = !!game.scores && Object.values(game.scores)
+              .some(s => s?.holes && Object.keys(s.holes).length > 0);
+            const canSchedule = currentUser && (currentUser.role === 'admin'
+              || currentUser.role === 'marshal' || isCreator);
+            return `
+          ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}
+          ${canSchedule ? `<a href="#/schedule/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('time', { size: 16 })} ${t('scScheduleTitle')}</a>` : ''}`;
+          })()}
           <button class="btn btn-outline" id="share-viber-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('copyLink')}</button>
           <a href="#/order/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('dining', { size: 16 })} ${t('orderFood')}</a>
@@ -3874,6 +3900,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-stats" class="btn btn-outline btn-sm" style="gap:5px;">${icon('leaderboard', { size: 14 })} ${t('statsTab')}</button>
           <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
           <button id="admin-tab-btn-tn" class="btn btn-outline btn-sm" style="gap:5px;">${icon('hole', { size: 14 })} ${t('tnAdminTab')}</button>
+          <button id="admin-tab-btn-sched" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -3987,6 +4014,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-tn" style="display:none;">
           <div id="admin-tn-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-sched" style="display:none;">
+          <div id="admin-sched-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -4001,6 +4032,7 @@ async function renderAdminPanel() {
   const tabStats = document.getElementById('admin-tab-btn-stats');
   const tabRank = document.getElementById('admin-tab-btn-rank');
   const tabTn = document.getElementById('admin-tab-btn-tn');
+  const tabSched = document.getElementById('admin-tab-btn-sched');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -4010,8 +4042,9 @@ async function renderAdminPanel() {
   const sectionStats = document.getElementById('admin-tab-stats');
   const sectionRank = document.getElementById('admin-tab-rank');
   const sectionTn = document.getElementById('admin-tab-tn');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn];
+  const sectionSched = document.getElementById('admin-tab-sched');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -4041,6 +4074,10 @@ async function renderAdminPanel() {
   tabTn.addEventListener('click', async () => {
     switchTab(tabTn, sectionTn);
     await renderAdminTournamentsTab();
+  });
+  tabSched.addEventListener('click', async () => {
+    switchTab(tabSched, sectionSched);
+    await renderAdminScheduleTab();
   });
 
   // No-circle tab: open edit modal
@@ -7681,6 +7718,60 @@ async function tnAdminSync(tn, { silent = false } = {}) {
   return res;
 }
 
+// Admin "Хуваарь" tab: the day's games (and match play draws) with one-tap
+// links to the printable marshal sheets — the start list and the scorecard.
+async function renderAdminScheduleTab() {
+  const el = document.getElementById('admin-sched-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+
+  let games = [];
+  let tns = [];
+  try { games = await store.loadAllGamesAdmin(); } catch (_) { }
+  try { tns = await store.loadTournaments(); } catch (_) { }
+
+  // Recent past stays listed so a just-finished game's scorecard is one tap
+  // away; anything older belongs to history, not the marshal's clipboard.
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const gMs = (g) => new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+  const rows = games
+    .filter(g => g.status !== 'deleted' && g.date && gMs(g) >= weekAgo)
+    .sort((a, b) => gMs(a) - gMs(b));
+
+  const gameRowHTML = (g) => {
+    const count = ensureGroups(g.groups).flatMap(x => ensureArray(x)).filter(Boolean).length;
+    return `
+      <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:170px;">
+          <b>${formatDate(g.date)} · ${esc(g.time || '')}</b>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">${esc(g.location || '')} · ${count} ${t('tnPlayers')}</div>
+        </div>
+        <a href="#/schedule/${esc(g.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>
+        <a href="#/scorecard/${esc(g.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('gsTitle')}</a>
+        <a href="#/game/${esc(g.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+      </div>`;
+  };
+
+  const mpTns = tns.filter(tn => tnKind(tn) !== 'stroke' && tn.mp?.matches && Object.keys(tn.mp.matches).length);
+  const tnRowHTML = (tn) => `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:170px;">
+        <b>${esc(tn.name || '—')}</b>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">${esc([tnDatesText(tn), tn.venue].filter(Boolean).join(' · '))}</div>
+      </div>
+      <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>
+      <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+    </div>`;
+
+  el.innerHTML = `
+    ${rows.length
+      ? rows.map(gameRowHTML).join('')
+      : `<p style="color:var(--text-secondary);">${t('noGames')}</p>`}
+    ${mpTns.length ? `
+      <h3 style="margin:18px 0 10px;">${t('tnAdminTab')}</h3>
+      ${mpTns.map(tnRowHTML).join('')}` : ''}`;
+}
+
 async function renderAdminTournamentsTab() {
   const el = document.getElementById('admin-tn-content');
   if (!el) return;
@@ -7727,6 +7818,7 @@ async function renderAdminTournamentsTab() {
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+          ${tnKind(tn) !== 'stroke' && tn.mp?.matches ? `<a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>` : ''}
           ${tnKind(tn) === 'stroke' && tn.sheetUrl ? `<button class="btn btn-primary btn-sm tn-adm-sync" data-tn="${esc(tn.id)}">${t('tnSyncNow')}</button>` : ''}
           ${tnKind(tn) !== 'stroke' ? '' : `<button class="btn btn-outline btn-sm tn-adm-upload" data-tn="${esc(tn.id)}">${t('tnUploadFile')}</button>`}
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
