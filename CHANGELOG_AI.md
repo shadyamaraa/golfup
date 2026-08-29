@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Member feedback: golf terms untranslated, HCP on schedule, tee-time gate)
+
+Five fixes straight from the members' group chat:
+
+- **"Scorecard"** — the group-card button drops its translation
+  (was «Группын карт»).
+- **"Strokeplay"** — the format label everywhere (hero facts, info tab,
+  admin select, wizard); «Цохилт» read as nothing to the members.
+- **(HCP n)** after each player's name on the schedule's flight cards.
+- **Holes, not rounds** — a stroke tournament's hero and info show
+  «18 нүх» / «36 нүх» (rounds × 18) instead of «1 тойрог».
+- **The enter-score shortcut waits for the tee time**: before the
+  flight's tee time on the opening day the button renders disabled with
+  the time on it («⛳ Оноо оруулах — 09:00»). Only the shortcut — the
+  scorecards stay reachable through the schedule for officials, and no
+  database rule changed.
+
 ## 2026-08-29 (Schedule readable at a glance: column headers)
 
 The board's Хуваарь section is now a two-tier flight card: the top row
