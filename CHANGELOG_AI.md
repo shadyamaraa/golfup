@@ -1,5 +1,14 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Saved PDFs are named after the event)
+
+Print → Save as PDF suggests the browser tab's title as the file name,
+which was always "UB Golf V2". The three print pages now set
+document.title to the event while mounted — "JCI Mongolia Open
+Championship — Хуваарь", "Sky Resort Golf Club 2026-08-30 — Онооны
+хуудас" — via `setPageTitle()` in `src/print-common.js`, restored through
+the router's listener teardown when navigating away.
+
 ## 2026-08-29 (Print pages no longer pan sideways on phones)
 
 On iOS Safari the QR caption's URL — one long token Safari refuses to

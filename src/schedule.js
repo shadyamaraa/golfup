@@ -21,7 +21,7 @@ import { t } from './i18n.js';
 import { gamePlayingHcp, groupsOf } from './game-score.js';
 import { spActive, spGroupList } from './strokeplay.js';
 import { courseTees } from './courses.js';
-import { esc, pageUrl, mountQr, copyUrl, printStyleHTML } from './print-common.js';
+import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
 // ---- Time math ----
 
@@ -61,6 +61,8 @@ export async function renderGameSchedulePage(gameId, ctx) {
       <div class="empty-state" style="padding:40px 20px;"><p>${t('gsGameNotFound')}</p></div></div>`;
     return;
   }
+
+  setPageTitle(ctx, `${game.location || ''} ${game.date || ''} — ${t('scScheduleTitle')}`);
 
   const groups = groupsOf(game).filter(g => g.length > 0);
 
@@ -344,6 +346,7 @@ export async function renderTnSchedulePage(tnId, ctx) {
 
 // The shared sheet around either draw: toolbar, tournament header, QR, body.
 function renderTnScheduleShell(host, tn, tnId, ctx, body) {
+  setPageTitle(ctx, `${tn.name || ''} — ${t('scScheduleTitle')}`);
   const url = pageUrl(`#/tnschedule/${tnId}`);
   host.innerHTML = `
     <div class="detail-container fade-in sc-clip">
