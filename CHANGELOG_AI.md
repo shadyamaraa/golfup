@@ -11,6 +11,10 @@ Five fixes straight from the members' group chat:
 - **(HCP n)** after each player's name on the schedule's flight cards.
 - **Holes, not rounds** — a stroke tournament's hero and info show
   «18 нүх» / «36 нүх» (rounds × 18) instead of «1 тойрог».
+- **No more ⛳ prefixes** — the golf-flag emoji is gone from the
+  tournament UI labels (schedule pills, Scorecard buttons, enter-score
+  CTAs, scorecard headers, admin scored-marker); intentional icons like
+  avatars and the wizard's type card keep theirs.
 - **The enter-score shortcut waits for the tee time**: before the
   flight's tee time on the opening day the button renders disabled with
   the time on it («⛳ Оноо оруулах — 09:00»). Only the shortcut — the

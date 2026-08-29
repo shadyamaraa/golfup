@@ -94,7 +94,7 @@ function rowHTML(tn, pid, p) {
       <span style="flex:1;min-width:130px;font-size:0.85rem;">
         <b>${esc(p.name || pid)}</b>
         ${p.userId || !pid.startsWith('p_') ? '' : ` <span class="pill-soft" style="font-size:0.62rem;">✍</span>`}
-        ${scored ? ` <span class="pill-soft" style="font-size:0.62rem;">⛳</span>` : ''}
+        ${scored ? ` <span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
       </span>
       <input data-sp="hcp" data-pid="${esc(pid)}" type="number" step="1" min="0" max="54"
         value="${esc(p.hcp ?? '')}" placeholder="${t('spHcp')}" title="${t('spHcp')}" style="${INPUT}width:74px;" />
@@ -175,7 +175,7 @@ function groupsHTML(tn, d) {
         <input data-spg="tee" data-gid="${esc(g.gid)}" type="time" value="${esc(g.teeTime || '')}"
           title="${t('mpTee')}" style="${INPUT}width:100px;" />
         <input data-spg="shole" data-gid="${esc(g.gid)}" type="number" min="1" max="18"
-          value="${esc(g.startHole ?? '')}" placeholder="⛳№" title="${t('spStartHole')}" style="${INPUT}width:64px;" />
+          value="${esc(g.startHole ?? '')}" placeholder="№" title="${t('spStartHole')}" style="${INPUT}width:64px;" />
         <a href="#/spgroup/${esc(tn.id)}/${round}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
         <button data-spg="del-group" data-gid="${esc(g.gid)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
       </div>

@@ -1794,8 +1794,8 @@ function renderTnBoard() {
           <div style="${schedGrid}">
             <b style="font-size:0.85rem;text-align:center;">${esc(g.number ?? '')}</b>
             <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
-            ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? `⛳ ${esc(g.startHole)}` : '–'}</span>` : ''}
-            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">⛳ ${t('spGroupCard')}</a>` : '<span></span>'}
+            ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? esc(g.startHole) : '–'}</span>` : ''}
+            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">${t('spGroupCard')}</a>` : '<span></span>'}
           </div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">
             ${pids.map(pid => {
@@ -1819,11 +1819,11 @@ function renderTnBoard() {
     ${myCardHref ? (myTeeWait ? `
       <button disabled class="btn btn-outline btn-sm"
          style="display:block;width:100%;text-align:center;margin-bottom:10px;opacity:0.55;cursor:default;">
-        ⛳ ${t('mpEnterScore')} — ${esc(myTeeWait)}
+        ${t('mpEnterScore')} — ${esc(myTeeWait)}
       </button>` : `
       <a href="${myCardHref}" class="btn btn-primary btn-sm"
          style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
-        ⛳ ${t('mpEnterScore')}
+        ${t('mpEnterScore')}
       </a>`) : ''}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
@@ -3437,7 +3437,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       <div class="player-list">${slots.join('')}</div>
       ${players.length && players.some(p => canScoreGamePlayer(currentUser, game, p.id)) ? `
         <a href="#/gscore/${game.id}/${groupIndex}" class="btn btn-primary btn-sm"
-           style="width:100%;margin-top:10px;gap:6px;">⛳ ${t('mpEnterScore')}</a>` : ''}
+           style="width:100%;margin-top:10px;gap:6px;">${t('mpEnterScore')}</a>` : ''}
     </div>`;
 }
 
