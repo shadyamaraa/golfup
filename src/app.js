@@ -3440,7 +3440,7 @@ function gameScoreboardHTML(game) {
   return `
     <div class="group-card glass-card">
       <div class="group-header">
-        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}</h3>
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
         ${canToggleMode
           ? `<button id="score-mode-toggle" class="group-count" style="cursor:pointer;border:1px solid var(--border-color);background:transparent;font-family:var(--font);">${modeLabel} ⇄</button>`
           : comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}

@@ -199,6 +199,21 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   return game;
 }
 
+// Mark a round finished (or reopen it) — drives the final-results report on
+// the scorer. Path-scoped so it never touches scores.
+export async function saveGameFinished(gameId, finished) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + gameId), { finishedAt: finished ? Date.now() : null });
+    return null;
+  }
+  const games = getLocalGames();
+  if (!games[gameId]) return null;
+  if (finished) games[gameId].finishedAt = Date.now();
+  else delete games[gameId].finishedAt;
+  setLocalGames(games);
+  return games[gameId];
+}
+
 // Switch a game's scoring mode (normal 18 ↔ competition 9/9) after it has
 // started — path-scoped so it never touches scores.
 export async function saveGameScoreMode(gameId, mode) {
