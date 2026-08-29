@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-08-28 (Scoring devices card folds away)
+
+Registration went automatic, so the "Оноо бичих төхөөрөмжүүд" card is a
+diagnostic now, not a daily stop: it renders collapsed (a `<details>`
+showing just the title, this device's tier and the registry count),
+remembers being opened across the admin tab's re-renders, and springs
+open on its own only when something actually needs the admin — an empty
+registry to bootstrap, or a pending manual request. The registry itself
+stays: it is the invisible device↔member link the database rules read to
+enforce "only this match's players, its assigned markers, and officials
+may write".
+
 ## 2026-08-28 (Stroke play scores live in the app — sheets are gone)
 
 The stroke play tournament stops reading a Google Sheet and stops

@@ -783,6 +783,12 @@ const devRoleLabel = (role) =>
   role === 'admin' ? t('mpDevRoleAdmin')
     : role === 'player' ? t('mpDevRolePlayer') : t('mpDevRoleScorer');
 
+// Since registration became automatic this card is a diagnostic, not a daily
+// stop — it starts collapsed and remembers being opened across the tab's
+// re-renders. It springs open on its own only when something actually needs
+// the admin: an empty registry to bootstrap, or a pending manual request.
+let devCardOpen = false;
+
 async function deviceAdminHTML() {
   // Members register their own device by role; by the time this card paints,
   // an admin or marshal normally already holds their access.
@@ -821,10 +827,18 @@ async function deviceAdminHTML() {
       </span>
     </div>`).join('');
 
+  const needsAttention = !status.role || !!requestRows;
   return `
-    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <details data-dev-card${devCardOpen || needsAttention ? ' open' : ''}
+      style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <b style="font-size:0.85rem;">${t('mpDevTitle')}</b>
+        ${status.role
+          ? `<span class="pill-soft" style="font-size:0.68rem;">${devRoleLabel(status.role)}</span>`
+          : `<span style="color:var(--amber);font-size:0.78rem;">⚠</span>`}
+        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-muted);">${Object.keys(devices).length}</span>
+      </summary>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;">
         <span style="font-size:0.72rem;color:var(--text-muted);">${t('mpDevThis')}: ${shortUid(status.uid)}</span>
         <span style="margin-left:auto;">${mine}</span>
       </div>
@@ -832,7 +846,7 @@ async function deviceAdminHTML() {
         ? `<p style="font-size:0.74rem;color:var(--amber);margin:8px 0 0;">${t('mpDevBootstrapHint')}</p>` : ''}
       ${requestRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevRequests')}</div>${requestRows}` : ''}
       ${deviceRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevApproved')}</div>${deviceRows}` : ''}
-    </div>`;
+    </details>`;
 }
 
 /**
@@ -845,6 +859,11 @@ export async function mountDeviceAdmin(host, ctx) {
   try { html = await deviceAdminHTML(); } catch (err) { console.warn('[mp-devices]', err); }
   host.innerHTML = html;
   if (!html) return;
+
+  // Remember the fold across the admin tab's frequent re-renders.
+  host.querySelector('details[data-dev-card]')?.addEventListener('toggle', (e) => {
+    devCardOpen = e.target.open;
+  });
 
   const act = async (fn, okMsg) => {
     try {
