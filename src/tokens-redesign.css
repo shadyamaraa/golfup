@@ -803,6 +803,8 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   max-width: 640px; margin: 0 auto; padding: 12px 20px 11px;
   text-decoration: none; color: inherit;
 }
+/* Several featured tournaments stack inside the one strip. */
+.tn-strip-inner + .tn-strip-inner { border-top: 1px solid var(--border-card); }
 
 /* round chip + state line */
 .tn-head { display: flex; align-items: center; gap: 8px; }

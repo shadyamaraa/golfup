@@ -1216,25 +1216,27 @@ function tnIsMe(entry) {
 
 // One tournament gets the strip: a live one first, then the nearest upcoming
 // within two weeks, then a finished one for three days after it ends.
-function tnFeatured(list) {
+// Every tournament worth surfacing on home, stacked: live ones first, then
+// anything starting within 14 days, then a just-finished one (3-day linger).
+// Same-day starts tie-break newest-created first, so the latest announcement
+// sits on top. Capped so the strip never swallows the page.
+function tnFeaturedList(list) {
   const all = Array.isArray(list) ? list : [];
   const now = Date.now();
-  const byStart = (a, b) => (tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0);
+  const createdMs = (tn) => tn.createdAt || parseInt((tn.id || '').split('_')[1], 10) || 0;
+  const byStart = (a, b) =>
+    ((tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0)) || (createdMs(b) - createdMs(a));
 
   const live = all.filter(tn => tnStatus(tn) === 'live').sort(byStart);
-  if (live.length) return live[0];
-
   const soon = all.filter(tn => {
     const s = tnDayMs(tn.startDate);
     return tnStatus(tn) === 'upcoming' && s !== null && s - now < 14 * 86400000;
   }).sort(byStart);
-  if (soon.length) return soon[0];
-
   const justDone = all.filter(tn => {
     const e = tnDayMs(tn.endDate || tn.startDate);
     return tnStatus(tn) === 'final' && e !== null && now - e < 3 * 86400000;
   }).sort((a, b) => (tnDayMs(b.endDate || b.startDate) || 0) - (tnDayMs(a.endDate || a.startDate) || 0));
-  return justDone[0] || null;
+  return [...live, ...soon, ...justDone].slice(0, 3);
 }
 
 // The strip sticks under the header, whose height moves with font size and
@@ -1286,12 +1288,12 @@ async function renderTournamentStrip(list) {
   // The home dashboard's tee-time card reads the same list; refresh it now
   // that the tournaments are actually loaded.
   renderNextTeeFeature();
-  let tn = tnFeatured(list);
+  let tns = tnFeaturedList(list);
   // With no real tournament to feature, preview builds fall back to the M Cup
   // sample so the strip's team-score row can be reviewed. The stroke play
   // sample is still reachable directly at #/tournament/demo.
-  if (!tn && tnDemoAllowed()) tn = MP_DEMO;
-  if (!tn) {
+  if (!tns.length && tnDemoAllowed()) tns = [MP_DEMO];
+  if (!tns.length) {
     host.innerHTML = '';
     host.dataset.has = '0';
     updateTournamentStripVisibility(location.hash || '#/');
@@ -1299,11 +1301,14 @@ async function renderTournamentStrip(list) {
   }
 
   // In-app scoring derives the strip's entries from the stored per-hole
-  // truth — no fetch, nothing to wait for.
-  paintTournamentStrip(host, tnForBoard(tn));
+  // truth — no fetch, nothing to wait for. Several featured tournaments
+  // stack as separate rows inside the one sticky strip.
+  host.innerHTML = tns.map(tn => tournamentStripHTML(tnForBoard(tn))).join('');
+  host.dataset.has = '1';
+  updateTournamentStripVisibility(location.hash || '#/');
 }
 
-function paintTournamentStrip(host, tn) {
+function tournamentStripHTML(tn) {
   const state = tnStatus(tn);
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
@@ -1361,7 +1366,7 @@ function paintTournamentStrip(host, tn) {
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
        </div>`);
 
-  host.innerHTML = `
+  return `
     <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
       <div class="tn-head">
         ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
@@ -1375,8 +1380,6 @@ function paintTournamentStrip(host, tn) {
       ${body}
       <span class="tn-fade"></span>
     </a>`;
-  host.dataset.has = '1';
-  updateTournamentStripVisibility(location.hash || '#/');
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).
