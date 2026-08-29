@@ -119,3 +119,114 @@ test('canScoreSp: self, officials, nobody else', () => {
   assert.equal(canScoreSp({ id: 'a', role: 'admin' }, 'p_zzz', players), true);
   assert.equal(canScoreSp(null, 'u1', players), false);
 });
+
+// ---- Groups (flights) ----
+
+const { chunkGroups, drawGroups, spGroupList, spPlayerGroup } =
+  await import('../src/strokeplay.js');
+
+test('chunkGroups spreads the leftover so nobody plays alone', () => {
+  const ids = (n) => Array.from({ length: n }, (_, i) => `p${i}`);
+  assert.deepEqual(chunkGroups(ids(8), 4).map(g => g.length), [4, 4]);
+  assert.deepEqual(chunkGroups(ids(10), 4).map(g => g.length), [4, 3, 3]);
+  assert.deepEqual(chunkGroups(ids(5), 4).map(g => g.length), [3, 2]);
+  assert.deepEqual(chunkGroups([], 4), []);
+});
+
+test('drawGroups random is a permutation in groups of size', () => {
+  const tn = TN({ a: { name: 'a' }, b: { name: 'b' }, c: { name: 'c' },
+    d: { name: 'd' }, e: { name: 'e' } }, {});
+  let seed = 0.1;
+  const groups = drawGroups(tn, { method: 'random', size: 4, rnd: () => (seed = (seed * 9301 + 49297) % 233280 / 233280) });
+  assert.deepEqual(groups.map(g => g.length), [3, 2]);
+  assert.deepEqual(groups.flat().sort(), ['a', 'b', 'c', 'd', 'e']);
+});
+
+test('drawGroups hcp snakes strong and weak into every group', () => {
+  const tn = TN({
+    a: { name: 'a', hcp: 1 }, b: { name: 'b', hcp: 2 },
+    c: { name: 'c', hcp: 10 }, d: { name: 'd', hcp: 20 }
+  }, {});
+  const groups = drawGroups(tn, { method: 'hcp', size: 2 });
+  // Two groups; the two lowest handicaps must not share one.
+  assert.equal(groups.length, 2);
+  const together = groups.some(g => g.includes('a') && g.includes('b'));
+  assert.equal(together, false);
+});
+
+test('drawGroups standings puts the leaders in the LAST group', () => {
+  const r70 = fullRound(4); r70[1] = 2;             // 70 → −2 (leader)
+  const r80 = fullRound(4); r80[1] = 12;            // 80 → +8 (worst)
+  const tn = TN({
+    lead: { name: 'lead' }, mid: { name: 'mid' }, tail: { name: 'tail' }
+  }, { lead: { 1: r70 }, mid: { 1: fullRound(4) }, tail: { 1: r80 } });
+  const groups = drawGroups(tn, { method: 'standings', size: 2 });
+  assert.ok(groups.at(-1).includes('lead'), 'leader tees off last');
+  assert.ok(groups[0].includes('tail'), 'the tail goes out first');
+});
+
+test('drawGroups leaves WD/DQ out of the draw', () => {
+  const tn = TN({ a: { name: 'a' }, b: { name: 'b', status: 'WD' } }, {});
+  assert.deepEqual(drawGroups(tn, { method: 'random', rnd: () => 0.5 }).flat(), ['a']);
+});
+
+test('canScoreSp lets a flight-mate score, but only in that round', () => {
+  const players = {
+    u1: { name: 'a', groups: { 1: 'g1' } },
+    u2: { name: 'b', groups: { 1: 'g1', 2: 'g9' } },
+    u3: { name: 'c', groups: { 1: 'g2' } }
+  };
+  assert.equal(canScoreSp({ id: 'u2' }, 'u1', players, 1), true);   // same flight
+  assert.equal(canScoreSp({ id: 'u3' }, 'u1', players, 1), false);  // other flight
+  assert.equal(canScoreSp({ id: 'u2' }, 'u1', players, 2), false);  // regrouped
+  assert.equal(canScoreSp({ id: 'u2' }, 'u1', players), false);     // no round given
+  assert.equal(canScoreSp({ id: 'u1' }, 'u1', players), true);      // self always
+});
+
+test('spGroupList sorts by number and spPlayerGroup reads the pointer', () => {
+  const tn = { sp: { groups: { 1: {
+    g2: { number: 2, teeTime: '09:10', players: { c: true } },
+    g1: { number: 1, teeTime: '09:00', players: { a: true, b: true } }
+  } } } };
+  assert.deepEqual(spGroupList(tn, 1).map(g => g.gid), ['g1', 'g2']);
+  assert.equal(spPlayerGroup({ a: { groups: { 1: 'g1' } } }, 'a', 1), 'g1');
+  assert.equal(spPlayerGroup({}, 'a', 1), null);
+});
+
+// ---- Excel/CSV draw import (groupsFromRows) ----
+// strokeplay-admin pulls i18n, which reads localStorage at import time.
+globalThis.localStorage ??= {
+  _v: {}, getItem(k) { return this._v[k] ?? null; },
+  setItem(k, v) { this._v[k] = String(v); }, removeItem(k) { delete this._v[k]; }
+};
+const { groupsFromRows } = await import('../src/strokeplay-admin.js');
+
+test('groupsFromRows: [group, name, tee] rows become the draw', () => {
+  const players = { u1: { name: 'Бат Дорж' }, u2: { name: 'Саруул Ганбат' }, u3: { name: 'Тулга Бямба' } };
+  const rows = [
+    ['Групп', 'Нэр', 'Цаг'],
+    ['1', 'Бат Дорж', '08:00'],
+    ['1', 'Саруул Ганбат', ''],
+    ['2', 'Тулга Бямба', '08:10'],
+    ['2', 'Үл Мэдэгдэх Хүн', '']
+  ];
+  const res = groupsFromRows(rows, players);
+  assert.equal(res.groups.length, 2);
+  assert.deepEqual(res.groups[0].pids.sort(), ['u1', 'u2']);
+  assert.equal(res.groups[0].teeTime, '08:00');
+  assert.deepEqual(res.groups[1].pids, ['u3']);
+  assert.equal(res.matched, 3);
+  assert.ok(res.unmatched.some(n => n.includes('Үл Мэдэгдэх')));
+});
+
+test('groupsFromRows: "Group N" heading rows bucket the bare names below', () => {
+  const players = { u1: { name: 'Бат Дорж' }, u2: { name: 'Саруул Ганбат' } };
+  const rows = [
+    ['Group 1'], ['Бат Дорж'],
+    ['Групп 2'], ['Саруул Ганбат']
+  ];
+  const res = groupsFromRows(rows, players);
+  assert.equal(res.groups.length, 2);
+  assert.deepEqual(res.groups[0].pids, ['u1']);
+  assert.deepEqual(res.groups[1].pids, ['u2']);
+});

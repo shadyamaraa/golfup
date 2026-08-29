@@ -9,6 +9,9 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import { SP_HOLES, roundGross, canScoreSp } from './strokeplay.js';
 
+// Which hole each open group card is on, per tournament+group.
+const viewHole = new Map();
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -93,7 +96,8 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     const roundCount = Math.max(1, Number(tn.rounds) || 1);
     const round = Math.min(roundCount,
       viewRound.get(key) || Number(tn.currentRound) || 1);
-    const editable = canScoreSp(ctx.user, pid, tn.sp.players);
+    // Flight-mates may edit each other's cards for the round they share.
+    const editable = canScoreSp(ctx.user, pid, tn.sp.players, round);
 
     host.innerHTML = `
       <div class="detail-container fade-in">
@@ -140,6 +144,125 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
 
   const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
   // No live store (local mode): render once from what the caller loaded.
+  if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
+  return off || (() => { });
+}
+
+// ---- Group card (one flight, hole by hole) ----
+// The marker practice: any member of the flight walks the round entering
+// everyone's strokes one hole at a time. Writes go to exactly the same
+// per-hole paths as the individual card, and the database rules allow them
+// because the players share a group pointer for this round.
+
+/**
+ * Render the group scorecard for `gid` of `round` into `host`.
+ * ctx: { user, showToast, tn?, backHash? } — subscribes live, returns the
+ * unsubscribe function.
+ */
+export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
+  if (!host) return () => { };
+  const key = `${tnId}/${gid}`;
+  let tnLive = null;
+
+  const paint = () => {
+    const tn = tnLive;
+    const g = tn?.sp?.groups?.[round]?.[gid];
+    if (!g) {
+      host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoGroups')}</p></div>`;
+      return;
+    }
+    if (host.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT') return;
+
+    const players = tn.sp.players || {};
+    const pids = Object.keys(g.players || {})
+      .filter(pid => players[pid])
+      .sort((a, b) => String(players[a].name || '').localeCompare(String(players[b].name || '')));
+    const par = Number(tn.par) || 72;
+    const editable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
+
+    // Open on the first hole any of the flight still has empty.
+    let hole = viewHole.get(key);
+    if (!hole) {
+      hole = 1;
+      for (let h = 1; h <= SP_HOLES; h++) {
+        if (pids.some(pid => !tn.sp.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
+        if (h === SP_HOLES) hole = SP_HOLES;
+      }
+      viewHole.set(key, hole);
+    }
+
+    const row = (pid) => {
+      const holes = tn.sp.scores?.[pid]?.[round] || {};
+      const { gross, holesIn } = roundGross(holes);
+      return `
+        <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">
+            ${esc(players[pid].name || pid)}
+          </span>
+          <input data-spgs-pid="${esc(pid)}" type="number" inputmode="numeric" min="1" max="19"
+            value="${esc(holes[hole] ?? '')}" ${editable ? '' : 'disabled'}
+            style="width:64px;text-align:center;padding:10px 2px;border-radius:8px;
+                   border:1px solid var(--border-color);background:var(--bg-color);
+                   color:var(--text-primary);font-family:var(--font);font-size:1.15rem;font-weight:800;" />
+          <span data-spgs-total="${esc(pid)}" style="width:70px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">
+            ${holesIn ? `${gross} · ${holesIn}/${SP_HOLES}` : '–'}
+          </span>
+        </div>`;
+    };
+
+    host.innerHTML = `
+      <div class="detail-container fade-in">
+        <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
+        <h2 class="detail-title" style="margin:8px 0 10px;">⛳ ${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
+        <div class="surface-card" style="padding:14px;">
+          <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
+            <b>R${esc(round)}</b>
+            ${g.teeTime ? `<span class="pill-soft" style="font-size:0.7rem;">${t('mpTee')} ${esc(g.teeTime)}</span>` : ''}
+            <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
+            <button data-spgs-nav="-1" class="btn btn-outline btn-sm" ${hole <= 1 ? 'disabled' : ''}>←</button>
+            <b style="font-size:1.3rem;min-width:90px;text-align:center;">${hole} / ${SP_HOLES}</b>
+            <button data-spgs-nav="1" class="btn btn-outline btn-sm" ${hole >= SP_HOLES ? 'disabled' : ''}>→</button>
+          </div>
+          ${pids.map(row).join('')}
+          ${editable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
+        </div>
+      </div>`;
+
+    host.querySelectorAll('button[data-spgs-nav]').forEach(b => b.onclick = () => {
+      viewHole.set(key, Math.min(SP_HOLES, Math.max(1, hole + Number(b.dataset.spgsNav))));
+      paint();
+    });
+
+    host.querySelectorAll('input[data-spgs-pid]').forEach(inp => {
+      inp.onchange = async () => {
+        const pid = inp.dataset.spgsPid;
+        const raw = inp.value.trim();
+        const n = Number(raw);
+        const value = raw === '' || !Number.isFinite(n) || n < 1 ? null : Math.min(19, Math.round(n));
+        try {
+          await store.saveTnSpScore(tnId, pid, round, hole, value, ctx.user?.id || null);
+        } catch (err) {
+          console.error('[sp-group-score]', err);
+          ctx.showToast?.('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+        }
+        if (tnLive?.sp) {
+          const scores = (tnLive.sp.scores = tnLive.sp.scores || {});
+          const rounds = (scores[pid] = scores[pid] || {});
+          const holes = (rounds[round] = rounds[round] || {});
+          if (value === null) delete holes[hole]; else holes[hole] = value;
+          const box = host.querySelector(`[data-spgs-total="${CSS.escape(pid)}"]`);
+          if (box) {
+            const { gross, holesIn } = roundGross(holes);
+            box.textContent = holesIn ? `${gross} · ${holesIn}/${SP_HOLES}` : '–';
+          }
+        }
+      };
+    });
+  };
+
+  const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
   return off || (() => { });
 }

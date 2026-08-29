@@ -1,5 +1,37 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Stroke play flights: auto draw, tee-time procession, group card)
+
+Stroke tournaments get per-round groups, following the real draw
+conventions: groups of 3–4, tee times 10 minutes apart, and a fresh draw
+each round. Stored as `sp/groups/{round}` plus a `groups[round]` pointer
+on each player — the pointer is what the database rules read to allow
+"anyone in my flight may enter my strokes" for exactly that round.
+
+- **Draw** (`drawGroups` in strokeplay.js, pure + tested): Random /
+  Balance by HCP (snake seeding, every group mixes strong and weak) /
+  By standings with the leaders off last (the professional R2+ draw;
+  WD/DQ are left out). `chunkGroups` spreads leftovers so nobody plays
+  alone (10 at size 4 → 4/3/3).
+- **Editor**: a Groups section with round tabs, method/size/first-tee
+  controls, one-tap draw, manual add/move/remove per group, and tee
+  times that re-chain 10 minutes apart when one is edited. An
+  **Excel/CSV import** reads (group, name[, tee]) rows or "Group N"
+  heading blocks and matches names to the roster with the sheet-era
+  tolerant matcher (`groupsFromRows`, tested); unmatched names are
+  reported, never guessed.
+- **Group card** (`#/spgroup/{tn}/{round}/{gid}`): the marker practice —
+  one screen, one hole at a time, a stroke input per flight member with
+  running totals; opens on the first unfinished hole. Writes hit the
+  same per-hole paths as the individual card.
+- **Board**: a Schedule fold listing every flight with its tee time and
+  players; a player's "Оноо оруулах" shortcut goes to their flight's
+  group card once a draw exists. Individual cards now also accept a
+  flight-mate's edits for the shared round (client and rules alike).
+  Tests 85.
+
+Deploy needs `firebase deploy --only database,hosting` (group rule).
+
 ## 2026-08-28 (Scoring devices card folds away)
 
 Registration went automatic, so the "Оноо бичих төхөөрөмжүүд" card is a
