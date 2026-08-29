@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Retire the casual-game start list)
+
+The per-game start list (`#/schedule/:gameId` — auto tee intervals with
+manual overrides) turned out not to match how game days actually run, so
+it is removed: the route, its guest-gate entry, the game-detail Хуваарь
+button, the admin tab's per-game link, and `saveGameSchedule()`. The
+tournament time table (`#/tnschedule/`) and the printable scorecard stay.
+`saveGame()` still spares the retired `games/{id}/schedule` field so any
+already-saved record is left untouched. Unused `scStartTime`/`scInterval`/
+`scStartTee` i18n keys dropped ×3 languages.
+
 ## 2026-08-29 (Saved PDFs are named after the event)
 
 Print → Save as PDF suggests the browser tab's title as the file name,

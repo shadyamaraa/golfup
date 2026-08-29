@@ -12,7 +12,7 @@ import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { renderScorecardPage } from './scorecard.js';
-import { renderGameSchedulePage, renderTnSchedulePage } from './schedule.js';
+import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -378,7 +378,7 @@ export async function router() {
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
     const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
-      || hash.startsWith('#/schedule/') || hash.startsWith('#/tnschedule/');
+      || hash.startsWith('#/tnschedule/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -435,9 +435,6 @@ export async function router() {
     else if (hash.startsWith('#/tnschedule/')) await renderTnSchedulePage(hash.split('#/tnschedule/')[1], {
       main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
     });
-    else if (hash.startsWith('#/schedule/')) await renderGameSchedulePage(hash.split('#/schedule/')[1], {
-      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
-    });
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -488,7 +485,7 @@ function updateHeader() {
     const h = location.hash || '#/';
     guestLogin.classList.toggle('hidden',
       !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
-        || h.startsWith('#/schedule/') || h.startsWith('#/tnschedule/')));
+        || h.startsWith('#/tnschedule/')));
   }
 }
 
@@ -3340,16 +3337,12 @@ function renderGameView(game) {
           ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn" style="gap:6px;">${icon('members', { size: 16 })} ${t('inviteBtn')}</button>` : ''}
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
           ${(() => {
-            // The printable pages: the scorecard once anyone has scored (or
-            // the game is over — a blank card still prints), the marshal
-            // start list for whoever runs the day.
+            // The printable scorecard: once anyone has scored, or the game
+            // is over — a blank card still prints.
             const hasScores = !!game.scores && Object.values(game.scores)
               .some(s => s?.holes && Object.keys(s.holes).length > 0);
-            const canSchedule = currentUser && (currentUser.role === 'admin'
-              || currentUser.role === 'marshal' || isCreator);
             return `
-          ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}
-          ${canSchedule ? `<a href="#/schedule/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('time', { size: 16 })} ${t('scScheduleTitle')}</a>` : ''}`;
+          ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}`;
           })()}
           <button class="btn btn-outline" id="share-viber-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('copyLink')}</button>
@@ -7826,7 +7819,6 @@ async function renderAdminScheduleTab() {
           <b>${formatDate(g.date)} · ${esc(g.time || '')}</b>
           <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">${esc(g.location || '')} · ${count} ${t('tnPlayers')}</div>
         </div>
-        <a href="#/schedule/${esc(g.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>
         <a href="#/scorecard/${esc(g.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('gsTitle')}</a>
         <a href="#/game/${esc(g.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
       </div>`;
