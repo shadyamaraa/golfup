@@ -24,6 +24,8 @@ const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 const drafts = new Map();
 // Which round's draw each open editor is looking at.
 const groupRoundFor = new Map();
+// The players fold, remembered across the tab's re-renders.
+const playersOpenFor = new Map();
 
 function draftFor(tn) {
   let d = drafts.get(tn.id);
@@ -98,20 +100,27 @@ function sectionHTML(tn, users) {
   const rows = Object.entries(d.players)
     .filter(([, p]) => p)
     .sort((a, b) => String(a[1].name || '').localeCompare(String(b[1].name || '')));
+  // An empty roster is the one time the fold opens itself — there is
+  // nothing else for the admin to do until players exist.
+  const open = playersOpenFor.get(tn.id) ?? !rows.length;
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
-      <h4 style="margin:0 0 8px;">${t('spPlayers')} — ${rows.length}</h4>
-      ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
-        || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
-      <div style="position:relative;margin-top:8px;">
-        <input data-sp="pick" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
-          style="${INPUT}width:100%;box-sizing:border-box;" />
-        <div data-sp="pick-list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
-          max-height:220px;overflow-y:auto;border:1px solid var(--border-color);
-          background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
-      </div>
-      <input data-sp="manual" placeholder="✍ ${t('spAddManual')}"
-        style="${INPUT}width:100%;box-sizing:border-box;margin-top:6px;" />
+      <details data-sp-players${open ? ' open' : ''}>
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spPlayers')} — ${rows.length}</summary>
+        <div style="margin-top:8px;">
+          ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
+            || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
+          <div style="position:relative;margin-top:8px;">
+            <input data-sp="pick" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
+              style="${INPUT}width:100%;box-sizing:border-box;" />
+            <div data-sp="pick-list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
+              max-height:220px;overflow-y:auto;border:1px solid var(--border-color);
+              background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
+          </div>
+          <input data-sp="manual" placeholder="✍ ${t('spAddManual')}"
+            style="${INPUT}width:100%;box-sizing:border-box;margin-top:6px;" />
+        </div>
+      </details>
       ${groupsHTML(tn, d)}
       <button data-sp="save" class="btn ${d.dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
         ${t('mpSave')}${d.dirty ? ' *' : ''}
@@ -241,6 +250,9 @@ function paint(host, tn, ctx) {
 
 function wire(host, tn, ctx) {
   const d = draftFor(tn);
+  host.querySelector('details[data-sp-players]')?.addEventListener('toggle', (e) => {
+    playersOpenFor.set(tn.id, e.target.open);
+  });
   const markDirty = () => {
     d.dirty = true;
     host.querySelector('button[data-sp="save"]')?.classList.replace('btn-outline', 'btn-primary');
