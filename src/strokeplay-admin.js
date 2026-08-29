@@ -421,6 +421,13 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     const shotgun = c.mode === 'shotgun';
     const firstTee = c.firstTee || '';
 
+    // Shotgun wave: the course has 18 starting holes, so groups 19+ form a
+    // second wave off the same holes 10 minutes behind the first (and so on).
+    const shotgunTee = (number) => {
+      const wave = Math.floor((number - 1) / 18);
+      return firstTee && wave ? addMinutesHHMM(firstTee, 10 * wave) : (firstTee || '');
+    };
+
     if (c.method === 'empty') {
       const count = Math.min(40, Math.max(1, Number(c.count) || 1));
       const existing = groupList(d, round);
@@ -432,7 +439,7 @@ function wireGroups(host, tn, ctx, d, markDirty) {
         if (!shotgun && clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
         groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
           number,
-          teeTime: (shotgun ? firstTee : clock) || '',
+          teeTime: shotgun ? shotgunTee(number) : (clock || ''),
           ...(shotgun ? { startHole: ((number - 1) % 18) + 1 } : {}),
           players: {}
         };
@@ -455,9 +462,10 @@ function wireGroups(host, tn, ctx, d, markDirty) {
       const gid = `g_${round}_${i + 1}`;
       groups[gid] = {
         number: i + 1,
-        // Shotgun: everyone off at the same time, each flight on its own
-        // starting hole. Sequential: the 10-minute procession off the 1st.
-        teeTime: shotgun ? firstTee : (clock || ''),
+        // Shotgun: the first 18 flights go off together, each on its own
+        // starting hole; flights 19+ form a second wave off the same holes
+        // 10 minutes later. Sequential: the 10-minute procession off the 1st.
+        teeTime: shotgun ? shotgunTee(i + 1) : (clock || ''),
         ...(shotgun ? { startHole: (i % 18) + 1 } : {}),
         players: Object.fromEntries(pids.map(pid => [pid, true]))
       };
@@ -470,10 +478,16 @@ function wireGroups(host, tn, ctx, d, markDirty) {
   host.querySelectorAll('input[data-spg="tee"]').forEach(inp => inp.onchange = () => {
     const g = d.groups[round]?.[inp.dataset.gid];
     if (!g) return;
+    const prev = g.teeTime;
     g.teeTime = inp.value;
     if (g.startHole) {
-      // A shotgun field moves as one: retiming any flight retimes them all.
-      Object.values(d.groups[round] || {}).forEach(x => { if (x) x.teeTime = inp.value; });
+      // Shotgun flights are NOT one block: a second wave can go off the same
+      // holes 10 minutes behind the first, so retiming one flight moves only
+      // the flights of ITS wave (the ones sharing its previous tee time) —
+      // never the other wave's.
+      Object.values(d.groups[round] || {}).forEach(x => {
+        if (x && x !== g && x.startHole && x.teeTime === prev) x.teeTime = inp.value;
+      });
     } else {
       // The groups behind follow at 10-minute steps — a procession, not a
       // sheet of independent times.
