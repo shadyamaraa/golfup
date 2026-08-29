@@ -7,7 +7,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
@@ -1565,7 +1565,12 @@ function paintTournamentPage(tn) {
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
     : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
-  const facts = [tnDatesText(tn), tnFormatText(tn), tn.rounds ? `${tn.rounds} ${t('tnRounds')}` : '']
+  // Stroke play counts in holes, the way golfers talk about it: one round
+  // reads "18 нүх", two "36 нүх" — "тойрог" meant nothing to the members.
+  const roundsFact = !tn.rounds ? ''
+    : tnKind(tn) === 'stroke' ? `${tn.rounds * SP_HOLES} ${t('tnHoles').toLowerCase()}`
+      : `${tn.rounds} ${t('tnRounds')}`;
+  const facts = [tnDatesText(tn), tnFormatText(tn), roundsFact]
     .filter(Boolean).join(' · ');
 
   main().innerHTML = `
@@ -1614,7 +1619,9 @@ function tnInfoHTML(tn) {
     [t('location'), [tn.venue, tn.city].filter(Boolean).join(' · ')],
     [t('date'), tnDatesText(tn)],
     [t('gameFormat'), tnFormatText(tn)],
-    [t('tnRounds'), tn.rounds],
+    tnKind(tn) === 'stroke'
+      ? [t('tnHoles'), tn.rounds ? tn.rounds * SP_HOLES : null]
+      : [t('tnRounds'), tn.rounds],
     [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
@@ -1750,6 +1757,16 @@ function renderTnBoard() {
   const myCardHref = myGid
     ? `#/spgroup/${esc(tn.id)}/${spRound}/${esc(myGid)}`
     : myPid ? `#/spscore/${esc(tn.id)}/${esc(myPid)}` : null;
+  // Before the flight's tee time on the opening day the enter-score shortcut
+  // waits, showing when it opens — only this button; the scorecards stay
+  // reachable through the schedule for the officials. Missing date or tee
+  // time keeps it live (nothing honest to wait for).
+  let myTeeWait = null;
+  const myTee = myGid ? tn.sp?.groups?.[spRound]?.[myGid]?.teeTime : null;
+  if (myCardHref && myTee && tn.startDate) {
+    const opens = new Date(`${tn.startDate}T${myTee}`);
+    if (!isNaN(opens.getTime()) && Date.now() < opens.getTime()) myTeeWait = myTee;
+  }
 
   // The day's schedule: every flight with its tee time. Laid out as a fixed
   // grid under a header row (group №, tee time, start hole, players) so a
@@ -1777,11 +1794,15 @@ function renderTnBoard() {
           <div style="${schedGrid}">
             <b style="font-size:0.85rem;text-align:center;">${esc(g.number ?? '')}</b>
             <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
-            ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? `⛳ ${esc(g.startHole)}` : '–'}</span>` : ''}
-            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">⛳ ${t('spGroupCard')}</a>` : '<span></span>'}
+            ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? esc(g.startHole) : '–'}</span>` : ''}
+            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">${t('spGroupCard')}</a>` : '<span></span>'}
           </div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">
-            ${pids.map(pid => `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(tn.sp.players[pid]?.name || pid)}</div>`).join('')
+            ${pids.map(pid => {
+              const p = tn.sp.players[pid] || {};
+              const hcp = Number.isFinite(Number(p.hcp)) ? ` <span style="color:var(--text-muted);font-size:0.72rem;">(${t('spHcp')} ${esc(p.hcp)})</span>` : '';
+              return `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || pid)}${hcp}</div>`;
+            }).join('')
               || `<span style="color:var(--text-muted);">—</span>`}
           </div>
         </div>`;
@@ -1795,11 +1816,15 @@ function renderTnBoard() {
         <button class="seg-tab${tnSpMetric === 'net' ? ' active' : ''}" data-sp-metric="net">${t('spNet')}</button>
       </div>` : ''}
     ${scheduleHTML}
-    ${myCardHref ? `
+    ${myCardHref ? (myTeeWait ? `
+      <button disabled class="btn btn-outline btn-sm"
+         style="display:block;width:100%;text-align:center;margin-bottom:10px;opacity:0.55;cursor:default;">
+        ${t('mpEnterScore')} — ${esc(myTeeWait)}
+      </button>` : `
       <a href="${myCardHref}" class="btn btn-primary btn-sm"
          style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
-        ⛳ ${t('mpEnterScore')}
-      </a>` : ''}
+        ${t('mpEnterScore')}
+      </a>`) : ''}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
@@ -3412,7 +3437,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
       <div class="player-list">${slots.join('')}</div>
       ${players.length && players.some(p => canScoreGamePlayer(currentUser, game, p.id)) ? `
         <a href="#/gscore/${game.id}/${groupIndex}" class="btn btn-primary btn-sm"
-           style="width:100%;margin-top:10px;gap:6px;">⛳ ${t('mpEnterScore')}</a>` : ''}
+           style="width:100%;margin-top:10px;gap:6px;">${t('mpEnterScore')}</a>` : ''}
     </div>`;
 }
 

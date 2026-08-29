@@ -149,7 +149,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     host.innerHTML = `
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
-        <h2 class="detail-title" style="margin:8px 0 10px;">⛳ ${t('spCardOf')}</h2>
+        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spCardOf')}</h2>
         ${cardHTML(tn, pid, round, editable)}
       </div>`;
 
@@ -280,12 +280,12 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     host.innerHTML = `
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
-        <h2 class="detail-title" style="margin:8px 0 10px;">⛳ ${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
+        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
         <div class="surface-card" style="padding:14px;">
           <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
             <b>R${esc(round)}</b>
             ${g.teeTime ? `<span class="pill-soft" style="font-size:0.7rem;">${t('mpTee')} ${esc(g.teeTime)}</span>` : ''}
-            ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">⛳ ${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
+            ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
             <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">

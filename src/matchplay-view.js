@@ -141,7 +141,7 @@ function enterScoreHTML(mp, match, state, tnId, viewer) {
   return `
     <a href="#/score/${esc(tnId)}/${esc(match.id)}" data-mpv-go="1" class="btn btn-primary btn-sm"
        style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
-      ⛳ ${t('mpEnterScore')}
+      ${t('mpEnterScore')}
     </a>`;
 }
 
