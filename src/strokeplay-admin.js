@@ -26,6 +26,16 @@ const drafts = new Map();
 const groupRoundFor = new Map();
 // The players fold, remembered across the tab's re-renders.
 const playersOpenFor = new Map();
+// The draw controls' values, so a repaint never resets what was picked.
+const drawCtlFor = new Map();
+const drawCtl = (tnId) => {
+  let c = drawCtlFor.get(tnId);
+  if (!c) {
+    c = { method: 'random', size: '4', count: '4', firstTee: '08:00', mode: 'seq' };
+    drawCtlFor.set(tnId, c);
+  }
+  return c;
+};
 
 function draftFor(tn) {
   let d = drafts.get(tn.id);
@@ -182,27 +192,30 @@ function groupsHTML(tn, d) {
         <button data-spg="import" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;">📄 Excel</button>
         <input data-spg-file type="file" accept=".xlsx,.xls,.csv" style="display:none;" />
       </div>
+      ${(() => {
+        const c = drawCtl(tn.id);
+        const sel = (v, cur) => String(v) === String(cur) ? ' selected' : '';
+        return `
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">
         <select data-spg="method" style="${INPUT}font-size:0.78rem;">
-          <option value="random">${t('spDrawRandom')}</option>
-          <option value="hcp">${t('spDrawHcp')}</option>
-          <option value="standings">${t('spDrawStandings')}</option>
+          <option value="random"${sel('random', c.method)}>${t('spDrawRandom')}</option>
+          <option value="hcp"${sel('hcp', c.method)}>${t('spDrawHcp')}</option>
+          <option value="standings"${sel('standings', c.method)}>${t('spDrawStandings')}</option>
+          <option value="empty"${sel('empty', c.method)}>${t('spEmptyGroups')}</option>
         </select>
-        <select data-spg="size" style="${INPUT}font-size:0.78rem;">
-          ${[4, 3].map(n => `<option value="${n}">${n} ${t('spPerGroup')}</option>`).join('')}
-        </select>
-        <input data-spg="first-tee" type="time" value="08:00" title="${t('mpTee')}" style="${INPUT}width:100px;" />
+        ${c.method === 'empty'
+          ? `<input data-spg="empty-count" type="number" min="1" max="40" value="${esc(c.count)}" title="${t('spGroups')}" style="${INPUT}width:64px;" />`
+          : `<select data-spg="size" style="${INPUT}font-size:0.78rem;">
+              ${[4, 3].map(n => `<option value="${n}"${sel(n, c.size)}>${n} ${t('spPerGroup')}</option>`).join('')}
+            </select>`}
+        <input data-spg="first-tee" type="time" value="${esc(c.firstTee)}" title="${t('mpTee')}" style="${INPUT}width:100px;" />
         <select data-spg="start-mode" title="${t('spStartMode')}" style="${INPUT}font-size:0.78rem;">
-          <option value="seq">${t('spSequential')}</option>
-          <option value="shotgun">${t('spShotgun')}</option>
+          <option value="seq"${sel('seq', c.mode)}>${t('spSequential')}</option>
+          <option value="shotgun"${sel('shotgun', c.mode)}>${t('spShotgun')}</option>
         </select>
         <button data-spg="draw" class="btn btn-primary btn-sm">${t('spDraw')}</button>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-        <span style="font-size:0.74rem;color:var(--text-secondary);font-weight:700;">${t('spEmptyGroups')}:</span>
-        <input data-spg="empty-count" type="number" min="1" max="40" value="4" style="${INPUT}width:64px;" />
-        <button data-spg="add-empty" class="btn btn-outline btn-sm" style="font-size:0.74rem;">+ ${t('spGroups')}</button>
-      </div>
+      </div>`;
+      })()}
       ${groups.map(groupBox).join('')
         || `<p style="font-size:0.76rem;color:var(--text-secondary);margin:8px 0 0;">${t('spNoGroups')}</p>`}
       ${loose.length && groups.length ? `
@@ -384,16 +397,53 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     paint(host, tn, ctx);
   });
 
-  // The draw: method + size + first tee → groups numbered in order, teeing
-  // off 10 minutes apart. Replaces this round's draw after a confirm when
-  // one already exists.
+  // The draw controls keep their values in drawCtl so repaints never reset
+  // them; changing the method swaps the size/count field, so it repaints.
+  const c = drawCtl(tn.id);
+  const bindCtl = (selector, key, repaintToo) => {
+    const el = host.querySelector(selector);
+    if (el) el.onchange = () => {
+      c[key] = el.value;
+      if (repaintToo) paint(host, tn, ctx);
+    };
+  };
+  bindCtl('select[data-spg="method"]', 'method', true);
+  bindCtl('select[data-spg="size"]', 'size');
+  bindCtl('input[data-spg="empty-count"]', 'count');
+  bindCtl('input[data-spg="first-tee"]', 'firstTee');
+  bindCtl('select[data-spg="start-mode"]', 'mode');
+
+  // The draw: method + size + first tee → groups numbered in order. The
+  // "empty groups" method APPENDS that many groups to fill by hand; the
+  // real draws replace this round after a confirm.
   const drawBtn = host.querySelector('button[data-spg="draw"]');
   if (drawBtn) drawBtn.onclick = () => {
+    const shotgun = c.mode === 'shotgun';
+    const firstTee = c.firstTee || '';
+
+    if (c.method === 'empty') {
+      const count = Math.min(40, Math.max(1, Number(c.count) || 1));
+      const existing = groupList(d, round);
+      let number = existing.length ? Math.max(...existing.map(g => Number(g.number) || 0)) : 0;
+      let clock = existing.length ? existing.at(-1).teeTime || '' : firstTee;
+      const groups = (d.groups[round] = d.groups[round] || {});
+      for (let i = 0; i < count; i++) {
+        number += 1;
+        if (!shotgun && clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
+        groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
+          number,
+          teeTime: (shotgun ? firstTee : clock) || '',
+          ...(shotgun ? { startHole: ((number - 1) % 18) + 1 } : {}),
+          players: {}
+        };
+      }
+      repaint();
+      return;
+    }
+
     if (Object.keys(d.groups[round] || {}).length && !confirm(t('spRedrawConfirm'))) return;
-    const method = host.querySelector('select[data-spg="method"]')?.value || 'random';
-    const size = Number(host.querySelector('select[data-spg="size"]')?.value) || 4;
-    const firstTee = host.querySelector('input[data-spg="first-tee"]')?.value || '';
-    const shotgun = host.querySelector('select[data-spg="start-mode"]')?.value === 'shotgun';
+    const method = c.method;
+    const size = Number(c.size) || 4;
     // The draw reads the DRAFT roster (unsaved adds included) but the live
     // scores, so a standings draw ranks on what the board shows.
     const draw = drawGroups(
@@ -451,27 +501,6 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     if (g?.players) delete g.players[b.dataset.pid];
     repaint();
   });
-
-  // Empty groups by count: numbered after the last, tee times continuing
-  // the procession (from the first-tee field when the draw is empty).
-  const addEmptyBtn = host.querySelector('button[data-spg="add-empty"]');
-  if (addEmptyBtn) addEmptyBtn.onclick = () => {
-    const count = Math.min(40, Math.max(1, Number(host.querySelector('input[data-spg="empty-count"]')?.value) || 1));
-    const existing = groupList(d, round);
-    let number = existing.length ? Math.max(...existing.map(g => Number(g.number) || 0)) : 0;
-    let clock = existing.length
-      ? existing.at(-1).teeTime || ''
-      : host.querySelector('input[data-spg="first-tee"]')?.value || '';
-    const groups = (d.groups[round] = d.groups[round] || {});
-    for (let i = 0; i < count; i++) {
-      number += 1;
-      if (clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
-      groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
-        number, teeTime: clock || '', players: {}
-      };
-    }
-    repaint();
-  };
 
   // Type-to-search per group: the same pattern as every other picker —
   // focus shows all unassigned players, typing filters, pointerdown moves
