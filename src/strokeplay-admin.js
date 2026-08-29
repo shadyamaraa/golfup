@@ -157,14 +157,13 @@ function groupsHTML(tn, d) {
               style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
           </span>`).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
       </div>
-      ${loose.length ? `
-        <div style="position:relative;margin-top:6px;">
-          <input data-spg="find" data-gid="${esc(g.gid)}" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
-            style="${INPUT}width:100%;box-sizing:border-box;font-size:0.78rem;" />
-          <div data-spg-list="${esc(g.gid)}" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
-            max-height:200px;overflow-y:auto;border:1px solid var(--border-color);
-            background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
-        </div>` : ''}
+      <div style="position:relative;margin-top:6px;">
+        <input data-spg="find" data-gid="${esc(g.gid)}" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
+          style="${INPUT}width:100%;box-sizing:border-box;font-size:0.78rem;" />
+        <div data-spg-list="${esc(g.gid)}" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
+          max-height:200px;overflow-y:auto;border:1px solid var(--border-color);
+          background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
+      </div>
     </div>`;
 
   return `
@@ -443,13 +442,23 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     if (!list) return;
 
     const candidates = () => {
-      const taken = new Set();
-      groupList(d, round).forEach(g => Object.keys(g.players || {}).forEach(pid => taken.add(pid)));
+      // Everyone playable except this group's own members. A player already
+      // in another flight still shows — labeled with it — and picking them
+      // MOVES them here, so a full field never dead-ends an empty group.
+      const groups = groupList(d, round);
+      const numberOf = new Map();
+      groups.forEach(g => Object.keys(g.players || {}).forEach(pid => numberOf.set(pid, g.number)));
+      const mine = new Set(Object.keys(d.groups[round]?.[gid]?.players || {}));
       return Object.entries(d.players)
-        .filter(([pid, p]) => p && !taken.has(pid)
+        .filter(([pid, p]) => p && !mine.has(pid)
           && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase()))
-        .map(([pid, p]) => ({ pid, name: p.name || pid }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .map(([pid, p]) => ({
+          pid,
+          name: p.name || pid,
+          from: numberOf.has(pid) ? `${t('spGroup')} ${numberOf.get(pid)}` : ''
+        }))
+        .sort((a, b) => (a.from ? 1 : 0) - (b.from ? 1 : 0)
+          || a.name.localeCompare(b.name));
     };
 
     const show = () => {
@@ -458,7 +467,9 @@ function wireGroups(host, tn, ctx, d, markDirty) {
       const hits = q ? all.filter(c => c.name.toLowerCase().includes(q)) : all;
       list.innerHTML = hits.length
         ? hits.slice(0, 40).map(c => `
-          <div data-spg-pid="${esc(c.pid)}" style="padding:8px 10px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid var(--border-color);">${esc(c.name)}</div>`).join('')
+          <div data-spg-pid="${esc(c.pid)}" style="padding:8px 10px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid var(--border-color);">
+            ${esc(c.name)}${c.from ? ` <span style="color:var(--text-muted);font-size:0.7rem;">↪ ${esc(c.from)}</span>` : ''}
+          </div>`).join('')
         : `<div style="padding:8px 10px;font-size:0.76rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
       list.hidden = false;
       list.querySelectorAll('[data-spg-pid]').forEach(item => {
