@@ -1758,14 +1758,14 @@ function renderTnBoard() {
   // for the flight's own members and the officials the rules would let in.
   const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
   const schedHasHole = spGroups.some(g => g.startHole);
-  const schedGrid = `display:grid;grid-template-columns:34px 56px ${schedHasHole ? '52px ' : ''}1fr auto;gap:8px;align-items:center;`;
+  const schedGrid = `display:grid;grid-template-columns:30px 66px ${schedHasHole ? '62px ' : ''}1fr auto;gap:8px;align-items:center;`;
   const scheduleHTML = spGroups.length ? `
     <details style="margin-bottom:10px;" ${tnStatus(tn) !== 'live' ? 'open' : ''}>
       <summary style="cursor:pointer;font-size:0.8rem;font-weight:800;">🕐 ${t('spSchedule')} — R${spRound}</summary>
-      <div style="${schedGrid}padding:8px 10px 2px;font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">
-        <span>${t('spGroup')} №</span>
-        <span>${t('spTeeTime')}</span>
-        ${schedHasHole ? `<span>⛳ ${t('spStartHole')}</span>` : ''}
+      <div style="${schedGrid}padding:8px 10px 2px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+        <span style="text-align:center;">№</span>
+        <span style="text-align:center;">${t('spTeeTime')}</span>
+        ${schedHasHole ? `<span style="text-align:center;">${t('spStartHole')}</span>` : ''}
         <span>${t('spPlayers')}</span>
         <span></span>
       </div>
@@ -1774,7 +1774,7 @@ function renderTnBoard() {
         const canIn = currentUser && (['admin', 'marshal'].includes(currentUser.role)
           || (myPid && g.players?.[myPid]));
         return `
-        <div class="surface-card" style="padding:10px;margin-top:6px;${schedGrid}">
+        <div class="surface-card" style="padding:10px 8px;margin-top:6px;${schedGrid}">
           <b style="font-size:0.8rem;text-align:center;">${esc(g.number ?? '')}</b>
           <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
           ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? `⛳ ${esc(g.startHole)}` : '–'}</span>` : ''}
