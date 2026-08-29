@@ -7529,6 +7529,9 @@ async function renderAdminRankingTab() {
 
 // Which tournament's editor is open in the admin list.
 let adminOpenTn = null;
+// The editor's meta-fields fold: collapsed by default so opening a
+// tournament lands on its players/lineup, not the name-and-dates form.
+let tnFormOpen = false;
 
 const TN_INPUT = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-family:var(--font);';
 
@@ -7654,8 +7657,13 @@ async function renderAdminTournamentsTab() {
         </div>
         ${open ? `
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
-            <div id="tn-e-${esc(tn.id)}-formwrap">${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}</div>
-            <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
+            <details data-tn-form${tnFormOpen ? ' open' : ''}>
+              <summary style="cursor:pointer;font-size:0.8rem;font-weight:800;">⚙ ${t('tnEditForm')}</summary>
+              <div style="margin-top:10px;">
+                <div id="tn-e-${esc(tn.id)}-formwrap">${tnAdminFormHTML(`tn-e-${tn.id}`, tn)}</div>
+                <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
+              </div>
+            </details>
             ${tnKind(tn) !== 'stroke'
               ? `<div id="mp-adm-${esc(tn.id)}"></div>`
               : `<div id="sp-adm-${esc(tn.id)}"></div>`}
@@ -7707,11 +7715,11 @@ async function renderAdminTournamentsTab() {
     if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); }
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
-    // The form renders below the row's actions, which on a long list can land
-    // off screen — and a button that scrolls nothing reads as a dead button.
+    // The editor renders below the row's actions, which on a long list can
+    // land off screen — and a button that scrolls nothing reads as dead.
     if (adminOpenTn) {
-      document.getElementById(`tn-e-${adminOpenTn}-name`)
-        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      document.querySelector('details[data-tn-form]')
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
   });
   el.querySelectorAll('.tn-adm-save').forEach(b => b.onclick = async () => {
@@ -7739,6 +7747,10 @@ async function renderAdminTournamentsTab() {
   // already typed into the shared fields survive; the format select reads
   // whatever is on screen when saving.
   if (adminOpenTn) {
+    // Remember the meta-form fold across this tab's frequent re-renders.
+    document.querySelector('details[data-tn-form]')?.addEventListener('toggle', (e) => {
+      tnFormOpen = e.target.open;
+    });
     const fmtSel = document.getElementById(`tn-e-${adminOpenTn}-format`);
     const wrap = document.getElementById(`tn-e-${adminOpenTn}-formwrap`);
     const tn = list.find(x => x.id === adminOpenTn);

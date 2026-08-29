@@ -1,5 +1,14 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Editor folds: tournament details and players collapse)
+
+Opening a tournament's editor now lands on the working sections, not the
+name-and-dates form: the meta fields (with their Save button) fold under
+"⚙ Тэмцээний мэдээлэл", collapsed by default, and the stroke editor's
+Тоглогчид section folds too — opening itself only while the roster is
+empty. Both folds remember their state across the tab's re-renders, the
+same pattern as the scoring-devices card.
+
 ## 2026-08-29 (Manual flights: empty groups by count, type-to-search adds)
 
 The draw isn't the only way to build flights any more: "Хоосон групп" —
