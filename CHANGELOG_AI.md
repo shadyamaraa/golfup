@@ -7,7 +7,8 @@ under a single-line header row — №, Эхлэх цаг, Эхлэх нүх, Т
 spectator no longer has to guess which pill is the tee time and which is
 the starting hole. The start-hole column only appears on shotgun draws
 (sequential schedules skip it), and the group-card link keeps its place
-in the last column.
+in the last column. Each flight's players list one per line instead of a
+run-on dotted string.
 
 ## 2026-08-29 (One course registry: games and tournaments share pars, tees and WHS)
 

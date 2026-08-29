@@ -1778,9 +1778,9 @@ function renderTnBoard() {
           <b style="font-size:0.8rem;text-align:center;">${esc(g.number ?? '')}</b>
           <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
           ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? `⛳ ${esc(g.startHole)}` : '–'}</span>` : ''}
-          <span style="min-width:0;font-size:0.8rem;">
-            ${esc(pids.map(pid => tn.sp.players[pid]?.name || pid).join(' · '))}
-          </span>
+          <div style="min-width:0;font-size:0.8rem;line-height:1.5;">
+            ${pids.map(pid => `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(tn.sp.players[pid]?.name || pid)}</div>`).join('')}
+          </div>
           ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">⛳ ${t('spGroupCard')}</a>` : '<span></span>'}
         </div>`;
       }).join('')}
