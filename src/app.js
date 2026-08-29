@@ -836,6 +836,7 @@ async function renderHome() {
       </div>
       <div id="home-weather"><div class="wx-skel"></div></div>
       <div id="home-news"></div>
+      <div id="next-tee-feature"></div>
       <div id="next-game-feature"></div>
       <div id="home-stats"></div>
       <div id="notifications-section"></div>
@@ -861,6 +862,7 @@ async function renderHome() {
   }
   renderHomeWeather(games);
   renderHomeNews();
+  renderNextTeeFeature();
   renderNextGameFeature(games);
   renderHomeStats(games);
   renderHomeUpcoming(games);
@@ -1281,6 +1283,9 @@ async function renderTournamentStrip(list) {
   }
   tnListCache = list;
   tnStripFor = currentUser?.id || null;
+  // The home dashboard's tee-time card reads the same list; refresh it now
+  // that the tournaments are actually loaded.
+  renderNextTeeFeature();
   let tn = tnFeatured(list);
   // With no real tournament to feature, preview builds fall back to the M Cup
   // sample so the strip's team-score row can be reviewed. The stroke play
@@ -2316,6 +2321,68 @@ async function renderGameWeather(game) {
     const live = document.getElementById('game-weather');
     if (live) live.innerHTML = '';
   }
+}
+
+// The member's tournament tee time, given the same "next game" treatment:
+// the nearest not-yet-final stroke tournament they are drawn into shows
+// their flight's tee time, start hole and flight-mates right on the home
+// dashboard, so nobody digs through the schedule tab for their own start.
+async function renderNextTeeFeature() {
+  const host = document.getElementById('next-tee-feature');
+  if (!host) return;
+  if (!currentUser) { host.innerHTML = ''; return; }
+  let list = tnListCache;
+  if (!list) {
+    try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { list = []; }
+  }
+  if (!document.getElementById('next-tee-feature')) return; // navigated away
+
+  const cards = [];
+  for (const tn of list || []) {
+    if (!spActive(tn) || tnStatus(tn) === 'final') continue;
+    const myPid = Object.keys(tn.sp.players).find(pid =>
+      pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id);
+    if (!myPid) continue;
+    const round = Math.min(Math.max(1, Number(tn.rounds) || 1), tnActiveRound(tn));
+    const gid = spPlayerGroup(tn.sp.players, myPid, round);
+    const g = gid ? tn.sp.groups?.[round]?.[gid] : null;
+    if (!g) continue;
+    const ms = tn.startDate && g.teeTime
+      ? new Date(`${tn.startDate}T${g.teeTime}`).getTime() : Infinity;
+    cards.push({ tn, round, g, myPid, ms });
+  }
+  if (!cards.length) { host.innerHTML = ''; return; }
+  cards.sort((a, b) => a.ms - b.ms);
+  const { tn, round, g, myPid } = cards[0];
+  const mates = Object.keys(g.players || {})
+    .filter(pid => pid !== myPid)
+    .map(pid => tn.sp.players[pid]?.name || pid);
+
+  host.innerHTML = `
+    <a href="#/tournament/${esc(tn.id)}" class="feature-card" style="display:block; text-decoration:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>Tee time</span>
+        <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">
+          ${esc([tn.startDate ? formatDate(tn.startDate) : '', g.teeTime || ''].filter(Boolean).join(' · '))}
+        </span>
+      </div>
+      <div class="fc-title">${esc(tn.name || '')}</div>
+      ${tn.venue ? `
+      <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.82rem; color:rgba(243,239,228,0.72);">
+        ${icon('location', { size: 14 })}<span>${esc(tn.venue)}</span>
+      </div>` : ''}
+      <div class="fc-chips">
+        <span class="fc-chip">${t('spGroup')} ${esc(g.number ?? '')}</span>
+        ${g.startHole ? `<span class="fc-chip">${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
+        <span class="fc-chip">R${round}</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:16px;">
+        <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.78rem; color:rgba(243,239,228,0.72);">
+          ${esc(mates.join(' · '))}
+        </span>
+        <span class="fc-cta" style="flex-shrink:0;">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </div>
+    </a>`;
 }
 
 // Prototype "next game" hero — the user's nearest upcoming game they're part of.

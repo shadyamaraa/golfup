@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Home dashboard: your tournament tee time card)
+
+A member drawn into a stroke tournament now sees their start right on
+the home dashboard, in the same hero-card style as "Дараагийн тоглолт":
+a **Tee time** card with the date and their flight's tee time, the
+tournament name and venue, chips for Групп № / Эхлэх нүх / round, and
+their flight-mates — tapping opens the tournament page. Shows the
+nearest not-yet-final tournament where the member has a flight; nothing
+renders otherwise.
+
 ## 2026-08-29 (Tournament tabs: Тэргүүлэгчид / Хуваарь, Net as a toggle)
 
 A stroke tournament's page now has exactly the two tabs the members
