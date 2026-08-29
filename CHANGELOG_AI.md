@@ -1,5 +1,29 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Print pages no longer pan sideways on phones)
+
+On iOS Safari the QR caption's URL — one long token Safari refuses to
+wrap — stretched the whole scorecard/schedule page wider than the screen,
+so the page itself scrolled sideways and the layout looked broken. The
+caption now breaks anywhere (`.sc-url`), the page container clips stray
+horizontal overflow (`.sc-clip`), and the sheet is capped at 100% width;
+tables keep scrolling inside their own `.sc-scroll` strip as designed.
+Files: `src/print-common.js`, `src/scorecard.js`, `src/schedule.js`.
+
+## 2026-08-29 (Print pagination: tables break between rows, no more near-empty pages)
+
+A printed draw came out as 3 pages with pages 1 and 3 nearly blank: the
+whole flight table sat in a `break-inside: avoid` block, so a table taller
+than the space left under the sheet header jumped wholesale to page 2, and
+the footer line spilled onto page 3 alone. Long tables (tournament draws,
+game start lists, scorecard reports) now use `<thead>`/`<tbody>` and break
+BETWEEN rows — the header row repeats on every printed page
+(`thead { display: table-header-group }`), only individual rows carry
+`break-inside: avoid`, and the whole-block avoid stays only on the small
+per-player scorecards. The JCI-sized 15-flight draw now prints as 2 full
+pages (verified by printing to PDF headlessly and inspecting the pages).
+Files: `src/print-common.js`, `src/schedule.js`, `src/scorecard.js`.
+
 ## 2026-08-29 (Tournament time table for marshals: stroke play flights print too)
 
 `#/tnschedule/:tnId` now lays out an in-app stroke play tournament's draw

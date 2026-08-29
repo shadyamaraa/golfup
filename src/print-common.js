@@ -67,9 +67,22 @@ export function printStyleHTML() {
       min-width: 20px; color: #111;
     }
     .sc-scroll { overflow-x: auto; }
+    /* The QR caption carries the page's own URL — one long token Safari
+       will not wrap on its own, which stretched the whole page sideways on
+       phones. Break it anywhere, and clip the page container so no stray
+       overflow can ever pan the viewport. */
+    .sc-url { word-break: break-all; overflow-wrap: anywhere; }
+    .sc-clip { overflow-x: hidden; max-width: 100%; }
+    .sc-sheet { max-width: 100%; box-sizing: border-box; }
     .sc-no-print { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .sc-block { break-inside: avoid; page-break-inside: avoid; }
     .sc-page-break { break-before: page; page-break-before: always; }
+    /* Long tables break BETWEEN rows, never inside one, and repeat their
+       header row on every printed page. A whole-table avoid pushed a table
+       taller than the space left after the sheet header onto its own page,
+       leaving page 1 nearly empty. */
+    .sc-sheet thead { display: table-header-group; }
+    .sc-sheet tr { break-inside: avoid; page-break-inside: avoid; }
     @media print {
       #app-header, #bottom-nav, #tn-strip, #global-sponsor, #toast-container,
       .sc-no-print { display: none !important; }

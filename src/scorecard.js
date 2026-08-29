@@ -128,19 +128,23 @@ function reportTableHTML(title, entries) {
     });
   if (!rows.length) return '';
   return `
-    <div class="sc-block" style="margin-top:16px;">
+    <div style="margin-top:16px;">
       <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${title}</div>
       <table style="margin-top:5px;min-width:260px;">
+        <thead>
         <tr class="sc-head">
           <th style="width:24px;">#</th><th class="sc-lbl" style="text-align:left;">${t('tnPlayer')}</th>
           <th style="width:52px;">Gross</th><th style="width:44px;">HCP</th><th style="width:52px;">Net</th>
         </tr>
+        </thead>
+        <tbody>
         ${rows.map((r, i) => `
         <tr${i === 0 && r.net !== null && r.thru === r.len ? ' style="font-weight:700;background:#f3ecd9;"' : ''}>
           <td>${i + 1}</td>
           <td style="text-align:left;white-space:nowrap;">${esc(r.name)}${r.thru < r.len ? ` <span style="color:#999;">(${r.thru}/${r.len})</span>` : ''}</td>
           <td>${r.gross}</td><td>${r.hcp ?? ''}</td><td style="font-weight:700;">${r.net ?? ''}</td>
         </tr>`).join('')}
+        </tbody>
       </table>
     </div>`;
 }
@@ -206,7 +210,7 @@ function headerHTML(game, url) {
       </div>
       <div style="text-align:center;flex:0 0 auto;">
         <canvas id="sc-qr" width="120" height="120"></canvas>
-        <div style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
+        <div class="sc-url" style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
       </div>
     </div>`;
 }
@@ -251,7 +255,7 @@ export async function renderScorecardPage(gameId, ctx) {
   `).join('');
 
   host.innerHTML = `
-    <div class="detail-container fade-in">
+    <div class="detail-container fade-in sc-clip">
       ${printStyleHTML()}
       <style>
         .sc-sheet .sc-lbl { min-width: 42px; background: #efe9db; text-align: left; padding-left: 6px; }
