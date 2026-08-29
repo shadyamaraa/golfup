@@ -114,12 +114,111 @@ export const spActive = (tn) => !!tn?.sp?.players;
 export const spHasHcp = (tn) =>
   Object.values(tn?.sp?.players || {}).some(p => Number.isFinite(Number(p?.hcp)));
 
-// Who may enter strokes on a player's card: the player themself (their pid
-// IS their member id, or a legacy record carries it as userId) and the
-// club's officials. Mirrors matchplay-score's canScore.
-export function canScoreSp(user, pid, players) {
+// ---- Groups (flights) ----
+// Groups live per ROUND — professional draws regroup every day (R1 by draw,
+// R2+ by standings with the leaders off last). Stored twice on purpose:
+//   sp/groups/{round}/{gid} = { number, teeTime, players: {pid:true} }
+//   sp/players/{pid}/groups/{round} = gid
+// The pointer on the player is what the database rules read to allow "anyone
+// in my flight may enter my strokes" without iterating groups.
+
+// The player's group id for a round, and the sorted group list.
+export const spPlayerGroup = (players, pid, round) =>
+  players?.[pid]?.groups?.[round] || null;
+
+export function spGroupList(tn, round) {
+  return Object.entries(tn?.sp?.groups?.[round] || {})
+    .filter(([, g]) => g)
+    .map(([gid, g]) => ({ gid, ...g }))
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0)
+      || String(a.teeTime || '').localeCompare(String(b.teeTime || '')));
+}
+
+// Chunk an ordered list of pids into groups of `size`, spreading the
+// leftover so no one plays alone: 10 players at size 4 → 4/3/3, not 4/4/2.
+export function chunkGroups(pids, size = 4) {
+  const n = pids.length;
+  if (!n) return [];
+  const count = Math.max(1, Math.ceil(n / size));
+  const base = Math.floor(n / count);
+  let extra = n % count;
+  const out = [];
+  let at = 0;
+  for (let i = 0; i < count; i++) {
+    const take = base + (extra > 0 ? 1 : 0);
+    if (extra > 0) extra--;
+    out.push(pids.slice(at, at + take));
+    at += take;
+  }
+  return out;
+}
+
+/**
+ * The draw: an ordered list of groups (arrays of pids) by `method`.
+ *   'random'    — shuffled (rnd() injectable so tests are deterministic);
+ *   'hcp'       — snake seeding by HCP so every group mixes strong and weak;
+ *   'standings' — by current total, LEADERS LAST (the professional draw:
+ *                 the last group off holds the lead), needs `entries` from
+ *                 spEntries(); players without a score go out first.
+ * WD/DQ players are left out of every draw.
+ */
+export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = Math.random } = {}) {
+  const players = tn?.sp?.players || {};
+  const pids = Object.keys(players).filter(pid => {
+    const p = players[pid];
+    return p && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
+  });
+
+  if (method === 'hcp') {
+    const hcpOf = (pid) => {
+      const n = Number(players[pid]?.hcp);
+      return Number.isFinite(n) ? n : 999;
+    };
+    pids.sort((a, b) => hcpOf(a) - hcpOf(b));
+    // Snake over the group count: 1..N, then N..1, so totals even out.
+    const count = Math.max(1, Math.ceil(pids.length / size));
+    const buckets = Array.from({ length: count }, () => []);
+    pids.forEach((pid, i) => {
+      const lap = Math.floor(i / count);
+      const at = i % count;
+      buckets[lap % 2 ? count - 1 - at : at].push(pid);
+    });
+    return buckets.filter(g => g.length);
+  }
+
+  if (method === 'standings') {
+    const totals = new Map(spEntries(tn, 'gross').map(e => [e.pid, e.total]));
+    // Worst first: the leaders land in the LAST group, teeing off last.
+    pids.sort((a, b) => {
+      const ta = totals.get(a); const tb = totals.get(b);
+      const va = ta === null || ta === undefined ? -Infinity : ta;
+      const vb = tb === null || tb === undefined ? -Infinity : tb;
+      return vb - va;
+    });
+    return chunkGroups(pids, size);
+  }
+
+  // random — Fisher–Yates with the injectable rnd.
+  for (let i = pids.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [pids[i], pids[j]] = [pids[j], pids[i]];
+  }
+  return chunkGroups(pids, size);
+}
+
+// Who may enter strokes on a player's card: the player themself, anyone in
+// the same group that round (the flight's marker practice — and what the
+// database rules enforce via the player's group pointer), and the club's
+// officials. `round` is optional: without it only self and officials pass.
+export function canScoreSp(user, pid, players, round) {
   if (!user || !pid) return false;
   if (user.role === 'admin' || user.role === 'marshal') return true;
   const p = players?.[pid];
-  return pid === user.id || p?.userId === user.id;
+  if (pid === user.id || p?.userId === user.id) return true;
+  if (!round) return false;
+  const myPid = players?.[user.id] ? user.id
+    : Object.keys(players || {}).find(k => players[k]?.userId === user.id);
+  if (!myPid) return false;
+  const g = spPlayerGroup(players, pid, round);
+  return !!g && g === spPlayerGroup(players, myPid, round);
 }

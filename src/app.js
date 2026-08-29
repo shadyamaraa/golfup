@@ -7,9 +7,9 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
-import { renderSpScorer } from './strokeplay-score.js';
+import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar } from './courses.js';
@@ -405,6 +405,15 @@ export async function router() {
       // Local mode has no live listener; hand the screen the loaded record.
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpScorer(main(), tnId, pid, {
+        user: currentUser, showToast, tn: tnOnce,
+        backHash: `#/tournament/${tnId}`
+      });
+      activeUnsubs.push(off);
+    }
+    else if (hash.startsWith('#/spgroup/')) {
+      const [tnId, round, gid] = hash.split('#/spgroup/')[1].split('/');
+      const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
+      const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
         user: currentUser, showToast, tn: tnOnce,
         backHash: `#/tournament/${tnId}`
       });
@@ -1730,11 +1739,39 @@ function renderTnBoard() {
 
   const me = ranked.find(tnIsMe);
   // A member playing in an in-app-scored tournament gets a straight path to
-  // their own card; the board itself is everyone's.
+  // their card — the flight's group card when a draw exists, their own
+  // otherwise. The board itself is everyone's.
   const myPid = spActive(tn) && currentUser
     ? Object.keys(tn.sp.players).find(pid =>
       pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id)
     : null;
+  const spRound = spActive(tn) ? Math.min(Math.max(1, Number(tn.rounds) || 1), tnActiveRound(tn)) : 1;
+  const myGid = myPid ? spPlayerGroup(tn.sp.players, myPid, spRound) : null;
+  const myCardHref = myGid
+    ? `#/spgroup/${esc(tn.id)}/${spRound}/${esc(myGid)}`
+    : myPid ? `#/spscore/${esc(tn.id)}/${esc(myPid)}` : null;
+
+  // The day's schedule: every flight with its tee time. The card link shows
+  // for the flight's own members and the officials the rules would let in.
+  const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
+  const scheduleHTML = spGroups.length ? `
+    <details style="margin-bottom:10px;" ${tnStatus(tn) !== 'live' ? 'open' : ''}>
+      <summary style="cursor:pointer;font-size:0.8rem;font-weight:800;">🕐 ${t('spSchedule')} — R${spRound}</summary>
+      ${spGroups.map(g => {
+        const pids = Object.keys(g.players || {});
+        const canIn = currentUser && (['admin', 'marshal'].includes(currentUser.role)
+          || (myPid && g.players?.[myPid]));
+        return `
+        <div class="surface-card" style="padding:10px;margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <b style="font-size:0.8rem;">${esc(g.number ?? '')}</b>
+          <span class="pill-soft" style="font-size:0.7rem;">${esc(g.teeTime || '–')}</span>
+          <span style="flex:1;min-width:140px;font-size:0.8rem;">
+            ${esc(pids.map(pid => tn.sp.players[pid]?.name || pid).join(' · '))}
+          </span>
+          ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">⛳ ${t('spGroupCard')}</a>` : ''}
+        </div>`;
+      }).join('')}
+    </details>` : '';
 
   host.innerHTML = `
     ${spActive(tn) && spHasHcp(tn) ? `
@@ -1742,8 +1779,9 @@ function renderTnBoard() {
         <button class="seg-tab${tnSpMetric !== 'net' ? ' active' : ''}" data-sp-metric="gross">${t('spGross')}</button>
         <button class="seg-tab${tnSpMetric === 'net' ? ' active' : ''}" data-sp-metric="net">${t('spNet')}</button>
       </div>` : ''}
-    ${myPid ? `
-      <a href="#/spscore/${esc(tn.id)}/${esc(myPid)}" class="btn btn-primary btn-sm"
+    ${scheduleHTML}
+    ${myCardHref ? `
+      <a href="${myCardHref}" class="btn btn-primary btn-sm"
          style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
         ⛳ ${t('mpEnterScore')}
       </a>` : ''}

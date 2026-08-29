@@ -23,7 +23,10 @@
           },
           "scores": {
             "$pid": {
-              ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists() && (root.child('mpDevices').child(auth.uid).child('userId').val() === $pid || root.child('tournaments').child($tnId).child('sp').child('players').child($pid).child('userId').val() === root.child('mpDevices').child(auth.uid).child('userId').val())"
+              ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists() && (root.child('mpDevices').child(auth.uid).child('userId').val() === $pid || root.child('tournaments').child($tnId).child('sp').child('players').child($pid).child('userId').val() === root.child('mpDevices').child(auth.uid).child('userId').val())",
+              "$round": {
+                ".write": "auth != null && root.child('mpDevices').child(auth.uid).exists() && root.child('tournaments').child($tnId).child('sp').child('players').child($pid).child('groups').child($round).exists() && root.child('tournaments').child($tnId).child('sp').child('players').child($pid).child('groups').child($round).val() === root.child('tournaments').child($tnId).child('sp').child('players').child(root.child('mpDevices').child(auth.uid).child('userId').val()).child('groups').child($round).val()"
+              }
             }
           }
         },

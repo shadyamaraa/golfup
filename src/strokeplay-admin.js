@@ -7,6 +7,9 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { drawGroups, spGroupList } from './strokeplay.js';
+import { addMinutesHHMM } from './matchplay.js';
+import { nameKey, nameMatches } from './tournament-sheet.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15,20 +18,59 @@ const INPUT = 'padding:8px;border-radius:7px;border:1px solid var(--border-color
 
 const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 
-// tnId -> { players, dirty, removed } — survives tab re-renders, dropped on
-// save/close so a stale snapshot can't overwrite newer work.
+// tnId -> { players, groups, dirty, removed } — survives tab re-renders,
+// dropped on save/close so a stale snapshot can't overwrite newer work.
+// groups: { [round]: { gid: { number, teeTime, players: {pid:true} } } }
 const drafts = new Map();
+// Which round's draw each open editor is looking at.
+const groupRoundFor = new Map();
 
 function draftFor(tn) {
   let d = drafts.get(tn.id);
   if (!d || !d.dirty) {
-    d = { players: clone(tn.sp?.players) || {}, dirty: false, removed: new Set() };
+    d = {
+      players: clone(tn.sp?.players) || {},
+      groups: clone(tn.sp?.groups) || {},
+      dirty: false,
+      removed: new Set()
+    };
     drafts.set(tn.id, d);
   }
   return d;
 }
 
 export function discardSpDraft(tnId) { drafts.delete(tnId); }
+
+// ---- Group helpers on the draft ----
+
+const roundOf = (tn) => Math.min(
+  Math.max(1, Number(tn.rounds) || 1),
+  groupRoundFor.get(tn.id) || Number(tn.currentRound) || 1);
+
+const groupList = (d, round) => Object.entries(d.groups[round] || {})
+  .filter(([, g]) => g)
+  .map(([gid, g]) => ({ gid, ...g }))
+  .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+
+const groupOfPid = (d, round, pid) => {
+  const hit = Object.entries(d.groups[round] || {})
+    .find(([, g]) => g?.players?.[pid]);
+  return hit ? hit[0] : null;
+};
+
+// Re-time the procession: from the group holding `fromGid` (or the first),
+// every later group goes off `step` minutes behind the one before it.
+function rechainTees(d, round, fromGid, step = 10) {
+  const list = groupList(d, round);
+  const at = fromGid ? list.findIndex(g => g.gid === fromGid) : 0;
+  if (at < 0) return;
+  let clock = list[at]?.teeTime;
+  if (!/^\d{1,2}:\d{2}$/.test(String(clock || ''))) return;
+  for (let i = at + 1; i < list.length; i++) {
+    clock = addMinutesHHMM(clock, step);
+    d.groups[round][list[i].gid].teeTime = clock;
+  }
+}
 
 // ---- Rendering ----
 
@@ -70,9 +112,78 @@ function sectionHTML(tn, users) {
       </div>
       <input data-sp="manual" placeholder="✍ ${t('spAddManual')}"
         style="${INPUT}width:100%;box-sizing:border-box;margin-top:6px;" />
+      ${groupsHTML(tn, d)}
       <button data-sp="save" class="btn ${d.dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
         ${t('mpSave')}${d.dirty ? ' *' : ''}
       </button>
+    </div>`;
+}
+
+// ---- Groups (flights) section ----
+
+function groupsHTML(tn, d) {
+  const roundCount = Math.max(1, Number(tn.rounds) || 1);
+  const round = roundOf(tn);
+  const groups = groupList(d, round);
+  const inGroup = new Set();
+  groups.forEach(g => Object.keys(g.players || {}).forEach(pid => inGroup.add(pid)));
+  const loose = Object.entries(d.players)
+    .filter(([pid, p]) => p && !inGroup.has(pid)
+      && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase()))
+    .sort((a, b) => String(a[1].name || '').localeCompare(String(b[1].name || '')));
+
+  const groupBox = (g) => `
+    <div style="border:1px solid var(--border-color);border-radius:8px;padding:8px;margin-top:6px;background:var(--bg-color);">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <b style="font-size:0.8rem;">${t('spGroup')} ${esc(g.number ?? '')}</b>
+        <input data-spg="tee" data-gid="${esc(g.gid)}" type="time" value="${esc(g.teeTime || '')}"
+          title="${t('mpTee')}" style="${INPUT}width:100px;" />
+        <a href="#/spgroup/${esc(tn.id)}/${round}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
+        <button data-spg="del-group" data-gid="${esc(g.gid)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+        ${Object.keys(g.players || {}).map(pid => `
+          <span class="pill-soft" style="font-size:0.72rem;">${esc(d.players[pid]?.name || pid)}
+            <button data-spg="del-player" data-gid="${esc(g.gid)}" data-pid="${esc(pid)}"
+              style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
+          </span>`).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
+        ${loose.length ? `
+          <select data-spg="add-player" data-gid="${esc(g.gid)}" style="${INPUT}font-size:0.74rem;max-width:170px;">
+            <option value="">+</option>
+            ${loose.map(([pid, p]) => `<option value="${esc(pid)}">${esc(p.name || pid)}</option>`).join('')}
+          </select>` : ''}
+      </div>
+    </div>`;
+
+  return `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <b style="font-size:0.85rem;">${t('spGroups')}</b>
+        <span style="display:flex;gap:4px;">
+          ${Array.from({ length: roundCount }, (_, i) => `
+            <button data-spg="round" data-round="${i + 1}" class="btn ${round === i + 1 ? 'btn-primary' : 'btn-outline'} btn-sm" style="font-size:0.72rem;">R${i + 1}</button>`).join('')}
+        </span>
+        <button data-spg="import" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;">📄 Excel</button>
+        <input data-spg-file type="file" accept=".xlsx,.xls,.csv" style="display:none;" />
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+        <select data-spg="method" style="${INPUT}font-size:0.78rem;">
+          <option value="random">${t('spDrawRandom')}</option>
+          <option value="hcp">${t('spDrawHcp')}</option>
+          <option value="standings">${t('spDrawStandings')}</option>
+        </select>
+        <select data-spg="size" style="${INPUT}font-size:0.78rem;">
+          ${[4, 3].map(n => `<option value="${n}">${n} ${t('spPerGroup')}</option>`).join('')}
+        </select>
+        <input data-spg="first-tee" type="time" value="08:00" title="${t('mpTee')}" style="${INPUT}width:100px;" />
+        <button data-spg="draw" class="btn btn-primary btn-sm">${t('spDraw')}</button>
+      </div>
+      ${groups.map(groupBox).join('')
+        || `<p style="font-size:0.76rem;color:var(--text-secondary);margin:8px 0 0;">${t('spNoGroups')}</p>`}
+      ${loose.length && groups.length ? `
+        <p style="font-size:0.72rem;color:var(--amber);margin:6px 0 0;">
+          ⚠ ${loose.length} ${t('spUnassigned')}: ${esc(loose.map(([, p]) => p.name).join(', '))}
+        </p>` : ''}
     </div>`;
 }
 
@@ -81,12 +192,26 @@ function sectionHTML(tn, users) {
 async function saveDraft(tn, ctx) {
   const d = draftFor(tn);
   const patch = {};
+
+  // The group pointer on each player is derived from the draw itself, so the
+  // two copies can never disagree; the rules read the pointer.
+  const pointers = {};
+  Object.entries(d.groups).forEach(([round, groups]) => {
+    Object.entries(groups || {}).forEach(([gid, g]) => {
+      Object.keys(g?.players || {}).forEach(pid => {
+        (pointers[pid] = pointers[pid] || {})[round] = gid;
+      });
+    });
+    patch[`sp/groups/${round}`] = groups && Object.keys(groups).length ? groups : null;
+  });
+
   Object.entries(d.players).forEach(([pid, p]) => {
     if (!p) return;
     const rec = { name: p.name || '' };
     if (p.userId) rec.userId = p.userId;
     if (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined && !isNaN(Number(p.hcp))) rec.hcp = Number(p.hcp);
     if (p.status) rec.status = p.status;
+    if (pointers[pid]) rec.groups = pointers[pid];
     patch[`sp/players/${pid}`] = rec;
   });
   d.removed.forEach(pid => {
@@ -136,10 +261,15 @@ function wire(host, tn, ctx) {
     const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
     if (scored && !confirm(t('spDelPlayerScored'))) return;
     delete d.players[pid];
+    // Out of the roster means out of every round's draw too.
+    Object.values(d.groups).forEach(groups =>
+      Object.values(groups || {}).forEach(g => { if (g?.players) delete g.players[pid]; }));
     d.removed.add(pid);
     d.dirty = true;
     paint(host, tn, ctx);
   });
+
+  wireGroups(host, tn, ctx, d, markDirty);
 
   // Manual (non-member) player: type a name, press Enter.
   const manual = host.querySelector('input[data-sp="manual"]');
@@ -200,6 +330,171 @@ function wire(host, tn, ctx) {
       ctx.showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
     });
   };
+}
+
+// ---- Group wiring ----
+
+function wireGroups(host, tn, ctx, d, markDirty) {
+  const round = roundOf(tn);
+  const repaint = () => { d.dirty = true; paint(host, tn, ctx); };
+
+  host.querySelectorAll('button[data-spg="round"]').forEach(b => b.onclick = () => {
+    groupRoundFor.set(tn.id, Number(b.dataset.round));
+    paint(host, tn, ctx);
+  });
+
+  // The draw: method + size + first tee → groups numbered in order, teeing
+  // off 10 minutes apart. Replaces this round's draw after a confirm when
+  // one already exists.
+  const drawBtn = host.querySelector('button[data-spg="draw"]');
+  if (drawBtn) drawBtn.onclick = () => {
+    if (Object.keys(d.groups[round] || {}).length && !confirm(t('spRedrawConfirm'))) return;
+    const method = host.querySelector('select[data-spg="method"]')?.value || 'random';
+    const size = Number(host.querySelector('select[data-spg="size"]')?.value) || 4;
+    const firstTee = host.querySelector('input[data-spg="first-tee"]')?.value || '';
+    // The draw reads the DRAFT roster (unsaved adds included) but the live
+    // scores, so a standings draw ranks on what the board shows.
+    const draw = drawGroups(
+      { ...tn, sp: { ...(tn.sp || {}), players: d.players, scores: tn.sp?.scores || {} } },
+      { method, size, round });
+    const groups = {};
+    let clock = firstTee;
+    draw.forEach((pids, i) => {
+      const gid = `g_${round}_${i + 1}`;
+      groups[gid] = {
+        number: i + 1,
+        teeTime: clock || '',
+        players: Object.fromEntries(pids.map(pid => [pid, true]))
+      };
+      if (clock) clock = addMinutesHHMM(clock, 10);
+    });
+    d.groups[round] = groups;
+    repaint();
+  };
+
+  host.querySelectorAll('input[data-spg="tee"]').forEach(inp => inp.onchange = () => {
+    const g = d.groups[round]?.[inp.dataset.gid];
+    if (!g) return;
+    g.teeTime = inp.value;
+    // The groups behind follow at 10-minute steps — a procession, not a
+    // sheet of independent times.
+    rechainTees(d, round, inp.dataset.gid);
+    repaint();
+  });
+
+  host.querySelectorAll('button[data-spg="del-group"]').forEach(b => b.onclick = () => {
+    delete d.groups[round]?.[b.dataset.gid];
+    repaint();
+  });
+
+  host.querySelectorAll('button[data-spg="del-player"]').forEach(b => b.onclick = () => {
+    const g = d.groups[round]?.[b.dataset.gid];
+    if (g?.players) delete g.players[b.dataset.pid];
+    repaint();
+  });
+
+  host.querySelectorAll('select[data-spg="add-player"]').forEach(sel => sel.onchange = () => {
+    if (!sel.value) return;
+    const g = d.groups[round]?.[sel.dataset.gid];
+    if (!g) return;
+    // One flight per player: joining a group leaves the old one.
+    const old = groupOfPid(d, round, sel.value);
+    if (old) delete d.groups[round][old].players[sel.value];
+    (g.players = g.players || {})[sel.value] = true;
+    repaint();
+  });
+
+  // Excel/CSV import: rows of (group, name[, tee time]) become this round's
+  // draw; names are matched to the roster with the same tolerant matcher the
+  // sheet-era leaderboard used.
+  const fileInp = host.querySelector('input[data-spg-file]');
+  const importBtn = host.querySelector('button[data-spg="import"]');
+  if (importBtn && fileInp) {
+    importBtn.onclick = () => fileInp.click();
+    fileInp.onchange = async () => {
+      const file = fileInp.files && fileInp.files[0];
+      fileInp.value = '';
+      if (!file) return;
+      try {
+        const rows = await readTableFile(file);
+        const res = groupsFromRows(rows, d.players);
+        if (!res.groups.length) { ctx.showToast('⚠️ ' + t('spImportNone'), 'warning'); return; }
+        const summary = `${res.groups.length} ${t('spGroups')} · ${res.matched} ${t('tnPlayers')}`
+          + (res.unmatched.length ? ` · ${t('spImportUnmatched')}: ${res.unmatched.join(', ')}` : '');
+        if (!confirm(`${summary}\n\n${t('tnConfirmImport')}`)) return;
+        const groups = {};
+        res.groups.forEach((g, i) => {
+          groups[`g_${round}_${i + 1}`] = {
+            number: i + 1,
+            teeTime: g.teeTime || '',
+            players: Object.fromEntries(g.pids.map(pid => [pid, true]))
+          };
+        });
+        d.groups[round] = groups;
+        repaint();
+      } catch (err) {
+        console.error('[sp-groups-import]', err);
+        ctx.showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+      }
+    };
+  }
+}
+
+// A workbook or CSV as rows of trimmed strings.
+async function readTableFile(file) {
+  if ((file.name || '').toLowerCase().endsWith('.csv')) {
+    return (await file.text()).split(/\r?\n/).map(l => l.split(',').map(c => c.trim()));
+  }
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' })
+    .map(r => r.map(c => String(c ?? '').trim()));
+}
+
+// Read a draw out of pasted table rows. Understood shapes, per row:
+//   [group №, player name, tee time?]  — the common export;
+//   [player name] under a "Групп 1" / "Group 1"-style heading row.
+// Rows whose name matches nothing on the roster are reported, not guessed.
+export function groupsFromRows(rows, players) {
+  const roster = Object.entries(players || {})
+    .filter(([, p]) => p)
+    .map(([pid, p]) => ({ pid, key: nameKey(p.name || '') }));
+  const findPid = (name) => {
+    const k = nameKey(name);
+    if (!k) return null;
+    return roster.find(r => r.key && nameMatches(k, [r.key]))?.pid || null;
+  };
+  const timeIn = (cells) => {
+    const hit = cells.map(c => /^(\d{1,2}):(\d{2})$/.exec(c)).find(Boolean);
+    return hit ? `${hit[1].padStart(2, '0')}:${hit[2]}` : '';
+  };
+
+  const byNumber = new Map();
+  let heading = 0;
+  (rows || []).forEach(cells => {
+    if (!Array.isArray(cells)) return;
+    const text = cells.filter(Boolean);
+    if (!text.length) return;
+    // A "Group 3" heading row switches the bucket the bare names below fill.
+    const head = /(?:групп|group|flight)\s*№?\s*(\d+)/i.exec(text.join(' '));
+    const numCell = text.find(c => /^\d{1,2}$/.test(c));
+    if (head && !text.some(c => findPid(c))) { heading = Number(head[1]); return; }
+    const names = text.map(c => ({ c, pid: findPid(c) })).filter(x => x.pid);
+    if (!names.length) return;
+    const n = numCell ? Number(numCell) : (heading || 1);
+    const g = byNumber.get(n) || { pids: [], teeTime: '' };
+    names.forEach(x => { if (!g.pids.includes(x.pid)) g.pids.push(x.pid); });
+    g.teeTime = g.teeTime || timeIn(text);
+    byNumber.set(n, g);
+  });
+
+  const groups = [...byNumber.entries()].sort((a, b) => a[0] - b[0]).map(([, g]) => g);
+  const matchedSet = new Set(groups.flatMap(g => g.pids));
+  const unmatched = (rows || []).flatMap(cells => (Array.isArray(cells) ? cells : []))
+    .filter(c => c && /[^\d:.\s]/.test(c) && nameKey(c) && !findPid(c)
+      && !/групп|group|flight|нэр|name|tee|цаг/i.test(c));
+  return { groups, matched: matchedSet.size, unmatched: [...new Set(unmatched)].slice(0, 8) };
 }
 
 /** Render the stroke play player section into `host`. */
