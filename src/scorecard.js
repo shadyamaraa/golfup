@@ -17,7 +17,7 @@ import { t } from './i18n.js';
 import { gameHoleCount } from './handicap.js';
 import { holePar, holeSI, coursePar, courseTees, physicalHole } from './courses.js';
 import { gameScoreLine, gamePlayingHcp, isCompMode, splitHcp, fmtToPar, groupsOf } from './game-score.js';
-import { esc, pageUrl, mountQr, copyUrl, printStyleHTML } from './print-common.js';
+import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
 // Result colors, matching the printed legend. Under par is red here as on
 // the club's cards (tokens-redesign.css keeps the same convention).
@@ -233,6 +233,8 @@ export async function renderScorecardPage(gameId, ctx) {
       <div class="empty-state" style="padding:40px 20px;"><p>${t('gsGameNotFound')}</p></div></div>`;
     return;
   }
+
+  setPageTitle(ctx, `${game.course?.name || game.location || ''} ${game.date || ''} — ${t('gsTitle')}`);
 
   const groups = groupsOf(game).filter(g => g.length > 0);
   const players = groups.flat();

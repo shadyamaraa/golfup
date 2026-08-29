@@ -33,6 +33,18 @@ export async function mountQr(canvasId, url) {
   }
 }
 
+// Name the browser tab after the event while a print page is mounted —
+// Print → Save as PDF uses document.title as the suggested file name, so
+// the download reads "JCI Mongolia Open — Хуваарь.pdf" instead of the
+// app's own title. Restored through ctx.onUnsub when the route changes.
+export function setPageTitle(ctx, title) {
+  const clean = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return;
+  const prev = document.title;
+  document.title = clean;
+  if (typeof ctx?.onUnsub === 'function') ctx.onUnsub(() => { document.title = prev; });
+}
+
 // Copy a URL to the clipboard with the execCommand fallback (same pattern as
 // copyGameLink in app.js). showToast comes from the page's ctx.
 export function copyUrl(url, showToast, label) {
