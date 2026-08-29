@@ -1820,6 +1820,7 @@ function renderTnBoard() {
       ${spGroups.length ? `
       <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 0;">
         <b style="font-size:0.8rem;">${t('spSchedule')} — R${spRound}</b>
+        <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;gap:4px;">🖨 ${t('scPrint')}</a>
       </div>
       <div style="${schedGrid}padding:8px 10px 2px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
         <span style="text-align:center;">№</span>
@@ -7787,8 +7788,18 @@ function tnAdminReadForm(p) {
   };
 }
 
-// Admin "Хуваарь" tab: the day's games (and match play draws) with one-tap
-// links to the printable marshal sheets — the start list and the scorecard.
+// Does the tournament have a draw the print page can lay out — match play
+// pairings, or a stroke play flight list in any round?
+function tnHasPrintableDraw(tn) {
+  if (tn?.mp?.matches && Object.keys(tn.mp.matches).length) return true;
+  if (!spActive(tn)) return false;
+  const rounds = Math.max(1, Number(tn.rounds) || 1);
+  for (let r = 1; r <= rounds; r++) if (spGroupList(tn, r).length) return true;
+  return false;
+}
+
+// Admin "Хуваарь" tab: the day's games and tournament draws with one-tap
+// links to the printable marshal sheets — the time table and the scorecard.
 async function renderAdminScheduleTab() {
   const el = document.getElementById('admin-sched-content');
   if (!el) return;
@@ -7821,7 +7832,7 @@ async function renderAdminScheduleTab() {
       </div>`;
   };
 
-  const mpTns = tns.filter(tn => tnKind(tn) !== 'stroke' && tn.mp?.matches && Object.keys(tn.mp.matches).length);
+  const mpTns = tns.filter(tnHasPrintableDraw);
   const tnRowHTML = (tn) => `
     <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <div style="flex:1;min-width:170px;">
@@ -7882,7 +7893,7 @@ async function renderAdminTournamentsTab() {
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
-          ${tnKind(tn) !== 'stroke' && tn.mp?.matches ? `<a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>` : ''}
+          ${tnHasPrintableDraw(tn) ? `<a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>` : ''}
           <button class="btn ${tn.homeHidden ? 'btn-outline-danger' : 'btn-outline'} btn-sm tn-adm-vis" data-tn="${esc(tn.id)}" title="${t('tnHomeVisTitle')}">
             ${tn.homeHidden ? '⊘ ' + t('tnHomeHidden') : '◉ ' + t('tnHomeShown')}
           </button>

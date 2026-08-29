@@ -19,6 +19,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { gamePlayingHcp, groupsOf } from './game-score.js';
+import { spActive, spGroupList } from './strokeplay.js';
 import { courseTees } from './courses.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML } from './print-common.js';
 
@@ -208,9 +209,55 @@ export async function renderGameSchedulePage(gameId, ctx) {
   paint();
 }
 
-// ---- M Cup (match play) draw ----
+// ---- Tournament draws: stroke play flights and the M Cup ----
 
 const MP_FORMAT_LABELS = { FOURSOMES: 'Foursomes', FOURBALL: 'Four-ball', SINGLES: 'Singles' };
+
+// The marshal's time table for an in-app stroke play tournament: one section
+// per round that has a draw — flight №, tee time, starting hole (shotgun
+// draws only), players with HCP, and a signature column.
+function strokeScheduleBlocksHTML(tn) {
+  const roundCount = Math.max(1, Number(tn?.rounds) || 1);
+  const players = tn?.sp?.players || {};
+  const nameOf = (pid) => {
+    const p = players[pid] || {};
+    const hcp = Number.isFinite(Number(p.hcp))
+      ? ` <span style="color:#777;">(${esc(p.hcp)})</span>` : '';
+    return `${esc(p.name || pid)}${hcp}`;
+  };
+  const rounds = [];
+  for (let r = 1; r <= roundCount; r++) {
+    const groups = spGroupList(tn, r);
+    if (groups.length) rounds.push({ r, groups });
+  }
+  if (!rounds.length) return '';
+  return rounds.map(({ r, groups }) => {
+    const hasHole = groups.some(g => g.startHole);
+    return `
+      <div class="sc-block" style="margin-top:16px;">
+        ${rounds.length > 1 || roundCount > 1 ? `<div style="font-weight:800;font-size:0.9rem;">R${r}</div>` : ''}
+        <div class="sc-scroll" style="margin-top:5px;">
+          <table class="sched-table" style="width:100%;font-size:0.82rem;">
+            <tr class="sc-head">
+              <th style="width:34px;">№</th>
+              <th style="width:64px;">${t('spTeeTime')}</th>
+              ${hasHole ? `<th style="width:64px;">${t('spStartHole')}</th>` : ''}
+              <th style="text-align:left;padding-left:8px;">${t('tnPlayer')}</th>
+              <th style="width:90px;">${t('scSignature')}</th>
+            </tr>
+            ${groups.map(g => `
+            <tr>
+              <td style="font-weight:700;">${esc(g.number ?? '')}</td>
+              <td style="font-weight:700;white-space:nowrap;">${esc(g.teeTime || '')}</td>
+              ${hasHole ? `<td style="font-weight:700;">${g.startHole ? esc(g.startHole) : ''}</td>` : ''}
+              <td style="text-align:left;padding-left:8px;">${Object.keys(g.players || {}).map(nameOf).join(', ') || '—'}</td>
+              <td></td>
+            </tr>`).join('')}
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+}
 
 export async function renderTnSchedulePage(tnId, ctx) {
   const host = ctx.main();
@@ -218,15 +265,23 @@ export async function renderTnSchedulePage(tnId, ctx) {
 
   let tn = null;
   try { tn = await store.loadTournament(tnId); } catch (_) { }
+
+  // A stroke play tournament with a draw prints its flight time table; a
+  // match play one prints its session draw. Nothing printable → not found.
+  const strokeBlocks = tn && spActive(tn) ? strokeScheduleBlocksHTML(tn) : '';
   const mp = tn?.mp;
-  if (!tn || !mp || !mp.matches || !Object.keys(mp.matches).length) {
+  const hasMp = !!(mp && mp.matches && Object.keys(mp.matches).length);
+  if (!tn || (!strokeBlocks && !hasMp)) {
     host.innerHTML = `<div class="detail-container fade-in">
       <a href="#/" class="back-link">${t('back')}</a>
-      <div class="empty-state" style="padding:40px 20px;"><p>${t('gsGameNotFound')}</p></div></div>`;
+      <div class="empty-state" style="padding:40px 20px;"><p>${strokeBlocks === '' && tn && spActive(tn) ? t('spNoGroups') : t('gsGameNotFound')}</p></div></div>`;
+    return;
+  }
+  if (strokeBlocks) {
+    renderTnScheduleShell(host, tn, tnId, ctx, strokeBlocks);
     return;
   }
 
-  const url = pageUrl(`#/tnschedule/${tnId}`);
   const roster = mp.roster || {};
   const nameOf = (pid) => roster[pid]?.name || pid || '';
   const lineup = (m, side) => (m.players?.[side] || []).filter(Boolean).map(pid => esc(nameOf(pid))).join(' / ');
@@ -272,6 +327,12 @@ export async function renderTnSchedulePage(tnId, ctx) {
       </div>`;
   };
 
+  renderTnScheduleShell(host, tn, tnId, ctx, sessionBlocks.map(sessionHTML).join(''));
+}
+
+// The shared sheet around either draw: toolbar, tournament header, QR, body.
+function renderTnScheduleShell(host, tn, tnId, ctx, body) {
+  const url = pageUrl(`#/tnschedule/${tnId}`);
   host.innerHTML = `
     <div class="detail-container fade-in">
       ${printStyleHTML()}
@@ -296,7 +357,7 @@ export async function renderTnSchedulePage(tnId, ctx) {
             <div style="font-size:0.6rem;color:#777;max-width:130px;">${t('scScanHint')}<br>${esc(url)}</div>
           </div>
         </div>
-        ${sessionBlocks.map(sessionHTML).join('')}
+        ${body}
         <div style="margin-top:14px;font-size:0.7rem;color:#888;text-align:right;">${esc(tn.name || '')} - ${esc(tn.startDate || '')}</div>
       </div>
     </div>`;
