@@ -1,5 +1,20 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Tournament time table for marshals: stroke play flights print too)
+
+`#/tnschedule/:tnId` now lays out an in-app stroke play tournament's draw
+as the marshal's time table — one section per round that has flights, each
+a `№ | Эхлэх цаг | Эхлэх нүх | Тоглогчид (HCP) | Гарын үсэг` table (the
+start-hole column appears only on shotgun draws), sharing the print/QR
+sheet the M Cup draw already used (`src/schedule.js`:
+`strokeScheduleBlocksHTML`, shell extracted as `renderTnScheduleShell`).
+Reached from three places (`src/app.js`): a 🖨 print link on the
+tournament page's Хуваарь tab, the admin «Хуваарь» tab (now lists every
+tournament with a printable draw via `tnHasPrintableDraw`), and the admin
+Tournaments row. Verified by the Playwright smoke run (38 checks green:
+R1/R2 sections, shotgun start holes, HCPs, signature column, guest
+access) plus `npm run build` and `npm run test:mp` 95/95.
+
 ## 2026-08-29 (Printable scorecard + marshal start lists: QR, print/PDF, F9/B9/18 net reports)
 
 Three new guest-reachable, print-ready routes plus an admin tab, so a
