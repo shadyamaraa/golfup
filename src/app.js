@@ -1552,7 +1552,14 @@ function tnTabsFor(tn) {
   const tabs = [];
   if (isMatchPlay(tn)) tabs.push('match');
   if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
-  tabs.push('info');
+  if (isMatchPlay(tn)) {
+    // Match play keeps its rulebook tab (the Match Center's 📖 jumps here).
+    tabs.push('info');
+  } else if (Object.values(tn?.sp?.groups || {}).some(r => r && Object.keys(r).length)) {
+    // Stroke play: the members called the info tab useless — the draw took
+    // its place as a tab of its own once a round has flights.
+    tabs.push('schedule');
+  }
   return tabs;
 }
 
@@ -1593,12 +1600,15 @@ function paintTournamentPage(tn) {
         </div>
       </div>
 
+      ${tnTabsFor(tn).length > 1 ? `
       <div class="seg-tabs tn-tabs">
         ${tnTabsFor(tn).map(tab => `
           <button class="seg-tab${tnPageTab === tab ? ' active' : ''}" data-tn-tab="${tab}">
-            ${tab === 'match' ? t('mpMatchCenter') : tab === 'board' ? t('tnLeaderboard') : t('tnInfo')}
+            ${tab === 'match' ? t('mpMatchCenter')
+              : tab === 'board' ? t('tnLeaderboard')
+                : tab === 'schedule' ? t('spSchedule') : t('tnInfo')}
           </button>`).join('')}
-      </div>
+      </div>` : ''}
 
       <div id="tn-board"></div>
       ${tn.id === TN_DEMO.id || tn.id === MP_DEMO_ID ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
@@ -1738,13 +1748,6 @@ function renderTnBoard() {
     return;
   }
 
-  const ranked = tnRanked(tn);
-  if (!ranked.length) {
-    host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
-    return;
-  }
-
-  const me = ranked.find(tnIsMe);
   // A member playing in an in-app-scored tournament gets a straight path to
   // their card — the flight's group card when a draw exists, their own
   // otherwise. The board itself is everyone's.
@@ -1768,17 +1771,32 @@ function renderTnBoard() {
     if (!isNaN(opens.getTime()) && Date.now() < opens.getTime()) myTeeWait = myTee;
   }
 
-  // The day's schedule: every flight with its tee time. Laid out as a fixed
+  // The enter-score shortcut, shared by both stroke tabs.
+  const ctaHTML = myCardHref ? (myTeeWait ? `
+      <button disabled class="btn btn-outline btn-sm"
+         style="display:block;width:100%;text-align:center;margin-bottom:10px;opacity:0.55;cursor:default;">
+        ${t('mpEnterScore')} — ${esc(myTeeWait)}
+      </button>` : `
+      <a href="${myCardHref}" class="btn btn-primary btn-sm"
+         style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
+        ${t('mpEnterScore')}
+      </a>`) : '';
+
+  // The Хуваарь tab: every flight with its tee time, laid out as a fixed
   // grid under a header row (group №, tee time, start hole, players) so a
   // spectator can read the columns without guessing what each pill means;
   // the start-hole column only exists on shotgun draws. The card link shows
   // for the flight's own members and the officials the rules would let in.
-  const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
-  const schedHasHole = spGroups.some(g => g.startHole);
-  const schedGrid = `display:grid;grid-template-columns:30px 66px ${schedHasHole ? '62px ' : ''}1fr;gap:8px;align-items:center;`;
-  const scheduleHTML = spGroups.length ? `
-    <details style="margin-bottom:10px;" ${tnStatus(tn) !== 'live' ? 'open' : ''}>
-      <summary style="cursor:pointer;font-size:0.8rem;font-weight:800;">🕐 ${t('spSchedule')} — R${spRound}</summary>
+  if (tnPageTab === 'schedule') {
+    const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
+    const schedHasHole = spGroups.some(g => g.startHole);
+    const schedGrid = `display:grid;grid-template-columns:30px 66px ${schedHasHole ? '62px ' : ''}1fr;gap:8px;align-items:center;`;
+    host.innerHTML = `
+      ${ctaHTML}
+      ${spGroups.length ? `
+      <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 0;">
+        <b style="font-size:0.8rem;">${t('spSchedule')} — R${spRound}</b>
+      </div>
       <div style="${schedGrid}padding:8px 10px 2px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
         <span style="text-align:center;">№</span>
         <span style="text-align:center;">${t('spTeeTime')}</span>
@@ -1806,25 +1824,21 @@ function renderTnBoard() {
               || `<span style="color:var(--text-muted);">—</span>`}
           </div>
         </div>`;
-      }).join('')}
-    </details>` : '';
+      }).join('')}` : `<div class="empty-state" style="padding:34px 20px;"><p>${t('spNoGroups')}</p></div>`}`;
+    return;
+  }
+
+  // The leaderboard (Тэргүүлэгчид): gross standings, with Net as a toggle
+  // on the list's own header when handicaps exist.
+  const ranked = tnRanked(tn);
+  if (!ranked.length) {
+    host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
+    return;
+  }
+  const me = ranked.find(tnIsMe);
 
   host.innerHTML = `
-    ${spActive(tn) && spHasHcp(tn) ? `
-      <div class="seg-tabs" style="margin-bottom:10px;">
-        <button class="seg-tab${tnSpMetric !== 'net' ? ' active' : ''}" data-sp-metric="gross">${t('spGross')}</button>
-        <button class="seg-tab${tnSpMetric === 'net' ? ' active' : ''}" data-sp-metric="net">${t('spNet')}</button>
-      </div>` : ''}
-    ${scheduleHTML}
-    ${myCardHref ? (myTeeWait ? `
-      <button disabled class="btn btn-outline btn-sm"
-         style="display:block;width:100%;text-align:center;margin-bottom:10px;opacity:0.55;cursor:default;">
-        ${t('mpEnterScore')} — ${esc(myTeeWait)}
-      </button>` : `
-      <a href="${myCardHref}" class="btn btn-primary btn-sm"
-         style="display:block;text-align:center;text-decoration:none;margin-bottom:10px;">
-        ${t('mpEnterScore')}
-      </a>`) : ''}
+    ${ctaHTML}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
@@ -1843,6 +1857,9 @@ function renderTnBoard() {
       </div>` : ''}
     <div class="section-head tn-section">
       <h2>${t('tnAllPlayers')}</h2>
+      ${spActive(tn) && spHasHcp(tn) ? `
+        <button data-sp-metric class="btn ${tnSpMetric === 'net' ? 'btn-primary' : 'btn-outline'} btn-sm"
+          style="font-size:0.72rem;margin-left:auto;">${t('spNet')}</button>` : ''}
       <span class="pill-soft" id="tn-count"></span>
     </div>
     <div id="tn-list"></div>
@@ -1854,8 +1871,9 @@ function renderTnBoard() {
     tnPageLimit = TN_PAGE_SIZE;
     renderTnList();
   });
+  // The Net button toggles: pressed sorts by net, pressed again back to gross.
   host.querySelectorAll('[data-sp-metric]').forEach(b => b.onclick = () => {
-    tnSpMetric = b.dataset.spMetric;
+    tnSpMetric = tnSpMetric === 'net' ? 'gross' : 'net';
     renderTnBoard();
   });
   renderTnList();
