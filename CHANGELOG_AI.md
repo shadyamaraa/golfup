@@ -1,5 +1,57 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Printable scorecard + marshal start lists: QR, print/PDF, F9/B9/18 net reports)
+
+Three new guest-reachable, print-ready routes plus an admin tab, so a
+finished round becomes a paper artifact and a competition day gets its
+marshal sheets straight from the app.
+
+- **`#/scorecard/:gameId`** (`src/scorecard.js`, new): Best Approach-style
+  card per player — Hole/Score/Par/HCP rows, `1..9 | F | 10..18 | B | TOT`
+  columns, result colors (eagle gold, birdie red, par white, bogey blue,
+  worse black) with a printed legend; per-player to-par badge and
+  HCP · Net line; then the club's three contests as ranked reports:
+  Front 9 Net, Back 9 Net, Overall 18 Net (splitHcp halves per nine, so
+  normal-mode games report too; 9-hole games get one Net table). Blank
+  cells for unentered holes; locations without `COURSE_DATA` drop the
+  Par/HCP rows but keep scores.
+- **`#/schedule/:gameId`** (`src/schedule.js`, new): the game's start list —
+  group #, tee time, players (+playing HCP), signature column. First group
+  at a start time, +interval per group (default 10 min), per-group manual
+  overrides; admin/marshal/creator edit and Save, everyone else (guests
+  included) sees the read-only sheet. Persists at `games/{id}/schedule`
+  via `saveGameSchedule()` (store.js); `saveGame()` now spares the
+  `schedule` branch like scores/hcp.
+- **`#/tnschedule/:tnId`** (also `src/schedule.js`): the M Cup draw —
+  sessions by day/number with format and start time, each match's number,
+  tee time and both lineups from `tn.mp`. Read-only; times stay edited in
+  the match-play admin editor.
+- **Print/PDF**: every sheet is a white "paper" card even on screen, with a
+  page-scoped `@media print` block (app chrome hidden, A4 portrait,
+  `print-color-adjust`, cards kept whole, reports on their own page) —
+  the browser's Print → Save as PDF covers the PDF ask, no jsPDF.
+- **QR**: each page renders its own URL as a QR (canvas) with the URL
+  printed under it. New dependency `qrcode` ^1.5 — the only one added —
+  loaded via dynamic import so it is a separate lazy chunk.
+- **Wiring** (`src/app.js`): the three routes join the guest gate (like
+  tournament boards) and the guest-login header check; game detail gets a
+  Scorecard button (once anyone scored, or the game is past) and a
+  Хуваарь button (admin/marshal/creator); admin panel gets a «Хуваарь»
+  tab listing the week's games and match-play draws with one-tap sheet
+  links; match-format tournament rows link their draw.
+- Shared helpers in `src/print-common.js` (esc/pageUrl/mountQr/copyUrl/
+  print CSS); `groupsOf()` exported from game-score.js; ~13 `sc*` i18n
+  keys ×3 languages.
+- Privacy note: anyone with a scorecard/schedule link sees that game's
+  player names, scores and times — the same exposure as the existing
+  `#/join/` share link (and RTDB `games` is world-readable already).
+  Sheet-driven stroke tournaments and M Cup have no per-hole strokes, so
+  they get no scorecard page (M Cup gets the draw sheet).
+- Verified: `npm run build` (qrcode splits into its own chunk),
+  `npm run test:mp` 54/54, and a Playwright smoke run over dev build in
+  localStorage mode — scorecard colors/totals/reports/QR, schedule
+  edit+save+revisit, admin tab, M Cup draw, guest access, print-media
+  chrome hiding (31 checks green).
 ## 2026-08-29 (Home dashboard: your tournament tee time card)
 
 A member drawn into a stroke tournament now sees their start right on

@@ -152,10 +152,10 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game). Every caller passes the full record, so the named
-    // top-level keys are still replaced wholesale — only the scoring
-    // branches are spared.
-    const { scores, scoreAudit, hcp, ...rest } = game;
+    // the same game, and schedule is saved from its own page). Every caller
+    // passes the full record, so the named top-level keys are still replaced
+    // wholesale — only the scoring/schedule branches are spared.
+    const { scores, scoreAudit, hcp, schedule, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -215,6 +215,21 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   else game.hcp[playerId] = hcp;
   setLocalGames(games);
   return game;
+}
+
+// The marshal start list for one game: first-group time, tee interval,
+// starting tee, and per-group manual overrides. Path-scoped like scores so
+// editing the game record never clobbers it (saveGame strips `schedule`).
+export async function saveGameSchedule(gameId, schedule) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + gameId), { schedule: schedule ?? null });
+    return null;
+  }
+  const games = getLocalGames();
+  if (!games[gameId]) return null;
+  games[gameId].schedule = schedule ?? null;
+  setLocalGames(games);
+  return games[gameId];
 }
 
 // Mark a round finished (or reopen it) — drives the final-results report on
