@@ -12,7 +12,7 @@ import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { gameHoleCount } from './handicap.js';
-import { courseTees, coursePar } from './courses.js';
+import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
@@ -2481,11 +2481,10 @@ async function renderCreateGame() {
           <div class="create-section">
             <div class="cs-label">${t('location')}</div>
             <select id="game-location" required style="display:none;">
-              <option value="Sky Resort Golf Club">Sky Resort Golf Club</option>
-              <option value="Chinggis Khaan Golf Course">Chinggis Khaan Golf Course</option>
+              ${courseList().map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}
             </select>
             <div class="course-picker" id="course-picker">
-              ${[['Sky Resort Golf Club', 'Sky Resort'], ['Chinggis Khaan Golf Course', 'Chinggis Khaan']].map(([name, sub], i) => `
+              ${courseList().map(c => [c.name, c.name.split(' Golf ')[0]]).map(([name, sub], i) => `
                 <button type="button" class="course-row ${i === 0 ? 'selected' : ''}" data-value="${esc(name)}">
                   <div class="tile-icon">${icon('play', { size: 18 })}</div>
                   <div class="lr-body"><div class="lr-title">${esc(name)}</div><div class="lr-sub">${esc(sub)}</div></div>
@@ -4743,8 +4742,7 @@ async function renderEditGame(gameId) {
           <div class="input-group">
             <label for="edit-location">${t('location')}</label>
             <select id="edit-location" required style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-              <option value="Sky Resort Golf Club" ${game.location === 'Sky Resort Golf Club' ? 'selected' : ''}>Sky Resort Golf Club</option>
-              <option value="Chinggis Khaan Golf Course" ${game.location === 'Chinggis Khaan Golf Course' ? 'selected' : ''}>Chinggis Khaan Golf Course</option>
+              ${courseList().map(c => `<option value="${esc(c.name)}" ${game.location === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
             </select>
           </div>
           <div class="input-group">
@@ -7565,6 +7563,10 @@ function tnAdminFormHTML(p, tn = {}) {
           ${COURSES.map(c => `<option value="${c.key}"${sel(c.key, tn.course)}>${esc(c.name)} · PAR ${c.par}</option>`).join('')}
           <option value=""${sel('', tn.course)}>${t('spCourseCustom')}</option>
         </select>
+        <select id="${p}-tee" title="${t('spTee')}" style="${TN_INPUT}">
+          <option value=""${sel('', tn.tee ?? '')}>${t('spTee')}: —</option>
+          ${courseTees(tn.course || '').map(x => `<option value="${x.key}"${sel(x.key, tn.tee)}>${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('')}
+        </select>
         <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
         <select id="${p}-rounds" title="${t('tnFRounds')}" style="${TN_INPUT}">
           ${[1, 2, 3, 4].map(n => `<option value="${n}"${sel(n, rounds)}>${t('tnFRounds')}: ${n}</option>`).join('')}
@@ -7603,6 +7605,12 @@ function tnAdminReadForm(p) {
     startDate: val('start'),
     endDate: val('end'),
     course: val('course'),
+    ...(() => {
+      // The tee carries the rating/slope the WHS math needs; a custom course
+      // or no tee stores nulls and the HCP tools simply stay manual.
+      const x = courseTees(val('course')).find(v => v.key === val('tee'));
+      return { tee: x ? x.key : null, rating: x?.rating ?? null, slope: x?.slope ?? null };
+    })(),
     rounds: num('rounds'),
     currentRound: num('round-now'),
     par: num('par'),
@@ -7797,9 +7805,16 @@ async function renderAdminTournamentsTab() {
       if (mpHost) mountMpAdmin(mpHost, tn, ctx);
       if (spHost) mountSpAdmin(spHost, tn, ctx);
     }
-    // Picking a course fills PAR (and blank venue/city) on the spot.
+    // Picking a course fills PAR (and blank venue/city) on the spot, and
+    // rebuilds the tee options — a tee belongs to its course.
     const courseSel = document.getElementById(`tn-e-${adminOpenTn}-course`);
     if (courseSel) courseSel.onchange = () => {
+      const teeSel = document.getElementById(`tn-e-${adminOpenTn}-tee`);
+      if (teeSel) {
+        teeSel.innerHTML = `<option value="">${t('spTee')}: —</option>`
+          + courseTees(courseSel.value).map(x =>
+            `<option value="${x.key}">${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('');
+      }
       const c = courseByKey(courseSel.value);
       if (!c) return;
       const set = (id, v, always) => {

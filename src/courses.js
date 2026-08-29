@@ -1,4 +1,8 @@
-// Per-hole course data, keyed by the game's location string.
+// The club's single course registry: per-hole pars and stroke indexes plus
+// rating/slope per tee, shared by casual games and tournaments alike. Games
+// reference a course by its location name string, tournaments by its short
+// key — resolveCourse() accepts both (and known name aliases), so records
+// stored under either spelling keep resolving.
 //
 // Sky Resort is Mt. Bogd Golf Club's course (MTBOGD_CONFIG.locationName in
 // src/config.js), so its numbers come straight from the club's official
@@ -8,6 +12,8 @@
 
 export const COURSE_DATA = {
   'Sky Resort Golf Club': {   // Mt. Bogd Golf Club official scorecard
+    key: 'sky',
+    city: 'Ulaanbaatar',
     par: 72,
     pars: { 1: 5, 2: 4, 3: 4, 4: 3, 5: 5, 6: 4, 7: 4, 8: 3, 9: 4, 10: 4, 11: 4, 12: 5, 13: 3, 14: 4, 15: 4, 16: 4, 17: 3, 18: 5 },
     si:   { 1: 5, 2: 3, 3: 9, 4: 11, 5: 7, 6: 15, 7: 13, 8: 17, 9: 1, 10: 18, 11: 10, 12: 2, 13: 12, 14: 16, 15: 4, 16: 6, 17: 14, 18: 8 },
@@ -21,6 +27,8 @@ export const COURSE_DATA = {
     },
   },
   'Chinggis Khaan Golf Course': {   // Riverside Golf Club (Terelj) official scorecard
+    key: 'chinggis',
+    city: 'Ulaanbaatar',
     par: 72,
     pars: { 1: 4, 2: 4, 3: 3, 4: 5, 5: 4, 6: 4, 7: 3, 8: 5, 9: 4, 10: 4, 11: 5, 12: 3, 13: 4, 14: 4, 15: 5, 16: 3, 17: 4, 18: 4 },
     si:   { 1: 17, 2: 15, 3: 7, 4: 3, 5: 13, 6: 1, 7: 9, 8: 11, 9: 5, 10: 10, 11: 2, 12: 18, 13: 6, 14: 12, 15: 16, 16: 8, 17: 14, 18: 4 },
@@ -33,16 +41,44 @@ export const COURSE_DATA = {
   },
 };
 
+// Older records (the tournament side's original preset list) spelled Riverside's
+// course "…Golf Club"; both spellings resolve to the same registry entry.
+const COURSE_ALIASES = {
+  'Chinggis Khaan Golf Club': 'Chinggis Khaan Golf Course',
+};
+
 const TEE_LABELS = {
   black: 'Black', blue: 'Blue', white: 'White', gold: 'Gold',
   goldLadies: 'Gold (L)', red: 'Red',
   professional: 'Professional', regular: 'Regular', senior: 'Senior', lady: 'Lady',
 };
 
+// A course by key ('sky'), name, or aliased name → its full record with the
+// name attached, or null for custom/unknown venues.
+export function resolveCourse(ref) {
+  if (!ref) return null;
+  const direct = COURSE_DATA[ref] || COURSE_DATA[COURSE_ALIASES[ref]];
+  if (direct) {
+    const name = COURSE_DATA[ref] ? ref : COURSE_ALIASES[ref];
+    return { name, ...direct };
+  }
+  const byKey = Object.entries(COURSE_DATA).find(([, c]) => c.key === ref);
+  return byKey ? { name: byKey[0], ...byKey[1] } : null;
+}
+
+// The registry as a pick list, in declaration order.
+export function courseList() {
+  return Object.entries(COURSE_DATA).map(([name, c]) =>
+    ({ key: c.key, name, city: c.city, par: c.par }));
+}
+
+export const coursePars = (ref) => resolveCourse(ref)?.pars ?? null;
+export const courseSIs = (ref) => resolveCourse(ref)?.si ?? null;
+
 // The card's tee options for a location — what the create/edit forms offer
 // so rating/slope need not be typed by hand. Empty for unknown locations.
 export function courseTees(location) {
-  const tees = COURSE_DATA[location]?.tees;
+  const tees = resolveCourse(location)?.tees;
   if (!tees) return [];
   return Object.entries(tees).map(([key, t]) => ({
     key, label: TEE_LABELS[key] || key, rating: t.rating, slope: t.slope,
@@ -50,7 +86,7 @@ export function courseTees(location) {
 }
 
 export function coursePar(location) {
-  return COURSE_DATA[location]?.par ?? null;
+  return resolveCourse(location)?.par ?? null;
 }
 
 // Scorer hole n (1..9 or 1..18) → the course's physical hole. A back9 game
@@ -60,9 +96,9 @@ export function physicalHole(game, n) {
 }
 
 export function holePar(game, n) {
-  return COURSE_DATA[game?.location]?.pars?.[physicalHole(game, n)] ?? null;
+  return resolveCourse(game?.location)?.pars?.[physicalHole(game, n)] ?? null;
 }
 
 export function holeSI(game, n) {
-  return COURSE_DATA[game?.location]?.si?.[physicalHole(game, n)] ?? null;
+  return resolveCourse(game?.location)?.si?.[physicalHole(game, n)] ?? null;
 }

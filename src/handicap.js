@@ -10,7 +10,7 @@
 // 1..15 at entry — the net-double-bogey hole cap needs per-hole par and a
 // stroke index and is deferred until games carry them.
 
-import { holePar } from './courses.js';
+import { holePar, coursePars, resolveCourse } from './courses.js';
 
 export const MAX_HCP_INDEX = 54.0;
 
@@ -99,6 +99,43 @@ export function roundFromGame(game, playerId) {
     holeScores,
     source: 'game',
     gameId: game.id,
+    playerId,
+    ghinPosted: false,
+  };
+}
+
+// One tournament stroke-play round + its 18-hole map → the same record shape
+// as roundFromGame, keyed for rounds/{ghin}/{tnId_rN} (the gameId field is
+// what store.upsertRound keys by, so corrections re-post idempotently).
+// Returns null until every hole is in; differential stays null unless the
+// tournament carries the tee's rating/slope.
+export function roundFromTournament(tn, playerId, round, holes) {
+  if (!tn?.id || !playerId || !round) return null;
+  const pars = coursePars(tn.course);
+  let total = 0;
+  const holeScores = {};
+  for (let n = 1; n <= 18; n++) {
+    const s = Number(holes?.[n]);
+    if (!Number.isFinite(s) || s <= 0) return null;
+    // Same AGS cap as roundFromGame: par + 5 where the hole's par is known.
+    const par = pars?.[n];
+    total += par ? Math.min(s, par + 5) : s;
+    holeScores[n] = s;
+  }
+  return {
+    playedAt: tn.startDate ? new Date(tn.startDate).getTime() : Date.now(),
+    courseName: resolveCourse(tn.course)?.name || tn.venue || '',
+    courseRating: tn.rating || null,
+    slopeRating: tn.slope || null,
+    par: tn.par || null,
+    holesPlayed: 18,
+    agsTotal: total,
+    differential: scoreDifferential(total, tn.rating, tn.slope),
+    holeScores,
+    source: 'tournament',
+    gameId: `${tn.id}_r${round}`,
+    tournamentId: tn.id,
+    round,
     playerId,
     ghinPosted: false,
   };
