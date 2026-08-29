@@ -1,5 +1,14 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Schedule readable at a glance: column headers)
+
+The board's Хуваарь section now lays every flight out on a fixed grid
+under a header row — Групп №, Эхлэх цаг, ⛳ Эхлэх нүх, Тоглогчид — so a
+spectator no longer has to guess which pill is the tee time and which is
+the starting hole. The start-hole column only appears on shotgun draws
+(sequential schedules skip it), and the group-card link keeps its place
+in the last column.
+
 ## 2026-08-29 (One course registry: games and tournaments share pars, tees and WHS)
 
 The two parallel course/handicap systems are now one. `src/courses.js` is
