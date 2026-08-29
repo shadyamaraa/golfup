@@ -1765,6 +1765,7 @@ function renderTnBoard() {
         <div class="surface-card" style="padding:10px;margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <b style="font-size:0.8rem;">${esc(g.number ?? '')}</b>
           <span class="pill-soft" style="font-size:0.7rem;">${esc(g.teeTime || '–')}</span>
+          ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">⛳ ${esc(g.startHole)}</span>` : ''}
           <span style="flex:1;min-width:140px;font-size:0.8rem;">
             ${esc(pids.map(pid => tn.sp.players[pid]?.name || pid).join(' · '))}
           </span>

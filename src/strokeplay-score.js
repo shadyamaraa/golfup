@@ -180,13 +180,17 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     const par = Number(tn.par) || 72;
     const editable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
 
-    // Open on the first hole any of the flight still has empty.
+    // Open on the first hole any of the flight still has empty — scanning
+    // from the flight's STARTING hole (a shotgun group at hole 12 plays
+    // 12..18 then 1..11), wrapping the course.
     let hole = viewHole.get(key);
     if (!hole) {
-      hole = 1;
-      for (let h = 1; h <= SP_HOLES; h++) {
+      const start = Number(g.startHole) >= 1 && Number(g.startHole) <= SP_HOLES
+        ? Number(g.startHole) : 1;
+      hole = ((start + SP_HOLES - 2) % SP_HOLES) + 1; // the hole before start
+      for (let k = 0; k < SP_HOLES; k++) {
+        const h = ((start - 1 + k) % SP_HOLES) + 1;
         if (pids.some(pid => !tn.sp.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
-        if (h === SP_HOLES) hole = SP_HOLES;
       }
       viewHole.set(key, hole);
     }
@@ -218,6 +222,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
           <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
             <b>R${esc(round)}</b>
             ${g.teeTime ? `<span class="pill-soft" style="font-size:0.7rem;">${t('mpTee')} ${esc(g.teeTime)}</span>` : ''}
+            ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">⛳ ${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
             <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
