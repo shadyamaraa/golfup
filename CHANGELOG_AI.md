@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (User manuals: score entry for stroke play and M Cup)
+
+Two step-by-step user manuals (Mongolian, A4 PDF, screenshots with dummy
+data) added under `docs/manuals/`:
+
+- `ubgolf-strokeplay-onoo-oruulah-garin-avlaga.pdf` — entering stroke play
+  tournament scores: sign-in, finding the tournament, the Оноо оруулах
+  button, the flight (group) scorecard hole by hole, the personal card,
+  the Хуваарь tab, corrections, and the live leaderboard.
+- `ubgolf-mcup-onoo-oruulah-garin-avlaga.pdf` — entering M Cup match play
+  scores: Match Center, the three-button scorer screen, auto-advance,
+  undo/corrections, the correction-consent flow, suspend/close-out, and
+  what else lives on the Match Center.
+
+Documentation only — no code changes. Screenshots were captured against
+the localhost demo tournaments with Firebase disabled locally, so no
+production data was touched or written.
+
 ## 2026-08-29 (Retire the casual-game start list)
 
 The per-game start list (`#/schedule/:gameId` — auto tee intervals with
