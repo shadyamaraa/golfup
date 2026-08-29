@@ -115,7 +115,7 @@ export function gameScoreLine(game, playerId, hcp) {
     ? [{ from: 1, to: 9, hcp: segHcp?.front }, { from: 10, to: 18, hcp: segHcp?.back }]
     : [{ from: 1, to: holeCount, hcp: typeof hcp === 'number' ? hcp : null }];
   let total = 0, thru = 0, toPar = 0, parsKnown = true;
-  const segNets = [];
+  const segNets = [], segGross = [];
   for (const seg of segs) {
     let segTotal = 0, segThru = 0, segParSum = 0, segParHoles = 0;
     for (let n = seg.from; n <= seg.to; n++) {
@@ -131,6 +131,7 @@ export function gameScoreLine(game, playerId, hcp) {
     if (segParHoles !== segThru) parsKnown = false;
     const segToPar = segThru && segParHoles === segThru ? segTotal - segParSum : null;
     toPar += segToPar ?? 0;
+    segGross.push(segThru ? segTotal : null);
     segNets.push(segThru && segToPar !== null && seg.hcp !== null && seg.hcp !== undefined
       ? segToPar - seg.hcp : null);
   }
@@ -140,6 +141,8 @@ export function gameScoreLine(game, playerId, hcp) {
     total, thru,
     toPar: thru && parsKnown ? toPar : null,
     net: thru && typeof hcp === 'number' ? total - hcp : null,
+    grossF: comp ? segGross[0] : null,
+    grossB: comp ? segGross[1] : null,
     netF: comp ? segNets[0] : null,
     netB: comp ? segNets[1] : null,
     netToPar: thru && parsKnown ? netToPar : null,
@@ -276,6 +279,51 @@ function stripHTML(game, players, hole) {
   return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">${cells.join('')}</div>`;
 }
 
+// May this member finish/reopen the round? Same circle as the scoring-mode
+// toggle: the game's creator and officials.
+function canFinishGame(user, game) {
+  return !!user && (game?.createdBy === user.id
+    || user.role === 'admin' || user.role === 'marshal');
+}
+
+// The final-results report shown under the score table once the round is
+// finished: per player, gross and net for F9 / B9 / the 18 in competition
+// mode, or just the 18 in normal mode.
+function reportHTML(game, players, usersById) {
+  if (!game?.finishedAt) return '';
+  const comp = isCompMode(game);
+  const rows = players.map(p => {
+    const hcp = gamePlayingHcp(game, p.id, usersById?.[p.id]);
+    return { p, ...gameScoreLine(game, p.id, hcp) };
+  }).filter(r => r.thru > 0);
+  rows.sort((a, b) => (a.netToPar ?? a.total) - (b.netToPar ?? b.total));
+  const cell = (gross, net) => `
+    <td style="padding:6px 4px;text-align:right;white-space:nowrap;">
+      ${gross !== null ? `<b>${gross}</b>` : '—'}${net !== null ? ` <span style="color:${net < 0 ? 'var(--red)' : 'var(--text-secondary)'};font-weight:700;">${fmtToPar(net)}</span>` : ''}
+    </td>`;
+  const head = (label) => `<th style="padding:4px;text-align:right;font-size:0.62rem;letter-spacing:0.06em;color:var(--text-secondary);">${label}</th>`;
+  return `
+    <div id="gs-report" style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 14px;margin-top:10px;">
+      <div style="font-weight:800;font-size:0.85rem;display:flex;align-items:center;gap:6px;">
+        🏁 ${t('gsReport')}
+        <span style="margin-left:auto;font-size:0.66rem;font-weight:600;color:var(--text-secondary);">G · N</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums;font-size:0.82rem;">
+        <tr>
+          <th style="padding:4px;text-align:left;font-size:0.62rem;letter-spacing:0.06em;color:var(--text-secondary);"></th>
+          ${comp ? head('F9') + head('B9') + head('18') : head('18')}
+        </tr>
+        ${rows.map(r => `
+          <tr style="border-top:1px solid var(--border-color);">
+            <td style="padding:6px 4px;font-weight:700;overflow:hidden;text-overflow:ellipsis;max-width:110px;white-space:nowrap;">${esc(shortName(r.p, usersById?.[r.p.id]))}</td>
+            ${comp
+              ? cell(r.grossF, r.netF) + cell(r.grossB, r.netB) + cell(r.total, r.netToPar)
+              : cell(r.total, r.netToPar)}
+          </tr>`).join('')}
+      </table>
+    </div>`;
+}
+
 // The hole header: "3-р Нүх · Пар 4 · SI 9" over a small "3 / 18" where the
 // course card is known; the plain "НҮХ 3 / 18" otherwise.
 function holeHeaderHTML(game, hole, holeCount) {
@@ -316,7 +364,12 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
           || `<div style="padding:14px 0;color:var(--text-secondary);">${t('emptySlot')}</div>`}
       </div>
 
+      ${reportHTML(game, players, usersById)}
+
       ${stripHTML(game, players, hole)}
+      ${canFinishGame(user, game) ? `
+        <button data-gs="finish" class="btn ${game.finishedAt ? 'btn-outline' : 'btn-primary'} btn-sm"
+          style="width:100%;margin-top:14px;gap:6px;">🏁 ${game.finishedAt ? t('gsResume') : t('gsFinish')}</button>` : ''}
       <div id="gs-note" style="font-size:0.75rem;color:var(--text-secondary);margin-top:10px;text-align:center;min-height:1.2em;"></div>
     </div>`;
 }
@@ -371,7 +424,8 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   let paintedKey = null;
 
   const structureKey = (players) =>
-    groupIdx + '|' + players.map(p => p.id + (canScoreGamePlayer(ctx.user, data, p.id) ? '+' : '-')).join(',');
+    groupIdx + '|' + (data.finishedAt ? 'fin' : 'live') + '|'
+    + players.map(p => p.id + (canScoreGamePlayer(ctx.user, data, p.id) ? '+' : '-')).join(',');
 
   const notFound = (msg, back) => {
     paintedKey = null;
@@ -420,6 +474,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       setStep(host.querySelector(`button[data-gs="minus"][data-pid="${p.id}"]`), strokes === null);
       setStep(host.querySelector(`button[data-gs="plus"][data-pid="${p.id}"]`), strokes !== null && strokes >= MAX_STROKES);
     }
+    // The final report recomputes with every correction while it is shown.
+    const report = host.querySelector('#gs-report');
+    if (report) report.outerHTML = reportHTML(data, players, usersById);
     for (let n = 1; n <= holeCount; n++) {
       const cell = host.querySelector(`button[data-gs="goto"][data-hole="${n}"]`);
       if (!cell) continue;
@@ -536,6 +593,17 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
             if (next === null) delete data.hcp[pid];
             else data.hcp[pid] = next;
           }
+          paint();
+        }).catch(err => {
+          console.error('[gscore]', err);
+          ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+        });
+      } else if (kind === 'finish') {
+        if (!canFinishGame(ctx.user, data)) return;
+        const next = !data.finishedAt;
+        store.saveGameFinished(gameId, next).then(local => {
+          if (local) data = local;
+          else data.finishedAt = next ? Date.now() : null;
           paint();
         }).catch(err => {
           console.error('[gscore]', err);
