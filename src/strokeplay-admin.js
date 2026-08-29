@@ -147,12 +147,15 @@ function groupsHTML(tn, d) {
             <button data-spg="del-player" data-gid="${esc(g.gid)}" data-pid="${esc(pid)}"
               style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
           </span>`).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
-        ${loose.length ? `
-          <select data-spg="add-player" data-gid="${esc(g.gid)}" style="${INPUT}font-size:0.74rem;max-width:170px;">
-            <option value="">+</option>
-            ${loose.map(([pid, p]) => `<option value="${esc(pid)}">${esc(p.name || pid)}</option>`).join('')}
-          </select>` : ''}
       </div>
+      ${loose.length ? `
+        <div style="position:relative;margin-top:6px;">
+          <input data-spg="find" data-gid="${esc(g.gid)}" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
+            style="${INPUT}width:100%;box-sizing:border-box;font-size:0.78rem;" />
+          <div data-spg-list="${esc(g.gid)}" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
+            max-height:200px;overflow-y:auto;border:1px solid var(--border-color);
+            background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
+        </div>` : ''}
     </div>`;
 
   return `
@@ -177,6 +180,11 @@ function groupsHTML(tn, d) {
         </select>
         <input data-spg="first-tee" type="time" value="08:00" title="${t('mpTee')}" style="${INPUT}width:100px;" />
         <button data-spg="draw" class="btn btn-primary btn-sm">${t('spDraw')}</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+        <span style="font-size:0.74rem;color:var(--text-secondary);font-weight:700;">${t('spEmptyGroups')}:</span>
+        <input data-spg="empty-count" type="number" min="1" max="40" value="4" style="${INPUT}width:64px;" />
+        <button data-spg="add-empty" class="btn btn-outline btn-sm" style="font-size:0.74rem;">+ ${t('spGroups')}</button>
       </div>
       ${groups.map(groupBox).join('')
         || `<p style="font-size:0.76rem;color:var(--text-secondary);margin:8px 0 0;">${t('spNoGroups')}</p>`}
@@ -393,15 +401,75 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     repaint();
   });
 
-  host.querySelectorAll('select[data-spg="add-player"]').forEach(sel => sel.onchange = () => {
-    if (!sel.value) return;
-    const g = d.groups[round]?.[sel.dataset.gid];
-    if (!g) return;
-    // One flight per player: joining a group leaves the old one.
-    const old = groupOfPid(d, round, sel.value);
-    if (old) delete d.groups[round][old].players[sel.value];
-    (g.players = g.players || {})[sel.value] = true;
+  // Empty groups by count: numbered after the last, tee times continuing
+  // the procession (from the first-tee field when the draw is empty).
+  const addEmptyBtn = host.querySelector('button[data-spg="add-empty"]');
+  if (addEmptyBtn) addEmptyBtn.onclick = () => {
+    const count = Math.min(40, Math.max(1, Number(host.querySelector('input[data-spg="empty-count"]')?.value) || 1));
+    const existing = groupList(d, round);
+    let number = existing.length ? Math.max(...existing.map(g => Number(g.number) || 0)) : 0;
+    let clock = existing.length
+      ? existing.at(-1).teeTime || ''
+      : host.querySelector('input[data-spg="first-tee"]')?.value || '';
+    const groups = (d.groups[round] = d.groups[round] || {});
+    for (let i = 0; i < count; i++) {
+      number += 1;
+      if (clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
+      groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
+        number, teeTime: clock || '', players: {}
+      };
+    }
     repaint();
+  };
+
+  // Type-to-search per group: the same pattern as every other picker —
+  // focus shows all unassigned players, typing filters, pointerdown moves
+  // the player into this group (and out of their old one).
+  host.querySelectorAll('input[data-spg="find"]').forEach(inp => {
+    const gid = inp.dataset.gid;
+    const list = host.querySelector(`[data-spg-list="${CSS.escape(gid)}"]`);
+    if (!list) return;
+
+    const candidates = () => {
+      const taken = new Set();
+      groupList(d, round).forEach(g => Object.keys(g.players || {}).forEach(pid => taken.add(pid)));
+      return Object.entries(d.players)
+        .filter(([pid, p]) => p && !taken.has(pid)
+          && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase()))
+        .map(([pid, p]) => ({ pid, name: p.name || pid }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    };
+
+    const show = () => {
+      const q = inp.value.trim().toLowerCase();
+      const all = candidates();
+      const hits = q ? all.filter(c => c.name.toLowerCase().includes(q)) : all;
+      list.innerHTML = hits.length
+        ? hits.slice(0, 40).map(c => `
+          <div data-spg-pid="${esc(c.pid)}" style="padding:8px 10px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid var(--border-color);">${esc(c.name)}</div>`).join('')
+        : `<div style="padding:8px 10px;font-size:0.76rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+      list.hidden = false;
+      list.querySelectorAll('[data-spg-pid]').forEach(item => {
+        item.onpointerdown = (e) => {
+          e.preventDefault();
+          const pid = item.dataset.spgPid;
+          const g = d.groups[round]?.[gid];
+          if (!g) return;
+          const old = groupOfPid(d, round, pid);
+          if (old) delete d.groups[round][old].players[pid];
+          (g.players = g.players || {})[pid] = true;
+          repaint();
+        };
+      });
+    };
+
+    inp.onfocus = show;
+    inp.oninput = show;
+    inp.onblur = () => setTimeout(() => {
+      if (!document.body.contains(inp)) return;
+      inp.value = '';
+      list.hidden = true;
+    }, 150);
   });
 
   // Excel/CSV import: rows of (group, name[, tee time]) become this round's
