@@ -2,12 +2,13 @@
 
 ## 2026-08-29 (Schedule readable at a glance: column headers)
 
-The board's Хуваарь section now lays every flight out on a fixed grid
-under a single-line header row — №, Эхлэх цаг, Эхлэх нүх, Тоглогчид — so a
-spectator no longer has to guess which pill is the tee time and which is
-the starting hole. The start-hole column only appears on shotgun draws
-(sequential schedules skip it), and the group-card link keeps its place
-in the last column.
+The board's Хуваарь section is now a two-tier flight card: the top row
+carries №, the tee-time pill, the start-hole pill (shotgun draws only)
+and the group-card button, aligned under a single-line header (№, Эхлэх
+цаг, Эхлэх нүх); the players list below it at full width, one name per
+line. On a phone the old five-column row squeezed the names against the
+button and broke them mid-word — now names never wrap and the card's
+height is just the player count.
 
 ## 2026-08-29 (One course registry: games and tournaments share pars, tees and WHS)
 
