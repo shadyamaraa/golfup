@@ -134,6 +134,14 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 #app-header   { background: color-mix(in srgb, var(--bg-primary) 86%, transparent); }
 .bottom-nav   { background: color-mix(in srgb, var(--bg-primary) 92%, transparent); }
 
+/* Pull-to-refresh strip follows the theme (was hardcoded old-green) */
+.ptr-indicator {
+  background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  color: var(--gold-dark);
+}
+[data-theme="dark"] .ptr-indicator { color: var(--gold); }
+
 /* ============================================================
    REDESIGN — component layer (loads after style.css, so wins)
    Re-skins the existing classes for the cream/navy look and adds
@@ -635,7 +643,10 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   display: block; margin-bottom: 14px; border-radius: 18px; overflow: hidden;
   box-shadow: var(--shadow-card); background: #0A1A2E;
 }
-.sponsor-img { display: block; width: 100%; height: 84px; object-fit: cover; }
+/* The banner keeps the image's own aspect ratio so nothing gets cropped on
+   narrow screens; only images taller than the cap fall back to a positioned
+   crop (the admin's drag-set object-position). */
+.sponsor-img { display: block; width: 100%; height: auto; max-height: 140px; object-fit: cover; }
 
 /* Admin sponsor drag-to-position preview */
 .sp-preview {
@@ -795,6 +806,8 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   max-width: 640px; margin: 0 auto; padding: 12px 20px 11px;
   text-decoration: none; color: inherit;
 }
+/* Several featured tournaments stack inside the one strip. */
+.tn-strip-inner + .tn-strip-inner { border-top: 1px solid var(--border-card); }
 
 /* round chip + state line */
 .tn-head { display: flex; align-items: center; gap: 8px; }

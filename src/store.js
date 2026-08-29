@@ -24,7 +24,16 @@ export async function initStore() {
       // write live scores. The app's own sign-in is untouched. If the
       // Anonymous provider is not enabled in the Firebase console this
       // rejects and the uid stays null — everything else keeps working.
-      onAuthStateChanged(auth, (u) => { deviceUid = u?.uid || null; });
+      onAuthStateChanged(auth, (u) => {
+        deviceUid = u?.uid || null;
+        // A login can land before anonymous auth resolves; finish the
+        // deferred device registration once the uid exists.
+        if (deviceUid && pendingAccessUser) {
+          const usr = pendingAccessUser;
+          pendingAccessUser = null;
+          ensureDeviceAccess(usr);
+        }
+      });
       signInAnonymously(auth).catch((e) => console.warn('anon auth unavailable:', e?.code || e));
     } catch (e) {
       console.warn('Firebase init failed, using localStorage', e);
@@ -33,6 +42,15 @@ export async function initStore() {
 }
 
 export function isUsingFirebase() { return useFirebase; }
+
+// The one way a member is named on screen: first name first. Stored fullName
+// strings predate that order (they were saved as "Овог Нэр"), so whenever the
+// split fields exist they win, and fullName is only the legacy fallback.
+export function memberName(u) {
+  if (!u) return '';
+  return [u.firstName, u.lastName].filter(Boolean).join(' ')
+    || u.fullName || u.name || u.username || u.id || '';
+}
 
 // ---- User Management ----
 export function getUser() {
@@ -210,6 +228,21 @@ export async function saveGameSchedule(gameId, schedule) {
   const games = getLocalGames();
   if (!games[gameId]) return null;
   games[gameId].schedule = schedule ?? null;
+  setLocalGames(games);
+  return games[gameId];
+}
+
+// Mark a round finished (or reopen it) — drives the final-results report on
+// the scorer. Path-scoped so it never touches scores.
+export async function saveGameFinished(gameId, finished) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + gameId), { finishedAt: finished ? Date.now() : null });
+    return null;
+  }
+  const games = getLocalGames();
+  if (!games[gameId]) return null;
+  if (finished) games[gameId].finishedAt = Date.now();
+  else delete games[gameId].finishedAt;
   setLocalGames(games);
   return games[gameId];
 }
@@ -668,6 +701,25 @@ export async function saveTnMatchHole(tnId, matchId, hole, value, by) {
   update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
 }
 
+// ---- Stroke play scorecard ----
+// One hole's strokes on a player's card. Same discipline as the match play
+// hole write: each hole is its own path (two people on two cards never
+// clobber each other), null clears, RTDB queues the write offline, and an
+// audit line records who put what where.
+export async function saveTnSpScore(tnId, pid, round, hole, strokes, by) {
+  if (!useFirebase || !db) return;
+  const holeRef = ref(db, `tournaments/${tnId}/sp/scores/${pid}/${round}/${hole}`);
+  if (strokes === null || strokes === undefined) {
+    await remove(holeRef);
+  } else {
+    await set(holeRef, Number(strokes));
+  }
+  push(ref(db, `tournaments/${tnId}/sp/audit`), {
+    at: Date.now(), by: by || null, pid, round, hole, strokes: strokes ?? null
+  }).catch(console.warn);
+  update(ref(db, 'tournaments/' + tnId), { updatedAt: Date.now() }).catch(console.warn);
+}
+
 // ---- Correction consent ----
 // A player changing a hole SOMEBODY ELSE entered does not overwrite it: the
 // proposal parks under pending/{hole} and only the original enterer (or an
@@ -680,7 +732,7 @@ export async function proposeTnHoleChange(tnId, matchId, hole, value, user) {
   await set(ref(db, `${base}/pending/${hole}`), {
     value,
     by: user?.id || null,
-    byName: user?.fullName || user?.name || user?.username || '',
+    byName: memberName(user),
     at: Date.now()
   });
   push(ref(db, `tournaments/${tnId}/mp/audit`), {
@@ -758,6 +810,47 @@ export async function setTnSubscribed(tnId, userId, on) {
 
 export function getDeviceUid() { return deviceUid; }
 
+// The device role a member's app role maps to. Admins run tournaments,
+// marshals (the club's marshal/marker crew) edit scores and everything
+// inside a tournament, everyone else may only touch matches they play in
+// or are assigned to score — the database rules enforce the same ladder.
+export function deviceRoleFor(user) {
+  if (!user) return null;
+  return user.role === 'admin' ? 'admin' : user.role === 'marshal' ? 'scorer' : 'player';
+}
+
+const DEVICE_ROLE_RANK = { admin: 3, scorer: 2, player: 1 };
+let pendingAccessUser = null;
+// The router calls ensureDeviceAccess on every route; this memo keeps that a
+// no-op once the registration for this member+role has gone through.
+let ensuredAccessKey = null;
+
+// Registers this browser in mpDevices for the logged-in member, so an admin
+// or marshal never has to file an access request. The rules verify the
+// claimed member's role server-side. Failures are silent: the manual
+// request/approve flow still exists as the fallback.
+export async function ensureDeviceAccess(user) {
+  if (!useFirebase || !db || !user?.id) return;
+  if (!deviceUid) { pendingAccessUser = user; return; }
+  const want = deviceRoleFor(user);
+  const key = user.id + ':' + want;
+  if (ensuredAccessKey === key) return;
+  try {
+    const snap = await get(ref(db, 'mpDevices/' + deviceUid));
+    const cur = snap.exists() ? snap.val() : null;
+    // A device an admin approved by hand may outrank what this member's role
+    // maps to — never downgrade that grant.
+    if (!cur || ((DEVICE_ROLE_RANK[cur.role] || 0) <= (DEVICE_ROLE_RANK[want] || 0)
+      && (cur.role !== want || cur.userId !== user.id))) {
+      await set(ref(db, 'mpDevices/' + deviceUid),
+        { role: want, userId: user.id, name: user.name || '', at: Date.now() });
+    }
+    ensuredAccessKey = key;
+  } catch (e) {
+    console.warn('device access:', e?.code || e);
+  }
+}
+
 export async function deviceStatus() {
   if (!useFirebase || !db || !deviceUid) return { uid: null, role: null, requested: false, registryEmpty: null };
   const [dev, req, reg] = await Promise.all([
@@ -768,6 +861,7 @@ export async function deviceStatus() {
   return {
     uid: deviceUid,
     role: dev.exists() ? (dev.val()?.role || 'scorer') : null,
+    userId: dev.exists() ? (dev.val()?.userId || null) : null,
     requested: req.exists(),
     registryEmpty: !reg.exists()
   };

@@ -52,6 +52,300 @@ marshal sheets straight from the app.
   localStorage mode — scorecard colors/totals/reports/QR, schedule
   edit+save+revisit, admin tab, M Cup draw, guest access, print-media
   chrome hiding (31 checks green).
+## 2026-08-29 (Home dashboard: your tournament tee time card)
+
+A member drawn into a stroke tournament now sees their start right on
+the home dashboard, in the same hero-card style as "Дараагийн тоглолт":
+a **Tee time** card with the date and their flight's tee time, the
+tournament name and venue, chips for Групп № / Эхлэх нүх / round, and
+their flight-mates — tapping opens the tournament page. Shows the
+nearest not-yet-final tournament where the member has a flight; nothing
+renders otherwise.
+
+## 2026-08-29 (Tournament tabs: Тэргүүлэгчид / Хуваарь, Net as a toggle)
+
+A stroke tournament's page now has exactly the two tabs the members
+asked for: **Тэргүүлэгчид** (the leaderboard — «Хүснэгт» read as
+nothing) and **Хуваарь** (the flight schedule, promoted from a fold
+inside the board to its own tab, replacing the info tab they called
+useless). The schedule tab appears once a round has flights; with no
+flights the single-tab bar hides itself. The Gross/Net seg-row is gone —
+the leaderboard shows gross, and a small **Net** toggle on the list's
+header re-sorts by net (press again for gross). Match play pages keep
+their Match Center / info tabs (the rulebook lives there).
+
+## 2026-08-29 (Member feedback: golf terms untranslated, HCP on schedule, tee-time gate)
+
+Five fixes straight from the members' group chat:
+
+- **"Scorecard"** — the group-card button drops its translation
+  (was «Группын карт»).
+- **"Strokeplay"** — the format label everywhere (hero facts, info tab,
+  admin select, wizard); «Цохилт» read as nothing to the members.
+- **(HCP n)** after each player's name on the schedule's flight cards.
+- **Holes, not rounds** — a stroke tournament's hero and info show
+  «18 нүх» / «36 нүх» (rounds × 18) instead of «1 тойрог».
+- **No more ⛳ prefixes** — the golf-flag emoji is gone from the
+  tournament UI labels (schedule pills, Scorecard buttons, enter-score
+  CTAs, scorecard headers, admin scored-marker); intentional icons like
+  avatars and the wizard's type card keep theirs.
+- **The enter-score shortcut waits for the tee time**: before the
+  flight's tee time on the opening day the button renders disabled with
+  the time on it («⛳ Оноо оруулах — 09:00»). Only the shortcut — the
+  scorecards stay reachable through the schedule for officials, and no
+  database rule changed.
+
+## 2026-08-29 (Schedule readable at a glance: column headers)
+
+The board's Хуваарь section is now a two-tier flight card: the top row
+carries №, the tee-time pill, the start-hole pill (shotgun draws only)
+and the group-card button, aligned under a single-line header (№, Эхлэх
+цаг, Эхлэх нүх); the players list below it at full width, one name per
+line. On a phone the old five-column row squeezed the names against the
+button and broke them mid-word — now names never wrap and the card's
+height is just the player count.
+
+## 2026-08-29 (One course registry: games and tournaments share pars, tees and WHS)
+
+The two parallel course/handicap systems are now one. `src/courses.js` is
+the single registry — per-hole pars and stroke indexes plus rating/slope
+per tee — and both sides read it: games by location name (as before),
+tournaments by short key. `resolveCourse()` accepts key, name, and the
+legacy "Chinggis Khaan Golf Club" spelling, so no stored record on either
+side needed migrating (the tournament pick lists now show the registry's
+correct "…Golf Course" name).
+
+What the tournament side gains from it:
+
+- **Tee on the tournament** (wizard + editor): picking a tee stores
+  `tee/rating/slope` next to `par` — the inputs the WHS math needs.
+- **Real scorecards**: the individual card shows each hole's par (label
+  and placeholder) with birdie-red / par-muted coloring, and the group
+  card's hole header reads "Пар 5 · SI 7"; both were bare number grids.
+- **Honest mid-round to-par**: with per-hole pars a started round posts
+  its running to-par to the leaderboard from the first hole (net keeps
+  the club's flat reading — full HCP off from hole 1, same as the casual
+  game's netToPar). Custom courses keep the old complete-rounds-only
+  behavior; stroke totals (`gross`/`netTotal`) still speak only for
+  finished rounds.
+- **HCP seeds itself**: adding a member (picker or "бүгдийг нэмэх") fills
+  their HCP from `courseHandicap(hcpIndex, slope, rating, par)` on the
+  tournament's tee; a "↻ HCP — WHS индексээс" button fills any blanks
+  later. A typed value is never overwritten.
+- **Tournament rounds count toward the handicap**: once a member's 18
+  holes of a round are in (and the tournament has rating/slope), the
+  round posts to `rounds/{ghin}/{tnId}_rN` (`roundFromTournament` in
+  handicap.js — same record shape and par+5 AGS cap as `roundFromGame`)
+  and the WHS index recomputes, exactly mirroring the casual game's
+  finalize hook. Corrections re-post the same key.
+
+The game create/edit course pickers also now render from the registry
+instead of hardcoded pairs. Tests: 95 (registry aliasing, running to-par,
+`roundFromTournament`, `courseHandicap` seeding).
+
+## 2026-08-29 (Editor folds: tournament details and players collapse)
+
+Opening a tournament's editor now lands on the working sections, not the
+name-and-dates form: the meta fields (with their Save button) fold under
+"⚙ Тэмцээний мэдээлэл", collapsed by default, and the stroke editor's
+Тоглогчид section folds too — opening itself only while the roster is
+empty. Both folds remember their state across the tab's re-renders, the
+same pattern as the scoring-devices card.
+
+## 2026-08-29 (Manual flights: empty groups by count, type-to-search adds)
+
+The draw isn't the only way to build flights any more: "Хоосон групп" —
+give a count and that many empty groups appear, numbered after the last
+and continuing the 10-minute tee procession (from the first-tee field
+when the round is empty). Each group's add control is now the same
+type-to-search picker as everywhere else — focus lists every unassigned
+player, typing filters, a tap moves the player in (and out of their old
+group); players already in a flight never show in another's search.
+
+## 2026-08-29 (Stroke play flights: auto draw, tee-time procession, group card)
+
+Stroke tournaments get per-round groups, following the real draw
+conventions: groups of 3–4, tee times 10 minutes apart, and a fresh draw
+each round. Stored as `sp/groups/{round}` plus a `groups[round]` pointer
+on each player — the pointer is what the database rules read to allow
+"anyone in my flight may enter my strokes" for exactly that round.
+
+- **Draw** (`drawGroups` in strokeplay.js, pure + tested): Random /
+  Balance by HCP (snake seeding, every group mixes strong and weak) /
+  By standings with the leaders off last (the professional R2+ draw;
+  WD/DQ are left out). `chunkGroups` spreads leftovers so nobody plays
+  alone (10 at size 4 → 4/3/3).
+- **Editor**: a Groups section with round tabs, method/size/first-tee
+  controls, one-tap draw, manual add/move/remove per group, and tee
+  times that re-chain 10 minutes apart when one is edited. An
+  **Excel/CSV import** reads (group, name[, tee]) rows or "Group N"
+  heading blocks and matches names to the roster with the sheet-era
+  tolerant matcher (`groupsFromRows`, tested); unmatched names are
+  reported, never guessed.
+- **Group card** (`#/spgroup/{tn}/{round}/{gid}`): the marker practice —
+  one screen, one hole at a time, a stroke input per flight member with
+  running totals; opens on the first unfinished hole. Writes hit the
+  same per-hole paths as the individual card.
+- **Board**: a Schedule fold listing every flight with its tee time and
+  players; a player's "Оноо оруулах" shortcut goes to their flight's
+  group card once a draw exists. Individual cards now also accept a
+  flight-mate's edits for the shared round (client and rules alike).
+  Tests 85.
+
+Deploy needs `firebase deploy --only database,hosting` (group rule).
+
+## 2026-08-28 (Scoring devices card folds away)
+
+Registration went automatic, so the "Оноо бичих төхөөрөмжүүд" card is a
+diagnostic now, not a daily stop: it renders collapsed (a `<details>`
+showing just the title, this device's tier and the registry count),
+remembers being opened across the admin tab's re-renders, and springs
+open on its own only when something actually needs the admin — an empty
+registry to bootstrap, or a pending manual request. The registry itself
+stays: it is the invisible device↔member link the database rules read to
+enforce "only this match's players, its assigned markers, and officials
+may write".
+
+## 2026-08-28 (Stroke play scores live in the app — sheets are gone)
+
+The stroke play tournament stops reading a Google Sheet and stops
+importing Excel; everything happens in the app:
+
+- **Engine** (`src/strokeplay.js`, new, pure, tested): per-hole strokes
+  under `tournaments/{id}/sp` are the only stored fact; `spEntries()`
+  recomputes the leaderboard entries the existing pure ranking
+  (`rankEntries`/`cutSet` in tournament-sheet.js) already consumes. A
+  round posts to-par once complete; a running round shows its thru.
+  **Net = Gross − HCP** per completed round.
+- **Wizard**: the stroke step is picks, not typing — a course dropdown
+  (`COURSES`: Sky Resort, Chinggis Khaan; picking one fills venue, city
+  and PAR), rounds 1–4, the cut as a dropdown; currentRound starts at 1;
+  no sheet fields. The editor's stroke fields match (course/rounds/
+  currentRound/cut dropdowns) and picking a course fills PAR there too.
+- **Players** (`src/strokeplay-admin.js`, new): picked from the members
+  with the same type-to-search picker as match play (entries keyed by
+  the member's id — `tnIsMe` stops needing name matching), non-members
+  added by typing a name (generated pid, no self-scoring), each player
+  with an HCP number and a WD/DQ status. Draft + per-field save, never
+  touching `sp/scores`.
+- **Scorecard** (`src/strokeplay-score.js`, new; route
+  `#/spscore/{tnId}/{pid}`): 18 numeric hole inputs per round with a
+  live total, per-hole writes (`store.saveTnSpScore`) that queue
+  offline, an audit trail, and the same access ladder as match play
+  (the player themself + admin/marshal — enforced client-side by
+  `canScoreSp` and server-side by new `sp` rules in
+  database.rules.json).
+- **Board**: computes entries from `sp` on every paint (one
+  `onTournamentChanged` listener is the whole live feed), a Gross/Net
+  toggle appears once anyone has an HCP, and a player sees an
+  "Оноо оруулах" shortcut to their own card. Legacy records that carry
+  sheet-era entries keep displaying them as a static snapshot.
+- **Removed**: sheet fetch/cache/polling, Sync/Excel buttons, the file
+  importer and analysis panel, the wizard/editor sheet fields. The club
+  ranking Excel importer is untouched (xlsx stays). Tests: 76.
+
+Deploy needs `firebase deploy --only database,hosting` (new sp rules).
+
+## 2026-08-27 (Tee times pace themselves at 10-minute intervals)
+
+The admin gives the first match its tee time by hand and the rest of the
+draw follows: setting any match's time fills every later match in that
+session (singles: in the flat list) whose time is still empty, 10
+minutes apart, and "+ Match нэмэх" creates the new match 10 minutes
+behind the previous one. A hand-set time is never overwritten — the
+chain adopts it as its new base. Pure engine functions
+`addMinutesHHMM` / `cascadeTeeTimes` in `src/matchplay.js` (midnight
+wraps handled), applied from the editor's teeTime edit and add-match
+paths; committing a tee time now repaints the section so the filled
+times show at once. Tests 65.
+
+## 2026-08-27 (Cards name their day and session)
+
+Match cards on the board and the detail modal header showed only the
+format (FOURSOMES / FOURBALL / SINGLES), so with several sessions set up
+nothing said which day a match belongs to. Both now carry the session's
+full label ("Өдөр 1 — FOURSOMES") via the existing `sessionLabel`;
+sessionless singles matches fall back to their own format text.
+
+## 2026-08-27 (Score entry reachable straight from the Match Center)
+
+Entering scores from the Match Center only worked for fielded players —
+tapping a match card opened the detail with no way in, and admins had to
+go through the admin editor's own link. The "⛳ Оноо оруулах" shortcut is
+now gated by the same `canScore` the scorer screen enforces (fielded
+players, assigned scorers, admin/marshal), appears both under the card
+and inside the match detail modal, and the modal closes itself when the
+link navigates to the scorer. `renderMatchCenter` receives the full
+viewer (`ctx.user`) so the role is known; a bare `userId` still works.
+Render tests cover player/admin/spectator visibility (59 total).
+
+## 2026-08-27 (Legacy names still showed Овог first — one memberName helper)
+
+Flipping the display composition wasn't enough: rosters, pickers and the
+scorer chips were built straight from stored `fullName` strings, which
+predate the rename and read "Овог Нэр". A single `store.memberName(u)`
+now defines how a member is named — split firstName/lastName fields win
+(first name first), stored `fullName` is only the legacy fallback — and
+every label site uses it: the match play pickers, roster entries, scorer
+chips, `displayFullName`, the editor's member sort, booking names, and
+the audit `byName`. The editor also refreshes stale roster snapshots
+from the live member records on paint (on both `tn.mp` and the draft —
+a clean draft re-clones from `tn.mp`, so the source must carry the fix),
+and the next save persists them. Members with only a single `fullName`
+string and no split fields keep it unchanged — the order of a plain
+string can't be known.
+
+## 2026-08-27 (Session pickers only offer the remaining players)
+
+Within a session, once a match's players are placed the next match's
+player picker no longer lists them — only whoever remains unfielded in
+that session (a player fields once per session; `lineupIssues` already
+flagged the duplicates, now the picker prevents them). The slot's own
+pick stays visible so it can be re-chosen, and singles is untouched
+except that a match's picker hides that same match's own picks (nobody
+plays themselves).
+
+## 2026-08-27 (Type-to-search player pickers; names read Нэр Овог)
+
+The four `<select>` pickers in the match play editor — team roster add,
+singles participants add, match player slots, scorer assignment — are now
+type-to-search comboboxes (`pickerHTML`/`wirePickers` in
+`src/matchplay-admin.js`, the same look as the app's player-search modal).
+Focus shows the full candidate list so tap-only picking still works;
+typing filters by name/username; a pick goes through the exact same
+mutation paths the selects used, and a filled player slot clears with ✕.
+Candidates are resolved on focus so they always reflect the current
+draft (members already rostered, scorers already assigned are excluded).
+
+Name order flipped everywhere a surname+name pair is composed:
+`displayFullName` and the stored `fullName` on admin create/edit and
+profile save now read **firstName lastName** (Нэр Овог), and the three
+forms put the Нэр input first. Sheet-name matching is unaffected
+(`nameKey` sorts tokens, so order never mattered there).
+
+## 2026-08-27 (Device access is automatic, tiered by member role)
+
+An admin hit PERMISSION_DENIED creating a tournament because their device
+was not in the `mpDevices` allowlist. Requests and approvals are gone:
+a logged-in member's browser now registers itself
+(`store.ensureDeviceAccess`, called from the router and on login), and
+`database.rules.json` verifies the claimed member's role in `users/`
+server-side. Three tiers: member `admin` → full tournament write; member
+`marshal` → only `tournaments/$id/mp/**` ("Marshal / Marker": scores and
+everything inside a tournament, but no creating/deleting tournaments);
+plain member → only matches they play in or are assigned to score
+(`scorerIds` map / `players` slots, checked in the rules). Hand-approved
+devices are never downgraded; the request flow stays as a fallback; the
+empty-registry bootstrap is unchanged. Scorer-screen banner now only
+appears when self-registration could not cover the device. Tests 56.
+Deploy needs `firebase deploy --only database,hosting`.
+## 2026-08-28 (fix green pull-to-refresh strip)
+
+The pull-to-refresh indicator still used the pre-redesign hardcoded
+dark-green background (`rgba(15,36,26,0.9)` in style.css). Added a
+re-skin override in tokens-redesign.css (same glass-chrome pattern as
+the header/bottom-nav) so it now follows the theme: cream in light,
+navy in dark, gold text.
 
 ## 2026-08-28 (Scorecard: par/SI from the Mt. Bogd card, to-par, manual handicap & net)
 

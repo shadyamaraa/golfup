@@ -20,7 +20,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
-  lineupIssues, participation, matchState, tnKind
+  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -114,11 +114,6 @@ function teamBoxHTML(tn, teamId, users) {
   const over = roster.length > ROSTER_SIZE;
   const logo = validLogo(team.logo) ? team.logo : null;
 
-  // Everyone already on EITHER roster is out of the picker — one member,
-  // one team.
-  const taken = new Set(Object.keys(mp.roster));
-  Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
-
   const chip = (p) => `
     <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name || p.id)}
       <button data-mp="del-player" data-pid="${esc(p.id)}" data-team="${teamId}"
@@ -147,11 +142,7 @@ function teamBoxHTML(tn, teamId, users) {
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
           ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
         </div>
-        <select data-mp="add-player" data-team="${teamId}" style="${INPUT}width:100%;margin-top:6px;">
-          <option value="">+ ${t('mpPickMember')}</option>
-          ${(users || []).filter(u => u && u.id && !taken.has(u.id))
-            .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-        </select>
+        <div style="margin-top:6px;">${pickerHTML('add-player', { team: teamId })}</div>
       </div>
     </div>`;
 }
@@ -189,20 +180,40 @@ function readLogoFile(file) {
   });
 }
 
-function playerSelectHTML(mp, match, teamId, slot, anyPlayer) {
-  // Team formats pick from that team's roster; singles from everyone.
-  const roster = anyPlayer
-    ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    : rosterOf(mp, teamId);
-  const cur = match.players?.[teamId]?.[slot] || '';
-  const known = !cur || roster.some(p => p.id === cur);
+// ---- Type-to-search picker ----
+// Replaces the <select> pickers: an input that filters candidates as the
+// admin types (the same look as the app's player-search modal), with a
+// dropdown of hits underneath. The input deliberately does NOT carry
+// data-mp — the generic wire() onchange would treat typed text as a pick.
+// Candidates are resolved on focus rather than at render time, so they
+// always reflect the current draft.
+function pickerHTML(kind, dataset, { current = '', clearable = false, width = '' } = {}) {
+  const attrs = Object.entries(dataset)
+    .map(([k, v]) => `data-${k}="${esc(v ?? '')}"`).join(' ');
   return `
-    <select data-mp="player" data-match="${esc(match.id)}" data-team="${teamId}" data-slot="${slot}" style="${INPUT}max-width:100%;">
-      <option value="">${t('mpPickPlayer')}</option>
-      ${roster.map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
-      ${known ? '' : `<option value="${esc(cur)}" selected>${esc(playerName(mp, cur))} ⚠</option>`}
-    </select>`;
+    <div style="position:relative;flex:1;min-width:0;${width ? `max-width:${width};` : ''}">
+      <input data-mpp="input" data-mpp-kind="${kind}" ${attrs} value="${esc(current)}"
+        placeholder="🔍 ${esc(t('mpTypeName'))}" autocomplete="off"
+        style="${INPUT}width:100%;box-sizing:border-box;${clearable && current ? 'padding-right:26px;' : ''}" />
+      ${clearable && current ? `
+        <button data-mpp="clear" tabindex="-1" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);
+          background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:2px 6px;">✕</button>` : ''}
+      <div data-mpp="list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
+        max-height:220px;overflow-y:auto;border:1px solid var(--border-color);
+        background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
+    </div>`;
+}
+
+function playerSelectHTML(mp, match, teamId, slot, anyPlayer) {
+  const cur = match.players?.[teamId]?.[slot] || '';
+  // A pick that survives from a bigger roster or another team keeps its
+  // warning marker so the admin sees it needs re-picking.
+  const known = !cur || (anyPlayer
+    ? !!mp.roster[cur]
+    : rosterOf(mp, teamId).some(p => p.id === cur));
+  return pickerHTML('player',
+    { match: match.id, team: teamId, slot },
+    { current: cur ? playerName(mp, cur) + (known ? '' : ' ⚠') : '', clearable: !!cur });
 }
 
 // Scorer assignment (spec §14). A picker over app members rather than free
@@ -215,18 +226,14 @@ function scorerHTML(tn, match, users) {
   const ids = Object.keys(match.scorerIds || {});
   const chip = (id) => {
     const u = users.find(x => x.id === id);
-    return `<span class="pill-soft" style="font-size:0.68rem;">${esc(u ? (u.fullName || u.name || u.username) : id)}
+    return `<span class="pill-soft" style="font-size:0.68rem;">${esc(u ? store.memberName(u) : id)}
       <button data-mp="del-scorer" data-match="${esc(match.id)}" data-user="${esc(id)}" style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button></span>`;
   };
   return `
     <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
       <span style="font-size:0.7rem;color:var(--text-secondary);font-weight:700;">${t('mpScorer')}:</span>
       ${ids.map(chip).join('') || `<span style="font-size:0.7rem;color:var(--text-muted);">—</span>`}
-      <select data-mp="add-scorer" data-match="${esc(match.id)}" style="${INPUT}max-width:170px;font-size:0.78rem;">
-        <option value="">+ ${t('mpScorer')}</option>
-        ${users.filter(u => !ids.includes(u.id))
-          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-      </select>
+      ${pickerHTML('add-scorer', { match: match.id }, { width: '190px' })}
     </div>`;
 }
 
@@ -332,7 +339,6 @@ function participationHTML(tn) {
 // Plain match play: one participants list instead of two team boxes.
 function participantsBoxHTML(tn, users) {
   const mp = draftFor(tn).mp;
-  const taken = new Set(Object.keys(mp.roster));
   const roster = Object.entries(mp.roster)
     .map(([id, p]) => ({ id, name: p?.name || id }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -347,11 +353,7 @@ function participantsBoxHTML(tn, users) {
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
         ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
       </div>
-      <select data-mp="add-player" data-team="" style="${INPUT}width:100%;margin-top:6px;">
-        <option value="">+ ${t('mpPickMember')}</option>
-        ${(users || []).filter(u => u && u.id && !taken.has(u.id))
-          .map(u => `<option value="${esc(u.id)}">${esc(u.fullName || u.name || u.username || u.id)}</option>`).join('')}
-      </select>
+      <div style="margin-top:6px;">${pickerHTML('add-player', { team: '' })}</div>
     </div>`;
 }
 
@@ -482,6 +484,15 @@ function handleEdit(tn, el) {
     if (!m) return false;
     const f = el.dataset.f;
     m[f] = f === 'number' ? (parseInt(el.value, 10) || null) : el.value;
+    // The first tee time given by hand paces the rest of the draw: every
+    // later match with no time yet falls in 10 minutes behind, and a time
+    // the admin set themselves is kept as the chain's new base.
+    if (f === 'teeTime' && m.teeTime) {
+      const pool = m.sessionId
+        ? Object.values(mp.matches).filter(x => x && x.sessionId === m.sessionId)
+        : Object.values(mp.matches).filter(Boolean);
+      cascadeTeeTimes(pool, m.id).forEach(c => { mp.matches[c.id].teeTime = c.teeTime; });
+    }
   } else if (kind === 'player') {
     const m = mp.matches[el.dataset.match];
     if (!m) return false;
@@ -525,11 +536,16 @@ function handleClick(tn, el, ctx, host) {
       : Object.values(mp.matches).filter(Boolean);
     const nums = pool.map(m => Number(m.number) || 0);
     const id = newId('m');
+    // A new match tees off 10 minutes behind the previous one, once the
+    // draw has a clock to follow.
+    const last = pool.length
+      ? pool.reduce((a, b) => ((Number(a.number) || 0) >= (Number(b.number) || 0) ? a : b))
+      : null;
     mp.matches[id] = {
       id,
       ...(sessionId ? { sessionId } : { format: 'SINGLES' }),
       number: (nums.length ? Math.max(...nums) : 0) + 1,
-      teeTime: '',
+      teeTime: last?.teeTime ? addMinutesHHMM(last.teeTime, 10) : '',
       players: { a: [], b: [] }
     };
   } else if (kind === 'logo-pick') {
@@ -551,7 +567,7 @@ function handleClick(tn, el, ctx, host) {
     // in this match". The display name is a snapshot; the id is the truth.
     const u = (ctx.users || []).find(x => x.id === el.value);
     if (!u) return;
-    const entry = { name: u.fullName || u.name || u.username || u.id, userId: u.id };
+    const entry = { name: store.memberName(u), userId: u.id };
     // Team formats file the player under their team; singles has no teams.
     if (el.dataset.team) entry.teamId = el.dataset.team;
     mp.roster[u.id] = entry;
@@ -585,11 +601,123 @@ function handleClick(tn, el, ctx, host) {
 // ---- Mount ----
 
 function paint(host, tn, ctx) {
+  // Roster names are snapshots taken when the player was added, so entries
+  // saved before the first-name-first rename still show the old order.
+  // Refresh them from the live member records; the correction is display-only
+  // until the admin's next save carries it along. Both the source record and
+  // the draft get it: a clean draft is re-cloned from tn.mp on every read,
+  // so mutating only the draft would be thrown away at once.
+  const byId = new Map((ctx.users || []).filter(u => u && u.id).map(u => [u.id, u]));
+  const refreshNames = (roster) => Object.entries(roster || {}).forEach(([id, p]) => {
+    const u = p && byId.get(p.userId || id);
+    if (!u) return;
+    const name = store.memberName(u);
+    if (name && p.name !== name) p.name = name;
+  });
+  refreshNames(tn.mp?.roster);
+  refreshNames(draftFor(tn).mp.roster);
   host.innerHTML = sectionHTML(tn, ctx.users || []);
   wire(host, tn, ctx);
 }
 
+// Wire every type-to-search picker: focus shows all candidates (a tap-only
+// admin can still just scroll and pick, like the old selects), typing
+// filters them, pointerdown on a hit applies it through the same mutation
+// paths the selects used — which repaint, closing the dropdown.
+function wirePickers(host, tn, ctx) {
+  host.querySelectorAll('input[data-mpp="input"]').forEach(inp => {
+    const list = inp.parentElement.querySelector('[data-mpp="list"]');
+    const kind = inp.dataset.mppKind;
+    const original = inp.value;
+
+    const candidates = () => {
+      const mp = draftFor(tn).mp;
+      if (kind === 'player') {
+        const singles = tnKind(tn) === 'match';
+        const m = mp.matches[inp.dataset.match] || {};
+        const slotPid = m.players?.[inp.dataset.team]?.[Number(inp.dataset.slot)] || '';
+        // A player fields once per session, so whoever is already placed in
+        // this session's matches is out of the picker — the next match only
+        // offers who remains. Singles has no such rule; there only this
+        // match's own picks are excluded (nobody plays themselves).
+        const used = new Set();
+        const eat = (x) => TEAM_KEYS.forEach(k =>
+          (x?.players?.[k] || []).forEach(pid => { if (pid) used.add(pid); }));
+        if (singles) eat(m);
+        else Object.values(mp.matches).forEach(x => {
+          if (x && x.sessionId === m.sessionId) eat(x);
+        });
+        used.delete(slotPid); // the slot's own pick stays visible
+        // Team formats pick from that team's roster; singles from everyone.
+        const pool = singles
+          ? Object.entries(mp.roster).map(([id, p]) => ({ id, name: p?.name || id }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          : rosterOf(mp, inp.dataset.team);
+        return pool.filter(p => !used.has(p.id))
+          .map(p => ({ id: p.id, label: p.name || p.id, sub: '' }));
+      }
+      const taken = kind === 'add-scorer'
+        ? new Set(Object.keys(mp.matches[inp.dataset.match]?.scorerIds || {}))
+        : new Set(Object.keys(mp.roster));
+      // One member, one roster entry — legacy entries may key by userId.
+      if (kind === 'add-player') {
+        Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
+      }
+      return (ctx.users || [])
+        .filter(u => u && u.id && !taken.has(u.id))
+        .map(u => {
+          const label = store.memberName(u);
+          return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
+        });
+    };
+
+    const pick = (id) => {
+      if (kind === 'player') {
+        handleEdit(tn, { dataset: { mp: 'player', match: inp.dataset.match, team: inp.dataset.team, slot: inp.dataset.slot }, value: id });
+        paint(host, tn, ctx);
+      } else {
+        handleClick(tn, { dataset: { mp: kind, team: inp.dataset.team, match: inp.dataset.match }, value: id }, ctx, host);
+      }
+    };
+
+    const show = () => {
+      const q = inp.value.trim().toLowerCase();
+      const all = candidates();
+      const hits = q && inp.value !== original
+        ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q))
+        : all;
+      list.innerHTML = hits.length
+        ? hits.slice(0, 60).map(c => `
+          <div data-mpp-id="${esc(c.id)}" style="padding:8px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid var(--border-color);">
+            ${esc(c.label)}${c.sub ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${esc(c.sub)}</span>` : ''}
+          </div>`).join('')
+        : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+      list.hidden = false;
+      list.querySelectorAll('[data-mpp-id]').forEach(item => {
+        // pointerdown fires before the input's blur, so the pick wins.
+        item.onpointerdown = (e) => { e.preventDefault(); pick(item.dataset.mppId); };
+      });
+    };
+
+    inp.onfocus = () => { if (inp.value) inp.select(); show(); };
+    inp.oninput = show;
+    inp.onblur = () => setTimeout(() => {
+      // A pick repaints and replaces this node; only an abandoned edit
+      // needs its current value put back.
+      if (!document.body.contains(inp)) return;
+      inp.value = original;
+      list.hidden = true;
+    }, 150);
+
+    inp.parentElement.querySelector('[data-mpp="clear"]')?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      pick('');
+    });
+  });
+}
+
 function wire(host, tn, ctx) {
+  wirePickers(host, tn, ctx);
   host.querySelectorAll('input[data-mp], select[data-mp], textarea[data-mp]').forEach(el => {
     // Rosters and player picks reshape the section, so they repaint; plain
     // fields only mark the draft dirty and repaint nothing — no lost focus.
@@ -600,7 +728,10 @@ function wire(host, tn, ctx) {
       }
       const changed = handleEdit(tn, el);
       if (!changed) return;
+      // A tee time repaints too: the cascade may have just filled the
+      // times of the matches below, and those inputs must show it.
       if (el.dataset.mp === 'player'
+        || (el.dataset.mp === 'match' && el.dataset.f === 'teeTime')
         || (el.dataset.mp === 'session' && el.dataset.f === 'format')) {
         paint(host, tn, ctx);
       } else {
@@ -648,13 +779,26 @@ export function mountMpAdmin(host, tn, ctx) {
 
 const shortUid = (uid) => (uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : '');
 
+const devRoleLabel = (role) =>
+  role === 'admin' ? t('mpDevRoleAdmin')
+    : role === 'player' ? t('mpDevRolePlayer') : t('mpDevRoleScorer');
+
+// Since registration became automatic this card is a diagnostic, not a daily
+// stop — it starts collapsed and remembers being opened across the tab's
+// re-renders. It springs open on its own only when something actually needs
+// the admin: an empty registry to bootstrap, or a pending manual request.
+let devCardOpen = false;
+
 async function deviceAdminHTML() {
+  // Members register their own device by role; by the time this card paints,
+  // an admin or marshal normally already holds their access.
+  await store.ensureDeviceAccess(store.getUser());
   const status = await store.deviceStatus();
   if (!status.uid) return '';
   const { devices, requests } = await store.loadDeviceRegistry();
 
   const mine = status.role
-    ? `<span class="pill-soft">${status.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>`
+    ? `<span class="pill-soft">${devRoleLabel(status.role)}</span>`
     : status.registryEmpty
       ? `<button data-dev="claim" class="btn btn-primary btn-sm">${t('mpDevClaim')}</button>`
       : status.requested
@@ -675,7 +819,7 @@ async function deviceAdminHTML() {
   const deviceRows = Object.entries(devices).map(([uid, d]) => `
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
       <span><b>${esc(d?.name || '?')}</b> <span style="color:var(--text-muted);">${shortUid(uid)}</span></span>
-      <span class="pill-soft" style="font-size:0.68rem;">${d?.role === 'admin' ? t('mpDevRoleAdmin') : t('mpDevRoleScorer')}</span>
+      <span class="pill-soft" style="font-size:0.68rem;">${devRoleLabel(d?.role)}</span>
       ${uid === status.uid ? `<span style="font-size:0.7rem;color:var(--text-secondary);">${t('mpDevThis')}</span>` : ''}
       <span style="margin-left:auto;display:flex;gap:6px;">
         ${d?.role !== 'admin' ? `<button data-dev="promote" data-uid="${esc(uid)}" data-name="${esc(d?.name || '')}" class="btn btn-outline btn-sm">${t('mpDevRoleAdmin')}</button>` : ''}
@@ -683,10 +827,18 @@ async function deviceAdminHTML() {
       </span>
     </div>`).join('');
 
+  const needsAttention = !status.role || !!requestRows;
   return `
-    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <details data-dev-card${devCardOpen || needsAttention ? ' open' : ''}
+      style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <b style="font-size:0.85rem;">${t('mpDevTitle')}</b>
+        ${status.role
+          ? `<span class="pill-soft" style="font-size:0.68rem;">${devRoleLabel(status.role)}</span>`
+          : `<span style="color:var(--amber);font-size:0.78rem;">⚠</span>`}
+        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-muted);">${Object.keys(devices).length}</span>
+      </summary>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;">
         <span style="font-size:0.72rem;color:var(--text-muted);">${t('mpDevThis')}: ${shortUid(status.uid)}</span>
         <span style="margin-left:auto;">${mine}</span>
       </div>
@@ -694,7 +846,7 @@ async function deviceAdminHTML() {
         ? `<p style="font-size:0.74rem;color:var(--amber);margin:8px 0 0;">${t('mpDevBootstrapHint')}</p>` : ''}
       ${requestRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevRequests')}</div>${requestRows}` : ''}
       ${deviceRows ? `<div style="margin-top:10px;font-size:0.72rem;font-weight:700;color:var(--text-secondary);">${t('mpDevApproved')}</div>${deviceRows}` : ''}
-    </div>`;
+    </details>`;
 }
 
 /**
@@ -707,6 +859,11 @@ export async function mountDeviceAdmin(host, ctx) {
   try { html = await deviceAdminHTML(); } catch (err) { console.warn('[mp-devices]', err); }
   host.innerHTML = html;
   if (!html) return;
+
+  // Remember the fold across the admin tab's frequent re-renders.
+  host.querySelector('details[data-dev-card]')?.addEventListener('toggle', (e) => {
+    devCardOpen = e.target.open;
+  });
 
   const act = async (fn, okMsg) => {
     try {

@@ -67,10 +67,12 @@ const TN = {
         players: { a: ['p3'], b: ['q3'] },
         holes: holes(...Array(18).fill(HALVED))
       },
-      // Live: ALTAI 2 UP thru 11.
+      // Live: ALTAI 2 UP thru 11. Carries an assigned scorer who is not a
+      // player — the enter-score tests below depend on that.
       m3: {
         id: 'm3', sessionId: 's2', number: 3, teeTime: '13:00',
         players: { a: ['p1', 'p2'], b: ['q1', 'q2'] },
+        scorerIds: { scorekeeper: true },
         holes: holes('a', HALVED, 'a', HALVED, HALVED, 'b', 'a', HALVED, HALVED, HALVED, HALVED)
       },
       // Upcoming.
@@ -97,6 +99,13 @@ test('the running session is named on the scoreboard', () => {
   const host = hostStub();
   renderMatchCenter(host, TN);
   assert.match(host.innerHTML, /DAY 1 — FOURBALL/);
+});
+
+test('every card names its day and session, not just the format', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN);
+  assert.match(host.innerHTML, /Day 1 — FOURSOMES/);
+  assert.match(host.innerHTML, /Day 1 — FOURBALL/);
 });
 
 test('every match state gets a card, with players named', () => {
@@ -193,6 +202,39 @@ test('the sample covers all four match states', () => {
   const states = new Set(Object.values(MP_DEMO.mp.matches).map(matchState));
   ['LIVE', 'COMPLETED', 'UPCOMING', 'SUSPENDED']
     .forEach(s => assert.ok(states.has(s), `sample must include a ${s} match`));
+});
+
+// ---- The score-entry shortcut ----
+// Shown to exactly who the scorer screen would let in: fielded players,
+// assigned scorers, and admin/marshal members — never to a spectator, and
+// never on a completed match.
+
+test('a fielded player sees enter-score on their unfinished match only', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'p3' } });
+  // p3 plays m2 (completed) and m4 (upcoming) — only m4 gets the button.
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 1);
+  assert.match(host.innerHTML, new RegExp(`#/score/${TN.id}/m4`));
+});
+
+test('an admin sees enter-score on every unfinished match', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'boss', role: 'admin' } });
+  // m3 live + m4 upcoming; m1/m2 are completed.
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 2);
+});
+
+test('an assigned scorer sees enter-score on their match only', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'scorekeeper' } });
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 1);
+  assert.match(host.innerHTML, new RegExp(`#/score/${TN.id}/m3`));
+});
+
+test('a spectator sees no enter-score buttons', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { user: { id: 'stranger' } });
+  assert.equal((host.innerHTML.match(/data-mpv-go/g) || []).length, 0);
 });
 
 // ---- Plain match play (1v1 singles, no teams) ----

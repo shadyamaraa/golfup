@@ -407,7 +407,12 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   const paintDeviceBanner = async () => {
     if (demoMode || !store.isUsingFirebase()) return;
     let status = null;
-    try { status = await store.deviceStatus(); } catch (_) { return; }
+    // A logged-in member's device registers itself by role; the banner is
+    // only for the rare device that could not (not a member, rules stale).
+    try {
+      await store.ensureDeviceAccess(ctx.user);
+      status = await store.deviceStatus();
+    } catch (_) { return; }
     if (!status?.uid || status.role || status.registryEmpty) return;
     const el = document.getElementById('sc-device');
     if (!el) return;
@@ -419,7 +424,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
     const btn = document.getElementById('sc-dev-req');
     if (btn) btn.onclick = async () => {
       try {
-        await store.requestDeviceAccess(ctx.user?.fullName || ctx.user?.name || ctx.user?.username || '');
+        await store.requestDeviceAccess(store.memberName(ctx.user));
         ctx.showToast?.('✅ ' + t('mpDevRequestSent'), 'success');
       } catch (err) {
         console.error('[scorer]', err);
