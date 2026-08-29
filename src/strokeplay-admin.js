@@ -150,6 +150,8 @@ function groupsHTML(tn, d) {
         <b style="font-size:0.8rem;">${t('spGroup')} ${esc(g.number ?? '')}</b>
         <input data-spg="tee" data-gid="${esc(g.gid)}" type="time" value="${esc(g.teeTime || '')}"
           title="${t('mpTee')}" style="${INPUT}width:100px;" />
+        <input data-spg="shole" data-gid="${esc(g.gid)}" type="number" min="1" max="18"
+          value="${esc(g.startHole ?? '')}" placeholder="⛳№" title="${t('spStartHole')}" style="${INPUT}width:64px;" />
         <a href="#/spgroup/${esc(tn.id)}/${round}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
         <button data-spg="del-group" data-gid="${esc(g.gid)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
       </div>
@@ -190,6 +192,10 @@ function groupsHTML(tn, d) {
           ${[4, 3].map(n => `<option value="${n}">${n} ${t('spPerGroup')}</option>`).join('')}
         </select>
         <input data-spg="first-tee" type="time" value="08:00" title="${t('mpTee')}" style="${INPUT}width:100px;" />
+        <select data-spg="start-mode" title="${t('spStartMode')}" style="${INPUT}font-size:0.78rem;">
+          <option value="seq">${t('spSequential')}</option>
+          <option value="shotgun">${t('spShotgun')}</option>
+        </select>
         <button data-spg="draw" class="btn btn-primary btn-sm">${t('spDraw')}</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
@@ -387,6 +393,7 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     const method = host.querySelector('select[data-spg="method"]')?.value || 'random';
     const size = Number(host.querySelector('select[data-spg="size"]')?.value) || 4;
     const firstTee = host.querySelector('input[data-spg="first-tee"]')?.value || '';
+    const shotgun = host.querySelector('select[data-spg="start-mode"]')?.value === 'shotgun';
     // The draw reads the DRAFT roster (unsaved adds included) but the live
     // scores, so a standings draw ranks on what the board shows.
     const draw = drawGroups(
@@ -398,10 +405,13 @@ function wireGroups(host, tn, ctx, d, markDirty) {
       const gid = `g_${round}_${i + 1}`;
       groups[gid] = {
         number: i + 1,
-        teeTime: clock || '',
+        // Shotgun: everyone off at the same time, each flight on its own
+        // starting hole. Sequential: the 10-minute procession off the 1st.
+        teeTime: shotgun ? firstTee : (clock || ''),
+        ...(shotgun ? { startHole: (i % 18) + 1 } : {}),
         players: Object.fromEntries(pids.map(pid => [pid, true]))
       };
-      if (clock) clock = addMinutesHHMM(clock, 10);
+      if (!shotgun && clock) clock = addMinutesHHMM(clock, 10);
     });
     d.groups[round] = groups;
     repaint();
@@ -411,9 +421,23 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     const g = d.groups[round]?.[inp.dataset.gid];
     if (!g) return;
     g.teeTime = inp.value;
-    // The groups behind follow at 10-minute steps — a procession, not a
-    // sheet of independent times.
-    rechainTees(d, round, inp.dataset.gid);
+    if (g.startHole) {
+      // A shotgun field moves as one: retiming any flight retimes them all.
+      Object.values(d.groups[round] || {}).forEach(x => { if (x) x.teeTime = inp.value; });
+    } else {
+      // The groups behind follow at 10-minute steps — a procession, not a
+      // sheet of independent times.
+      rechainTees(d, round, inp.dataset.gid);
+    }
+    repaint();
+  });
+
+  host.querySelectorAll('input[data-spg="shole"]').forEach(inp => inp.onchange = () => {
+    const g = d.groups[round]?.[inp.dataset.gid];
+    if (!g) return;
+    const n = parseInt(inp.value, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 18) g.startHole = n;
+    else delete g.startHole;
     repaint();
   });
 
