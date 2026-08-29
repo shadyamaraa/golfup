@@ -70,6 +70,12 @@ export function printStyleHTML() {
     .sc-no-print { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .sc-block { break-inside: avoid; page-break-inside: avoid; }
     .sc-page-break { break-before: page; page-break-before: always; }
+    /* Long tables break BETWEEN rows, never inside one, and repeat their
+       header row on every printed page. A whole-table avoid pushed a table
+       taller than the space left after the sheet header onto its own page,
+       leaving page 1 nearly empty. */
+    .sc-sheet thead { display: table-header-group; }
+    .sc-sheet tr { break-inside: avoid; page-break-inside: avoid; }
     @media print {
       #app-header, #bottom-nav, #tn-strip, #global-sponsor, #toast-container,
       .sc-no-print { display: none !important; }

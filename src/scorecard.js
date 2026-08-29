@@ -128,19 +128,23 @@ function reportTableHTML(title, entries) {
     });
   if (!rows.length) return '';
   return `
-    <div class="sc-block" style="margin-top:16px;">
+    <div style="margin-top:16px;">
       <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${title}</div>
       <table style="margin-top:5px;min-width:260px;">
+        <thead>
         <tr class="sc-head">
           <th style="width:24px;">#</th><th class="sc-lbl" style="text-align:left;">${t('tnPlayer')}</th>
           <th style="width:52px;">Gross</th><th style="width:44px;">HCP</th><th style="width:52px;">Net</th>
         </tr>
+        </thead>
+        <tbody>
         ${rows.map((r, i) => `
         <tr${i === 0 && r.net !== null && r.thru === r.len ? ' style="font-weight:700;background:#f3ecd9;"' : ''}>
           <td>${i + 1}</td>
           <td style="text-align:left;white-space:nowrap;">${esc(r.name)}${r.thru < r.len ? ` <span style="color:#999;">(${r.thru}/${r.len})</span>` : ''}</td>
           <td>${r.gross}</td><td>${r.hcp ?? ''}</td><td style="font-weight:700;">${r.net ?? ''}</td>
         </tr>`).join('')}
+        </tbody>
       </table>
     </div>`;
 }

@@ -154,6 +154,7 @@ export async function renderGameSchedulePage(gameId, ctx) {
           </div>
           <div class="sc-scroll" style="margin-top:12px;">
             <table class="sched-table">
+              <thead>
               <tr class="sc-head">
                 <th style="width:44px;">${t('group')}</th>
                 <th style="width:64px;">${t('scTeeTime')}</th>
@@ -161,7 +162,10 @@ export async function renderGameSchedulePage(gameId, ctx) {
                 <th style="text-align:left;padding-left:8px;">${t('tnPlayer')}</th>
                 <th style="width:90px;">${t('scSignature')}</th>
               </tr>
+              </thead>
+              <tbody>
               ${rowsHTML || `<tr><td colspan="5" style="padding:16px;color:#888;">${t('emptySlot')}</td></tr>`}
+              </tbody>
             </table>
           </div>
           <div style="margin-top:14px;font-size:0.7rem;color:#888;text-align:right;">${esc(game.location || '')} - ${esc(game.date || '')}</div>
@@ -234,10 +238,11 @@ function strokeScheduleBlocksHTML(tn) {
   return rounds.map(({ r, groups }) => {
     const hasHole = groups.some(g => g.startHole);
     return `
-      <div class="sc-block" style="margin-top:16px;">
+      <div style="margin-top:16px;">
         ${rounds.length > 1 || roundCount > 1 ? `<div style="font-weight:800;font-size:0.9rem;">R${r}</div>` : ''}
         <div class="sc-scroll" style="margin-top:5px;">
           <table class="sched-table" style="width:100%;font-size:0.82rem;">
+            <thead>
             <tr class="sc-head">
               <th style="width:34px;">№</th>
               <th style="width:64px;">${t('spTeeTime')}</th>
@@ -245,6 +250,8 @@ function strokeScheduleBlocksHTML(tn) {
               <th style="text-align:left;padding-left:8px;">${t('tnPlayer')}</th>
               <th style="width:90px;">${t('scSignature')}</th>
             </tr>
+            </thead>
+            <tbody>
             ${groups.map(g => `
             <tr>
               <td style="font-weight:700;">${esc(g.number ?? '')}</td>
@@ -253,6 +260,7 @@ function strokeScheduleBlocksHTML(tn) {
               <td style="text-align:left;padding-left:8px;">${Object.keys(g.players || {}).map(nameOf).join(', ') || '—'}</td>
               <td></td>
             </tr>`).join('')}
+            </tbody>
           </table>
         </div>
       </div>`;
@@ -305,16 +313,19 @@ export async function renderTnSchedulePage(tnId, ctx) {
       ? `Day ${esc(session.day ?? '')} · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${session.startTime ? ` · ${esc(session.startTime)}` : ''}`
       : '';
     return `
-      <div class="sc-block" style="margin-top:16px;">
+      <div style="margin-top:16px;">
         ${head ? `<div style="font-weight:800;font-size:0.9rem;">${head}</div>` : ''}
         <div class="sc-scroll" style="margin-top:5px;">
           <table class="sched-table" style="width:100%;font-size:0.82rem;">
+            <thead>
             <tr class="sc-head">
               <th style="width:34px;">#</th>
               <th style="width:64px;">${t('scTeeTime')}</th>
               <th style="text-align:left;padding-left:8px;">${esc(teamName('a'))}</th>
               <th style="text-align:left;padding-left:8px;">${esc(teamName('b'))}</th>
             </tr>
+            </thead>
+            <tbody>
             ${matches.map(m => `
             <tr>
               <td style="font-weight:700;">${esc(m.number ?? '')}</td>
@@ -322,6 +333,7 @@ export async function renderTnSchedulePage(tnId, ctx) {
               <td style="text-align:left;padding-left:8px;">${lineup(m, 'a')}</td>
               <td style="text-align:left;padding-left:8px;">${lineup(m, 'b')}</td>
             </tr>`).join('')}
+            </tbody>
           </table>
         </div>
       </div>`;
