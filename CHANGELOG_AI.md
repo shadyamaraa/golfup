@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Tournament tabs: Тэргүүлэгчид / Хуваарь, Net as a toggle)
+
+A stroke tournament's page now has exactly the two tabs the members
+asked for: **Тэргүүлэгчид** (the leaderboard — «Хүснэгт» read as
+nothing) and **Хуваарь** (the flight schedule, promoted from a fold
+inside the board to its own tab, replacing the info tab they called
+useless). The schedule tab appears once a round has flights; with no
+flights the single-tab bar hides itself. The Gross/Net seg-row is gone —
+the leaderboard shows gross, and a small **Net** toggle on the list's
+header re-sorts by net (press again for gross). Match play pages keep
+their Match Center / info tabs (the rulebook lives there).
+
 ## 2026-08-29 (Member feedback: golf terms untranslated, HCP on schedule, tee-time gate)
 
 Five fixes straight from the members' group chat:
