@@ -3349,6 +3349,10 @@ function setupFollowListeners() { } // handled by delegated listener in initApp
 
 function renderGroupCard(players, groupIndex, game, isPast) {
   const groupSize = game.groupSize;
+  // The organizer/admin can still remove players while the game is live
+  // (within the 4h live window); players themselves only before start.
+  const canManage = game.createdBy === currentUser?.id || currentUser?.role === 'admin';
+  const managerCanRemove = canManage && (!isPast || isGameLive(game));
   const slots = [];
   for (let i = 0; i < groupSize; i++) {
     if (players[i]) {
@@ -3367,7 +3371,7 @@ function renderGroupCard(players, groupIndex, game, isPast) {
             <span class="joined-time">${timeAgo(players[i].joinedAt)}</span>
             ${followBtn(players[i].id)}
             ${(allUsersMap[players[i].id]?.bankAccount || allUsersMap[players[i].id]?.bankName) ? `<button class="copy-bank-btn" data-id="${players[i].id}" title="Данс харах" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">${icon('card', { size: 17 })}</button>` : ''}
-            ${!isPast && (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || players[i].id === currentUser?.id) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
+            ${(managerCanRemove || (!isPast && players[i].id === currentUser?.id)) ? `<button class="remove-player-btn" data-id="${players[i].id}" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">${icon('close', { size: 15 })}</button>` : ''}
           </div>
         </div>`);
     } else {
