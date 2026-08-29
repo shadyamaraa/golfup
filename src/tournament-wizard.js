@@ -13,6 +13,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
 import { COURSES, courseByKey } from './strokeplay.js';
+import { courseTees } from './courses.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,7 +27,7 @@ const blank = () => ({
   step: 1,
   name: '', format: '',
   startDate: '', endDate: '', venue: '', city: '',
-  course: '', rounds: '1', par: '72', cutAfterRound: '', cutSize: '',
+  course: '', tee: '', rounds: '1', par: '72', cutAfterRound: '', cutSize: '',
   teamAName: '', teamAShort: '', teamBName: '', teamBShort: ''
 });
 
@@ -131,6 +132,15 @@ function stepHTML() {
           ...COURSES.map(c => [c.key, `${c.name} · PAR ${c.par}`]),
           ['', t('spCourseCustom')]
         ]))}
+        ${(() => {
+          // The tee decides rating/slope — what the WHS course handicap and
+          // posted differentials need. Custom venues have no registry tees.
+          const tees = courseTees(draft.course);
+          return tees.length ? field(t('spTee'), select('tee', [
+            ['', '—'],
+            ...tees.map(x => [x.key, `${x.label} · ${x.rating}/${x.slope}`])
+          ])) : '';
+        })()}
         ${field(t('tnFPar'), input('par', 'number'))}
         ${field(t('tnFRounds'), select('rounds', [1, 2, 3, 4].map(n => [String(n), String(n)])))}
         ${field(t('tnFCutAfter'), select('cutAfterRound', cutOptions))}
@@ -154,6 +164,10 @@ function stepHTML() {
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
       : draft.format === 'stroke'
         ? line(t('spCourse'), courseByKey(draft.course)?.name || draft.venue || '—')
+          + line(t('spTee'), (() => {
+            const x = courseTees(draft.course).find(v => v.key === draft.tee);
+            return x ? `${x.label} · ${x.rating}/${x.slope}` : '';
+          })())
           + line(t('tnFRounds'), draft.rounds)
           + line(t('tnFPar'), draft.par)
         : ''}`;
@@ -190,8 +204,12 @@ async function create(ctx) {
   } else {
     // Scores are entered in the app (sp node); the round being played starts
     // at 1 and the admin advances it from the editor.
+    const teeInfo = courseTees(draft.course).find(x => x.key === draft.tee) || null;
     Object.assign(data, {
       course: draft.course,
+      tee: teeInfo ? draft.tee : null,
+      rating: teeInfo?.rating ?? null,
+      slope: teeInfo?.slope ?? null,
       rounds: num(draft.rounds) || 1, currentRound: 1,
       par: num(draft.par) || 72,
       cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize)
@@ -237,6 +255,7 @@ function paint(host, ctx) {
       // are respected — only blanks are filled). Round count reshapes the
       // cut options, so both repaint; a select loses nothing to that.
       if (sel.dataset.wz === 'course') {
+        draft.tee = '';
         const c = courseByKey(sel.value);
         if (c) {
           draft.par = String(c.par);

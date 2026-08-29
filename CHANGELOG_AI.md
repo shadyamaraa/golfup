@@ -1,5 +1,43 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (One course registry: games and tournaments share pars, tees and WHS)
+
+The two parallel course/handicap systems are now one. `src/courses.js` is
+the single registry — per-hole pars and stroke indexes plus rating/slope
+per tee — and both sides read it: games by location name (as before),
+tournaments by short key. `resolveCourse()` accepts key, name, and the
+legacy "Chinggis Khaan Golf Club" spelling, so no stored record on either
+side needed migrating (the tournament pick lists now show the registry's
+correct "…Golf Course" name).
+
+What the tournament side gains from it:
+
+- **Tee on the tournament** (wizard + editor): picking a tee stores
+  `tee/rating/slope` next to `par` — the inputs the WHS math needs.
+- **Real scorecards**: the individual card shows each hole's par (label
+  and placeholder) with birdie-red / par-muted coloring, and the group
+  card's hole header reads "Пар 5 · SI 7"; both were bare number grids.
+- **Honest mid-round to-par**: with per-hole pars a started round posts
+  its running to-par to the leaderboard from the first hole (net keeps
+  the club's flat reading — full HCP off from hole 1, same as the casual
+  game's netToPar). Custom courses keep the old complete-rounds-only
+  behavior; stroke totals (`gross`/`netTotal`) still speak only for
+  finished rounds.
+- **HCP seeds itself**: adding a member (picker or "бүгдийг нэмэх") fills
+  their HCP from `courseHandicap(hcpIndex, slope, rating, par)` on the
+  tournament's tee; a "↻ HCP — WHS индексээс" button fills any blanks
+  later. A typed value is never overwritten.
+- **Tournament rounds count toward the handicap**: once a member's 18
+  holes of a round are in (and the tournament has rating/slope), the
+  round posts to `rounds/{ghin}/{tnId}_rN` (`roundFromTournament` in
+  handicap.js — same record shape and par+5 AGS cap as `roundFromGame`)
+  and the WHS index recomputes, exactly mirroring the casual game's
+  finalize hook. Corrections re-post the same key.
+
+The game create/edit course pickers also now render from the registry
+instead of hardcoded pairs. Tests: 95 (registry aliasing, running to-par,
+`roundFromTournament`, `courseHandicap` seeding).
+
 ## 2026-08-29 (Editor folds: tournament details and players collapse)
 
 Opening a tournament's editor now lands on the working sections, not the

@@ -5,7 +5,9 @@
 // net, thru — is recomputed from them on every render. No DOM, no Firebase.
 //
 // Data model (tournaments/{id}):
-//   course: 'sky' | 'chinggis' | ''        // preset key, '' = custom venue
+//   course: 'sky' | 'chinggis' | ''        // registry key, '' = custom venue
+//   tee: 'blue' | ... | null               // registry tee key (optional)
+//   rating, slope: number | null           // from the chosen tee (optional)
 //   sp: {
 //     players: { pid: { name, userId?, hcp?, status? } },
 //       // pid IS the member's userId for members; manually added players
@@ -17,34 +19,43 @@
 // (rankEntries / cutSet / activeRound): spEntries() emits exactly the entry
 // shape those functions and the leaderboard render already consume.
 
+import { courseList, resolveCourse, coursePars } from './courses.js';
+
 export const SP_HOLES = 18;
 
 // The courses the club actually plays, so creating a tournament is a pick,
-// not a form: choosing one fills the venue, city and PAR in one tap.
-export const COURSES = [
-  { key: 'sky', name: 'Sky Resort Golf Club', city: 'Ulaanbaatar', par: 72 },
-  { key: 'chinggis', name: 'Chinggis Khaan Golf Club', city: 'Ulaanbaatar', par: 72 }
-];
+// not a form: choosing one fills the venue, city and PAR in one tap. The
+// list is the shared registry in courses.js — the same per-hole data the
+// casual game scorer uses — addressed here by short key ('sky'/'chinggis').
+export const COURSES = courseList();
 
-export const courseByKey = (key) => COURSES.find(c => c.key === key) || null;
+export const courseByKey = (key) => resolveCourse(key);
 
-// One round's tally from its hole map: total strokes entered and how many
-// holes they cover. Non-numeric and non-positive values are ignored — an
-// admin clearing a hole writes null, which RTDB drops.
-export function roundGross(holes) {
+// One round's tally from its hole map: total strokes entered, how many holes
+// they cover, and — when the course's per-hole pars are known — the running
+// to-par over exactly the holes entered. Non-numeric and non-positive values
+// are ignored — an admin clearing a hole writes null, which RTDB drops.
+export function roundGross(holes, pars = null) {
   let gross = 0;
   let holesIn = 0;
-  Object.values(holes || {}).forEach(v => {
+  let parIn = 0;
+  let parKnown = !!pars;
+  Object.entries(holes || {}).forEach(([h, v]) => {
     const n = Number(v);
-    if (Number.isFinite(n) && n > 0) { gross += n; holesIn += 1; }
+    if (Number.isFinite(n) && n > 0) {
+      gross += n;
+      holesIn += 1;
+      const p = Number(pars?.[h]);
+      if (Number.isFinite(p)) parIn += p; else parKnown = false;
+    }
   });
-  return { gross, holesIn };
+  return { gross, holesIn, toPar: parKnown && holesIn ? gross - parIn : null };
 }
 
-// A round only counts toward totals once every hole is in — with a single
-// course PAR (no per-hole pars) a partial round has no honest to-par, which
-// is also how the old sheet flow behaved. The board still shows the thru of
-// the round being played.
+// Without per-hole pars a round only counts toward totals once every hole is
+// in — a single course PAR gives a partial round no honest to-par, which is
+// also how the old sheet flow behaved. With the registry's pars the board
+// instead posts a running to-par from the first hole (see spEntries).
 const completeRounds = (perRound) => perRound.filter(r => r.holesIn >= SP_HOLES);
 
 /**
@@ -54,13 +65,15 @@ const completeRounds = (perRound) => perRound.filter(r => r.holesIn >= SP_HOLES)
  *   'net'   — to-par less the player's HCP per completed round.
  * Every entry also carries gross/net stroke totals and hcp for display, plus
  * pid/userId so a row can be tied to the signed-in member without name
- * matching. Entries with no complete round have total null (rankEntries
- * sorts them last among those still standing).
+ * matching. Entries with nothing to post have total null (rankEntries sorts
+ * them last among those still standing) — that means no complete round on a
+ * course without per-hole pars, or no score at all on a registry course.
  */
 export function spEntries(tn, metric = 'gross') {
   const sp = tn?.sp;
   if (!sp?.players) return [];
   const par = Number(tn?.par) || 72;
+  const pars = coursePars(tn?.course);
   const roundCount = Math.max(1, Number(tn?.rounds) || 1);
   const hcpOf = (p) => {
     const n = Number(p?.hcp);
@@ -69,16 +82,24 @@ export function spEntries(tn, metric = 'gross') {
 
   return Object.entries(sp.players).filter(([, p]) => p).map(([pid, p]) => {
     const perRound = Array.from({ length: roundCount }, (_, i) =>
-      roundGross(sp.scores?.[pid]?.[i + 1]));
+      roundGross(sp.scores?.[pid]?.[i + 1], pars));
     const hcp = hcpOf(p);
     const net = metric === 'net' && hcp !== null;
 
-    const rounds = perRound.map(r =>
-      r.holesIn >= SP_HOLES ? r.gross - par - (net ? hcp : 0) : null);
+    // With the registry's per-hole pars an in-progress round posts its
+    // running to-par (net keeps the club's flat reading: the full HCP comes
+    // off from the first hole, matching the casual game's netToPar). Without
+    // them only a complete round has an honest score.
+    const roundToPar = (r) => {
+      if (r.toPar !== null && r.holesIn > 0) return r.toPar - (net ? hcp : 0);
+      return r.holesIn >= SP_HOLES ? r.gross - par - (net ? hcp : 0) : null;
+    };
+    const rounds = perRound.map(roundToPar);
     const done = completeRounds(perRound);
     const grossTotal = done.length ? done.reduce((a, r) => a + r.gross, 0) : null;
-    const total = done.length
-      ? grossTotal - par * done.length - (net ? hcp * done.length : 0)
+    const started = rounds.filter(v => v !== null);
+    const total = started.length
+      ? started.reduce((a, v) => a + v, 0)
       : null;
 
     // Thru of the latest round anyone has touched: 'F' once that round is

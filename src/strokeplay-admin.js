@@ -8,6 +8,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { drawGroups, spGroupList } from './strokeplay.js';
+import { courseHandicap } from './handicap.js';
 import { addMinutesHHMM } from './matchplay.js';
 import { nameKey, nameMatches } from './tournament-sheet.js';
 
@@ -105,6 +106,15 @@ function rowHTML(tn, pid, p) {
     </div>`;
 }
 
+// A member's WHS playing handicap on this tournament's course and tee — what
+// seeds the roster's HCP field so nobody retypes what the club already knows.
+// null when either side lacks the data (no index, custom course, no tee).
+// A typed value always wins; this only ever fills blanks.
+function whsHcp(u, tn) {
+  const ch = courseHandicap(u?.hcpIndex, tn?.slope, tn?.rating, Number(tn?.par) || null);
+  return ch === null ? null : Math.max(0, Math.min(54, ch));
+}
+
 function sectionHTML(tn, users) {
   const d = draftFor(tn);
   const rows = Object.entries(d.players)
@@ -132,6 +142,10 @@ function sectionHTML(tn, users) {
           <button data-sp="add-all" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
             👥 ${t('spAddAll')}
           </button>
+          ${tn.rating && tn.slope ? `
+          <button data-sp="hcp-whs" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
+            ${t('spHcpFromWhs')}
+          </button>` : ''}
         </div>
       </details>
       ${groupsHTML(tn, d)}
@@ -320,7 +334,26 @@ function wire(host, tn, ctx) {
       u && u.id && u.status !== 'hold' && !d.players[u.id]);
     if (!adds.length) { ctx.showToast(t('spAddAllNone'), 'info'); return; }
     if (!confirm(`${adds.length} ${t('spAddAllConfirm')}`)) return;
-    adds.forEach(u => { d.players[u.id] = { name: store.memberName(u), userId: u.id }; });
+    adds.forEach(u => {
+      const hcp = whsHcp(u, tn);
+      d.players[u.id] = { name: store.memberName(u), userId: u.id, ...(hcp !== null ? { hcp } : {}) };
+    });
+    d.dirty = true;
+    paint(host, tn, ctx);
+  };
+
+  // Fill the BLANK HCP fields from members' WHS indexes (courseHandicap on
+  // this tournament's tee). Hand-entered values are never overwritten.
+  const whsBtn = host.querySelector('button[data-sp="hcp-whs"]');
+  if (whsBtn) whsBtn.onclick = () => {
+    const byId = new Map((ctx.users || []).map(u => [u.id, u]));
+    let filled = 0;
+    Object.entries(d.players).forEach(([pid, p]) => {
+      if (!p || !p.userId || (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined)) return;
+      const hcp = whsHcp(byId.get(p.userId), tn);
+      if (hcp !== null) { p.hcp = hcp; filled++; }
+    });
+    if (!filled) { ctx.showToast(t('spHcpWhsNone'), 'info'); return; }
     d.dirty = true;
     paint(host, tn, ctx);
   };
@@ -363,7 +396,9 @@ function wire(host, tn, ctx) {
     list.querySelectorAll('[data-sp-id]').forEach(item => {
       item.onpointerdown = (e) => {
         e.preventDefault();
-        d.players[item.dataset.spId] = { name: item.dataset.spName, userId: item.dataset.spId };
+        const id = item.dataset.spId;
+        const hcp = whsHcp((ctx.users || []).find(u => u?.id === id), tn);
+        d.players[id] = { name: item.dataset.spName, userId: id, ...(hcp !== null ? { hcp } : {}) };
         d.dirty = true;
         paint(host, tn, ctx);
       };

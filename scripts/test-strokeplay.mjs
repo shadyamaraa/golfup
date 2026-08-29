@@ -8,6 +8,8 @@ import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES
 } from '../src/strokeplay.js';
 import { rankEntries } from '../src/tournament-sheet.js';
+import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
+import { roundFromTournament, courseHandicap } from '../src/handicap.js';
 
 // A full 18-hole round averaging `avg` strokes; override single holes after.
 const fullRound = (avg) => Object.fromEntries(
@@ -25,13 +27,35 @@ test('course presets carry venue, city and par', () => {
   assert.equal(courseByKey('nope'), null);
 });
 
+test('the registry answers by key, name and legacy alias alike', () => {
+  assert.equal(courseByKey('sky').name, 'Sky Resort Golf Club');
+  assert.equal(courseByKey('chinggis').pars[1], 4);
+  // The tournament side's original preset said "Club"; both spellings land
+  // on the same registry entry.
+  assert.equal(resolveCourse('Chinggis Khaan Golf Club').name, 'Chinggis Khaan Golf Course');
+  assert.equal(resolveCourse('Chinggis Khaan Golf Course').key, 'chinggis');
+  assert.deepEqual(courseTees('sky'), courseTees('Sky Resort Golf Club'));
+  assert.ok(courseTees('sky').some(x => x.key === 'blue' && x.rating === 71.5 && x.slope === 130));
+  assert.equal(resolveCourse(''), null);
+  assert.equal(coursePars('custom-course'), null);
+});
+
 test('roundGross sums entered holes and counts them', () => {
-  assert.deepEqual(roundGross({ 1: 4, 2: 5, 3: 3 }), { gross: 12, holesIn: 3 });
-  assert.deepEqual(roundGross(fullRound(4)), { gross: 72, holesIn: 18 });
-  assert.deepEqual(roundGross({}), { gross: 0, holesIn: 0 });
-  assert.deepEqual(roundGross(null), { gross: 0, holesIn: 0 });
+  assert.deepEqual(roundGross({ 1: 4, 2: 5, 3: 3 }), { gross: 12, holesIn: 3, toPar: null });
+  assert.deepEqual(roundGross(fullRound(4)), { gross: 72, holesIn: 18, toPar: null });
+  assert.deepEqual(roundGross({}), { gross: 0, holesIn: 0, toPar: null });
+  assert.deepEqual(roundGross(null), { gross: 0, holesIn: 0, toPar: null });
   // Cleared and junk values are ignored.
-  assert.deepEqual(roundGross({ 1: 4, 2: null, 3: 'x', 4: 0 }), { gross: 4, holesIn: 1 });
+  assert.deepEqual(roundGross({ 1: 4, 2: null, 3: 'x', 4: 0 }), { gross: 4, holesIn: 1, toPar: null });
+});
+
+test('roundGross with per-hole pars carries the running to-par', () => {
+  const pars = coursePars('sky');
+  assert.equal(pars[1], 5);                     // Sky opens on a par 5
+  // 4 on the par-5 1st, 4 on the par-4 2nd: one under thru 2.
+  assert.deepEqual(roundGross({ 1: 4, 2: 4 }, pars), { gross: 8, holesIn: 2, toPar: -1 });
+  assert.deepEqual(roundGross(fullRound(4), pars), { gross: 72, holesIn: 18, toPar: 0 });
+  assert.deepEqual(roundGross({}, pars), { gross: 0, holesIn: 0, toPar: null });
 });
 
 test('a complete round posts to-par; a partial one only shows thru', () => {
@@ -229,4 +253,83 @@ test('groupsFromRows: "Group N" heading rows bucket the bare names below', () =>
   assert.equal(res.groups.length, 2);
   assert.deepEqual(res.groups[0].pids, ['u1']);
   assert.deepEqual(res.groups[1].pids, ['u2']);
+});
+
+// ---- Unified course/HCP: mid-round to-par and WHS posting ----
+
+test('a registry course posts a running to-par mid-round', () => {
+  const tn = TN(
+    { u1: { name: 'Бат', hcp: 8 } },
+    { u1: { 1: { 1: 4, 2: 4 } } },   // −1 thru 2 on Sky
+    { course: 'sky' });
+  const [e] = spEntries(tn);
+  assert.deepEqual(e.rounds, [-1, null]);
+  assert.equal(e.total, -1);
+  assert.equal(e.thru, '2');
+  // Net keeps the club's flat reading: the full HCP off from the first hole.
+  const [n] = spEntries(tn, 'net');
+  assert.deepEqual(n.rounds, [-9, null]);
+  assert.equal(n.total, -9);
+  // Stroke totals still only speak for finished rounds.
+  assert.equal(e.gross, null);
+});
+
+test('a custom course still waits for the 18th hole', () => {
+  const tn = TN({ u1: { name: 'Бат' } }, { u1: { 1: { 1: 4, 2: 4 } } });
+  const [e] = spEntries(tn);
+  assert.deepEqual(e.rounds, [null, null]);
+  assert.equal(e.total, null);
+  assert.equal(e.thru, '2');
+});
+
+test('complete rounds on a registry course match the old math', () => {
+  const r1 = fullRound(4); r1[1] = 9;  // gross 77, +5 on Sky
+  const tn = TN({ u1: { name: 'Бат', hcp: 8 } }, { u1: { 1: r1 } }, { course: 'sky' });
+  assert.equal(spEntries(tn)[0].total, 5);
+  assert.equal(spEntries(tn, 'net')[0].total, -3);
+});
+
+const SP_TN = (extra = {}) => ({
+  id: 'tn1', course: 'sky', par: 72, rating: 71.5, slope: 130,
+  startDate: '2026-08-01', ...extra
+});
+
+test('roundFromTournament needs all 18 holes', () => {
+  const holes = fullRound(4);
+  delete holes[7];
+  assert.equal(roundFromTournament(SP_TN(), 'u1', 1, holes), null);
+  assert.equal(roundFromTournament(SP_TN(), 'u1', 1, null), null);
+});
+
+test('roundFromTournament posts a WHS-shaped round keyed by tnId_rN', () => {
+  const rec = roundFromTournament(SP_TN(), 'u1', 2, fullRound(4));
+  assert.equal(rec.agsTotal, 72);
+  assert.equal(rec.gameId, 'tn1_r2');
+  assert.equal(rec.tournamentId, 'tn1');
+  assert.equal(rec.round, 2);
+  assert.equal(rec.source, 'tournament');
+  assert.equal(rec.courseName, 'Sky Resort Golf Club');
+  assert.equal(rec.playerId, 'u1');
+  assert.equal(rec.holesPlayed, 18);
+  // (113/130) × (72 − 71.5) rounded to a decimal.
+  assert.equal(rec.differential, 0.4);
+});
+
+test('roundFromTournament caps a blow-up hole at par + 5 for the AGS only', () => {
+  const holes = fullRound(4);
+  holes[4] = 12;                      // Sky's 4th is a par 3 → counts as 8
+  const rec = roundFromTournament(SP_TN(), 'u1', 1, holes);
+  assert.equal(rec.agsTotal, 72 - 4 + 8);
+  assert.equal(rec.holeScores[4], 12);  // the card keeps the real strokes
+});
+
+test('roundFromTournament without rating/slope posts no differential', () => {
+  const rec = roundFromTournament(SP_TN({ rating: null, slope: null }), 'u1', 1, fullRound(4));
+  assert.equal(rec.differential, null);
+});
+
+test('courseHandicap seeds the roster from a WHS index', () => {
+  // 12.4 × (130/113) + (71.5 − 72) = 13.77 → 14 on Sky's blue tees.
+  assert.equal(courseHandicap(12.4, 130, 71.5, 72), 14);
+  assert.equal(courseHandicap(null, 130, 71.5, 72), null);
 });
