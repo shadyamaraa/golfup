@@ -1,5 +1,36 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Fix, part two: the scorers repaint over the next page too)
+
+An independent audit of every teardown path found a second route to the
+symptom fixed earlier today, one the listener fix does not cover.
+
+Every scorer awaits its write and then calls `paint()`:
+`renderSpScorer`'s hole `onchange` (strokeplay-score.js), the group card's
+step tap, the casual game scorer's `write()` (game-score.js) and the match
+play scorer's hole entry. `paint()` writes to the cached `host`, which is
+the one shared `#main-content`. A member who enters a score and leaves
+before the write lands — ordinary on a phone with weak signal on the
+course — had the scorer painted over whatever page they moved to. No
+listener involved, so the earlier fix could not have caught it.
+
+The `alive()` guard moves from the listener callback to the top of each
+`paint()`, which covers both paths at once, and the casual game scorer now
+receives `alive` from the router as well.
+
+Reproduced in a browser with a 1.5s write: enter a hole, navigate home,
+let the write land. With the guard removed the scorecard's inputs appear
+on the home screen; with it in place home is byte-identical and no
+`data-sps-hole` input exists on the page.
+
+Still open from the same audit, not touched here: the header bell badge
+stops updating after the first navigation away from home
+(`onNotificationsChanged` returns a path-wide `off(ref)` that also detaches
+the persistent badge listener), the same over-broad form on the order and
+game helpers, the router's `isRouting` guard discarding rather than
+queueing a navigation that arrives mid-render, and the news carousel
+interval outliving the home route.
+
 ## 2026-08-30 (Fix: a screen you left could repaint itself over the one you are on)
 
 Members sitting on the home screen during a live tournament were being

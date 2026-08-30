@@ -442,7 +442,7 @@ export async function router() {
     else if (hash.startsWith('#/gscore/')) {
       const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
       await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
-        main, user: currentUser, showToast,
+        main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
