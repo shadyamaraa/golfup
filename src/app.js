@@ -11,6 +11,8 @@ import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGrou
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
+import { renderScorecardPage } from './scorecard.js';
+import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -375,7 +377,8 @@ export async function router() {
     // else — games, orders, the scorer screen — still requires signing in.
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
-    const guestOk = hash.startsWith('#/tournament/');
+    const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
+      || hash.startsWith('#/tnschedule/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -426,6 +429,12 @@ export async function router() {
         onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
+    else if (hash.startsWith('#/scorecard/')) await renderScorecardPage(hash.split('#/scorecard/')[1], {
+      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+    });
+    else if (hash.startsWith('#/tnschedule/')) await renderTnSchedulePage(hash.split('#/tnschedule/')[1], {
+      main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+    });
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -467,14 +476,16 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
-  // Guests on a public page (a tournament board) get a way into the app;
-  // on the auth screen itself the button would only point at the page
-  // they are already on.
+  // Guests on a public page (a tournament board, a scorecard or a start
+  // list opened from a QR) get a way into the app; on the auth screen
+  // itself the button would only point at the page they are already on.
   const guestLogin = document.getElementById('guest-login');
   if (guestLogin) {
     guestLogin.textContent = t('guestLogin');
+    const h = location.hash || '#/';
     guestLogin.classList.toggle('hidden',
-      !!currentUser || !(location.hash || '#/').startsWith('#/tournament/'));
+      !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
+        || h.startsWith('#/tnschedule/')));
   }
 }
 
@@ -1216,25 +1227,29 @@ function tnIsMe(entry) {
 
 // One tournament gets the strip: a live one first, then the nearest upcoming
 // within two weeks, then a finished one for three days after it ends.
-function tnFeatured(list) {
-  const all = Array.isArray(list) ? list : [];
+// Every tournament worth surfacing on home, stacked: live ones first, then
+// anything starting within 14 days, then a just-finished one (3-day linger).
+// Same-day starts tie-break newest-created first, so the latest announcement
+// sits on top. Capped so the strip never swallows the page.
+function tnFeaturedList(list) {
+  // homeHidden is the admin's per-tournament "don't show on home" toggle;
+  // the tournament stays fully reachable from its own page/links.
+  const all = (Array.isArray(list) ? list : []).filter(tn => !tn.homeHidden);
   const now = Date.now();
-  const byStart = (a, b) => (tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0);
+  const createdMs = (tn) => tn.createdAt || parseInt((tn.id || '').split('_')[1], 10) || 0;
+  const byStart = (a, b) =>
+    ((tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0)) || (createdMs(b) - createdMs(a));
 
   const live = all.filter(tn => tnStatus(tn) === 'live').sort(byStart);
-  if (live.length) return live[0];
-
   const soon = all.filter(tn => {
     const s = tnDayMs(tn.startDate);
     return tnStatus(tn) === 'upcoming' && s !== null && s - now < 14 * 86400000;
   }).sort(byStart);
-  if (soon.length) return soon[0];
-
   const justDone = all.filter(tn => {
     const e = tnDayMs(tn.endDate || tn.startDate);
     return tnStatus(tn) === 'final' && e !== null && now - e < 3 * 86400000;
   }).sort((a, b) => (tnDayMs(b.endDate || b.startDate) || 0) - (tnDayMs(a.endDate || a.startDate) || 0));
-  return justDone[0] || null;
+  return [...live, ...soon, ...justDone].slice(0, 3);
 }
 
 // The strip sticks under the header, whose height moves with font size and
@@ -1286,12 +1301,12 @@ async function renderTournamentStrip(list) {
   // The home dashboard's tee-time card reads the same list; refresh it now
   // that the tournaments are actually loaded.
   renderNextTeeFeature();
-  let tn = tnFeatured(list);
+  let tns = tnFeaturedList(list);
   // With no real tournament to feature, preview builds fall back to the M Cup
   // sample so the strip's team-score row can be reviewed. The stroke play
   // sample is still reachable directly at #/tournament/demo.
-  if (!tn && tnDemoAllowed()) tn = MP_DEMO;
-  if (!tn) {
+  if (!tns.length && tnDemoAllowed()) tns = [MP_DEMO];
+  if (!tns.length) {
     host.innerHTML = '';
     host.dataset.has = '0';
     updateTournamentStripVisibility(location.hash || '#/');
@@ -1299,11 +1314,14 @@ async function renderTournamentStrip(list) {
   }
 
   // In-app scoring derives the strip's entries from the stored per-hole
-  // truth — no fetch, nothing to wait for.
-  paintTournamentStrip(host, tnForBoard(tn));
+  // truth — no fetch, nothing to wait for. Several featured tournaments
+  // stack as separate rows inside the one sticky strip.
+  host.innerHTML = tns.map(tn => tournamentStripHTML(tnForBoard(tn))).join('');
+  host.dataset.has = '1';
+  updateTournamentStripVisibility(location.hash || '#/');
 }
 
-function paintTournamentStrip(host, tn) {
+function tournamentStripHTML(tn) {
   const state = tnStatus(tn);
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
@@ -1361,7 +1379,7 @@ function paintTournamentStrip(host, tn) {
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
        </div>`);
 
-  host.innerHTML = `
+  return `
     <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
       <div class="tn-head">
         ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
@@ -1375,8 +1393,6 @@ function paintTournamentStrip(host, tn) {
       ${body}
       <span class="tn-fade"></span>
     </a>`;
-  host.dataset.has = '1';
-  updateTournamentStripVisibility(location.hash || '#/');
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).
@@ -1801,6 +1817,7 @@ function renderTnBoard() {
       ${spGroups.length ? `
       <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 0;">
         <b style="font-size:0.8rem;">${t('spSchedule')} — R${spRound}</b>
+        <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;gap:4px;">🖨 ${t('scPrint')}</a>
       </div>
       <div style="${schedGrid}padding:8px 10px 2px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
         <span style="text-align:center;">№</span>
@@ -3319,6 +3336,14 @@ function renderGameView(game) {
           ${!isReadOnly && isJoined ? `<button class="btn btn-outline-danger" id="leave-btn">${t('leave')}</button>` : ''}
           ${!isReadOnly && game.createdBy === currentUser?.id ? `<button class="btn btn-outline" id="invite-btn" style="gap:6px;">${icon('members', { size: 16 })} ${t('inviteBtn')}</button>` : ''}
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
+          ${(() => {
+            // The printable scorecard: once anyone has scored, or the game
+            // is over — a blank card still prints.
+            const hasScores = !!game.scores && Object.values(game.scores)
+              .some(s => s?.holes && Object.keys(s.holes).length > 0);
+            return `
+          ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}`;
+          })()}
           <button class="btn btn-outline" id="share-viber-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('shareViber')}</button>
           <button class="btn btn-outline" id="copy-link-btn" style="gap:6px;">${icon('share', { size: 16 })} ${t('copyLink')}</button>
           <a href="#/order/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('dining', { size: 16 })} ${t('orderFood')}</a>
@@ -4023,6 +4048,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-stats" class="btn btn-outline btn-sm" style="gap:5px;">${icon('leaderboard', { size: 14 })} ${t('statsTab')}</button>
           <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
           <button id="admin-tab-btn-tn" class="btn btn-outline btn-sm" style="gap:5px;">${icon('hole', { size: 14 })} ${t('tnAdminTab')}</button>
+          <button id="admin-tab-btn-sched" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -4136,6 +4162,10 @@ async function renderAdminPanel() {
         <div id="admin-tab-tn" style="display:none;">
           <div id="admin-tn-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
+
+        <div id="admin-tab-sched" style="display:none;">
+          <div id="admin-sched-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
+        </div>
       </div>
     </div>
   `;
@@ -4150,6 +4180,7 @@ async function renderAdminPanel() {
   const tabStats = document.getElementById('admin-tab-btn-stats');
   const tabRank = document.getElementById('admin-tab-btn-rank');
   const tabTn = document.getElementById('admin-tab-btn-tn');
+  const tabSched = document.getElementById('admin-tab-btn-sched');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -4159,8 +4190,9 @@ async function renderAdminPanel() {
   const sectionStats = document.getElementById('admin-tab-stats');
   const sectionRank = document.getElementById('admin-tab-rank');
   const sectionTn = document.getElementById('admin-tab-tn');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn];
+  const sectionSched = document.getElementById('admin-tab-sched');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -4190,6 +4222,10 @@ async function renderAdminPanel() {
   tabTn.addEventListener('click', async () => {
     switchTab(tabTn, sectionTn);
     await renderAdminTournamentsTab();
+  });
+  tabSched.addEventListener('click', async () => {
+    switchTab(tabSched, sectionSched);
+    await renderAdminScheduleTab();
   });
 
   // No-circle tab: open edit modal
@@ -7745,6 +7781,69 @@ function tnAdminReadForm(p) {
   };
 }
 
+// Does the tournament have a draw the print page can lay out — match play
+// pairings, or a stroke play flight list in any round?
+function tnHasPrintableDraw(tn) {
+  if (tn?.mp?.matches && Object.keys(tn.mp.matches).length) return true;
+  if (!spActive(tn)) return false;
+  const rounds = Math.max(1, Number(tn.rounds) || 1);
+  for (let r = 1; r <= rounds; r++) if (spGroupList(tn, r).length) return true;
+  return false;
+}
+
+// Admin "Хуваарь" tab: the day's games and tournament draws with one-tap
+// links to the printable marshal sheets — the time table and the scorecard.
+async function renderAdminScheduleTab() {
+  const el = document.getElementById('admin-sched-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
+
+  let games = [];
+  let tns = [];
+  try { games = await store.loadAllGamesAdmin(); } catch (_) { }
+  try { tns = await store.loadTournaments(); } catch (_) { }
+
+  // Recent past stays listed so a just-finished game's scorecard is one tap
+  // away; anything older belongs to history, not the marshal's clipboard.
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const gMs = (g) => new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
+  const rows = games
+    .filter(g => g.status !== 'deleted' && g.date && gMs(g) >= weekAgo)
+    .sort((a, b) => gMs(a) - gMs(b));
+
+  const gameRowHTML = (g) => {
+    const count = ensureGroups(g.groups).flatMap(x => ensureArray(x)).filter(Boolean).length;
+    return `
+      <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:170px;">
+          <b>${formatDate(g.date)} · ${esc(g.time || '')}</b>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">${esc(g.location || '')} · ${count} ${t('tnPlayers')}</div>
+        </div>
+        <a href="#/scorecard/${esc(g.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('gsTitle')}</a>
+        <a href="#/game/${esc(g.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+      </div>`;
+  };
+
+  const mpTns = tns.filter(tnHasPrintableDraw);
+  const tnRowHTML = (tn) => `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:170px;">
+        <b>${esc(tn.name || '—')}</b>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">${esc([tnDatesText(tn), tn.venue].filter(Boolean).join(' · '))}</div>
+      </div>
+      <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>
+      <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+    </div>`;
+
+  el.innerHTML = `
+    ${rows.length
+      ? rows.map(gameRowHTML).join('')
+      : `<p style="color:var(--text-secondary);">${t('noGames')}</p>`}
+    ${mpTns.length ? `
+      <h3 style="margin:18px 0 10px;">${t('tnAdminTab')}</h3>
+      ${mpTns.map(tnRowHTML).join('')}` : ''}`;
+}
+
 async function renderAdminTournamentsTab() {
   const el = document.getElementById('admin-tn-content');
   if (!el) return;
@@ -7786,6 +7885,10 @@ async function renderAdminTournamentsTab() {
             ${icon('edit', { size: 14 })} ${open ? t('tnClose') : t('tnEdit')}
           </button>
           <a href="#/tournament/${esc(tn.id)}" class="btn btn-outline btn-sm">${t('viewDetails')}</a>
+          ${tnHasPrintableDraw(tn) ? `<a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</a>` : ''}
+          <button class="btn ${tn.homeHidden ? 'btn-outline-danger' : 'btn-outline'} btn-sm tn-adm-vis" data-tn="${esc(tn.id)}" title="${t('tnHomeVisTitle')}">
+            ${tn.homeHidden ? '⊘ ' + t('tnHomeHidden') : '◉ ' + t('tnHomeShown')}
+          </button>
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
         ${open ? `
@@ -7872,6 +7975,15 @@ async function renderAdminTournamentsTab() {
     if (!tn || !confirm(`${tn.name} — ${t('delete')}?`)) return;
     try { await store.deleteTournament(tn.id); }
     catch (err) { tnAdminError(err); return; }
+    await renderAdminTournamentsTab();
+  });
+  // Home-strip visibility toggle — path-scoped so open scorecards are safe.
+  el.querySelectorAll('.tn-adm-vis').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (!tn) return;
+    try { await store.updateTournament(tn.id, { homeHidden: !tn.homeHidden }); }
+    catch (err) { tnAdminError(err); return; }
+    renderTournamentStrip();
     await renderAdminTournamentsTab();
   });
 

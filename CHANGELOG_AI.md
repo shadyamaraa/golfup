@@ -10,6 +10,118 @@ between score and name: among equal totals, a player whose thru is set
 scoreless always sink to the very bottom. On registry courses nothing
 changes (started players already carry a running to-par).
 
+## 2026-08-29 (Retire the casual-game start list)
+
+The per-game start list (`#/schedule/:gameId` — auto tee intervals with
+manual overrides) turned out not to match how game days actually run, so
+it is removed: the route, its guest-gate entry, the game-detail Хуваарь
+button, the admin tab's per-game link, and `saveGameSchedule()`. The
+tournament time table (`#/tnschedule/`) and the printable scorecard stay.
+`saveGame()` still spares the retired `games/{id}/schedule` field so any
+already-saved record is left untouched. Unused `scStartTime`/`scInterval`/
+`scStartTee` i18n keys dropped ×3 languages.
+
+## 2026-08-29 (Saved PDFs are named after the event)
+
+Print → Save as PDF suggests the browser tab's title as the file name,
+which was always "UB Golf V2". The three print pages now set
+document.title to the event while mounted — "JCI Mongolia Open
+Championship — Хуваарь", "Sky Resort Golf Club 2026-08-30 — Онооны
+хуудас" — via `setPageTitle()` in `src/print-common.js`, restored through
+the router's listener teardown when navigating away.
+
+## 2026-08-29 (Print pages no longer pan sideways on phones)
+
+On iOS Safari the QR caption's URL — one long token Safari refuses to
+wrap — stretched the whole scorecard/schedule page wider than the screen,
+so the page itself scrolled sideways and the layout looked broken. The
+caption now breaks anywhere (`.sc-url`), the page container clips stray
+horizontal overflow (`.sc-clip`), and the sheet is capped at 100% width;
+tables keep scrolling inside their own `.sc-scroll` strip as designed.
+Files: `src/print-common.js`, `src/scorecard.js`, `src/schedule.js`.
+
+## 2026-08-29 (Print pagination: tables break between rows, no more near-empty pages)
+
+A printed draw came out as 3 pages with pages 1 and 3 nearly blank: the
+whole flight table sat in a `break-inside: avoid` block, so a table taller
+than the space left under the sheet header jumped wholesale to page 2, and
+the footer line spilled onto page 3 alone. Long tables (tournament draws,
+game start lists, scorecard reports) now use `<thead>`/`<tbody>` and break
+BETWEEN rows — the header row repeats on every printed page
+(`thead { display: table-header-group }`), only individual rows carry
+`break-inside: avoid`, and the whole-block avoid stays only on the small
+per-player scorecards. The JCI-sized 15-flight draw now prints as 2 full
+pages (verified by printing to PDF headlessly and inspecting the pages).
+Files: `src/print-common.js`, `src/schedule.js`, `src/scorecard.js`.
+
+## 2026-08-29 (Tournament time table for marshals: stroke play flights print too)
+
+`#/tnschedule/:tnId` now lays out an in-app stroke play tournament's draw
+as the marshal's time table — one section per round that has flights, each
+a `№ | Эхлэх цаг | Эхлэх нүх | Тоглогчид (HCP) | Гарын үсэг` table (the
+start-hole column appears only on shotgun draws), sharing the print/QR
+sheet the M Cup draw already used (`src/schedule.js`:
+`strokeScheduleBlocksHTML`, shell extracted as `renderTnScheduleShell`).
+Reached from three places (`src/app.js`): a 🖨 print link on the
+tournament page's Хуваарь tab, the admin «Хуваарь» tab (now lists every
+tournament with a printable draw via `tnHasPrintableDraw`), and the admin
+Tournaments row. Verified by the Playwright smoke run (38 checks green:
+R1/R2 sections, shotgun start holes, HCPs, signature column, guest
+access) plus `npm run build` and `npm run test:mp` 95/95.
+
+## 2026-08-29 (Printable scorecard + marshal start lists: QR, print/PDF, F9/B9/18 net reports)
+
+Three new guest-reachable, print-ready routes plus an admin tab, so a
+finished round becomes a paper artifact and a competition day gets its
+marshal sheets straight from the app.
+
+- **`#/scorecard/:gameId`** (`src/scorecard.js`, new): Best Approach-style
+  card per player — Hole/Score/Par/HCP rows, `1..9 | F | 10..18 | B | TOT`
+  columns, result colors (eagle gold, birdie red, par white, bogey blue,
+  worse black) with a printed legend; per-player to-par badge and
+  HCP · Net line; then the club's three contests as ranked reports:
+  Front 9 Net, Back 9 Net, Overall 18 Net (splitHcp halves per nine, so
+  normal-mode games report too; 9-hole games get one Net table). Blank
+  cells for unentered holes; locations without `COURSE_DATA` drop the
+  Par/HCP rows but keep scores.
+- **`#/schedule/:gameId`** (`src/schedule.js`, new): the game's start list —
+  group #, tee time, players (+playing HCP), signature column. First group
+  at a start time, +interval per group (default 10 min), per-group manual
+  overrides; admin/marshal/creator edit and Save, everyone else (guests
+  included) sees the read-only sheet. Persists at `games/{id}/schedule`
+  via `saveGameSchedule()` (store.js); `saveGame()` now spares the
+  `schedule` branch like scores/hcp.
+- **`#/tnschedule/:tnId`** (also `src/schedule.js`): the M Cup draw —
+  sessions by day/number with format and start time, each match's number,
+  tee time and both lineups from `tn.mp`. Read-only; times stay edited in
+  the match-play admin editor.
+- **Print/PDF**: every sheet is a white "paper" card even on screen, with a
+  page-scoped `@media print` block (app chrome hidden, A4 portrait,
+  `print-color-adjust`, cards kept whole, reports on their own page) —
+  the browser's Print → Save as PDF covers the PDF ask, no jsPDF.
+- **QR**: each page renders its own URL as a QR (canvas) with the URL
+  printed under it. New dependency `qrcode` ^1.5 — the only one added —
+  loaded via dynamic import so it is a separate lazy chunk.
+- **Wiring** (`src/app.js`): the three routes join the guest gate (like
+  tournament boards) and the guest-login header check; game detail gets a
+  Scorecard button (once anyone scored, or the game is past) and a
+  Хуваарь button (admin/marshal/creator); admin panel gets a «Хуваарь»
+  tab listing the week's games and match-play draws with one-tap sheet
+  links; match-format tournament rows link their draw.
+- Shared helpers in `src/print-common.js` (esc/pageUrl/mountQr/copyUrl/
+  print CSS); `groupsOf()` exported from game-score.js; ~13 `sc*` i18n
+  keys ×3 languages.
+- Privacy note: anyone with a scorecard/schedule link sees that game's
+  player names, scores and times — the same exposure as the existing
+  `#/join/` share link (and RTDB `games` is world-readable already).
+  Sheet-driven stroke tournaments and M Cup have no per-hole strokes, so
+  they get no scorecard page (M Cup gets the draw sheet).
+- Verified: `npm run build` (qrcode splits into its own chunk),
+  `npm run test:mp` 54/54, and a Playwright smoke run over dev build in
+  localStorage mode — scorecard colors/totals/reports/QR, schedule
+  edit+save+revisit, admin tab, M Cup draw, guest access, print-media
+  chrome hiding (31 checks green).
+
 ## 2026-08-29 (Home dashboard: your tournament tee time card)
 
 A member drawn into a stroke tournament now sees their start right on

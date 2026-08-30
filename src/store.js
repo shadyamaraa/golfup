@@ -152,10 +152,10 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game). Every caller passes the full record, so the named
-    // top-level keys are still replaced wholesale — only the scoring
-    // branches are spared.
-    const { scores, scoreAudit, hcp, ...rest } = game;
+    // the same game; `schedule` is a retired field spared for old records). Every
+    // caller passes the full record, so the named top-level keys are still replaced
+    // wholesale — only the scoring/schedule branches are spared.
+    const { scores, scoreAudit, hcp, schedule, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
