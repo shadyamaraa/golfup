@@ -249,3 +249,211 @@ export function canScoreSp(user, pid, players, round) {
   const g = spPlayerGroup(players, pid, round);
   return !!g && g === spPlayerGroup(players, myPid, round);
 }
+
+// ---- Player card (read-only, PGA-style) ----
+// A player's round told hole by hole: what they shot, how it read against
+// the hole's par, and the score running through the turn. Pure — the view
+// in strokeplay-card.js only lays these numbers out.
+
+// How a hole read: the club's card and the app's card classify identically,
+// so this is the single place the thresholds live.
+export function holeDiffClass(strokes, par) {
+  const s = Number(strokes);
+  const p = Number(par);
+  if (!Number.isFinite(s) || s <= 0 || !Number.isFinite(p) || p <= 0) return null;
+  const d = s - p;
+  if (d <= -2) return 'eagle';    // an albatross folds in here, as on the printed card
+  if (d === -1) return 'birdie';
+  if (d === 0) return 'par';
+  if (d === 1) return 'bogey';
+  return 'double';                // double bogey or worse
+}
+
+/**
+ * One stretch of holes (a nine, or the whole round). `gross`/`holesIn`/`toPar`
+ * cover exactly the holes ENTERED — that is the honest running score — while
+ * `par` is the stretch's FULL par, unplayed holes included, because that is
+ * what the card's PAR row prints. `par` stays null unless every hole in the
+ * stretch has a par: a single course total can't fill nine cells.
+ */
+export function spSegment(holes, pars = null, from = 1, to = SP_HOLES) {
+  const seg = {};
+  for (let h = from; h <= to; h++) {
+    if (holes?.[h] !== undefined && holes?.[h] !== null) seg[h] = holes[h];
+  }
+  const { gross, holesIn, toPar } = roundGross(seg, pars);
+  let par = 0;
+  let known = !!pars;
+  for (let h = from; h <= to && known; h++) {
+    const p = Number(pars?.[h]);
+    if (Number.isFinite(p) && p > 0) par += p; else known = false;
+  }
+  return { gross, holesIn, toPar, par: known ? par : null };
+}
+
+/**
+ * One player's round, hole by hole. `running` is cumulative through the
+ * whole turn — the back nine continues from the front's last value, so the
+ * final cell equals the round's to-par, the way a golfer reads a card.
+ * Returns null for an unknown player.
+ */
+export function spPlayerCard(tn, pid, round) {
+  const p = tn?.sp?.players?.[pid];
+  if (!p) return null;
+  const r = Math.max(1, Number(round) || 1);
+  const pars = tnPars(tn);
+  const sis = tnSIs(tn);
+  const holes = tn?.sp?.scores?.[pid]?.[r] || {};
+  const hcpN = Number(p.hcp);
+
+  let run = 0;
+  let seen = 0;
+  const rows = Array.from({ length: SP_HOLES }, (_, i) => {
+    const hole = i + 1;
+    const par = Number(pars?.[hole]) || null;
+    const raw = Number(holes[hole]);
+    const strokes = Number.isFinite(raw) && raw > 0 ? raw : null;
+    const diff = strokes !== null && par !== null ? strokes - par : null;
+    if (diff !== null) { run += diff; seen += 1; }
+    return {
+      hole,
+      par,
+      si: Number(sis?.[hole]) || null,
+      strokes,
+      diff,
+      cls: holeDiffClass(strokes, par),
+      // Only a hole that was actually played against a known par carries a
+      // running figure; the rest print blank.
+      running: diff !== null ? run : null
+    };
+  });
+
+  const front = spSegment(holes, pars, 1, 9);
+  const back = spSegment(holes, pars, 10, SP_HOLES);
+  const total = spSegment(holes, pars, 1, SP_HOLES);
+  return {
+    pid,
+    round: r,
+    name: p.name || pid,
+    hcp: Number.isFinite(hcpN) ? hcpN : null,
+    status: p.status || '',
+    hasPars: !!pars,
+    holes: rows,
+    front,
+    back,
+    total,
+    thru: total.holesIn >= SP_HOLES ? 'F' : total.holesIn ? String(total.holesIn) : ''
+  };
+}
+
+/**
+ * A player's numbers for one round (`round` a number) or the whole
+ * tournament (`round` null). Everything that needs per-hole pars — the
+ * scoring spread, the by-par averages, best/worst, to-par — comes back null
+ * on a course the registry doesn't carry; the stroke counts always hold.
+ */
+export function spPlayerStats(tn, pid, round = null) {
+  const p = tn?.sp?.players?.[pid];
+  if (!p) return null;
+  const roundCount = Math.max(1, Number(tn?.rounds) || 1);
+  const scope = round === null || round === 'all' ? 'all' : Math.max(1, Number(round) || 1);
+  const inScope = (r) => scope === 'all' || r === scope;
+  const pars = tnPars(tn);
+  const hasPars = !!pars;
+  const hcpN = Number(p.hcp);
+  const hcp = Number.isFinite(hcpN) ? hcpN : null;
+
+  const rounds = [];
+  const dist = { eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0 };
+  const byPar = { 3: { count: 0, gross: 0 }, 4: { count: 0, gross: 0 }, 5: { count: 0, gross: 0 } };
+  let gross = 0;
+  let holesPlayed = 0;
+  let toPar = 0;
+  let roundsPlayed = 0;
+  let roundsComplete = 0;
+  let frontGross = 0; let frontHoles = 0; let frontToPar = 0;
+  let backGross = 0; let backHoles = 0; let backToPar = 0;
+  let best = null;
+  let worst = null;
+
+  for (let r = 1; r <= roundCount; r++) {
+    const card = spPlayerCard(tn, pid, r);
+    const complete = card.total.holesIn >= SP_HOLES;
+    rounds.push({
+      round: r,
+      gross: card.total.holesIn ? card.total.gross : null,
+      holesIn: card.total.holesIn,
+      toPar: card.total.toPar,
+      thru: card.thru,
+      complete
+    });
+    if (!inScope(r)) continue;
+    if (card.total.holesIn) roundsPlayed += 1;
+    if (complete) roundsComplete += 1;
+    gross += card.total.gross;
+    holesPlayed += card.total.holesIn;
+    if (card.total.toPar !== null) toPar += card.total.toPar;
+    frontGross += card.front.gross; frontHoles += card.front.holesIn;
+    if (card.front.toPar !== null) frontToPar += card.front.toPar;
+    backGross += card.back.gross; backHoles += card.back.holesIn;
+    if (card.back.toPar !== null) backToPar += card.back.toPar;
+
+    card.holes.forEach(h => {
+      if (h.strokes === null || h.cls === null) return;
+      dist[h.cls] += 1;
+      const bucket = byPar[h.par];
+      if (bucket) { bucket.count += 1; bucket.gross += h.strokes; }
+      const at = { round: r, hole: h.hole, par: h.par, strokes: h.strokes, diff: h.diff, cls: h.cls };
+      if (!best || h.diff < best.diff) best = at;
+      if (!worst || h.diff > worst.diff) worst = at;
+    });
+  }
+
+  // The field's scoring average over the same scope — the number that tells
+  // a player whether their round was good for the day, not just for them.
+  let fieldGross = 0;
+  let fieldRounds = 0;
+  Object.keys(tn?.sp?.players || {}).forEach(other => {
+    for (let r = 1; r <= roundCount; r++) {
+      if (!inScope(r)) continue;
+      const holes = tn?.sp?.scores?.[other]?.[r];
+      const { gross: g, holesIn } = roundGross(holes);
+      if (holesIn >= SP_HOLES) { fieldGross += g; fieldRounds += 1; }
+    }
+  });
+
+  const parBuckets = {};
+  [3, 4, 5].forEach(k => {
+    const b = byPar[k];
+    parBuckets[k] = b.count
+      ? { count: b.count, gross: b.gross, avg: b.gross / b.count, toPar: b.gross / b.count - k }
+      : { count: 0, gross: 0, avg: null, toPar: null };
+  });
+
+  return {
+    pid,
+    name: p.name || pid,
+    status: p.status || '',
+    hcp,
+    hasPars,
+    scope,
+    rounds,
+    roundsPlayed,
+    roundsComplete,
+    holesPlayed,
+    gross: holesPlayed ? gross : null,
+    toPar: hasPars && holesPlayed ? toPar : null,
+    net: hcp !== null && roundsComplete ? gross - hcp * roundsComplete : null,
+    scoringAvg: roundsComplete
+      ? rounds.filter(x => x.complete && inScope(x.round)).reduce((a, x) => a + x.gross, 0) / roundsComplete
+      : null,
+    holeAvg: holesPlayed ? gross / holesPlayed : null,
+    front: { gross: frontGross, holesIn: frontHoles, toPar: hasPars && frontHoles ? frontToPar : null },
+    back: { gross: backGross, holesIn: backHoles, toPar: hasPars && backHoles ? backToPar : null },
+    dist: hasPars ? dist : null,
+    byPar: hasPars ? parBuckets : null,
+    best: hasPars ? best : null,
+    worst: hasPars ? worst : null,
+    fieldAvg: fieldRounds ? fieldGross / fieldRounds : null
+  };
+}
