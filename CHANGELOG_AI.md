@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-08-29 (Leaderboard: started players above the scoreless)
+
+On a course without per-hole pars a mid-round player has no honest
+total, so they ranked alongside players who had not hit a ball — the
+whole board read as one alphabetical list. `rankEntries` gains a tier
+between score and name: among equal totals, a player whose thru is set
+(they have holes in) sits above one with no score at all, so the truly
+scoreless always sink to the very bottom. On registry courses nothing
+changes (started players already carry a running to-par).
+
 ## 2026-08-29 (Retire the casual-game start list)
 
 The per-game start list (`#/schedule/:gameId` — auto tee intervals with
@@ -111,6 +121,7 @@ marshal sheets straight from the app.
   localStorage mode — scorecard colors/totals/reports/QR, schedule
   edit+save+revisit, admin tab, M Cup draw, guest access, print-media
   chrome hiding (31 checks green).
+
 ## 2026-08-29 (Home dashboard: your tournament tee time card)
 
 A member drawn into a stroke tournament now sees their start right on
