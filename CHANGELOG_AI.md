@@ -1,5 +1,34 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Player card: what they shot on every hole, broadcast-style)
+
+Tapping a player on a stroke leaderboard opens their card at
+`#/spcard/:tnId/:pid` — the read-only view the club asked for, laid out
+the way a golf broadcast lays it out.
+
+- **Scorecard tab**: HOLE / PAR / SCORE with the score running underneath,
+  two nines stacked (no sideways scrolling on a phone), OUT and IN segment
+  columns and an OUT · IN · TOT strip. Birdies are ringed, eagles
+  double-ringed, bogeys boxed and doubles double-boxed — shapes carry what
+  the club's red-under/ink-over colouring cannot, drawn from theme tokens
+  so dark mode follows.
+- **Статистик tab**: round-by-round list (tap a round to jump to its card),
+  scoring spread with bars, average by par 3/4/5, front vs back nine, best
+  and worst hole, scoring average against the field's, and net when the
+  player carries an HCP. Scope chips pick one round or all.
+- **Header**: position from the live ranking, TOT, the round's to-par, HCP,
+  flight and tee time, plus the enter-score and group-card shortcuts —
+  shown only to whoever `canScoreSp` already allows, so no new permission
+  surface opens. Guests can read a card, exactly as they can read the board.
+- Engine (`strokeplay.js`, pure and tested): `holeDiffClass`, `spSegment`,
+  `spPlayerCard`, `spPlayerStats`. Everything needing per-hole pars degrades
+  to null on a course the registry doesn't carry, and the card then hides
+  its PAR and ± rows rather than inventing them from the course total.
+
+Two deliberate departures from the PGA app's screen: both nines show at
+once instead of paging with dots, and there are no Odds/Highlights tabs or
+putts/GIR/fairway stats — the app tracks no such data. Tests 97 → 109.
+
 ## 2026-08-30 (Group scorecard scores like the game scorer: − par + steppers)
 
 The tournament flight card drops its typed number inputs for the same

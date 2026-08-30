@@ -10,6 +10,7 @@ import { renderScorerPage } from './matchplay-score.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
+import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
@@ -378,7 +379,7 @@ export async function router() {
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
     const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
-      || hash.startsWith('#/tnschedule/');
+      || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -418,6 +419,16 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
         user: currentUser, showToast, tn: tnOnce,
+        backHash: `#/tournament/${tnId}`
+      });
+      activeUnsubs.push(off);
+    }
+    else if (hash.startsWith('#/spcard/')) {
+      // A player's card, read only — opened by tapping their leaderboard row.
+      const [tnId, pid] = hash.split('#/spcard/')[1].split('/');
+      const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
+      const off = renderSpPlayerCard(main(), tnId, pid, {
+        user: currentUser, tn: tnOnce, metric: tnSpMetric,
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -485,7 +496,7 @@ function updateHeader() {
     const h = location.hash || '#/';
     guestLogin.classList.toggle('hidden',
       !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
-        || h.startsWith('#/tnschedule/')));
+        || h.startsWith('#/tnschedule/') || h.startsWith('#/spcard/')));
   }
 }
 
@@ -1971,8 +1982,10 @@ function renderTnList() {
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
-    return `
-      <div class="tn-lb-row${mine ? ' tn-me' : ''}">
+    // A row opens that player's card. Sheet-era records carry no pid, so
+    // those rows stay plain divs rather than offering a dead tap.
+    const open = e.pid ? `#/spcard/${esc(tn.id)}/${esc(e.pid)}` : null;
+    const inner = `
         <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">
           <span class="tn-pos-n">${esc(e.posLabel)}</span>
           ${tnDeltaHTML(e)}
@@ -1988,8 +2001,12 @@ function renderTnList() {
           : ''}
         <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}
-      </div>`;
+        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}`;
+    // An anchor rather than a click handler: the list repaints on every live
+    // score, and an href survives that without rebinding.
+    return open
+      ? `<a class="tn-lb-row${mine ? ' tn-me' : ''}" href="${open}">${inner}</a>`
+      : `<div class="tn-lb-row${mine ? ' tn-me' : ''}">${inner}</div>`;
   };
 
   host.innerHTML = `
