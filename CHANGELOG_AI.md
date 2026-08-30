@@ -1,5 +1,19 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Group scorecard scores like the game scorer: − par + steppers)
+
+The tournament flight card drops its typed number inputs for the same
+−/+ steppers the casual game scorer taps all day: + on an empty hole
+seeds the hole's par (fallback 4), then ±1 per tap up to 15; − at 1
+clears the hole. Every flight member's stepper is live at once, so the
+marker moves straight down the card with no keyboard. The card follows
+the round to the flight's first open hole (start-hole wrap intact) until
+a score tap or navigation pins it — the last player's seeded score stays
+correctable — and a fresh visit unpins. New 18-hole strip below the
+rows: par per cell, gold fill once the whole flight is in, tap to jump.
+Taps write per hole with a single-flight gate and update the row in
+place, so rapid taps never fight the live listener.
+
 ## 2026-08-30 (Venue name resolves the course: Mt. Bogd counts to-par too)
 
 The JCI Mongolia Open showed no running totals while the Ladies event
