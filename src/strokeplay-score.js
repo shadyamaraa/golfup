@@ -197,7 +197,13 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     });
   };
 
-  const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
+  // The router hands down `alive`; a repaint after this screen was torn down
+  // would land on whatever page replaced it.
+  const off = store.onTournamentChanged?.(tnId, (tn) => {
+    if (ctx.alive?.() === false) return;
+    tnLive = tn;
+    paint();
+  });
   // No live store (local mode): render once from what the caller loaded.
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
   return off || (() => { });
@@ -420,7 +426,13 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     });
   };
 
-  const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
+  // The router hands down `alive`; a repaint after this screen was torn down
+  // would land on whatever page replaced it.
+  const off = store.onTournamentChanged?.(tnId, (tn) => {
+    if (ctx.alive?.() === false) return;
+    tnLive = tn;
+    paint();
+  });
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
   return off || (() => { });
 }

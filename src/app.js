@@ -49,6 +49,11 @@ let currentUserFollowers = new Set();
 let followsLoadedForUser = null;
 let isRouting = false;
 let activeUnsubs = [];
+// Every screen teardown bumps this. A live listener captures the epoch it was
+// mounted on, so should one ever outlive its screen it can no longer repaint
+// itself over whatever page the member is actually looking at.
+let viewEpoch = 0;
+const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
 let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
@@ -329,6 +334,7 @@ function clearActiveListeners() {
     try { unsub(); } catch (e) { }
   });
   activeUnsubs = [];
+  viewEpoch++;
 }
 
 // ---- Routing ----
@@ -397,7 +403,7 @@ export async function router() {
     else if (hash.startsWith('#/score/')) {
       const [tnId, matchId] = hash.split('#/score/')[1].split('/');
       await renderScorerPage(tnId, matchId, {
-        main, user: currentUser, showToast,
+        main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn),
         // The sample M Cup can be scored on preview builds: taps stay local,
         // nothing is written, and the demo resets on reload.
@@ -409,7 +415,7 @@ export async function router() {
       // Local mode has no live listener; hand the screen the loaded record.
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpScorer(main(), tnId, pid, {
-        user: currentUser, showToast, tn: tnOnce,
+        user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -418,7 +424,7 @@ export async function router() {
       const [tnId, round, gid] = hash.split('#/spgroup/')[1].split('/');
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
-        user: currentUser, showToast, tn: tnOnce,
+        user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -428,7 +434,7 @@ export async function router() {
       const [tnId, pid] = hash.split('#/spcard/')[1].split('/');
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpPlayerCard(main(), tnId, pid, {
-        user: currentUser, tn: tnOnce, metric: tnSpMetric,
+        user: currentUser, tn: tnOnce, metric: tnSpMetric, alive: viewAlive(),
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -1564,8 +1570,9 @@ async function renderTournamentPage(id) {
   if (store.isUsingFirebase() && tn.id !== TN_DEMO.id && tn.id !== MP_DEMO_ID) {
     // Every score — a match play hole or a stroke card stroke — lands on the
     // tournament record, so this one listener is the whole live feed.
+    const alive = viewAlive();
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
-      if (!fresh || fresh.status === 'deleted') return;
+      if (!alive() || !fresh || fresh.status === 'deleted') return;
       tnPageData = fresh;
       repaint();
     });
