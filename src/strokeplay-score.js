@@ -7,8 +7,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp } from './strokeplay.js';
-import { coursePars, courseSIs } from './courses.js';
+import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs } from './strokeplay.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
 
@@ -75,7 +74,7 @@ async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
 function cardHTML(tn, pid, round, editable) {
   const p = tn.sp?.players?.[pid] || {};
   const holes = tn.sp?.scores?.[pid]?.[round] || {};
-  const pars = coursePars(tn.course);
+  const pars = tnPars(tn);
   const { gross, holesIn, toPar } = roundGross(holes, pars);
   const par = Number(tn.par) || 72;
   const roundCount = Math.max(1, Number(tn.rounds) || 1);
@@ -180,7 +179,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
           if (value === null) delete holes[hole]; else holes[hole] = value;
           // The full repaint skips while a hole input keeps focus (it must
           // not eat keystrokes), so the totals line updates in place.
-          const pars = coursePars(tnLive.course);
+          const pars = tnPars(tnLive);
           inp.style.color = strokeColor(value, pars?.[hole] || null);
           const box = host.querySelector('[data-sps-total]');
           if (box) {
@@ -229,8 +228,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     const pids = Object.keys(g.players || {})
       .filter(pid => players[pid])
       .sort((a, b) => String(players[a].name || '').localeCompare(String(players[b].name || '')));
-    const pars = coursePars(tn.course);
-    const sis = courseSIs(tn.course);
+    const pars = tnPars(tn);
+    const sis = tnSIs(tn);
     const editable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
 
     // Open on the first hole any of the flight still has empty — scanning

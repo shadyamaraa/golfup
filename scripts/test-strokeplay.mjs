@@ -348,3 +348,16 @@ test('a started player outranks a scoreless one even without pars', () => {
   assert.deepEqual(withPars.map(e => e.name), ['Дорж', 'Бат', 'Анар', 'Цэрэн']);
   assert.equal(withPars[0].total, -1);
 });
+
+test('a typed venue resolves pars when no course key was ever picked', () => {
+  // The JCI case: course was never chosen, but the venue says Mt. Bogd —
+  // a registry alias for Sky Resort — so mid-round to-par still posts.
+  assert.equal(resolveCourse('Mt. Bogd').key, 'sky');
+  const tn = TN(
+    { u1: { name: 'Бат' } },
+    { u1: { 1: { 1: 4, 2: 4 } } },
+    { rounds: 1, course: '', venue: 'Mt. Bogd' });
+  const [e] = spEntries(tn);
+  assert.equal(e.total, -1);
+  assert.equal(e.thru, '2');
+});

@@ -111,7 +111,8 @@ export function roundFromGame(game, playerId) {
 // tournament carries the tee's rating/slope.
 export function roundFromTournament(tn, playerId, round, holes) {
   if (!tn?.id || !playerId || !round) return null;
-  const pars = coursePars(tn.course);
+  // Course key first, venue-name alias second — same tolerance as tnPars.
+  const pars = coursePars(tn.course) || coursePars(tn.venue);
   let total = 0;
   const holeScores = {};
   for (let n = 1; n <= 18; n++) {
@@ -124,7 +125,7 @@ export function roundFromTournament(tn, playerId, round, holes) {
   }
   return {
     playedAt: tn.startDate ? new Date(tn.startDate).getTime() : Date.now(),
-    courseName: resolveCourse(tn.course)?.name || tn.venue || '',
+    courseName: (resolveCourse(tn.course) || resolveCourse(tn.venue))?.name || tn.venue || '',
     courseRating: tn.rating || null,
     slopeRating: tn.slope || null,
     par: tn.par || null,

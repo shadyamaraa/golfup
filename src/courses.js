@@ -42,9 +42,17 @@ export const COURSE_DATA = {
 };
 
 // Older records (the tournament side's original preset list) spelled Riverside's
-// course "…Golf Club"; both spellings resolve to the same registry entry.
+// course "…Golf Club"; both spellings resolve to the same registry entry. The
+// Mt. Bogd names cover tournaments whose venue was typed by hand — Sky Resort
+// IS Mt. Bogd Golf Club's course.
 const COURSE_ALIASES = {
   'Chinggis Khaan Golf Club': 'Chinggis Khaan Golf Course',
+  'Mt. Bogd': 'Sky Resort Golf Club',
+  'Mt Bogd': 'Sky Resort Golf Club',
+  'Mt. Bogd Golf Club': 'Sky Resort Golf Club',
+  'Sky Resort': 'Sky Resort Golf Club',
+  'Riverside': 'Chinggis Khaan Golf Course',
+  'Riverside Golf Club': 'Chinggis Khaan Golf Course',
 };
 
 const TEE_LABELS = {
@@ -57,6 +65,7 @@ const TEE_LABELS = {
 // name attached, or null for custom/unknown venues.
 export function resolveCourse(ref) {
   if (!ref) return null;
+  ref = String(ref).trim();
   const direct = COURSE_DATA[ref] || COURSE_DATA[COURSE_ALIASES[ref]];
   if (direct) {
     const name = COURSE_DATA[ref] ? ref : COURSE_ALIASES[ref];
