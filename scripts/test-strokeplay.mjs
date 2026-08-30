@@ -333,3 +333,18 @@ test('courseHandicap seeds the roster from a WHS index', () => {
   assert.equal(courseHandicap(12.4, 130, 71.5, 72), 14);
   assert.equal(courseHandicap(null, 130, 71.5, 72), null);
 });
+
+test('a started player outranks a scoreless one even without pars', () => {
+  // Custom course (no registry pars): a partial round has no total, but the
+  // player who has holes in still sits above those with nothing at all.
+  const tn = TN(
+    { a: { name: 'Анар' }, b: { name: 'Бат' }, c: { name: 'Цэрэн' }, d: { name: 'Дорж' } },
+    { b: { 1: fullRound(4) }, d: { 1: { 1: 4, 2: 4 } } },
+    { rounds: 1, course: '' });
+  const names = rankEntries(spEntries(tn), {}).map(e => e.name);
+  assert.deepEqual(names, ['Бат', 'Дорж', 'Анар', 'Цэрэн']);
+  // With pars the started player carries a real running total instead.
+  const withPars = rankEntries(spEntries({ ...tn, course: 'sky' }), {});
+  assert.deepEqual(withPars.map(e => e.name), ['Дорж', 'Бат', 'Анар', 'Цэрэн']);
+  assert.equal(withPars[0].total, -1);
+});

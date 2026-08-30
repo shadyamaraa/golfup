@@ -492,8 +492,14 @@ export function rankEntries(entries, { cutAfterRound, cutSize } = {}) {
     return (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) ? Infinity : n;
   };
   const out = (e) => (noStanding(e?.status) ? 1 : 0);
+  // Among equal totals — above all among the null ones a course without
+  // per-hole pars produces mid-round — a player who has actually started
+  // (their thru is set) sits above one with no score at all, so the board
+  // never reads as a plain alphabetical list with the field mixed in.
+  const started = (e) => (String(e?.thru ?? '') !== '' ? 0 : 1);
   list.sort((a, b) => out(a) - out(b)
     || score(a) - score(b)
+    || started(a) - started(b)
     || String(a?.name || '').localeCompare(String(b?.name || '')));
 
   // Positions are numbered over the players still in the tournament only, so a
