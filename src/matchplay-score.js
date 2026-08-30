@@ -445,6 +445,8 @@ export async function renderScorerPage(tnId, matchId, ctx) {
 
   if (!demoMode && store.isUsingFirebase()) {
     const unsub = store.onTournamentChanged(tnId, (fresh) => {
+      // Torn down already: repainting now would cover the page that replaced us.
+      if (ctx.alive?.() === false) return;
       if (!fresh || fresh.status === 'deleted') return;
       data = fresh;
       // A repaint must not silently reinstate a screen access was refused

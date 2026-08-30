@@ -571,12 +571,14 @@ export async function deleteNewsItem(id) {
 export function onNewsChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'news');
-  const handler = onValue(r, (snap) => {
+  // onValue returns the unsubscribe itself. Handing that value to
+  // off(ref, 'value', cb) instead would never match: off compares against the
+  // SNAPSHOT callback, so the listener would outlive the screen that made it.
+  return onValue(r, (snap) => {
     const val = snap.exists() ? Object.values(snap.val()).filter(n => n && n.id) : [];
     val.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     callback(val);
   });
-  return () => off(r, 'value', handler);
 }
 
 // ---- Sponsor banner (RTDB, single object: { imageUrl, link }) ----
@@ -594,8 +596,7 @@ export async function saveSponsor(obj) {
 export function onSponsorChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'sponsor');
-  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
-  return () => off(r, 'value', handler);
+  return onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
 }
 
 // ---- Tournaments (RTDB) ----
@@ -632,20 +633,18 @@ export async function deleteTournament(id) {
 export function onTournamentsChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'tournaments');
-  const handler = onValue(r, (snap) => {
+  return onValue(r, (snap) => {
     const list = snap.exists()
       ? Object.values(snap.val()).filter(tn => tn && tn.id && tn.status !== 'deleted')
       : [];
     callback(list);
   });
-  return () => off(r, 'value', handler);
 }
 
 export function onTournamentChanged(id, callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'tournaments/' + id);
-  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
-  return () => off(r, 'value', handler);
+  return onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
 }
 
 // ---- Match play (M Cup) ----

@@ -1,5 +1,39 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Fix: a screen you left could repaint itself over the one you are on)
+
+Members sitting on the home screen during a live tournament were being
+thrown onto a scorecard they had visited earlier. The URL, the bottom nav
+and the tournament strip all still said home — only the content had been
+overwritten.
+
+**Root cause.** Every tournament subscription in `store.js` was built as
+`const handler = onValue(r, cb); return () => off(r, 'value', handler)`.
+But `onValue` returns an *unsubscribe function*, while `off()` matches
+registrations by the identity of the *snapshot callback*. The two never
+match, so `off()` removed nothing and **no tournament listener ever
+detached**. The router dutifully called the unsubscribe on every route
+change and it did nothing. Each visited scorecard, player card, scorer or
+tournament page left a live listener behind, and because `main()` is one
+shared element, the next write to the tournament record — constant during
+a live event — had the abandoned screen paint straight over whatever page
+the member was actually reading. Verified against the installed
+firebase 11.10.0 with an offline probe: the old form still fired after
+"unsubscribing", the returned unsubscribe fired zero times.
+
+- `onTournamentChanged`, `onTournamentsChanged`, `onNewsChanged` and
+  `onSponsorChanged` now return `onValue`'s own unsubscribe. (The helpers
+  that call `off(ref)` with no callback were always correct — that form
+  removes every listener at the path — and are left alone.)
+- Defence in depth: `clearActiveListeners()` bumps a `viewEpoch`, and the
+  router hands each live screen an `alive()` closure over the epoch it
+  mounted on. A listener that somehow outlives its screen again — in the
+  stroke scorer, the group card, the player card, the match play scorer or
+  the tournament page — now declines to repaint instead of covering the
+  page. Both layers were reproduced and verified in a browser: with the
+  guard removed the leaked listener paints the scorecard over home again;
+  with it in place home is byte-identical after the update.
+
 ## 2026-08-30 (Player card: what they shot on every hole, broadcast-style)
 
 Tapping a player on a stroke leaderboard opens their card at
