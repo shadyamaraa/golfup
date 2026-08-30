@@ -19,7 +19,7 @@
 // (rankEntries / cutSet / activeRound): spEntries() emits exactly the entry
 // shape those functions and the leaderboard render already consume.
 
-import { courseList, resolveCourse, coursePars } from './courses.js';
+import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
 
 export const SP_HOLES = 18;
 
@@ -30,6 +30,12 @@ export const SP_HOLES = 18;
 export const COURSES = courseList();
 
 export const courseByKey = (key) => resolveCourse(key);
+
+// A tournament's per-hole pars/SIs: the course key first, then the venue
+// name — an older record whose admin never picked a course still resolves
+// when its typed venue ("Mt. Bogd") is a registry alias.
+export const tnPars = (tn) => coursePars(tn?.course) || coursePars(tn?.venue);
+export const tnSIs = (tn) => courseSIs(tn?.course) || courseSIs(tn?.venue);
 
 // One round's tally from its hole map: total strokes entered, how many holes
 // they cover, and — when the course's per-hole pars are known — the running
@@ -73,7 +79,7 @@ export function spEntries(tn, metric = 'gross') {
   const sp = tn?.sp;
   if (!sp?.players) return [];
   const par = Number(tn?.par) || 72;
-  const pars = coursePars(tn?.course);
+  const pars = tnPars(tn);
   const roundCount = Math.max(1, Number(tn?.rounds) || 1);
   const hcpOf = (p) => {
     const n = Number(p?.hcp);

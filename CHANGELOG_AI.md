@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Venue name resolves the course: Mt. Bogd counts to-par too)
+
+The JCI Mongolia Open showed no running totals while the Ladies event
+(same course) did: its record never had a course key picked, so no
+per-hole pars resolved. Course resolution now falls back to the typed
+venue name, and the registry gains aliases — Mt. Bogd (all spellings) →
+Sky Resort, Riverside → Chinggis Khaan — plus whitespace-tolerant
+lookups. `tnPars`/`tnSIs` in strokeplay.js carry the course-then-venue
+chain for the engine, both scorecards and `roundFromTournament`.
+
 ## 2026-08-29 (Leaderboard: started players above the scoreless)
 
 On a course without per-hole pars a mid-round player has no honest
