@@ -3558,7 +3558,9 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   }
   const filledCount = players.length;
   const isFull = filledCount >= groupSize;
-  const canDirectAdd = !isPast && !isFull && (game.createdBy === currentUser?.id || currentUser?.role === 'admin');
+  // Same live-window allowance as removal: the organizer/admin can still add
+  // players to a group while the game is in progress.
+  const canDirectAdd = !isFull && canManage && (!isPast || isGameLive(game));
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
