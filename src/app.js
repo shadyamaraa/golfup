@@ -59,6 +59,10 @@ let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
 let bellSubFor = null;
+// The bell badge's listener outlives routes on purpose, so it needs its own
+// handle: without one a sign-out leaves the previous account's unread count
+// writing into the shared badge.
+let bellUnsub = null;
 let openCircles = new Set();
 let adminStatsMonth = 'all'; // admin stats tab month filter (YYYY-MM or 'all')
 let lastNotifsCache = [];    // latest notifications, for the header bell shortcut
@@ -341,14 +345,14 @@ function clearActiveListeners() {
 export async function router() {
   if (isRouting) return;
   isRouting = true;
+  const hash = location.hash || '#/';
 
   try {
-    const hash = location.hash || '#/';
 
     // Kiosk mode: lock to kitchen route and hide header.
     if (isKiosk) {
       document.getElementById('app-header')?.style.setProperty('display', 'none', 'important');
-      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; isRouting = false; return; }
+      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; return; }
     }
 
     currentUser = store.getUser();
@@ -369,13 +373,22 @@ export async function router() {
     updateBottomNav(hash);
     updateGlobalSponsorVisibility(hash);
     updateTournamentStripVisibility(hash);
-    // Header bell unread badge — subscribe once per user (persists across routes).
+    // Header bell unread badge — subscribed once per user and kept across
+    // routes, so it is torn down by account rather than by navigation.
     if (currentUser && bellSubFor !== currentUser.id) {
+      try { bellUnsub?.(); } catch (e) { }
+      bellUnsub = null;
       bellSubFor = currentUser.id;
       store.loadNotifications(currentUser.id).then(ns => updateBellBadge(activeNotifCount(ns))).catch(() => {});
       if (store.isUsingFirebase()) {
-        store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns)));
+        bellUnsub = store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns))) || null;
       }
+    } else if (!currentUser && bellSubFor) {
+      // Signed out: drop the listener with the account it belongs to.
+      try { bellUnsub?.(); } catch (e) { }
+      bellUnsub = null;
+      bellSubFor = null;
+      updateBellBadge(0);
     }
     clearActiveListeners();
 
@@ -442,7 +455,7 @@ export async function router() {
     else if (hash.startsWith('#/gscore/')) {
       const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
       await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
-        main, user: currentUser, showToast,
+        main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
@@ -472,6 +485,11 @@ export async function router() {
   } finally {
     paintIcons();
     isRouting = false;
+    // A hashchange that landed while this render was awaiting was dropped by
+    // the guard above — nothing else would ever render it, leaving the URL and
+    // the screen disagreeing. Render it now. Each pass paints the hash current
+    // at its start, so this converges instead of looping.
+    if ((location.hash || '#/') !== hash) router();
   }
 }
 
@@ -983,6 +1001,9 @@ function wireNewsCarousel(host, count) {
   track.addEventListener('mouseenter', stop);
   track.addEventListener('mouseleave', start);
   start();
+  // The pause handlers live on the track, which dies with main().innerHTML, so
+  // without this the 5s timer keeps waking the phone long after home is gone.
+  activeUnsubs.push(stop);
 }
 
 // Global sponsor banner — admin-managed image (+ optional link), shown on every
@@ -6849,9 +6870,11 @@ async function showQpayModal(orderId, total, opts = {}) {
     }, 1500);
   }
 
-  closeBtn.onclick = async () => {
-    stopPolling();
-    unsub();
+  // Detach without judging why: stops the poll and the listener, nothing else.
+  const detach = () => { stopPolling(); try { unsub(); } catch (_) { } };
+
+  const dismiss = async () => {
+    detach();
     if (settled) { modal.remove(); location.hash = doneHash; return; }
     // Backed out before paying — remove the dangling unpaid record so it never
     // shows up as a phantom order, then leave to a safe page.
@@ -6860,6 +6883,12 @@ async function showQpayModal(orderId, total, opts = {}) {
     showToast(t('qpayCancelled'), 'info');
     location.hash = cancelHash;
   };
+
+  closeBtn.onclick = dismiss;
+  // A backdrop tap is a dismissal too. Without this the global overlay handler
+  // just removes the node, stranding the listener, the 3s poll and the unpaid
+  // record; it still runs afterwards, harmlessly, on an already-detached node.
+  modal.addEventListener('click', (e) => { if (e.target === modal) dismiss(); });
 
   // Server-side check finalizes the record (confirm booking + mark paid); the
   // resulting RTDB write flows back through the listener below, which settles
@@ -6885,6 +6914,10 @@ async function showQpayModal(orderId, total, opts = {}) {
       onPaid(rec);
     }
   });
+  // Leaving by any other route at least stops the poll and the listener. Only
+  // an explicit dismissal cancels the pending payment — a route change on the
+  // success path must not undo the order that was just paid for.
+  activeUnsubs.push(detach);
   try {
     const invoice = await store.createQpayInvoice(orderId);
     qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
@@ -6963,7 +6996,11 @@ async function showMtbogdQpayModal(bookingId, gameId) {
     setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); location.hash = doneHash; }, 1500);
   }
 
-  closeBtn.onclick = () => { stop(); modal.remove(); location.hash = doneHash; };
+  const dismissMq = () => { stop(); modal.remove(); location.hash = doneHash; };
+  closeBtn.onclick = dismissMq;
+  // Same as the order modal: a backdrop tap must stop the poll, not just hide it.
+  modal.addEventListener('click', (e) => { if (e.target === modal) dismissMq(); });
+  activeUnsubs.push(stop);
 
   checkBtn.onclick = async () => {
     checkBtn.disabled = true;

@@ -282,6 +282,9 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   };
 
   const paint = () => {
+    // Hole writes are awaited, so a member who scores and immediately leaves
+    // would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const m = data?.mp?.matches?.[matchId];
     if (!m) {
       // Still nothing to show. With a listener attached this is a waiting

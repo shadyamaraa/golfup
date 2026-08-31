@@ -134,6 +134,9 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
   let tnLive = null;
 
   const paint = () => {
+    // Hole writes are awaited, so a member who scores and immediately leaves
+    // would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const tn = tnLive;
     if (!tn?.sp?.players?.[pid]) {
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoPlayers')}</p></div>`;
@@ -245,6 +248,9 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
   };
 
   const paint = () => {
+    // Step taps await their write, so a member who scores and immediately
+    // leaves would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const tn = tnLive;
     const g = tn?.sp?.groups?.[round]?.[gid];
     if (!g) {
@@ -420,7 +426,10 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         const rounds = (scores[pid] = scores[pid] || {});
         const holes = (rounds[round] = rounds[round] || {});
         if (next === null) delete holes[hole]; else holes[hole] = next;
-        updateRow(pid);
+        // The write is awaited, so this may resume on another screen. Skip the
+        // DOM touch-up then — but still post the round: a round completed on
+        // this very tap must reach the member's handicap either way.
+        if (ctx.alive?.() !== false) updateRow(pid);
         if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
       }
     });
