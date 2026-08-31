@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, update, remove, onValue, off, push } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, push } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -361,12 +361,13 @@ export function createUser(name, uid = null, role = 'user') {
 export function onAllGamesChanged(callback) {
   if (useFirebase && db) {
     const gamesRef = ref(db, 'games');
-    onValue(gamesRef, (snap) => {
+    // Return onValue's own unsubscribe: off(ref) with no callback detaches
+    // EVERY listener on the path, including another screen's.
+    return onValue(gamesRef, (snap) => {
       const data = snap.val();
       if (!data) callback([]);
       else callback(Object.values(data).filter(g => g.status !== 'deleted').sort((a, b) => b.createdAt - a.createdAt));
     });
-    return () => off(gamesRef);
   }
 }
 
@@ -393,10 +394,9 @@ export async function saveBookingQuote(id, quote) {
 export function onGameChanged(id, callback) {
   if (useFirebase && db) {
     const gameRef = ref(db, 'games/' + id);
-    onValue(gameRef, (snap) => {
+    return onValue(gameRef, (snap) => {
       callback(snap.val());
     });
-    return () => off(gameRef);
   }
 }
 
@@ -474,11 +474,12 @@ export async function deleteNotification(userId, notifId) {
 export function onNotificationsChanged(userId, callback) {
   if (useFirebase && db) {
     const notifRef = ref(db, `notifications/${userId}`);
-    onValue(notifRef, (snap) => {
+    // The header bell and the home list both listen here with different
+    // lifetimes, so a path-wide off() would let one tear down the other.
+    return onValue(notifRef, (snap) => {
       if (!snap.exists()) { callback([]); return; }
       callback(Object.values(snap.val()).sort((a, b) => b.createdAt - a.createdAt));
     });
-    return () => off(notifRef);
   }
 }
 
@@ -931,20 +932,18 @@ export async function loadOrder(id) {
 export function onOrdersChanged(cb) {
   if (!useFirebase || !db) return () => {};
   const ordersRef = ref(db, 'orders');
-  onValue(ordersRef, (snap) => {
+  return onValue(ordersRef, (snap) => {
     if (!snap.exists()) { cb([]); return; }
     const orders = Object.entries(snap.val()).map(([id, val]) => ({ id, ...val }));
     orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     cb(orders);
   });
-  return () => off(ordersRef);
 }
 
 export function onOrderChanged(id, cb) {
   if (!useFirebase || !db) return () => {};
   const r = ref(db, 'orders/' + id);
-  onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
-  return () => off(r);
+  return onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
 }
 
 // ---- QPay helpers (food orders only; tee-time QPay is owned by MTBogd) ----

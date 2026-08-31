@@ -1,5 +1,59 @@
 # CHANGELOG_AI.md
 
+## 2026-08-30 (Audit follow-up: every listener and timer now dies with its screen)
+
+The teardown audit that produced today's two fixes confirmed 25 findings. Once
+deduplicated they were four real defects, all fixed here.
+
+**The header bell badge stopped updating after the first navigation.**
+`onNotificationsChanged` returned `() => off(notifRef)` with no callback, which
+detaches *every* listener on `notifications/{uid}`. The header bell subscribes
+once per user and keeps its listener across routes; renderHome subscribes to the
+same path and registers its unsubscribe in `activeUnsubs`. So the first route
+change after home tore down the bell listener as collateral, and nothing ever
+re-armed it — `bellSubFor` is set once and was never reset. The badge froze at
+its last value (it is static markup, so it never blanked to give the game away).
+Signing out made it worse: the previous account's listener kept writing its
+unread count into the shared badge.
+Fixed on both sides — the helper returns `onValue`'s own unsubscribe, and the
+bell's handle is now held in `bellUnsub` and released when the account changes
+or signs out.
+
+**The remaining four subscription helpers had the same over-broad teardown.**
+`onAllGamesChanged`, `onGameChanged`, `onOrdersChanged` and `onOrderChanged` all
+returned `off(ref)`. Latent today, because their subscribers share the per-route
+`activeUnsubs` lifetime — but it is the exact class that produced the bug members
+reported this morning, so all four now return the real unsubscribe. `off` is no
+longer imported anywhere in `store.js`.
+
+**The router silently discarded any navigation that arrived mid-render.**
+`if (isRouting) return;` fires inside the hashchange handler, and `router()` is
+async, so a tap landing during an awaited load was dropped with nothing queued:
+the requested screen never appeared and the URL and the view disagreed from then
+on. `finally` now compares the hash it rendered against the current one and
+renders again when they differ — each pass paints the hash current at its start,
+so it converges. The kiosk branch no longer clears `isRouting` by hand; `finally`
+owns it.
+
+**Timers and modals that outlived their screen.** The news carousel's 5s interval
+kept firing forever after leaving home (its pause handlers die with the DOM), so
+`stop` is registered for teardown. Both QPay modals could be dismissed by tapping
+the backdrop, where the global overlay handler removed the node and stranded the
+listener, the 3s poll and — for the order modal — an unpaid record; a backdrop tap
+is now a real dismissal, and route changes detach the poll and listener without
+cancelling a payment that already succeeded. The group scorecard's step handler
+skips its post-await DOM touch-up when the screen is gone, while still posting a
+round completed on that tap to the member's handicap. `main.js` also checks for a
+new bundle at boot, not only five minutes in, so fixes reach phones that stay open.
+
+Verified in a browser, each fix with its own negative test: with the fix reverted
+the assertion fails, reproducing the defect. Bell listener survives leaving home
+(2 → 1, not 0) and the badge still updates; sign-out drops it to 0 and clears the
+badge; a navigation fired mid-render lands on the requested screen; the carousel
+timer count goes 1 → 0 on leaving home. Build clean, 109/109 tests.
+The QPay modal changes were code-reviewed but not browser-driven — reaching that
+modal needs a live cart and invoice.
+
 ## 2026-08-30 (Fix, part two: the scorers repaint over the next page too)
 
 An independent audit of every teardown path found a second route to the

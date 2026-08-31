@@ -45,6 +45,9 @@ async function checkForUpdate() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') checkForUpdate();
 });
+// Also at boot: a phone that stays open would otherwise sit on a stale bundle
+// until the first tab-visible event or the five-minute tick.
+checkForUpdate();
 setInterval(checkForUpdate, CHECK_INTERVAL);
 
 window.onerror = function(msg, url, lineNo, columnNo, error) {
