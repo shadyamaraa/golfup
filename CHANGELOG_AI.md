@@ -1,5 +1,46 @@
 # CHANGELOG_AI.md
 
+## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
+
+Members reported that updating the ranking showed no up/down arrows — nothing
+compared with the previous standings. The live record confirmed it: 97 entries,
+every one with `prevRank` equal to its `rank` (up 0, down 0, same 97), saved
+this morning.
+
+The arrows compared each player with *whatever was saved last*. Uploading the
+same standings twice — to fix a name, correct a points cell, or simply
+re-export — overwrote every `prevRank` with the current rank and erased all
+movement, with no history to fall back on.
+
+- New pure module `src/ranking.js` (`rankingKey`, `isRankingCorrection`,
+  `mergeRankingUpload`, `rankingMovement`), tested in
+  `scripts/test-ranking.mjs` (109 → 120 tests). The stored ranking now carries
+  a `previous` block — the standings before the last real change — and each
+  entry's `prevRank` is derived from it. An upload where every player present
+  in both rankings sits at the same rank is a *correction*: the baseline and
+  the arrows stay. Any one player having moved makes it a new ranking and the
+  baseline advances. Data saved before `previous` existed keeps the `prevRank`
+  it already carries on a correction, so nothing regresses on deploy.
+- Names are matched on a whitespace-collapsed, case-folded, NFC key, and
+  `parseRankingFile` collapses internal runs of spaces — five live names carry
+  double spaces today and would otherwise have come back as "new".
+- Admin → Чансаа shows what the arrows compare against ("Харьцуулалт: <date>",
+  or "no previous ranking") plus the field's movement (▲n ▼n –n ●n), so an
+  all-"–" screen is explained rather than mysterious. i18n mn/en/kr.
+- Home top-10, `#/ranking` and `rankingDeltaHTML` are untouched — they read
+  the same `prevRank` as before.
+
+Verified in a browser: upload A → all ●, "no baseline"; upload B → ▲2 ▼2 with
+the baseline dated; upload B again → ▲2 ▼2 unchanged, baseline unchanged;
+home and `#/ranking` agree; stored object has `previous` and no undefined.
+Negative test with the old computation restored: the re-upload collapses to
+up 0 / down 0 / same 4 — the live symptom exactly.
+
+Today's lost arrows cannot be recovered by code (no history existed). After
+deploy the admin can upload the *previous* standings file and then the current
+one: the second upload is a real change, so the baseline advances and the
+arrows return. From then on a re-upload no longer wipes them.
+
 ## 2026-08-30 (Audit follow-up: every listener and timer now dies with its screen)
 
 The teardown audit that produced today's two fixes confirmed 25 findings. Once

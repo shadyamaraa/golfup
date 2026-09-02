@@ -18,6 +18,7 @@ import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
+import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
@@ -7684,7 +7685,7 @@ async function parseRankingFile(file) {
   const entries = data
     .map((r, i) => ({
       rank: ri >= 0 && parseInt(r[ri], 10) > 0 ? parseInt(r[ri], 10) : i + 1,
-      name: (r[ni] || '').trim(),
+      name: (r[ni] || '').replace(/\s+/g, ' ').trim(),
       points: pi >= 0 ? (r[pi] || '') : '',
     }))
     .filter(e => e.name);
@@ -7703,7 +7704,20 @@ async function parseRankingFile(file) {
   return entries;
 }
 
-// Admin → Чансаа: current ranking + Excel upload (computes ▲/▼ vs previous).
+// What the arrows compare against, and how the field moved — so the admin
+// can see the baseline instead of guessing why every row reads "–".
+function rankingBaselineHTML(current) {
+  const entries = Array.isArray(current?.entries) ? current.entries : [];
+  if (!entries.length) return '';
+  const m = rankingMovement(entries);
+  const when = current?.previous?.updatedAt ? new Date(current.previous.updatedAt).toLocaleString() : null;
+  return `<p style="margin:6px 0 0; font-size:0.78rem; color:var(--text-secondary);">
+    ${when ? `${t('rankingBaseline')}: ${esc(when)}` : t('rankingNoBaseline')}
+    · <span class="rk-delta rk-up">▲${m.up}</span> <span class="rk-delta rk-down">▼${m.down}</span> –${m.same} ●${m.fresh}
+  </p>`;
+}
+
+// Admin → Чансаа: current ranking + Excel upload (▲/▼ vs the last real change).
 async function renderAdminRankingTab() {
   const el = document.getElementById('admin-rank-content');
   if (!el) return;
@@ -7719,6 +7733,7 @@ async function renderAdminRankingTab() {
       <button type="button" id="rank-upload-btn" class="btn btn-primary btn-sm">${t('rankingUpload')}</button>
       <input type="file" id="rank-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />
       ${current?.updatedAt ? `<p style="margin:10px 0 0; font-size:0.78rem; color:var(--text-secondary);">${t('rankingUpdated')}: ${new Date(current.updatedAt).toLocaleString()} · ${entries.length}</p>` : ''}
+      ${rankingBaselineHTML(current)}
     </div>
     ${entries.length === 0
       ? `<p style="color:var(--text-secondary);">${t('rankingEmpty')}</p>`
@@ -7735,13 +7750,10 @@ async function renderAdminRankingTab() {
     catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
     if (!parsed.length) { showToast(t('rankingEmpty'), 'warning'); return; }
     if (!confirm(`${parsed.length} мөр уншигдлаа. Чансааг шинэчлэх үү?`)) return;
-    // Carry previous positions so the UI can show ▲/▼ deltas.
-    const prevByName = new Map(entries.map(e => [e.name.toLowerCase(), e.rank]));
-    parsed.forEach(e => {
-      const p = prevByName.get(e.name.toLowerCase());
-      if (p != null) e.prevRank = p;
-    });
-    await store.saveRanking({ updatedAt: Date.now(), entries: parsed });
+    // ▲/▼ compare with the ranking before the last REAL change. A re-upload
+    // of the same standings (a name or points fix) keeps the arrows; the
+    // old code overwrote every prevRank with the current rank and lost them.
+    await store.saveRanking(mergeRankingUpload(current, parsed, Date.now()));
     showToast('✅ ' + t('rankingSaved'), 'success');
     await renderAdminRankingTab();
   };
