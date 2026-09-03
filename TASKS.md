@@ -18,6 +18,10 @@
       database rules, not only in the UI. See `docs/mcup-match-play.md`.
 - [ ] M Cup phase 2 (spec §27): push notifications, player and pair
       statistics, historical results.
+- [ ] Casual game formats phase 2: scramble / fourball / foursome — 2 v 2
+      inside a tee group, one-ball team scores under
+      `games/{id}/teamScores`, no WHS posting for scramble/foursome.
+      See `docs/casual-formats.md`.
 
 ## In Progress
 

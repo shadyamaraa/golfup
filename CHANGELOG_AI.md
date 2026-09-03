@@ -1,5 +1,48 @@
 # CHANGELOG_AI.md
 
+## 2026-09-03 (Casual games: Match play and Skins formats)
+
+A casual game now carries a **format**. Stroke play is what every game was
+and stays the default — a record without the field reads as stroke play and
+is never backfilled. The match play family reads the same scorecard
+differently; see `docs/casual-formats.md`.
+
+- `games/{id}.format`: `'stroke' | 'match' | 'skins'`, chosen with a chip row
+  on the create form (between holes and scoring mode) and editable on the
+  edit form. Competition 9/9 is a stroke play idea, so its row hides for the
+  other formats and `scoreMode` is forced to `normal`.
+- New pure module `src/game-formats.js`: pairing by group order (a four
+  splits three ways, `pairing/{groupIdx}` stores the order and is honoured
+  only while it names the group's current players), the "off the low man"
+  allowance by stroke index, `matchResult()` on top of `settleMatch()`, and
+  `skinsResult()` with carry-over. 24 tests in `scripts/test-game-formats.mjs`
+  (120 → 144).
+- Scorer (`src/game-score.js`): the strokes stepper is unchanged; a format
+  panel appears under it. Match play shows one card per pair with the status,
+  the allowance and an A / B / – strip; **tapping a hole sets it by hand** (A /
+  ТЭНЦСЭН / B / Авто) — how a conceded hole is recorded without strokes; a
+  gap in the walk is named. **Хос солих ⇄** cycles a four's three splits.
+  Skins shows standings chips and a pot strip. `isCompMode()` now requires
+  stroke play, which retires comp mode everywhere at once for the others.
+- Game page: a format pill in the title; the scoreboard becomes the matches
+  (name · status · name) or the skins standings. Home cards carry the pill.
+  The printed `#/scorecard/` replaces the F9/B9/18 net reports with a match
+  table (hand-set holes starred) or a skins table.
+- `src/store.js`: `saveGamePairing`, `saveGameHoleOverride` (path-scoped,
+  audited, localStorage fallback), and — the data-safety point —
+  `saveGame()` now also strips `pairing` and `holeOverrides` so an Edit,
+  join or leave never wipes what the scorer wrote.
+- i18n mn/en/kr: `fmtSkins/fmtFourball/fmtFoursome` and the `gs*` strings the
+  panels use; `mpHalved` gains its Korean.
+- WHS posting unchanged: a conceded hole with no strokes leaves the card
+  incomplete, so nothing posts. No database-rules change.
+
+Verified: `npm run test:mp` 144/144, `npm run build`, and a localStorage
+walk-through (Firebase off) of create → score → hand-set hole → re-pair →
+finish → game page → printed card for both formats, plus edit back to stroke
+play with nothing lost. Phase 2 (scramble / fourball / foursome) is outlined
+in the doc and on the backlog.
+
 ## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
 
 Members reported that updating the ranking showed no up/down arrows — nothing

@@ -17,6 +17,8 @@ import { t } from './i18n.js';
 import { gameHoleCount } from './handicap.js';
 import { holePar, holeSI, coursePar, courseTees, physicalHole } from './courses.js';
 import { gameScoreLine, gamePlayingHcp, isCompMode, splitHcp, fmtToPar, groupsOf } from './game-score.js';
+import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult } from './game-formats.js';
+import { holeTimeline, HALVED } from './matchplay.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
 // Result colors, matching the printed legend. Under par is red here as on
@@ -149,7 +151,99 @@ function reportTableHTML(title, entries) {
     </div>`;
 }
 
+// Match play: one table per group — each match, its result, and the hole-by-
+// hole reading (A / B / –), hand-set holes starred.
+function matchReportHTML(game, usersById) {
+  const holeCount = gameHoleCount(game);
+  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const groups = groupsOf(game);
+  const tables = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
+    const { matches } = groupMatches(game, gi, players, hcps, game.holeOverrides);
+    const live = matches.filter(m => m.thru > 0);
+    if (!live.length) return '';
+    let starred = false;
+    const rows = live.map(m => {
+      const cells = holeTimeline({ holes: m.holes, totalHoles: holeCount }).map(r => {
+        const hand = m.source[r.hole] === 'override';
+        if (hand) starred = true;
+        const mark = r.result === 'a' ? 'A' : r.result === 'b' ? 'B' : r.result === HALVED ? '–' : '';
+        return `<td style="${r.result === 'a' ? 'background:#e6efe9;' : r.result === 'b' ? 'background:#f5e5e3;' : ''}">${mark}${hand ? '*' : ''}</td>`;
+      }).join('');
+      const s = m.settled;
+      const result = s.finished
+        ? (s.winner === 'a' ? `<b>${name(m.pair.a)}</b> ${esc(m.status)}` : s.winner === 'b' ? `<b>${name(m.pair.b)}</b> ${esc(m.status)}` : 'HALVED')
+        : `${esc(m.status)} (${m.thru}/${holeCount})`;
+      return `
+        <tr>
+          <td style="text-align:left;white-space:nowrap;">${name(m.pair.a)}<br><span style="color:#777;">v</span> ${name(m.pair.b)}</td>
+          <td style="text-align:left;white-space:nowrap;">${result}</td>
+          ${cells}
+        </tr>`;
+    }).join('');
+    return `
+      <div style="margin-top:16px;">
+        <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${t('gsMatches')}${groups.length > 1 ? ` — ${t('group')} ${gi + 1}` : ''}</div>
+        <div class="sc-scroll"><table style="margin-top:5px;">
+          <thead>
+          <tr class="sc-head">
+            <th class="sc-lbl" style="text-align:left;">Match</th><th class="sc-lbl" style="text-align:left;">Result</th>
+            ${Array.from({ length: holeCount }, (_, i) => `<th style="width:22px;">${i + 1}</th>`).join('')}
+          </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        ${starred ? `<div style="font-size:0.66rem;color:#777;margin-top:3px;">* ${t('gsHandSet')}</div>` : ''}
+      </div>`;
+  }).filter(Boolean).join('');
+  return tables;
+}
+
+// Skins: each group's standings and the holes each player took.
+function skinsReportHTML(game, usersById) {
+  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const groups = groupsOf(game);
+  return groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
+    const r = skinsResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    const rows = [...players].sort((x, y) => r.totals[y.id] - r.totals[x.id]).map((p, i) => `
+      <tr${i === 0 && r.totals[p.id] > 0 ? ' style="font-weight:700;background:#f3ecd9;"' : ''}>
+        <td>${i + 1}</td>
+        <td style="text-align:left;white-space:nowrap;">${name(p)}</td>
+        <td>${typeof hcps[p.id] === 'number' ? hcps[p.id] : ''}</td>
+        <td style="font-weight:700;">${r.totals[p.id]}</td>
+        <td style="text-align:left;">${r.perHole.filter(h => h.winner === p.id).map(h => h.pot > 1 ? `${h.hole} (${h.pot})` : h.hole).join(', ')}</td>
+      </tr>`).join('');
+    return `
+      <div style="margin-top:16px;">
+        <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${t('fmtSkins')}${groups.length > 1 ? ` — ${t('group')} ${gi + 1}` : ''}
+          <span style="font-weight:400;color:#777;font-size:0.78rem;"> · ${r.net ? `${t('gsNet')} · HCP ${r.base}` : t('gsGrossPlay')}</span></div>
+        <table style="margin-top:5px;min-width:260px;">
+          <thead>
+          <tr class="sc-head">
+            <th style="width:24px;">#</th><th class="sc-lbl" style="text-align:left;">${t('tnPlayer')}</th>
+            <th style="width:44px;">HCP</th><th style="width:52px;">Skins</th><th class="sc-lbl" style="text-align:left;">${t('tnHoles')}</th>
+          </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${r.carry ? `<div style="font-size:0.72rem;color:#777;margin-top:3px;">${t('gsSkinsCarry')} ${r.carry} · ${t('gsSkinsUnclaimed')}</div>` : ''}
+      </div>`;
+  }).filter(Boolean).join('');
+}
+
 function reportsHTML(game, players, usersById) {
+  const fmt = gameFormat(game);
+  if (fmt !== 'stroke') {
+    const body = fmt === 'match' ? matchReportHTML(game, usersById) : skinsReportHTML(game, usersById);
+    if (!body) return '';
+    return `
+      <div class="sc-page-break" style="margin-top:20px;border-top:2px solid #999;padding-top:8px;">
+        <div style="font-weight:800;font-size:1rem;">${t('scReports')}</div>
+        ${body}
+      </div>`;
+  }
   const holeCount = gameHoleCount(game);
   const entry = (p, from, to, hcpPart) => {
     const { gross, thru } = segGross(game, p.id, from, to);
@@ -200,6 +294,7 @@ function headerHTML(game, url) {
     c.slope ? `${t('gsSlope')} ${c.slope}` : null,
     totalPar ? `${t('gsPar')} ${totalPar}` : null,
     isCompMode(game) ? t('gsModeComp') : null,
+    gameFormat(game) !== 'stroke' ? t(FORMAT_LABEL_KEY[gameFormat(game)]) : null,
   ].filter(Boolean).join(' · ');
   return `
     <div style="display:flex;gap:14px;align-items:flex-start;">

@@ -12,6 +12,7 @@ import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
+import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
@@ -2604,6 +2605,7 @@ function renderGamesCards(games, isPast = false) {
             </div>
             ${g.creatorName ? `<div class="gc-meta">${icon('profile', { size: 13 })}<span>${esc(g.creatorName)}</span></div>` : ''}
             ${gameCommunities.length > 0 ? `<div class="gc-audience"><span class="pill-soft" title="${esc(communityAudienceLabel(gameCommunities))}">${esc(communityAudienceLabel(gameCommunities))}</span></div>` : ''}
+            ${gameFormat(g) !== 'stroke' ? `<div class="gc-audience"><span class="pill-soft">${t(FORMAT_LABEL_KEY[gameFormat(g)])}</span></div>` : ''}
           </div>
           <div class="gc-top-right">
             ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
@@ -2658,6 +2660,7 @@ async function renderCreateGame() {
   let selectedInviteIds = [];
   let selectedHoles = 'full18';
   let selectedScoreMode = 'normal';
+  let selectedFormat = 'stroke';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -2717,6 +2720,16 @@ async function renderCreateGame() {
           </div>
 
           <div class="create-section">
+            <div class="cs-label">${t('gameFormat')}</div>
+            <div class="chip-row" id="format-chips">
+              <button type="button" class="seg-chip active" data-format="stroke">${t('fmtStroke')}</button>
+              <button type="button" class="seg-chip" data-format="match">${t('fmtMatch')}</button>
+              <button type="button" class="seg-chip" data-format="skins">${t('fmtSkins')}</button>
+            </div>
+            <p class="auto-group-hint" id="format-hint" style="display:none;">${t('gsFormatHint')}</p>
+          </div>
+
+          <div class="create-section" id="mode-section">
             <div class="cs-label">${t('gsMode')}</div>
             <div class="chip-row" id="mode-chips">
               <button type="button" class="seg-chip active" data-mode="normal">${t('gsModeNormal')}</button>
@@ -2991,6 +3004,24 @@ async function renderCreateGame() {
     });
   });
 
+  // Format: stroke play, or a match play family format read off the same
+  // strokes (see src/game-formats.js). Competition 9/9 is a stroke play
+  // idea, so the mode row leaves with it.
+  document.querySelectorAll('#format-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#format-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedFormat = chip.dataset.format;
+      const stroke = selectedFormat === 'stroke';
+      document.getElementById('format-hint').style.display = stroke ? 'none' : '';
+      document.getElementById('mode-section').style.display = stroke ? '' : 'none';
+      if (!stroke) {
+        selectedScoreMode = 'normal';
+        document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.toggle('active', c.dataset.mode === 'normal'));
+      }
+    });
+  });
+
   // Holes chips set both the game's holes field and the tee-time API holes.
   document.querySelectorAll('#holes-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -3173,6 +3204,7 @@ async function renderCreateGame() {
       groupSize: groupSize,
       holes: selectedHoles,
       scoreMode: selectedScoreMode,
+      format: selectedFormat,
       ...(() => {
         // Course rating/slope/par power the handicap math; a game without them
         // still scores fine, it just produces no differential.
@@ -3371,7 +3403,7 @@ function renderGameView(game) {
             ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''}</h2>
+        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''} ${gameFormat(game) !== 'stroke' ? '<span class="pill-soft">' + t(FORMAT_LABEL_KEY[gameFormat(game)]) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('time', { size: 15 })} ${game.time}</span>
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('profile', { size: 15 })} ${t('createdBy')}: ${esc(game.creatorName || '-')}</span>
@@ -3604,7 +3636,83 @@ function renderGroupCard(players, groupIndex, game, isPast) {
 // where the course card is known; net (from the per-game hand-entered
 // handicap, or the profile index) shows per player, and once EVERY row has a
 // net the board ranks by net — that is the game being "played on handicap".
+// Match play: one line per pair in each group — who leads and by how much,
+// or the result — the same reading the group scorer shows.
+function gameMatchBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  const shortName = (p) => allUsersMap[p.id]?.firstName || p.name || '?';
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const { matches } = groupMatches(game, gi, players, hcps, game.holeOverrides);
+    const live = matches.filter(m => m.thru > 0);
+    if (!live.length) return '';
+    const rows = live.map(m => {
+      const a = esc(shortName(m.pair.a));
+      const b = esc(shortName(m.pair.b));
+      const s = m.settled;
+      const lead = s.leader === 'a' ? a : s.leader === 'b' ? b : '';
+      const status = s.finished ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved')) : (lead ? `${lead} ${esc(m.status)}` : 'AS');
+      return `
+        <div class="player-row filled" style="gap:8px;">
+          <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${a}</span>
+          <span style="text-align:center;flex:0 0 auto;">
+            <b style="font-size:0.95rem;">${status}</b>
+            <div style="font-size:0.64rem;color:var(--text-secondary);">${s.finished ? t('mpFinal') : `${t('mpThru')} ${m.thru}`}</div>
+          </span>
+          <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${b}</span>
+        </div>`;
+    }).join('');
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}`;
+  }).join('');
+  if (!blocks) return '';
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsMatches')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t('fmtMatch')}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
+// Skins: each group's standings by skins won, the carry-over noted.
+function gameSkinsBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const r = skinsResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    const rows = [...players].sort((x, y) => r.totals[y.id] - r.totals[x.id]).map((p, i) => `
+      <div class="player-row filled">
+        <span class="player-order">${i + 1}</span>
+        <span class="player-name">${esc(displayUsername(allUsersMap[p.id] || p))}
+          ${typeof hcps[p.id] === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${hcps[p.id]}</span>` : ''}
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < gameHoleCount(game) ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+          <b style="font-size:1.05rem;">${r.totals[p.id]}</b>
+        </div>
+      </div>`).join('');
+    const carry = r.carry ? `<div style="font-size:0.72rem;color:var(--text-secondary);padding:4px 0 2px;">${t('gsSkinsCarry')} ${r.carry}${r.thru >= gameHoleCount(game) ? ` · ${t('gsSkinsUnclaimed')}` : ''}</div>` : '';
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}${carry}`;
+  }).join('');
+  if (!blocks) return '';
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t('fmtSkins')}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
 function gameScoreboardHTML(game) {
+  // The match play family reads the same strokes differently — see
+  // src/game-formats.js; stroke play keeps the ranked table below.
+  const fmt = gameFormat(game);
+  if (fmt === 'match') return gameMatchBoardHTML(game);
+  if (fmt === 'skins') return gameSkinsBoardHTML(game);
   const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
   const rows = players
     .map(p => {
@@ -4962,6 +5070,14 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('gameFormat')}</label>
+            <div class="chip-row" id="edit-format-chips" style="margin-top:6px;">
+              ${['stroke', 'match', 'skins'].map(f => `
+                <button type="button" class="seg-chip ${gameFormat(game) === f ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsFormatEditHint')}</p>
+          </div>
+          <div class="input-group" id="edit-mode-group" ${gameFormat(game) === 'stroke' ? '' : 'style="display:none;"'}>
             <label>${t('gsMode')}</label>
             <div class="chip-row" id="edit-mode-chips" style="margin-top:6px;">
               <button type="button" class="seg-chip ${(game.scoreMode || 'normal') === 'normal' ? 'active' : ''}" data-mode="normal">${t('gsModeNormal')}</button>
@@ -5042,6 +5158,13 @@ async function renderEditGame(gameId) {
       chip.classList.add('active');
     });
   });
+  document.querySelectorAll('#edit-format-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#edit-format-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      document.getElementById('edit-mode-group').style.display = chip.dataset.format === 'stroke' ? '' : 'none';
+    });
+  });
 
   const editSizeInput = document.getElementById('edit-group-size');
   document.getElementById('edit-size-minus').addEventListener('click', () => {
@@ -5105,7 +5228,13 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
-    game.scoreMode = document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal';
+    // Safe to change after scores exist: the format only decides how the
+    // stored strokes are read. An untouched old record keeps no format key.
+    const chosenFormat = document.querySelector('#edit-format-chips .seg-chip.active')?.dataset.format || 'stroke';
+    if (chosenFormat !== gameFormat(game)) game.format = chosenFormat;
+    game.scoreMode = chosenFormat === 'stroke'
+      ? (document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal')
+      : 'normal';
     {
       const rating = parseFloat(document.getElementById('edit-course-rating').value);
       const slope = parseInt(document.getElementById('edit-course-slope').value, 10);
