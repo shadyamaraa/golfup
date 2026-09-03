@@ -27,7 +27,7 @@ const blank = () => ({
   step: 1,
   name: '', format: '',
   startDate: '', endDate: '', venue: '', city: '',
-  course: '', tee: '', rounds: '1', par: '72', cutAfterRound: '', cutSize: '',
+  course: '', tee: '', rounds: '1', par: '72', spScoring: 'strokes', cutAfterRound: '', cutSize: '',
   teamAName: '', teamAShort: '', teamBName: '', teamBShort: ''
 });
 
@@ -142,11 +142,17 @@ function stepHTML() {
           ])) : '';
         })()}
         ${field(t('tnFPar'), input('par', 'number'))}
+        ${field(t('spScoring'), select('spScoring', [
+          ['strokes', t('spScoringStrokes')],
+          ['stableford', t('spScoringStableford')]
+        ]))}
         ${field(t('tnFRounds'), select('rounds', [1, 2, 3, 4].map(n => [String(n), String(n)])))}
         ${field(t('tnFCutAfter'), select('cutAfterRound', cutOptions))}
         ${draft.cutAfterRound ? field(t('tnFCutSize'), input('cutSize', 'number')) : ''}
       </div>
-      <p style="margin:8px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spWizardHint')}</p>`;
+      <p style="margin:8px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spWizardHint')}</p>
+      ${draft.spScoring === 'stableford'
+        ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spStablefordHint')}</p>` : ''}`;
   }
 
   // Step 5 — summary.
@@ -212,6 +218,7 @@ async function create(ctx) {
       slope: teeInfo?.slope ?? null,
       rounds: num(draft.rounds) || 1, currentRound: 1,
       par: num(draft.par) || 72,
+      spScoring: draft.spScoring === 'stableford' ? 'stableford' : 'strokes',
       cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize)
     });
   }

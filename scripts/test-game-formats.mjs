@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   FORMATS, gameFormat, isStrokeFormat, pairKey, pairingOptions, groupOrder, groupPairs,
   nextPairing, pairAllowance, groupAllowance, netStrokes, allowanceTotal,
-  matchHoles, matchResult, groupMatches, skinsResult
+  matchHoles, matchResult, groupMatches, skinsResult, stablefordResult
 } from '../src/game-formats.js';
 import { HALVED } from '../src/matchplay.js';
 import { strokesReceived } from '../src/handicap.js';
@@ -38,7 +38,8 @@ test('gameFormat: missing or unknown reads as stroke play', () => {
   assert.equal(gameFormat({ format: 'skins' }), 'skins');
   assert.ok(isStrokeFormat({}));
   assert.ok(!isStrokeFormat({ format: 'skins' }));
-  assert.deepEqual(FORMATS, ['stroke', 'match', 'skins']);
+  assert.deepEqual(FORMATS, ['stroke', 'match', 'skins', 'stableford']);
+  assert.equal(gameFormat({ format: 'stableford' }), 'stableford');
 });
 
 // ---- pairing ----
@@ -312,4 +313,95 @@ test('skins: nine-hole cards stop at nine; fewer than two players is nothing', (
   assert.equal(r.totals.p1, 9);
   assert.equal(skinsResult(g, [P1], {}), null);
   assert.equal(skinsResult(g, [], {}), null);
+});
+
+// ---- stableford ----
+
+// Sky Resort's card: four par 3s, ten par 4s, four par 5s.
+const SKY_PARS = { 1: 5, 2: 4, 3: 4, 4: 3, 5: 5, 6: 4, 7: 4, 8: 3, 9: 4, 10: 4, 11: 4, 12: 5, 13: 3, 14: 4, 15: 4, 16: 4, 17: 3, 18: 5 };
+const levelPar = () => ({ ...SKY_PARS });
+
+test('stableford: a level-par round is 36 points gross', () => {
+  const g = withScores(G({ format: 'stableford' }), { p1: levelPar(), p2: levelPar() });
+  const r = stablefordResult(g, [P1, P2], {});
+  assert.equal(r.parsKnown, true);
+  assert.equal(r.net, false);
+  assert.equal(r.perPlayer.p1.points, 36);
+  assert.equal(r.perPlayer.p1.thru, 18);
+  assert.equal(r.perPlayer.p1.given, 0);
+  // All 4s: birdie on every par 3, par on every par 4, bogey on every par 5.
+  const flat = withScores(G(), { p1: same(18, 4) });
+  const r2 = stablefordResult(flat, [P1], {});
+  assert.equal(r2.perPlayer.p1.points, 4 * 3 + 10 * 2 + 4 * 1);
+});
+
+test('stableford: each player takes their OWN full handicap by stroke index', () => {
+  const g = withScores(G(), { p1: levelPar(), p2: levelPar(), p3: levelPar() });
+  const r = stablefordResult(g, [P1, P2, P3], { p1: 10, p2: null, p3: 4 });
+  // Unlike match play and skins, one missing handicap only makes THAT player
+  // gross — everyone else keeps their allowance.
+  assert.equal(r.perPlayer.p1.points, 46);
+  assert.equal(r.perPlayer.p2.points, 36);
+  assert.equal(r.perPlayer.p3.points, 40);
+  assert.equal(r.perPlayer.p1.given, 10);
+  assert.equal(r.perPlayer.p2.given, 0);
+  assert.equal(r.net, true);
+  assert.deepEqual(r.order, ['p1', 'p3', 'p2']);
+});
+
+test('stableford: a blow-up hole costs the two points and no more', () => {
+  const card = levelPar();
+  card[1] = 15;                       // par 5, so this is a +10
+  const g = withScores(G(), { p1: card });
+  assert.equal(stablefordResult(g, [P1], {}).perPlayer.p1.points, 34);
+  assert.equal(stablefordResult(g, [P1], {}).perPlayer.p1.perHole[0].points, 0);
+});
+
+test('stableford: a hole nobody finished scores nothing and stops nothing', () => {
+  // Skins stops its walk at the first missing hole; Stableford does not — a
+  // player who picks up simply scores no points there.
+  const card = levelPar();
+  delete card[3];
+  const g = withScores(G(), { p1: card });
+  const r = stablefordResult(g, [P1], {});
+  assert.equal(r.perPlayer.p1.thru, 17);
+  assert.equal(r.perPlayer.p1.points, 34);
+  assert.equal(r.perPlayer.p1.perHole[2].points, null);
+  assert.equal(r.perPlayer.p1.perHole[3].points, 2);   // hole 4 still counts
+});
+
+test('stableford: thru is per player, not per group', () => {
+  const g = withScores(G(), { p1: levelPar(), p2: { 1: 5, 2: 4 } });
+  const r = stablefordResult(g, [P1, P2], {});
+  assert.equal(r.perPlayer.p1.thru, 18);
+  assert.equal(r.perPlayer.p2.thru, 2);
+  assert.equal(r.thru, 18);
+});
+
+test('stableford: a nine allocates against the holes it actually plays', () => {
+  // Value9 plays physical holes 10-18: SI 2 is hole 12 (card 3), SI 4 is 15 (card 6).
+  const back = withScores(G({ holes: 'back9' }), { p1: same(9, 4) });
+  const r = stablefordResult(back, [P1], { p1: 5 });
+  assert.equal(r.perPlayer.p1.given, 2);
+  assert.deepEqual(r.perPlayer.p1.perHole.filter(h => h.given).map(h => h.hole), [3, 6]);
+  assert.equal(r.perPlayer.p1.perHole.length, 9);
+  // Front nine: SI 5, 3, 1 are card holes 1, 2, 9.
+  const front = withScores(G({ holes: 'front9' }), { p1: same(9, 4) });
+  const f = stablefordResult(front, [P1], { p1: 5 });
+  assert.deepEqual(f.perPlayer.p1.perHole.filter(h => h.given).map(h => h.hole), [1, 2, 9]);
+});
+
+test('stableford: a course with no card cannot be scored in points', () => {
+  const g = withScores(G({ location: 'Somewhere Else' }), { p1: same(18, 4) });
+  const r = stablefordResult(g, [P1], { p1: 10 });
+  assert.equal(r.parsKnown, false);
+  assert.equal(r.perPlayer.p1.points, 0);
+  assert.equal(r.perPlayer.p1.perHole[0].points, null);
+});
+
+test('stableford: order is points first, then who has played more', () => {
+  const g = withScores(G(), { p1: { 1: 5, 2: 4 }, p2: { 1: 5 }, p3: levelPar() });
+  const r = stablefordResult(g, [P1, P2, P3], {});
+  assert.deepEqual(r.order, ['p3', 'p1', 'p2']);   // 36 · 4 (thru 2) · 2 (thru 1)
+  assert.equal(stablefordResult(g, [], {}), null);
 });

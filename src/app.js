@@ -7,12 +7,12 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
-import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult } from './game-formats.js';
+import { gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
@@ -1110,17 +1110,22 @@ function tnInitial(name) {
 
 // Scores are stored relative to par. Rendering follows golf reading rather than
 // app semantics: under par is red, level is muted, over par is ink.
-function tnScoreText(v) {
+// `points` switches the reading from to-par to Stableford points: a plain
+// integer where bigger is better, so none of the E / +n / −n vocabulary — and
+// no red, which on this board means "under par".
+function tnScoreText(v, points = false) {
   if (v === undefined || v === null || v === '') return '–';
   const n = Number(v);
   if (isNaN(n)) return String(v);
+  if (points) return String(n);
   if (n === 0) return 'E';
   return n < 0 ? `−${Math.abs(n)}` : `+${n}`;
 }
 
-function tnScoreClass(v) {
+function tnScoreClass(v, points = false) {
   const n = Number(v);
   if (v === undefined || v === null || v === '' || isNaN(n)) return 'tn-sc-none';
+  if (points) return 'tn-sc-over';   // plain ink: points carry no par colour
   if (n < 0) return 'tn-sc-under';
   if (n > 0) return 'tn-sc-over';
   return 'tn-sc-even';
@@ -1166,10 +1171,12 @@ function tnRanked(tn) {
   // In-app scoring recomputes its entries from tn.sp on every call; a
   // legacy record ranks its stored snapshot.
   const b = tnForBoard(tn);
+  const higherWins = tnHigherWins(tn);
   return tnWithDeltas(tsheet.rankEntries(b?.entries, {
     cutAfterRound: b?.cutAfterRound,
-    cutSize: b?.cutSize
-  }));
+    cutSize: b?.cutSize,
+    higherWins
+  }), higherWins);
 }
 
 // The round actually being played: the highest one anybody has posted a score
@@ -1184,7 +1191,7 @@ function tnActiveRound(tn) {
 // ranking the field on the rounds finished BEFORE the current one gives the
 // "before" position with no stored history — the arrows appear on their own as
 // soon as round two starts landing, and reset when a new round opens.
-function tnWithDeltas(ranked) {
+function tnWithDeltas(ranked, higherWins = false) {
   let current = 0;
   ranked.forEach(e => (e.rounds || []).forEach((v, i) => {
     if (v !== null && v !== undefined && v !== '') current = Math.max(current, i + 1);
@@ -1199,7 +1206,7 @@ function tnWithDeltas(ranked) {
   };
   const prior = ranked.map(e => ({ e, v: prevTotal(e) }))
     .filter(x => x.v !== null && x.e.rank !== Infinity)
-    .sort((a, b) => a.v - b.v);
+    .sort((a, b) => (higherWins ? b.v - a.v : a.v - b.v));
 
   const prevRank = new Map();
   let pos = 0;
@@ -1240,7 +1247,9 @@ let tnSpMetric = 'gross';
 // per-hole truth on every paint; anything else shows its stored snapshot.
 function tnForBoard(tn) {
   if (!spActive(tn)) return tn;
-  const metric = tnSpMetric === 'net' && spHasHcp(tn) ? 'net' : 'gross';
+  // Stableford is the tournament's own setting and is already played off
+  // handicap, so the viewer's gross/net preference does not reach it.
+  const metric = spMetricFor(tn, tnSpMetric === 'net' && spHasHcp(tn) ? 'net' : 'gross');
   return { ...tn, entries: spEntries(tn, metric) };
 }
 
@@ -1363,6 +1372,7 @@ async function renderTournamentStrip(list) {
 
 function tournamentStripHTML(tn) {
   const state = tnStatus(tn);
+  const pts = tnScoring(tn) === 'stableford';
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
@@ -1376,8 +1386,8 @@ function tournamentStripHTML(tn) {
       <span class="tn-pos">${esc(e.posLabel)}</span>
       <span class="tn-av">${avatarInner(mine ? currentUser?.avatar : e.avatar, tnInitial(e.name))}</span>
       <span class="tn-pname">${esc(e.name || '')}</span>
-      <span class="tn-cap">${t('tnTotal')}</span>
-      <span class="tn-sc ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+      <span class="tn-cap">${pts ? t('spPoints') : t('tnTotal')}</span>
+      <span class="tn-sc ${tnScoreClass(e.total, pts)}">${tnScoreText(e.total, pts)}</span>
       ${state === 'live' ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
     </span>`;
   };
@@ -1694,6 +1704,9 @@ function tnInfoHTML(tn) {
     tnKind(tn) === 'stroke'
       ? [t('tnHoles'), tn.rounds ? tn.rounds * SP_HOLES : null]
       : [t('tnRounds'), tn.rounds],
+    tnKind(tn) === 'stroke'
+      ? [t('spScoring'), tnScoring(tn) === 'stableford' ? t('spScoringStableford') : t('spScoringStrokes')]
+      : ['', ''],
     [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
@@ -1892,8 +1905,10 @@ function renderTnBoard() {
   }
 
   // The leaderboard (Тэргүүлэгчид): gross standings, with Net as a toggle
-  // on the list's own header when handicaps exist.
+  // on the list's own header when handicaps exist — or Stableford points,
+  // which the organiser set on the tournament and which rank the other way up.
   const ranked = tnRanked(tn);
+  const spPts = tnScoring(tn) === 'stableford';
   if (!ranked.length) {
     host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
     return;
@@ -1902,6 +1917,10 @@ function renderTnBoard() {
 
   host.innerHTML = `
     ${ctaHTML}
+    ${spPts && !tnPars(tn) ? `
+      <div style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:0.78rem;">
+        ${t('spNoParsStableford')}
+      </div>` : ''}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
@@ -1914,13 +1933,17 @@ function renderTnBoard() {
           <span class="tn-me-name">${esc(me.posLabel)} · ${esc(me.name || '')}</span>
         </span>
         <span class="tn-me-score">
-          <span class="tn-sc ${tnScoreClass(me.total)}">${tnScoreText(me.total)}</span>
+          <span class="tn-sc ${tnScoreClass(me.total, spPts)}">${tnScoreText(me.total, spPts)}</span>
           <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
         </span>
       </div>` : ''}
     <div class="section-head tn-section">
       <h2>${t('tnAllPlayers')}</h2>
-      ${spActive(tn) && spHasHcp(tn) ? `
+      ${spPts
+        // Stableford is played off handicap already, so there is no gross to
+        // toggle to — the board says what it is instead.
+        ? `<span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('spScoringStableford')} · ${t('spNet')}</span>`
+        : spActive(tn) && spHasHcp(tn) ? `
         <button data-sp-metric class="btn ${tnSpMetric === 'net' ? 'btn-primary' : 'btn-outline'} btn-sm"
           style="font-size:0.72rem;margin-left:auto;">${t('spNet')}</button>` : ''}
       <span class="pill-soft" id="tn-count"></span>
@@ -1947,6 +1970,7 @@ function renderTnList() {
   const tn = tnPageData;
   if (!host || !tn) return;
 
+  const pts = tnScoring(tn) === 'stableford';
   const ranked = tnRanked(tn);
   const q = tnPageQuery.trim().toLowerCase();
   const shown = q
@@ -2005,7 +2029,7 @@ function renderTnList() {
         // empty chip in gold only draws the eye to nothing.
         return `<span class="tn-rd${n === activeRound && !empty ? ' tn-rd-live' : ''}">
           <i>${t('tnRoundShort')}${n}</i>
-          <b class="${tnScoreClass(v)}">${tnScoreText(v)}</b>
+          <b class="${tnScoreClass(v, pts)}">${tnScoreText(v, pts)}</b>
         </span>`;
       }).join('')}
     </span>`;
@@ -2029,9 +2053,9 @@ function renderTnList() {
           // noise, but the cell has to stay so TOT and THRU keep their columns.
           ? (hasAnyRound(e) ? roundsHTML(e) : '<span class="tn-rds"></span>')
           : ''}
-        <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+        <span class="tn-c-tot ${tnScoreClass(e.total, pts)}">${tnScoreText(e.total, pts)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}`;
+        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null, pts)}</span>`}`;
     // An anchor rather than a click handler: the list repaints on every live
     // score, and an href survives that without rebinding.
     return open
@@ -2045,7 +2069,7 @@ function renderTnList() {
         <span class="tn-c-pos">${t('tnPos')}</span>
         <span class="tn-c-name">${t('tnPlayer')}</span>
         ${multi ? '<span class="tn-rds-head"></span>' : ''}
-        <span class="tn-c-tot">${t('tnTotal')}</span>
+        <span class="tn-c-tot">${pts ? t('spPoints') : t('tnTotal')}</span>
         <span class="tn-c-thru">${t('tnThru')}</span>
         ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
       </div>
@@ -2725,6 +2749,7 @@ async function renderCreateGame() {
               <button type="button" class="seg-chip active" data-format="stroke">${t('fmtStroke')}</button>
               <button type="button" class="seg-chip" data-format="match">${t('fmtMatch')}</button>
               <button type="button" class="seg-chip" data-format="skins">${t('fmtSkins')}</button>
+              <button type="button" class="seg-chip" data-format="stableford">${t('fmtStableford')}</button>
             </div>
             <p class="auto-group-hint" id="format-hint" style="display:none;">${t('gsFormatHint')}</p>
           </div>
@@ -3707,12 +3732,60 @@ function gameSkinsBoardHTML(game) {
     </div>`;
 }
 
+// Stableford: each group's players by points won, highest first.
+function gameStablefordBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  let noCard = false;
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const r = stablefordResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    if (!r.parsKnown) { noCard = true; return ''; }
+    const rows = r.order.map((pid, i) => {
+      const p = players.find(x => x.id === pid) || { id: pid };
+      const e = r.perPlayer[pid];
+      return `
+      <div class="player-row filled">
+        <span class="player-order">${i + 1}</span>
+        <span class="player-name">${esc(displayUsername(allUsersMap[pid] || p))}
+          ${typeof e.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${e.hcp}</span>` : ''}
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:0.72rem;color:var(--text-secondary);">${e.thru < gameHoleCount(game) ? `${t('mpThru')} ${e.thru}` : 'F'}</span>
+          <b style="font-size:1.05rem;">${e.points}</b>
+        </div>
+      </div>`;
+    }).join('');
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}`;
+  }).join('');
+  if (!blocks) {
+    // A venue with no course card cannot be scored in points at all — say so
+    // rather than leaving the page looking as if nobody has played.
+    return noCard ? `
+      <div class="group-card glass-card">
+        <div class="group-header">
+          <h3 class="group-title">${t('fmtStableford')}</h3>
+        </div>
+        <div class="player-list"><p style="font-size:0.8rem;color:var(--text-secondary);padding:4px 0;">${t('gsNoCourseCard')}</p></div>
+      </div>` : '';
+  }
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t('fmtStableford')}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
 function gameScoreboardHTML(game) {
   // The match play family reads the same strokes differently — see
   // src/game-formats.js; stroke play keeps the ranked table below.
   const fmt = gameFormat(game);
   if (fmt === 'match') return gameMatchBoardHTML(game);
   if (fmt === 'skins') return gameSkinsBoardHTML(game);
+  if (fmt === 'stableford') return gameStablefordBoardHTML(game);
   const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
   const rows = players
     .map(p => {
@@ -5072,7 +5145,7 @@ async function renderEditGame(gameId) {
           <div class="input-group">
             <label>${t('gameFormat')}</label>
             <div class="chip-row" id="edit-format-chips" style="margin-top:6px;">
-              ${['stroke', 'match', 'skins'].map(f => `
+              ${FORMATS.map(f => `
                 <button type="button" class="seg-chip ${gameFormat(game) === f ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
             </div>
             <p class="auto-group-hint" style="margin-top:6px;">${t('gsFormatEditHint')}</p>
@@ -7932,6 +8005,10 @@ function tnAdminFormHTML(p, tn = {}) {
           ${courseTees(tn.course || '').map(x => `<option value="${x.key}"${sel(x.key, tn.tee)}>${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('')}
         </select>
         <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
+        <select id="${p}-sp-scoring" title="${t('spScoring')}" style="${TN_INPUT}">
+          <option value="strokes"${sel('strokes', tn.spScoring || 'strokes')}>${t('spScoring')}: ${t('spScoringStrokes')}</option>
+          <option value="stableford"${sel('stableford', tn.spScoring || 'strokes')}>${t('spScoring')}: ${t('spScoringStableford')}</option>
+        </select>
         <select id="${p}-rounds" title="${t('tnFRounds')}" style="${TN_INPUT}">
           ${[1, 2, 3, 4].map(n => `<option value="${n}"${sel(n, rounds)}>${t('tnFRounds')}: ${n}</option>`).join('')}
         </select>
@@ -7978,6 +8055,9 @@ function tnAdminReadForm(p) {
     rounds: num('rounds'),
     currentRound: num('round-now'),
     par: num('par'),
+    // Only meaningful for stroke play; a match play form has no such select
+    // and falls back to the default, which changes nothing.
+    spScoring: val('sp-scoring') === 'stableford' ? 'stableford' : 'strokes',
     format: val('format'),
     status: val('status'),
     cutAfterRound: num('cut-after'),

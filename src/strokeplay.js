@@ -20,6 +20,8 @@
 // shape those functions and the leaderboard render already consume.
 
 import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
+import { holePoints, roundPoints } from './stableford.js';
+import { strokesReceived } from './handicap.js';
 
 export const SP_HOLES = 18;
 
@@ -36,6 +38,20 @@ export const courseByKey = (key) => resolveCourse(key);
 // when its typed venue ("Mt. Bogd") is a registry alias.
 export const tnPars = (tn) => coursePars(tn?.course) || coursePars(tn?.venue);
 export const tnSIs = (tn) => courseSIs(tn?.course) || courseSIs(tn?.venue);
+
+// How the organiser chose to score this tournament. Stableford ranks POINTS,
+// highest first — the whole board, the cut and the movement arrows follow
+// this, so every reader goes through here rather than testing the field.
+// A record without the field is stroke play, and is never backfilled.
+export const tnScoring = (tn) => (tn?.spScoring === 'stableford' ? 'stableford' : 'strokes');
+
+// Whether a bigger total is a better one.
+export const tnHigherWins = (tn) => tnScoring(tn) === 'stableford';
+
+// Which spEntries metric a tournament's board should ask for. Stableford is
+// already played off handicap, so the gross/net toggle does not apply to it.
+export const spMetricFor = (tn, uiMetric) =>
+  (tnScoring(tn) === 'stableford' ? 'stableford' : (uiMetric === 'net' ? 'net' : 'gross'));
 
 // One round's tally from its hole map: total strokes entered, how many holes
 // they cover, and — when the course's per-hole pars are known — the running
@@ -67,8 +83,10 @@ const completeRounds = (perRound) => perRound.filter(r => r.holesIn >= SP_HOLES)
 /**
  * The leaderboard's entries, computed from sp. `metric` picks what `total`
  * and `rounds[]` carry:
- *   'gross' — to-par as posted;
- *   'net'   — to-par less the player's HCP per completed round.
+ *   'gross'      — to-par as posted;
+ *   'net'        — to-par less the player's HCP per completed round;
+ *   'stableford' — POINTS, where higher is better (see src/stableford.js).
+ *                  Rank these with rankEntries({ higherWins: true }).
  * Every entry also carries gross/net stroke totals and hcp for display, plus
  * pid/userId so a row can be tied to the signed-in member without name
  * matching. Entries with nothing to post have total null (rankEntries sorts
@@ -80,6 +98,7 @@ export function spEntries(tn, metric = 'gross') {
   if (!sp?.players) return [];
   const par = Number(tn?.par) || 72;
   const pars = tnPars(tn);
+  const sis = tnSIs(tn);
   const roundCount = Math.max(1, Number(tn?.rounds) || 1);
   const hcpOf = (p) => {
     const n = Number(p?.hcp);
@@ -91,6 +110,13 @@ export function spEntries(tn, metric = 'gross') {
       roundGross(sp.scores?.[pid]?.[i + 1], pars));
     const hcp = hcpOf(p);
     const net = metric === 'net' && hcp !== null;
+    // Stableford counts points per hole off the full handicap by stroke
+    // index, so a round in progress already has an honest total — and a
+    // course with no card cannot be scored in points at all.
+    const points = metric === 'stableford'
+      ? Array.from({ length: roundCount }, (_, i) =>
+        roundPoints(sp.scores?.[pid]?.[i + 1], pars, sis, hcp))
+      : null;
 
     // With the registry's per-hole pars an in-progress round posts its
     // running to-par (net keeps the club's flat reading: the full HCP comes
@@ -100,7 +126,9 @@ export function spEntries(tn, metric = 'gross') {
       if (r.toPar !== null && r.holesIn > 0) return r.toPar - (net ? hcp : 0);
       return r.holesIn >= SP_HOLES ? r.gross - par - (net ? hcp : 0) : null;
     };
-    const rounds = perRound.map(roundToPar);
+    const rounds = points
+      ? points.map(r => (r.holesIn > 0 && r.parsKnown ? r.points : null))
+      : perRound.map(roundToPar);
     const done = completeRounds(perRound);
     const grossTotal = done.length ? done.reduce((a, r) => a + r.gross, 0) : null;
     const started = rounds.filter(v => v !== null);
@@ -214,14 +242,17 @@ export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = M
   }
 
   if (method === 'standings') {
-    const totals = new Map(spEntries(tn, 'gross').map(e => [e.pid, e.total]));
+    // Whatever the tournament actually ranks by: a Stableford draw has to
+    // read points, or "leaders last" would send the field out backwards.
+    const higher = tnHigherWins(tn);
+    const totals = new Map(spEntries(tn, higher ? 'stableford' : 'gross').map(e => [e.pid, e.total]));
     // Worst first: the leaders land in the LAST group, teeing off last.
-    pids.sort((a, b) => {
-      const ta = totals.get(a); const tb = totals.get(b);
-      const va = ta === null || ta === undefined ? -Infinity : ta;
-      const vb = tb === null || tb === undefined ? -Infinity : tb;
-      return vb - va;
-    });
+    const key = (pid) => {
+      const v = totals.get(pid);
+      if (v === null || v === undefined) return -Infinity;
+      return higher ? -v : v;
+    };
+    pids.sort((a, b) => key(b) - key(a));
     return chunkGroups(pids, size);
   }
 
@@ -324,7 +355,12 @@ export function spPlayerCard(tn, pid, round) {
       cls: holeDiffClass(strokes, par),
       // Only a hole that was actually played against a known par carries a
       // running figure; the rest print blank.
-      running: diff !== null ? run : null
+      running: diff !== null ? run : null,
+      // The Stableford reading of the same hole — computed for every card
+      // because it is cheap and pure; the view decides whether to show it.
+      given: Number.isFinite(hcpN) ? strokesReceived(hcpN, Number(sis?.[hole]) || null) : 0,
+      points: holePoints(strokes, par,
+        Number.isFinite(hcpN) ? strokesReceived(hcpN, Number(sis?.[hole]) || null) : 0)
     };
   });
 
