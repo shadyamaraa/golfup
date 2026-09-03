@@ -10,6 +10,7 @@ import { renderScorerPage } from './matchplay-score.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
+import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
@@ -17,6 +18,7 @@ import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
+import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
@@ -48,11 +50,20 @@ let currentUserFollowers = new Set();
 let followsLoadedForUser = null;
 let isRouting = false;
 let activeUnsubs = [];
+// Every screen teardown bumps this. A live listener captures the epoch it was
+// mounted on, so should one ever outlive its screen it can no longer repaint
+// itself over whatever page the member is actually looking at.
+let viewEpoch = 0;
+const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
 let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
 let bellSubFor = null;
+// The bell badge's listener outlives routes on purpose, so it needs its own
+// handle: without one a sign-out leaves the previous account's unread count
+// writing into the shared badge.
+let bellUnsub = null;
 let openCircles = new Set();
 let adminStatsMonth = 'all'; // admin stats tab month filter (YYYY-MM or 'all')
 let lastNotifsCache = [];    // latest notifications, for the header bell shortcut
@@ -328,20 +339,21 @@ function clearActiveListeners() {
     try { unsub(); } catch (e) { }
   });
   activeUnsubs = [];
+  viewEpoch++;
 }
 
 // ---- Routing ----
 export async function router() {
   if (isRouting) return;
   isRouting = true;
+  const hash = location.hash || '#/';
 
   try {
-    const hash = location.hash || '#/';
 
     // Kiosk mode: lock to kitchen route and hide header.
     if (isKiosk) {
       document.getElementById('app-header')?.style.setProperty('display', 'none', 'important');
-      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; isRouting = false; return; }
+      if (hash !== '#/kitchen') { location.hash = '#/kitchen'; return; }
     }
 
     currentUser = store.getUser();
@@ -362,13 +374,22 @@ export async function router() {
     updateBottomNav(hash);
     updateGlobalSponsorVisibility(hash);
     updateTournamentStripVisibility(hash);
-    // Header bell unread badge — subscribe once per user (persists across routes).
+    // Header bell unread badge — subscribed once per user and kept across
+    // routes, so it is torn down by account rather than by navigation.
     if (currentUser && bellSubFor !== currentUser.id) {
+      try { bellUnsub?.(); } catch (e) { }
+      bellUnsub = null;
       bellSubFor = currentUser.id;
       store.loadNotifications(currentUser.id).then(ns => updateBellBadge(activeNotifCount(ns))).catch(() => {});
       if (store.isUsingFirebase()) {
-        store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns)));
+        bellUnsub = store.onNotificationsChanged(currentUser.id, ns => updateBellBadge(activeNotifCount(ns))) || null;
       }
+    } else if (!currentUser && bellSubFor) {
+      // Signed out: drop the listener with the account it belongs to.
+      try { bellUnsub?.(); } catch (e) { }
+      bellUnsub = null;
+      bellSubFor = null;
+      updateBellBadge(0);
     }
     clearActiveListeners();
 
@@ -378,7 +399,7 @@ export async function router() {
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
     const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
-      || hash.startsWith('#/tnschedule/');
+      || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -396,7 +417,7 @@ export async function router() {
     else if (hash.startsWith('#/score/')) {
       const [tnId, matchId] = hash.split('#/score/')[1].split('/');
       await renderScorerPage(tnId, matchId, {
-        main, user: currentUser, showToast,
+        main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn),
         // The sample M Cup can be scored on preview builds: taps stay local,
         // nothing is written, and the demo resets on reload.
@@ -408,7 +429,7 @@ export async function router() {
       // Local mode has no live listener; hand the screen the loaded record.
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpScorer(main(), tnId, pid, {
-        user: currentUser, showToast, tn: tnOnce,
+        user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -417,7 +438,17 @@ export async function router() {
       const [tnId, round, gid] = hash.split('#/spgroup/')[1].split('/');
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
-        user: currentUser, showToast, tn: tnOnce,
+        user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
+        backHash: `#/tournament/${tnId}`
+      });
+      activeUnsubs.push(off);
+    }
+    else if (hash.startsWith('#/spcard/')) {
+      // A player's card, read only — opened by tapping their leaderboard row.
+      const [tnId, pid] = hash.split('#/spcard/')[1].split('/');
+      const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
+      const off = renderSpPlayerCard(main(), tnId, pid, {
+        user: currentUser, tn: tnOnce, metric: tnSpMetric, alive: viewAlive(),
         backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
@@ -425,7 +456,7 @@ export async function router() {
     else if (hash.startsWith('#/gscore/')) {
       const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
       await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
-        main, user: currentUser, showToast,
+        main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn)
       });
     }
@@ -455,6 +486,11 @@ export async function router() {
   } finally {
     paintIcons();
     isRouting = false;
+    // A hashchange that landed while this render was awaiting was dropped by
+    // the guard above — nothing else would ever render it, leaving the URL and
+    // the screen disagreeing. Render it now. Each pass paints the hash current
+    // at its start, so this converges instead of looping.
+    if ((location.hash || '#/') !== hash) router();
   }
 }
 
@@ -485,7 +521,7 @@ function updateHeader() {
     const h = location.hash || '#/';
     guestLogin.classList.toggle('hidden',
       !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
-        || h.startsWith('#/tnschedule/')));
+        || h.startsWith('#/tnschedule/') || h.startsWith('#/spcard/')));
   }
 }
 
@@ -966,6 +1002,9 @@ function wireNewsCarousel(host, count) {
   track.addEventListener('mouseenter', stop);
   track.addEventListener('mouseleave', start);
   start();
+  // The pause handlers live on the track, which dies with main().innerHTML, so
+  // without this the 5s timer keeps waking the phone long after home is gone.
+  activeUnsubs.push(stop);
 }
 
 // Global sponsor banner — admin-managed image (+ optional link), shown on every
@@ -1553,8 +1592,9 @@ async function renderTournamentPage(id) {
   if (store.isUsingFirebase() && tn.id !== TN_DEMO.id && tn.id !== MP_DEMO_ID) {
     // Every score — a match play hole or a stroke card stroke — lands on the
     // tournament record, so this one listener is the whole live feed.
+    const alive = viewAlive();
     const unsub = store.onTournamentChanged(tn.id, (fresh) => {
-      if (!fresh || fresh.status === 'deleted') return;
+      if (!alive() || !fresh || fresh.status === 'deleted') return;
       tnPageData = fresh;
       repaint();
     });
@@ -1971,8 +2011,10 @@ function renderTnList() {
 
   const rowHTML = (e) => {
     const mine = tnIsMe(e);
-    return `
-      <div class="tn-lb-row${mine ? ' tn-me' : ''}">
+    // A row opens that player's card. Sheet-era records carry no pid, so
+    // those rows stay plain divs rather than offering a dead tap.
+    const open = e.pid ? `#/spcard/${esc(tn.id)}/${esc(e.pid)}` : null;
+    const inner = `
         <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">
           <span class="tn-pos-n">${esc(e.posLabel)}</span>
           ${tnDeltaHTML(e)}
@@ -1988,8 +2030,12 @@ function renderTnList() {
           : ''}
         <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}
-      </div>`;
+        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}`;
+    // An anchor rather than a click handler: the list repaints on every live
+    // score, and an href survives that without rebinding.
+    return open
+      ? `<a class="tn-lb-row${mine ? ' tn-me' : ''}" href="${open}">${inner}</a>`
+      : `<div class="tn-lb-row${mine ? ' tn-me' : ''}">${inner}</div>`;
   };
 
   host.innerHTML = `
@@ -3534,7 +3580,9 @@ function renderGroupCard(players, groupIndex, game, isPast) {
   }
   const filledCount = players.length;
   const isFull = filledCount >= groupSize;
-  const canDirectAdd = !isPast && !isFull && (game.createdBy === currentUser?.id || currentUser?.role === 'admin');
+  // Same live-window allowance as removal: the organizer/admin can still add
+  // players to a group while the game is in progress.
+  const canDirectAdd = !isFull && canManage && (!isPast || isGameLive(game));
   return `
     <div class="group-card glass-card ${isFull ? 'group-full' : ''}">
       <div class="group-header">
@@ -6823,9 +6871,11 @@ async function showQpayModal(orderId, total, opts = {}) {
     }, 1500);
   }
 
-  closeBtn.onclick = async () => {
-    stopPolling();
-    unsub();
+  // Detach without judging why: stops the poll and the listener, nothing else.
+  const detach = () => { stopPolling(); try { unsub(); } catch (_) { } };
+
+  const dismiss = async () => {
+    detach();
     if (settled) { modal.remove(); location.hash = doneHash; return; }
     // Backed out before paying — remove the dangling unpaid record so it never
     // shows up as a phantom order, then leave to a safe page.
@@ -6834,6 +6884,12 @@ async function showQpayModal(orderId, total, opts = {}) {
     showToast(t('qpayCancelled'), 'info');
     location.hash = cancelHash;
   };
+
+  closeBtn.onclick = dismiss;
+  // A backdrop tap is a dismissal too. Without this the global overlay handler
+  // just removes the node, stranding the listener, the 3s poll and the unpaid
+  // record; it still runs afterwards, harmlessly, on an already-detached node.
+  modal.addEventListener('click', (e) => { if (e.target === modal) dismiss(); });
 
   // Server-side check finalizes the record (confirm booking + mark paid); the
   // resulting RTDB write flows back through the listener below, which settles
@@ -6859,6 +6915,10 @@ async function showQpayModal(orderId, total, opts = {}) {
       onPaid(rec);
     }
   });
+  // Leaving by any other route at least stops the poll and the listener. Only
+  // an explicit dismissal cancels the pending payment — a route change on the
+  // success path must not undo the order that was just paid for.
+  activeUnsubs.push(detach);
   try {
     const invoice = await store.createQpayInvoice(orderId);
     qrImg.src = `data:image/png;base64,${invoice.qr_image}`;
@@ -6937,7 +6997,11 @@ async function showMtbogdQpayModal(bookingId, gameId) {
     setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); location.hash = doneHash; }, 1500);
   }
 
-  closeBtn.onclick = () => { stop(); modal.remove(); location.hash = doneHash; };
+  const dismissMq = () => { stop(); modal.remove(); location.hash = doneHash; };
+  closeBtn.onclick = dismissMq;
+  // Same as the order modal: a backdrop tap must stop the poll, not just hide it.
+  modal.addEventListener('click', (e) => { if (e.target === modal) dismissMq(); });
+  activeUnsubs.push(stop);
 
   checkBtn.onclick = async () => {
     checkBtn.disabled = true;
@@ -7621,7 +7685,7 @@ async function parseRankingFile(file) {
   const entries = data
     .map((r, i) => ({
       rank: ri >= 0 && parseInt(r[ri], 10) > 0 ? parseInt(r[ri], 10) : i + 1,
-      name: (r[ni] || '').trim(),
+      name: (r[ni] || '').replace(/\s+/g, ' ').trim(),
       points: pi >= 0 ? (r[pi] || '') : '',
     }))
     .filter(e => e.name);
@@ -7640,7 +7704,20 @@ async function parseRankingFile(file) {
   return entries;
 }
 
-// Admin → Чансаа: current ranking + Excel upload (computes ▲/▼ vs previous).
+// What the arrows compare against, and how the field moved — so the admin
+// can see the baseline instead of guessing why every row reads "–".
+function rankingBaselineHTML(current) {
+  const entries = Array.isArray(current?.entries) ? current.entries : [];
+  if (!entries.length) return '';
+  const m = rankingMovement(entries);
+  const when = current?.previous?.updatedAt ? new Date(current.previous.updatedAt).toLocaleString() : null;
+  return `<p style="margin:6px 0 0; font-size:0.78rem; color:var(--text-secondary);">
+    ${when ? `${t('rankingBaseline')}: ${esc(when)}` : t('rankingNoBaseline')}
+    · <span class="rk-delta rk-up">▲${m.up}</span> <span class="rk-delta rk-down">▼${m.down}</span> –${m.same} ●${m.fresh}
+  </p>`;
+}
+
+// Admin → Чансаа: current ranking + Excel upload (▲/▼ vs the last real change).
 async function renderAdminRankingTab() {
   const el = document.getElementById('admin-rank-content');
   if (!el) return;
@@ -7656,6 +7733,7 @@ async function renderAdminRankingTab() {
       <button type="button" id="rank-upload-btn" class="btn btn-primary btn-sm">${t('rankingUpload')}</button>
       <input type="file" id="rank-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />
       ${current?.updatedAt ? `<p style="margin:10px 0 0; font-size:0.78rem; color:var(--text-secondary);">${t('rankingUpdated')}: ${new Date(current.updatedAt).toLocaleString()} · ${entries.length}</p>` : ''}
+      ${rankingBaselineHTML(current)}
     </div>
     ${entries.length === 0
       ? `<p style="color:var(--text-secondary);">${t('rankingEmpty')}</p>`
@@ -7672,13 +7750,10 @@ async function renderAdminRankingTab() {
     catch (err) { showToast('⚠️ ' + (err?.message || 'parse failed'), 'error'); return; }
     if (!parsed.length) { showToast(t('rankingEmpty'), 'warning'); return; }
     if (!confirm(`${parsed.length} мөр уншигдлаа. Чансааг шинэчлэх үү?`)) return;
-    // Carry previous positions so the UI can show ▲/▼ deltas.
-    const prevByName = new Map(entries.map(e => [e.name.toLowerCase(), e.rank]));
-    parsed.forEach(e => {
-      const p = prevByName.get(e.name.toLowerCase());
-      if (p != null) e.prevRank = p;
-    });
-    await store.saveRanking({ updatedAt: Date.now(), entries: parsed });
+    // ▲/▼ compare with the ranking before the last REAL change. A re-upload
+    // of the same standings (a name or points fix) keeps the arrows; the
+    // old code overwrote every prevRank with the current rank and lost them.
+    await store.saveRanking(mergeRankingUpload(current, parsed, Date.now()));
     showToast('✅ ' + t('rankingSaved'), 'success');
     await renderAdminRankingTab();
   };

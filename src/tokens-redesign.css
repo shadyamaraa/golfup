@@ -1019,6 +1019,66 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .tn-more:hover { background: var(--bg-card-hover); }
 
+/* ---- Player scorecard (#/spcard) ---- */
+/* Leaderboard rows open a player's card, so they read as tappable. */
+a.tn-lb-row { cursor: pointer; }
+a.tn-lb-row:hover { background: var(--bg-card-hover); }
+a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
+
+.spc-grid {
+  display: grid;
+  grid-template-columns: 30px repeat(9, minmax(0, 1fr)) 32px;
+  gap: 3px 2px; align-items: center;
+}
+.spc-lbl {
+  font-size: 0.52rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.spc-h { text-align: center; font-size: 0.62rem; font-weight: 800; color: var(--text-muted); }
+.spc-p { text-align: center; font-size: 0.68rem; font-weight: 600; color: var(--text-secondary); }
+.spc-r { text-align: center; font-size: 0.58rem; font-weight: 700; }
+.spc-s { display: flex; align-items: center; justify-content: center; height: 28px; }
+.spc-seg { border-left: 1px solid var(--border-card); background: var(--bg-card-hover); }
+.spc-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; font-size: 0.8rem; font-weight: 800;
+  font-style: normal; color: var(--text-primary);
+}
+/* Under par reads red, over par reads ink — the club's convention. The
+   shapes carry what colour alone cannot: eagle and double get a second ring
+   drawn as a box-shadow, spaced by a ring of the card's own background so it
+   tracks the theme instead of a hardcoded hex. */
+.spc-n.is-birdie { border: 1.5px solid var(--red); border-radius: 50%; color: var(--red); }
+.spc-n.is-eagle {
+  border: 1.5px solid var(--red); border-radius: 50%; color: var(--red);
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3.2px var(--red);
+}
+.spc-n.is-par { color: var(--text-secondary); }
+.spc-n.is-bogey { border: 1.5px solid var(--text-primary); border-radius: 4px; }
+.spc-n.is-double {
+  border: 1.5px solid var(--text-primary); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3.2px var(--text-primary);
+}
+
+.spc-sum { display: flex; gap: 8px; margin-top: 12px; }
+.spc-sum-cell {
+  flex: 1; text-align: center; padding: 8px 4px;
+  background: var(--bg-card-hover); border: 1px solid var(--border-card); border-radius: 10px;
+}
+.spc-sum-cap {
+  display: block; font-size: 0.56rem; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.spc-sum-v { display: block; font-size: 1.15rem; font-weight: 800; margin-top: 2px; }
+.spc-sum-sub { display: block; font-size: 0.68rem; font-weight: 700; }
+
+.spc-stat-row {
+  display: grid; grid-template-columns: 74px 30px 1fr; gap: 8px;
+  align-items: center; margin-top: 6px; font-size: 0.78rem;
+}
+.spc-bar { height: 7px; border-radius: 4px; background: var(--bg-card-hover); overflow: hidden; }
+.spc-bar > span { display: block; height: 100%; border-radius: 4px; }
+
 /* info tab */
 .tn-info { padding: 4px 0; }
 .tn-info-row { display: flex; align-items: baseline; gap: 12px; padding: 11px 16px; }

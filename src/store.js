@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, update, remove, onValue, off, push } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, push } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -152,10 +152,10 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game; `schedule` is a retired field spared for old records). Every
-    // caller passes the full record, so the named top-level keys are still replaced
-    // wholesale — only the scoring/schedule branches are spared.
-    const { scores, scoreAudit, hcp, schedule, ...rest } = game;
+    // the same game). Every caller passes the full record, so the named
+    // top-level keys are still replaced wholesale — only the scoring
+    // branches are spared.
+    const { scores, scoreAudit, hcp, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -361,12 +361,13 @@ export function createUser(name, uid = null, role = 'user') {
 export function onAllGamesChanged(callback) {
   if (useFirebase && db) {
     const gamesRef = ref(db, 'games');
-    onValue(gamesRef, (snap) => {
+    // Return onValue's own unsubscribe: off(ref) with no callback detaches
+    // EVERY listener on the path, including another screen's.
+    return onValue(gamesRef, (snap) => {
       const data = snap.val();
       if (!data) callback([]);
       else callback(Object.values(data).filter(g => g.status !== 'deleted').sort((a, b) => b.createdAt - a.createdAt));
     });
-    return () => off(gamesRef);
   }
 }
 
@@ -393,10 +394,9 @@ export async function saveBookingQuote(id, quote) {
 export function onGameChanged(id, callback) {
   if (useFirebase && db) {
     const gameRef = ref(db, 'games/' + id);
-    onValue(gameRef, (snap) => {
+    return onValue(gameRef, (snap) => {
       callback(snap.val());
     });
-    return () => off(gameRef);
   }
 }
 
@@ -474,11 +474,12 @@ export async function deleteNotification(userId, notifId) {
 export function onNotificationsChanged(userId, callback) {
   if (useFirebase && db) {
     const notifRef = ref(db, `notifications/${userId}`);
-    onValue(notifRef, (snap) => {
+    // The header bell and the home list both listen here with different
+    // lifetimes, so a path-wide off() would let one tear down the other.
+    return onValue(notifRef, (snap) => {
       if (!snap.exists()) { callback([]); return; }
       callback(Object.values(snap.val()).sort((a, b) => b.createdAt - a.createdAt));
     });
-    return () => off(notifRef);
   }
 }
 
@@ -571,12 +572,14 @@ export async function deleteNewsItem(id) {
 export function onNewsChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'news');
-  const handler = onValue(r, (snap) => {
+  // onValue returns the unsubscribe itself. Handing that value to
+  // off(ref, 'value', cb) instead would never match: off compares against the
+  // SNAPSHOT callback, so the listener would outlive the screen that made it.
+  return onValue(r, (snap) => {
     const val = snap.exists() ? Object.values(snap.val()).filter(n => n && n.id) : [];
     val.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     callback(val);
   });
-  return () => off(r, 'value', handler);
 }
 
 // ---- Sponsor banner (RTDB, single object: { imageUrl, link }) ----
@@ -594,8 +597,7 @@ export async function saveSponsor(obj) {
 export function onSponsorChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'sponsor');
-  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
-  return () => off(r, 'value', handler);
+  return onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
 }
 
 // ---- Tournaments (RTDB) ----
@@ -632,20 +634,18 @@ export async function deleteTournament(id) {
 export function onTournamentsChanged(callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'tournaments');
-  const handler = onValue(r, (snap) => {
+  return onValue(r, (snap) => {
     const list = snap.exists()
       ? Object.values(snap.val()).filter(tn => tn && tn.id && tn.status !== 'deleted')
       : [];
     callback(list);
   });
-  return () => off(r, 'value', handler);
 }
 
 export function onTournamentChanged(id, callback) {
   if (!useFirebase || !db) return null;
   const r = ref(db, 'tournaments/' + id);
-  const handler = onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
-  return () => off(r, 'value', handler);
+  return onValue(r, (snap) => callback(snap.exists() ? snap.val() : null));
 }
 
 // ---- Match play (M Cup) ----
@@ -932,20 +932,18 @@ export async function loadOrder(id) {
 export function onOrdersChanged(cb) {
   if (!useFirebase || !db) return () => {};
   const ordersRef = ref(db, 'orders');
-  onValue(ordersRef, (snap) => {
+  return onValue(ordersRef, (snap) => {
     if (!snap.exists()) { cb([]); return; }
     const orders = Object.entries(snap.val()).map(([id, val]) => ({ id, ...val }));
     orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     cb(orders);
   });
-  return () => off(ordersRef);
 }
 
 export function onOrderChanged(id, cb) {
   if (!useFirebase || !db) return () => {};
   const r = ref(db, 'orders/' + id);
-  onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
-  return () => off(r);
+  return onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
 }
 
 // ---- QPay helpers (food orders only; tee-time QPay is owned by MTBogd) ----

@@ -282,6 +282,9 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   };
 
   const paint = () => {
+    // Hole writes are awaited, so a member who scores and immediately leaves
+    // would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const m = data?.mp?.matches?.[matchId];
     if (!m) {
       // Still nothing to show. With a listener attached this is a waiting
@@ -445,6 +448,8 @@ export async function renderScorerPage(tnId, matchId, ctx) {
 
   if (!demoMode && store.isUsingFirebase()) {
     const unsub = store.onTournamentChanged(tnId, (fresh) => {
+      // Torn down already: repainting now would cover the page that replaced us.
+      if (ctx.alive?.() === false) return;
       if (!fresh || fresh.status === 'deleted') return;
       data = fresh;
       // A repaint must not silently reinstate a screen access was refused

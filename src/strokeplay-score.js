@@ -7,13 +7,16 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp } from './strokeplay.js';
-import { coursePars, courseSIs } from './courses.js';
+import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs } from './strokeplay.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
 
-// Which hole each open group card is on, per tournament+group.
+// Which hole each open group card is PINNED to, per tournament+group — set
+// by a score tap or manual navigation; while unset the card follows the
+// round to the first hole the flight still has open. Same clamp as the
+// game scorer's stepper.
 const viewHole = new Map();
+const MAX_GS_STROKES = 15;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -75,7 +78,7 @@ async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
 function cardHTML(tn, pid, round, editable) {
   const p = tn.sp?.players?.[pid] || {};
   const holes = tn.sp?.scores?.[pid]?.[round] || {};
-  const pars = coursePars(tn.course);
+  const pars = tnPars(tn);
   const { gross, holesIn, toPar } = roundGross(holes, pars);
   const par = Number(tn.par) || 72;
   const roundCount = Math.max(1, Number(tn.rounds) || 1);
@@ -131,6 +134,9 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
   let tnLive = null;
 
   const paint = () => {
+    // Hole writes are awaited, so a member who scores and immediately leaves
+    // would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const tn = tnLive;
     if (!tn?.sp?.players?.[pid]) {
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoPlayers')}</p></div>`;
@@ -180,7 +186,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
           if (value === null) delete holes[hole]; else holes[hole] = value;
           // The full repaint skips while a hole input keeps focus (it must
           // not eat keystrokes), so the totals line updates in place.
-          const pars = coursePars(tnLive.course);
+          const pars = tnPars(tnLive);
           inp.style.color = strokeColor(value, pars?.[hole] || null);
           const box = host.querySelector('[data-sps-total]');
           if (box) {
@@ -194,7 +200,13 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     });
   };
 
-  const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
+  // The router hands down `alive`; a repaint after this screen was torn down
+  // would land on whatever page replaced it.
+  const off = store.onTournamentChanged?.(tnId, (tn) => {
+    if (ctx.alive?.() === false) return;
+    tnLive = tn;
+    paint();
+  });
   // No live store (local mode): render once from what the caller loaded.
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
   return off || (() => { });
@@ -214,39 +226,48 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
 export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
   if (!host) return () => { };
   const key = `${tnId}/${gid}`;
+  // A fresh mount starts in follow mode — the pin only lives for one visit,
+  // exactly like the game scorer's resetGameScorerView().
+  viewHole.delete(key);
   let tnLive = null;
+  let saving = false;
+
+  // The first hole any of the flight still has empty — scanning from the
+  // flight's STARTING hole (a shotgun group at hole 12 plays 12..18 then
+  // 1..11), wrapping the course. Recomputed on every paint while nobody has
+  // pinned a hole, so the screen follows the round on its own.
+  const followHole = (tn, g, pids) => {
+    const start = Number(g.startHole) >= 1 && Number(g.startHole) <= SP_HOLES
+      ? Number(g.startHole) : 1;
+    let hole = ((start + SP_HOLES - 2) % SP_HOLES) + 1; // the hole before start
+    for (let k = 0; k < SP_HOLES; k++) {
+      const h = ((start - 1 + k) % SP_HOLES) + 1;
+      if (pids.some(pid => !tn.sp.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
+    }
+    return hole;
+  };
 
   const paint = () => {
+    // Step taps await their write, so a member who scores and immediately
+    // leaves would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     const tn = tnLive;
     const g = tn?.sp?.groups?.[round]?.[gid];
     if (!g) {
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoGroups')}</p></div>`;
       return;
     }
-    if (host.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT') return;
 
     const players = tn.sp.players || {};
     const pids = Object.keys(g.players || {})
       .filter(pid => players[pid])
       .sort((a, b) => String(players[a].name || '').localeCompare(String(players[b].name || '')));
-    const pars = coursePars(tn.course);
-    const sis = courseSIs(tn.course);
-    const editable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
+    const pars = tnPars(tn);
+    const sis = tnSIs(tn);
+    const anyEditable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
 
-    // Open on the first hole any of the flight still has empty — scanning
-    // from the flight's STARTING hole (a shotgun group at hole 12 plays
-    // 12..18 then 1..11), wrapping the course.
-    let hole = viewHole.get(key);
-    if (!hole) {
-      const start = Number(g.startHole) >= 1 && Number(g.startHole) <= SP_HOLES
-        ? Number(g.startHole) : 1;
-      hole = ((start + SP_HOLES - 2) % SP_HOLES) + 1; // the hole before start
-      for (let k = 0; k < SP_HOLES; k++) {
-        const h = ((start - 1 + k) % SP_HOLES) + 1;
-        if (pids.some(pid => !tn.sp.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
-      }
-      viewHole.set(key, hole);
-    }
+    // A pinned hole (any score tap or nav) wins; otherwise follow the round.
+    const hole = viewHole.get(key) || followHole(tn, g, pids);
 
     // The running tally beside each name: to-par when the course's per-hole
     // pars are known (what a marker actually wants to see mid-round), the
@@ -259,23 +280,57 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         : `${gross} · ${holesIn}/${SP_HOLES}`;
     };
 
+    // Same stepper the game scorer taps all day: − / value / +. The + on an
+    // empty hole seeds the hole's par, so most scores are one or two taps.
+    const stepBtn = (kind, pid, label, disabled) => `
+      <button data-spgs-step="${kind}" data-pid="${esc(pid)}" ${disabled ? 'disabled' : ''}
+        style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
+               border:2px solid var(--border-color);background:var(--bg-card-hover);
+               color:var(--text-primary);font-size:1.35rem;font-weight:800;
+               ${disabled ? 'opacity:0.35;cursor:default;' : ''}">${label}</button>`;
+
     const row = (pid) => {
       const holes = tn.sp.scores?.[pid]?.[round] || {};
+      const strokes = holes[hole] ?? null;
+      const canEdit = canScoreSp(ctx.user, pid, players, round);
       return `
-        <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">
-            ${esc(players[pid].name || pid)}
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+          <span style="flex:1;min-width:0;">
+            <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">
+              ${esc(players[pid].name || pid)}
+            </span>
+            <span data-spgs-total="${esc(pid)}" style="font-size:0.74rem;color:var(--text-secondary);">
+              ${tallyText(holes)}
+            </span>
           </span>
-          <input data-spgs-pid="${esc(pid)}" type="number" inputmode="numeric" min="1" max="19"
-            value="${esc(holes[hole] ?? '')}" ${editable ? '' : 'disabled'} placeholder="${pars?.[hole] ?? ''}"
-            style="width:64px;text-align:center;padding:10px 2px;border-radius:8px;
-                   border:1px solid var(--border-color);background:var(--bg-color);
-                   color:${strokeColor(Number(holes[hole]) || null, pars?.[hole] || null)};font-family:var(--font);font-size:1.15rem;font-weight:800;" />
-          <span data-spgs-total="${esc(pid)}" style="width:70px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">
-            ${tallyText(holes)}
-          </span>
+          ${canEdit ? stepBtn('minus', pid, '−', strokes === null) : ''}
+          <div data-spgs-val="${esc(pid)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;color:${strokeColor(strokes, pars?.[hole] || null)};">
+            ${strokes ?? '·'}
+          </div>
+          ${canEdit ? stepBtn('plus', pid, '+', strokes !== null && strokes >= MAX_GS_STROKES) : ''}
         </div>`;
     };
+
+    // 18 holes at a glance: the big figure is the hole's par (entered count
+    // without a course card), gold fill once the whole flight is in, a 2px
+    // ring on the hole being viewed. Tapping jumps (and pins).
+    const stripHTML = () => `
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">
+        ${Array.from({ length: SP_HOLES }, (_, i) => {
+          const n = i + 1;
+          const entered = pids.filter(pid => tn.sp.scores?.[pid]?.[round]?.[n]).length;
+          const full = pids.length > 0 && entered >= pids.length;
+          const on = n === hole;
+          return `
+          <button data-spgs-goto="${n}"
+            style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
+                   border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
+                   background:${full ? 'var(--gold)' : 'transparent'};
+                   color:${full ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
+            <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${pars?.[n] ?? (entered || '·')}
+          </button>`;
+        }).join('')}
+      </div>`;
 
     host.innerHTML = `
       <div class="detail-container fade-in">
@@ -289,15 +344,16 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
-            <button data-spgs-nav="-1" class="btn btn-outline btn-sm" ${hole <= 1 ? 'disabled' : ''}>←</button>
-            <div style="min-width:90px;text-align:center;">
+            <button data-spgs-nav="-1" class="btn btn-outline btn-sm" style="width:52px;" ${hole <= 1 ? 'disabled' : ''}>‹</button>
+            <div data-spgs-head style="flex:1;min-width:90px;text-align:center;">
               <b style="font-size:1.3rem;">${hole} / ${SP_HOLES}</b>
               ${pars?.[hole] ? `<div style="font-size:0.72rem;color:var(--text-secondary);">${t('gsPar')} ${pars[hole]}${sis?.[hole] ? ` · SI ${sis[hole]}` : ''}</div>` : ''}
             </div>
-            <button data-spgs-nav="1" class="btn btn-outline btn-sm" ${hole >= SP_HOLES ? 'disabled' : ''}>→</button>
+            <button data-spgs-nav="1" class="btn btn-outline btn-sm" style="width:52px;" ${hole >= SP_HOLES ? 'disabled' : ''}>›</button>
           </div>
           ${pids.map(row).join('')}
-          ${editable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
+          ${stripHTML()}
+          ${anyEditable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
         </div>
       </div>`;
 
@@ -305,36 +361,87 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       viewHole.set(key, Math.min(SP_HOLES, Math.max(1, hole + Number(b.dataset.spgsNav))));
       paint();
     });
+    host.querySelectorAll('button[data-spgs-goto]').forEach(b => b.onclick = () => {
+      viewHole.set(key, Number(b.dataset.spgsGoto));
+      paint();
+    });
 
-    host.querySelectorAll('input[data-spgs-pid]').forEach(inp => {
-      inp.onchange = async () => {
-        const pid = inp.dataset.spgsPid;
-        const raw = inp.value.trim();
-        const n = Number(raw);
-        const value = raw === '' || !Number.isFinite(n) || n < 1 ? null : Math.min(19, Math.round(n));
-        let saved = true;
-        try {
-          await store.saveTnSpScore(tnId, pid, round, hole, value, ctx.user?.id || null);
-        } catch (err) {
-          saved = false;
-          console.error('[sp-group-score]', err);
-          ctx.showToast?.('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
-        }
-        if (tnLive?.sp) {
-          const scores = (tnLive.sp.scores = tnLive.sp.scores || {});
-          const rounds = (scores[pid] = scores[pid] || {});
-          const holes = (rounds[round] = rounds[round] || {});
-          if (value === null) delete holes[hole]; else holes[hole] = value;
-          inp.style.color = strokeColor(value, pars?.[hole] || null);
-          const box = host.querySelector(`[data-spgs-total="${CSS.escape(pid)}"]`);
-          if (box) box.textContent = tallyText(holes);
-          if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
-        }
+    // One tap = one write, updated in place so rapid taps never fight a
+    // repaint. The tap also pins the hole: the last player's seeded score
+    // must stay correctable instead of the screen following on.
+    const updateRow = (pid) => {
+      const holes = tnLive.sp.scores?.[pid]?.[round] || {};
+      const strokes = holes[hole] ?? null;
+      const val = host.querySelector(`[data-spgs-val="${CSS.escape(pid)}"]`);
+      if (val) {
+        val.textContent = strokes ?? '·';
+        val.style.color = strokeColor(strokes, pars?.[hole] || null);
+      }
+      const tot = host.querySelector(`[data-spgs-total="${CSS.escape(pid)}"]`);
+      if (tot) tot.textContent = tallyText(holes);
+      const setStep = (kind, disabled) => {
+        const btn = host.querySelector(`[data-spgs-step="${kind}"][data-pid="${CSS.escape(pid)}"]`);
+        if (!btn) return;
+        btn.disabled = disabled;
+        btn.style.opacity = disabled ? '0.35' : '';
+        btn.style.cursor = disabled ? 'default' : 'pointer';
       };
+      setStep('minus', strokes === null);
+      setStep('plus', strokes !== null && strokes >= MAX_GS_STROKES);
+      const cell = host.querySelector(`button[data-spgs-goto="${hole}"]`);
+      if (cell) {
+        const entered = pids.filter(p => tnLive.sp.scores?.[p]?.[round]?.[hole]).length;
+        const full = pids.length > 0 && entered >= pids.length;
+        cell.style.background = full ? 'var(--gold)' : 'transparent';
+        cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
+      }
+    };
+
+    host.querySelectorAll('button[data-spgs-step]').forEach(b => b.onclick = async () => {
+      if (saving) return;
+      const pid = b.dataset.pid;
+      if (!canScoreSp(ctx.user, pid, tnLive?.sp?.players || {}, round)) return;
+      viewHole.set(key, hole);
+      const cur = tnLive?.sp?.scores?.[pid]?.[round]?.[hole] ?? null;
+      let next;
+      if (b.dataset.spgsStep === 'plus') {
+        next = cur === null ? (pars?.[hole] ?? 4) : Math.min(MAX_GS_STROKES, cur + 1);
+      } else {
+        next = cur === null ? null : (cur <= 1 ? null : cur - 1);
+      }
+      if (next === cur) return;
+      saving = true;
+      let saved = true;
+      try {
+        await store.saveTnSpScore(tnId, pid, round, hole, next, ctx.user?.id || null);
+      } catch (err) {
+        saved = false;
+        console.error('[sp-group-score]', err);
+        ctx.showToast?.('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+      } finally {
+        saving = false;
+      }
+      if (tnLive?.sp) {
+        const scores = (tnLive.sp.scores = tnLive.sp.scores || {});
+        const rounds = (scores[pid] = scores[pid] || {});
+        const holes = (rounds[round] = rounds[round] || {});
+        if (next === null) delete holes[hole]; else holes[hole] = next;
+        // The write is awaited, so this may resume on another screen. Skip the
+        // DOM touch-up then — but still post the round: a round completed on
+        // this very tap must reach the member's handicap either way.
+        if (ctx.alive?.() !== false) updateRow(pid);
+        if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
+      }
     });
   };
 
-  const off = store.onTournamentChanged?.(tnId, (tn) => { tnLive = tn; paint(); });
+  // The router hands down `alive`; a repaint after this screen was torn down
+  // would land on whatever page replaced it.
+  const off = store.onTournamentChanged?.(tnId, (tn) => {
+    if (ctx.alive?.() === false) return;
+    tnLive = tn;
+    paint();
+  });
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
   return off || (() => { });
 }

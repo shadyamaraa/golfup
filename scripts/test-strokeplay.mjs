@@ -5,7 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES
+  COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
+  holeDiffClass, spSegment, spPlayerCard, spPlayerStats
 } from '../src/strokeplay.js';
 import { rankEntries } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -332,4 +333,198 @@ test('courseHandicap seeds the roster from a WHS index', () => {
   // 12.4 × (130/113) + (71.5 − 72) = 13.77 → 14 on Sky's blue tees.
   assert.equal(courseHandicap(12.4, 130, 71.5, 72), 14);
   assert.equal(courseHandicap(null, 130, 71.5, 72), null);
+});
+
+test('a started player outranks a scoreless one even without pars', () => {
+  // Custom course (no registry pars): a partial round has no total, but the
+  // player who has holes in still sits above those with nothing at all.
+  const tn = TN(
+    { a: { name: 'Анар' }, b: { name: 'Бат' }, c: { name: 'Цэрэн' }, d: { name: 'Дорж' } },
+    { b: { 1: fullRound(4) }, d: { 1: { 1: 4, 2: 4 } } },
+    { rounds: 1, course: '' });
+  const names = rankEntries(spEntries(tn), {}).map(e => e.name);
+  assert.deepEqual(names, ['Бат', 'Дорж', 'Анар', 'Цэрэн']);
+  // With pars the started player carries a real running total instead.
+  const withPars = rankEntries(spEntries({ ...tn, course: 'sky' }), {});
+  assert.deepEqual(withPars.map(e => e.name), ['Дорж', 'Бат', 'Анар', 'Цэрэн']);
+  assert.equal(withPars[0].total, -1);
+});
+
+test('a typed venue resolves pars when no course key was ever picked', () => {
+  // The JCI case: course was never chosen, but the venue says Mt. Bogd —
+  // a registry alias for Sky Resort — so mid-round to-par still posts.
+  assert.equal(resolveCourse('Mt. Bogd').key, 'sky');
+  const tn = TN(
+    { u1: { name: 'Бат' } },
+    { u1: { 1: { 1: 4, 2: 4 } } },
+    { rounds: 1, course: '', venue: 'Mt. Bogd' });
+  const [e] = spEntries(tn);
+  assert.equal(e.total, -1);
+  assert.equal(e.thru, '2');
+});
+
+// ---- Player card + stats (the PGA-style read-only view's engine) ----
+
+// Sky's front nine: 5 4 4 3 5 4 4 3 4 (36), back: 4 4 5 3 4 4 4 3 5 (36).
+const SKY = (players, scores, extra = {}) =>
+  TN(players, scores, { rounds: 1, course: 'sky', ...extra });
+
+test('holeDiffClass buckets a hole the way the printed card does', () => {
+  assert.equal(holeDiffClass(3, 5), 'eagle');
+  assert.equal(holeDiffClass(1, 4), 'eagle');     // an albatross folds in
+  assert.equal(holeDiffClass(3, 4), 'birdie');
+  assert.equal(holeDiffClass(4, 4), 'par');
+  assert.equal(holeDiffClass(5, 4), 'bogey');
+  assert.equal(holeDiffClass(6, 4), 'double');
+  assert.equal(holeDiffClass(9, 4), 'double');
+  assert.equal(holeDiffClass(4, null), null);
+  assert.equal(holeDiffClass(null, 4), null);
+  assert.equal(holeDiffClass(0, 4), null);
+});
+
+test('spSegment sums a nine and carries its FULL par', () => {
+  const pars = coursePars('sky');
+  assert.deepEqual(spSegment(fullRound(4), pars, 1, 9), { gross: 36, holesIn: 9, toPar: 0, par: 36 });
+  assert.deepEqual(spSegment(fullRound(4), pars, 10, 18), { gross: 36, holesIn: 9, toPar: 0, par: 36 });
+  assert.equal(spSegment(fullRound(4), pars, 1, 18).par, 72);
+  // A part-played nine still prints the whole nine's par.
+  const three = { 1: 5, 2: 4, 3: 4 };
+  assert.deepEqual(spSegment(three, pars, 1, 9), { gross: 13, holesIn: 3, toPar: 0, par: 36 });
+  // No registry pars → par null, strokes still counted.
+  assert.deepEqual(spSegment(three, null, 1, 9), { gross: 13, holesIn: 3, toPar: null, par: null });
+});
+
+test('spPlayerCard reads each hole against its par', () => {
+  const r1 = fullRound(4); r1[1] = 3; r1[4] = 2; r1[13] = 6;  // eagle, birdie, double
+  const card = spPlayerCard(SKY({ u1: { name: 'Бат', hcp: 8 } }, { u1: { 1: r1 } }), 'u1', 1);
+  assert.equal(card.hasPars, true);
+  assert.equal(card.holes[0].cls, 'eagle');     // 3 on the par 5
+  assert.equal(card.holes[3].cls, 'birdie');    // 2 on the par 3
+  assert.equal(card.holes[12].cls, 'double');   // 6 on the par 3
+  assert.equal(card.holes[1].cls, 'par');
+  assert.equal(card.holes[0].si, 5);            // Sky's stroke index for hole 1
+  assert.equal(card.thru, 'F');
+});
+
+test('spPlayerCard runs the score through the turn', () => {
+  const r1 = fullRound(4); r1[1] = 3; r1[4] = 2; r1[13] = 6;
+  const card = spPlayerCard(SKY({ u1: { name: 'Бат' } }, { u1: { 1: r1 } }), 'u1', 1);
+  // −2 after the eagle, and the last cell is the round's to-par.
+  assert.equal(card.holes[0].running, -2);
+  assert.equal(card.holes[17].running, card.total.toPar);
+  assert.equal(card.front.gross + card.back.gross, card.total.gross);
+  assert.deepEqual([card.front.par, card.back.par, card.total.par], [36, 36, 72]);
+});
+
+test('spPlayerCard without registry pars keeps strokes, drops the reading', () => {
+  const card = spPlayerCard(
+    TN({ u1: { name: 'Бат' } }, { u1: { 1: fullRound(4) } }, { rounds: 1, course: '', venue: 'Nowhere' }),
+    'u1', 1);
+  assert.equal(card.hasPars, false);
+  assert.ok(card.holes.every(h => h.par === null && h.cls === null && h.running === null));
+  assert.equal(card.total.gross, 72);
+  assert.equal(card.total.par, null);   // never synthesized from tn.par
+  assert.equal(card.thru, 'F');
+});
+
+test('spPlayerCard handles a partial round and an untouched one', () => {
+  const seven = {}; for (let h = 1; h <= 7; h++) seven[h] = 4;
+  const tn = SKY({ u1: { name: 'Бат' } }, { u1: { 1: seven } }, { rounds: 2 });
+  const card = spPlayerCard(tn, 'u1', 1);
+  assert.equal(card.total.holesIn, 7);
+  assert.equal(card.thru, '7');
+  assert.equal(card.back.holesIn, 0);
+  assert.equal(card.holes[7].running, null);
+  const idle = spPlayerCard(tn, 'u1', 2);
+  assert.equal(idle.thru, '');
+  assert.ok(idle.holes.every(h => h.strokes === null));
+  assert.equal(spPlayerCard(tn, 'nobody', 1), null);
+});
+
+test('spPlayerStats counts the scoring spread', () => {
+  // 1 eagle, 3 birdies, 10 pars, 3 bogeys, 1 triple.
+  const r = {}; const pars = coursePars('sky');
+  for (let h = 1; h <= 18; h++) r[h] = pars[h];
+  r[1] = pars[1] - 2; r[2] = pars[2] - 1; r[3] = pars[3] - 1; r[5] = pars[5] - 1;
+  r[10] = pars[10] + 1; r[11] = pars[11] + 1; r[12] = pars[12] + 1; r[13] = pars[13] + 3;
+  const s = spPlayerStats(SKY({ u1: { name: 'Бат' } }, { u1: { 1: r } }), 'u1', null);
+  assert.deepEqual(s.dist, { eagle: 1, birdie: 3, par: 10, bogey: 3, double: 1 });
+  assert.equal(s.best.cls, 'eagle');
+  assert.equal(s.best.hole, 1);
+  assert.equal(s.worst.diff, 3);
+  assert.equal(s.worst.hole, 13);
+});
+
+test('spPlayerStats averages by par type', () => {
+  const s = spPlayerStats(SKY({ u1: { name: 'Бат' } }, { u1: { 1: fullRound(4) } }), 'u1', null);
+  assert.equal(s.byPar[3].count, 4);            // Sky has four par 3s
+  assert.equal(s.byPar[3].avg, 4);
+  assert.equal(s.byPar[3].toPar, 1);
+  assert.equal(s.byPar[4].toPar, 0);
+  assert.equal(s.byPar[5].toPar, -1);
+});
+
+test('spPlayerStats aggregates rounds and scopes to one', () => {
+  const r2 = fullRound(4); r2[1] = 6;
+  const tn = SKY({ u1: { name: 'Бат' } }, { u1: { 1: fullRound(4), 2: r2 } }, { rounds: 2 });
+  const all = spPlayerStats(tn, 'u1', null);
+  assert.equal(all.roundsPlayed, 2);
+  assert.equal(all.roundsComplete, 2);
+  assert.equal(all.holesPlayed, 36);
+  assert.equal(all.gross, 72 + 74);
+  assert.equal(all.scoringAvg, 73);
+  assert.equal(all.front.gross, 36 + 38);   // R2's opening 6 lands on the front nine
+  assert.equal(all.rounds.length, 2);
+  const one = spPlayerStats(tn, 'u1', 1);
+  assert.equal(one.holesPlayed, 18);
+  assert.equal(one.gross, 72);
+  assert.equal(one.scoringAvg, 72);
+  assert.equal(one.rounds.length, 2);            // the list always shows every round
+});
+
+test('spPlayerStats nets off the HCP per completed round', () => {
+  const two = { u1: { 1: fullRound(4), 2: fullRound(4) } };
+  const withHcp = spPlayerStats(SKY({ u1: { name: 'Бат', hcp: 8 } }, two, { rounds: 2 }), 'u1', null);
+  assert.equal(withHcp.net, 144 - 16);
+  const noHcp = spPlayerStats(SKY({ u1: { name: 'Бат' } }, two, { rounds: 2 }), 'u1', null);
+  assert.equal(noHcp.net, null);
+  // A round still on the course doesn't earn its allowance yet.
+  const part = { u1: { 1: fullRound(4), 2: { 1: 4, 2: 4 } } };
+  const mid = spPlayerStats(SKY({ u1: { name: 'Бат', hcp: 8 } }, part, { rounds: 2 }), 'u1', null);
+  assert.equal(mid.roundsComplete, 1);
+  assert.equal(mid.net, mid.gross - 8);
+});
+
+test('spPlayerStats survives WD, manual players and a course with no card', () => {
+  const eleven = {}; for (let h = 1; h <= 11; h++) eleven[h] = 4;
+  const wd = spPlayerStats(SKY({ u1: { name: 'Бат', status: 'WD' } }, { u1: { 1: eleven } }), 'u1', null);
+  assert.equal(wd.status, 'WD');
+  assert.equal(wd.holesPlayed, 11);
+  assert.equal(wd.roundsComplete, 0);
+  assert.equal(wd.scoringAvg, null);
+  assert.equal(wd.net, null);
+  assert.equal(wd.dist.par + wd.dist.birdie + wd.dist.bogey + wd.dist.eagle + wd.dist.double, 11);
+
+  const manual = spPlayerStats(SKY({ p_x: { name: 'Зочин' } }, { p_x: { 1: { 1: 5, 2: 4 } } }), 'p_x', null);
+  assert.equal(manual.name, 'Зочин');
+  assert.equal(manual.holesPlayed, 2);
+
+  const bare = spPlayerStats(
+    TN({ u1: { name: 'Бат' } }, { u1: { 1: fullRound(4) } }, { rounds: 1, course: '', venue: 'Nowhere' }),
+    'u1', null);
+  assert.equal(bare.hasPars, false);
+  assert.equal(bare.dist, null);
+  assert.equal(bare.byPar, null);
+  assert.equal(bare.best, null);
+  assert.equal(bare.toPar, null);
+  assert.equal(bare.gross, 72);
+  assert.equal(bare.holeAvg, 4);
+  assert.equal(spPlayerStats(SKY({ u1: { name: 'Бат' } }, {}), 'nobody', null), null);
+});
+
+test('spPlayerStats reports the field average over the same scope', () => {
+  const tn = SKY({ u1: { name: 'Бат' }, u2: { name: 'Дорж' }, u3: { name: 'Сараа' } },
+    { u1: { 1: fullRound(4) }, u2: { 1: fullRound(5) }, u3: { 1: { 1: 4 } } });
+  const s = spPlayerStats(tn, 'u1', null);
+  assert.equal(s.fieldAvg, (72 + 90) / 2);   // only complete rounds count
 });

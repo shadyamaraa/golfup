@@ -17,6 +17,228 @@ data) added under `docs/manuals/`:
 Documentation only — no code changes. Screenshots were captured against
 the localhost demo tournaments with Firebase disabled locally, so no
 production data was touched or written.
+## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
+
+Members reported that updating the ranking showed no up/down arrows — nothing
+compared with the previous standings. The live record confirmed it: 97 entries,
+every one with `prevRank` equal to its `rank` (up 0, down 0, same 97), saved
+this morning.
+
+The arrows compared each player with *whatever was saved last*. Uploading the
+same standings twice — to fix a name, correct a points cell, or simply
+re-export — overwrote every `prevRank` with the current rank and erased all
+movement, with no history to fall back on.
+
+- New pure module `src/ranking.js` (`rankingKey`, `isRankingCorrection`,
+  `mergeRankingUpload`, `rankingMovement`), tested in
+  `scripts/test-ranking.mjs` (109 → 120 tests). The stored ranking now carries
+  a `previous` block — the standings before the last real change — and each
+  entry's `prevRank` is derived from it. An upload where every player present
+  in both rankings sits at the same rank is a *correction*: the baseline and
+  the arrows stay. Any one player having moved makes it a new ranking and the
+  baseline advances. Data saved before `previous` existed keeps the `prevRank`
+  it already carries on a correction, so nothing regresses on deploy.
+- Names are matched on a whitespace-collapsed, case-folded, NFC key, and
+  `parseRankingFile` collapses internal runs of spaces — five live names carry
+  double spaces today and would otherwise have come back as "new".
+- Admin → Чансаа shows what the arrows compare against ("Харьцуулалт: <date>",
+  or "no previous ranking") plus the field's movement (▲n ▼n –n ●n), so an
+  all-"–" screen is explained rather than mysterious. i18n mn/en/kr.
+- Home top-10, `#/ranking` and `rankingDeltaHTML` are untouched — they read
+  the same `prevRank` as before.
+
+Verified in a browser: upload A → all ●, "no baseline"; upload B → ▲2 ▼2 with
+the baseline dated; upload B again → ▲2 ▼2 unchanged, baseline unchanged;
+home and `#/ranking` agree; stored object has `previous` and no undefined.
+Negative test with the old computation restored: the re-upload collapses to
+up 0 / down 0 / same 4 — the live symptom exactly.
+
+Today's lost arrows cannot be recovered by code (no history existed). After
+deploy the admin can upload the *previous* standings file and then the current
+one: the second upload is a real change, so the baseline advances and the
+arrows return. From then on a re-upload no longer wipes them.
+
+## 2026-08-30 (Audit follow-up: every listener and timer now dies with its screen)
+
+The teardown audit that produced today's two fixes confirmed 25 findings. Once
+deduplicated they were four real defects, all fixed here.
+
+**The header bell badge stopped updating after the first navigation.**
+`onNotificationsChanged` returned `() => off(notifRef)` with no callback, which
+detaches *every* listener on `notifications/{uid}`. The header bell subscribes
+once per user and keeps its listener across routes; renderHome subscribes to the
+same path and registers its unsubscribe in `activeUnsubs`. So the first route
+change after home tore down the bell listener as collateral, and nothing ever
+re-armed it — `bellSubFor` is set once and was never reset. The badge froze at
+its last value (it is static markup, so it never blanked to give the game away).
+Signing out made it worse: the previous account's listener kept writing its
+unread count into the shared badge.
+Fixed on both sides — the helper returns `onValue`'s own unsubscribe, and the
+bell's handle is now held in `bellUnsub` and released when the account changes
+or signs out.
+
+**The remaining four subscription helpers had the same over-broad teardown.**
+`onAllGamesChanged`, `onGameChanged`, `onOrdersChanged` and `onOrderChanged` all
+returned `off(ref)`. Latent today, because their subscribers share the per-route
+`activeUnsubs` lifetime — but it is the exact class that produced the bug members
+reported this morning, so all four now return the real unsubscribe. `off` is no
+longer imported anywhere in `store.js`.
+
+**The router silently discarded any navigation that arrived mid-render.**
+`if (isRouting) return;` fires inside the hashchange handler, and `router()` is
+async, so a tap landing during an awaited load was dropped with nothing queued:
+the requested screen never appeared and the URL and the view disagreed from then
+on. `finally` now compares the hash it rendered against the current one and
+renders again when they differ — each pass paints the hash current at its start,
+so it converges. The kiosk branch no longer clears `isRouting` by hand; `finally`
+owns it.
+
+**Timers and modals that outlived their screen.** The news carousel's 5s interval
+kept firing forever after leaving home (its pause handlers die with the DOM), so
+`stop` is registered for teardown. Both QPay modals could be dismissed by tapping
+the backdrop, where the global overlay handler removed the node and stranded the
+listener, the 3s poll and — for the order modal — an unpaid record; a backdrop tap
+is now a real dismissal, and route changes detach the poll and listener without
+cancelling a payment that already succeeded. The group scorecard's step handler
+skips its post-await DOM touch-up when the screen is gone, while still posting a
+round completed on that tap to the member's handicap. `main.js` also checks for a
+new bundle at boot, not only five minutes in, so fixes reach phones that stay open.
+
+Verified in a browser, each fix with its own negative test: with the fix reverted
+the assertion fails, reproducing the defect. Bell listener survives leaving home
+(2 → 1, not 0) and the badge still updates; sign-out drops it to 0 and clears the
+badge; a navigation fired mid-render lands on the requested screen; the carousel
+timer count goes 1 → 0 on leaving home. Build clean, 109/109 tests.
+The QPay modal changes were code-reviewed but not browser-driven — reaching that
+modal needs a live cart and invoice.
+
+## 2026-08-30 (Fix, part two: the scorers repaint over the next page too)
+
+An independent audit of every teardown path found a second route to the
+symptom fixed earlier today, one the listener fix does not cover.
+
+Every scorer awaits its write and then calls `paint()`:
+`renderSpScorer`'s hole `onchange` (strokeplay-score.js), the group card's
+step tap, the casual game scorer's `write()` (game-score.js) and the match
+play scorer's hole entry. `paint()` writes to the cached `host`, which is
+the one shared `#main-content`. A member who enters a score and leaves
+before the write lands — ordinary on a phone with weak signal on the
+course — had the scorer painted over whatever page they moved to. No
+listener involved, so the earlier fix could not have caught it.
+
+The `alive()` guard moves from the listener callback to the top of each
+`paint()`, which covers both paths at once, and the casual game scorer now
+receives `alive` from the router as well.
+
+Reproduced in a browser with a 1.5s write: enter a hole, navigate home,
+let the write land. With the guard removed the scorecard's inputs appear
+on the home screen; with it in place home is byte-identical and no
+`data-sps-hole` input exists on the page.
+
+Still open from the same audit, not touched here: the header bell badge
+stops updating after the first navigation away from home
+(`onNotificationsChanged` returns a path-wide `off(ref)` that also detaches
+the persistent badge listener), the same over-broad form on the order and
+game helpers, the router's `isRouting` guard discarding rather than
+queueing a navigation that arrives mid-render, and the news carousel
+interval outliving the home route.
+
+## 2026-08-30 (Fix: a screen you left could repaint itself over the one you are on)
+
+Members sitting on the home screen during a live tournament were being
+thrown onto a scorecard they had visited earlier. The URL, the bottom nav
+and the tournament strip all still said home — only the content had been
+overwritten.
+
+**Root cause.** Every tournament subscription in `store.js` was built as
+`const handler = onValue(r, cb); return () => off(r, 'value', handler)`.
+But `onValue` returns an *unsubscribe function*, while `off()` matches
+registrations by the identity of the *snapshot callback*. The two never
+match, so `off()` removed nothing and **no tournament listener ever
+detached**. The router dutifully called the unsubscribe on every route
+change and it did nothing. Each visited scorecard, player card, scorer or
+tournament page left a live listener behind, and because `main()` is one
+shared element, the next write to the tournament record — constant during
+a live event — had the abandoned screen paint straight over whatever page
+the member was actually reading. Verified against the installed
+firebase 11.10.0 with an offline probe: the old form still fired after
+"unsubscribing", the returned unsubscribe fired zero times.
+
+- `onTournamentChanged`, `onTournamentsChanged`, `onNewsChanged` and
+  `onSponsorChanged` now return `onValue`'s own unsubscribe. (The helpers
+  that call `off(ref)` with no callback were always correct — that form
+  removes every listener at the path — and are left alone.)
+- Defence in depth: `clearActiveListeners()` bumps a `viewEpoch`, and the
+  router hands each live screen an `alive()` closure over the epoch it
+  mounted on. A listener that somehow outlives its screen again — in the
+  stroke scorer, the group card, the player card, the match play scorer or
+  the tournament page — now declines to repaint instead of covering the
+  page. Both layers were reproduced and verified in a browser: with the
+  guard removed the leaked listener paints the scorecard over home again;
+  with it in place home is byte-identical after the update.
+
+## 2026-08-30 (Player card: what they shot on every hole, broadcast-style)
+
+Tapping a player on a stroke leaderboard opens their card at
+`#/spcard/:tnId/:pid` — the read-only view the club asked for, laid out
+the way a golf broadcast lays it out.
+
+- **Scorecard tab**: HOLE / PAR / SCORE with the score running underneath,
+  two nines stacked (no sideways scrolling on a phone), OUT and IN segment
+  columns and an OUT · IN · TOT strip. Birdies are ringed, eagles
+  double-ringed, bogeys boxed and doubles double-boxed — shapes carry what
+  the club's red-under/ink-over colouring cannot, drawn from theme tokens
+  so dark mode follows.
+- **Статистик tab**: round-by-round list (tap a round to jump to its card),
+  scoring spread with bars, average by par 3/4/5, front vs back nine, best
+  and worst hole, scoring average against the field's, and net when the
+  player carries an HCP. Scope chips pick one round or all.
+- **Header**: position from the live ranking, TOT, the round's to-par, HCP,
+  flight and tee time, plus the enter-score and group-card shortcuts —
+  shown only to whoever `canScoreSp` already allows, so no new permission
+  surface opens. Guests can read a card, exactly as they can read the board.
+- Engine (`strokeplay.js`, pure and tested): `holeDiffClass`, `spSegment`,
+  `spPlayerCard`, `spPlayerStats`. Everything needing per-hole pars degrades
+  to null on a course the registry doesn't carry, and the card then hides
+  its PAR and ± rows rather than inventing them from the course total.
+
+Two deliberate departures from the PGA app's screen: both nines show at
+once instead of paging with dots, and there are no Odds/Highlights tabs or
+putts/GIR/fairway stats — the app tracks no such data. Tests 97 → 109.
+
+## 2026-08-30 (Group scorecard scores like the game scorer: − par + steppers)
+
+The tournament flight card drops its typed number inputs for the same
+−/+ steppers the casual game scorer taps all day: + on an empty hole
+seeds the hole's par (fallback 4), then ±1 per tap up to 15; − at 1
+clears the hole. Every flight member's stepper is live at once, so the
+marker moves straight down the card with no keyboard. The card follows
+the round to the flight's first open hole (start-hole wrap intact) until
+a score tap or navigation pins it — the last player's seeded score stays
+correctable — and a fresh visit unpins. New 18-hole strip below the
+rows: par per cell, gold fill once the whole flight is in, tap to jump.
+Taps write per hole with a single-flight gate and update the row in
+place, so rapid taps never fight the live listener.
+
+## 2026-08-30 (Venue name resolves the course: Mt. Bogd counts to-par too)
+
+The JCI Mongolia Open showed no running totals while the Ladies event
+(same course) did: its record never had a course key picked, so no
+per-hole pars resolved. Course resolution now falls back to the typed
+venue name, and the registry gains aliases — Mt. Bogd (all spellings) →
+Sky Resort, Riverside → Chinggis Khaan — plus whitespace-tolerant
+lookups. `tnPars`/`tnSIs` in strokeplay.js carry the course-then-venue
+chain for the engine, both scorecards and `roundFromTournament`.
+
+## 2026-08-29 (Leaderboard: started players above the scoreless)
+
+On a course without per-hole pars a mid-round player has no honest
+total, so they ranked alongside players who had not hit a ball — the
+whole board read as one alphabetical list. `rankEntries` gains a tier
+between score and name: among equal totals, a player whose thru is set
+(they have holes in) sits above one with no score at all, so the truly
+scoreless always sink to the very bottom. On registry courses nothing
+changes (started players already carry a running to-par).
 
 ## 2026-08-29 (Retire the casual-game start list)
 
@@ -129,6 +351,7 @@ marshal sheets straight from the app.
   localStorage mode — scorecard colors/totals/reports/QR, schedule
   edit+save+revisit, admin tab, M Cup draw, guest access, print-media
   chrome hiding (31 checks green).
+
 ## 2026-08-29 (Home dashboard: your tournament tee time card)
 
 A member drawn into a stroke tournament now sees their start right on

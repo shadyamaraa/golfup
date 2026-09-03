@@ -490,6 +490,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   };
 
   const paint = () => {
+    // Writes are awaited, so a member who taps a score and immediately leaves
+    // would otherwise have this repaint land on the page they moved to.
+    if (ctx.alive?.() === false) return;
     if (!data || data.status === 'deleted') {
       if (!store.isUsingFirebase()) notFound(t('gsGameNotFound'), '#/');
       return;
