@@ -7,7 +7,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring } from './strokeplay.js';
+import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnIsTeam } from './strokeplay.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
@@ -67,6 +67,11 @@ function cardPoints(tn, holes, hcp) {
 // finalizeRoundIfComplete, so tournament golf counts toward the handicap
 // the same way an evening game does. Corrections re-post the same key.
 async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
+  // A team event plays one ball a team, so no player has a card of their own
+  // and nothing may post — a "complete" round there would be partly somebody
+  // else's shots, and would corrupt the WHS index it landed on. The casual
+  // scorer guards the same way (isOneBallFormat in game-score.js).
+  if (tnIsTeam(tn)) return;
   try {
     if (!tn?.rating || !tn?.slope) return;
     const holes = tn.sp?.scores?.[pid]?.[round];

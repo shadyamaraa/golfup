@@ -15,6 +15,14 @@
 //     scores:  { pid: { [round]: { [hole]: strokes } } }
 //   }
 //
+// A TEAM event (scramble) needs no second data model: a team is simply another
+// sp.players entry — kind:'team', its members listed, and the organiser's
+// hand-entered team handicap — so its one ball lives at the ordinary
+// sp.scores[teamKey] path, the leaderboard ranks it like any other entry, and
+// the database rules already let anyone in the flight write it. Its members
+// stay in sp.players too (that is what carries the flight pointer the rules
+// read) and are simply left off the board.
+//
 // The board keeps riding the existing pure ranking in tournament-sheet.js
 // (rankEntries / cutSet / activeRound): spEntries() emits exactly the entry
 // shape those functions and the leaderboard render already consume.
@@ -47,6 +55,59 @@ export const tnScoring = (tn) => (tn?.spScoring === 'stableford' ? 'stableford' 
 
 // Whether a bigger total is a better one.
 export const tnHigherWins = (tn) => tnScoring(tn) === 'stableford';
+
+// ---- Team events (scramble) ----
+//
+// One ball a team, so the TEAM is the scoring unit and the ranked entry. The
+// whole strokeplay stack — spEntries, rankEntries, the cut, the movement
+// arrows, the board, the schedule — needs no change for that, because a team
+// is stored as an sp.players entry and therefore already looks like a
+// competitor to every one of them. Only the scorer and the admin have to know
+// an entry is a team rather than a person.
+
+// Is this tournament played by teams rather than individuals?
+export const tnIsTeam = (tn) => tn?.format === 'scramble';
+
+// How many players to a team. The organiser chooses; missing reads as 4, the
+// club scramble, because that is what a flight of four already is.
+export const tnTeamSize = (tn) => (Number(tn?.spTeamSize) === 2 ? 2 : 4);
+
+// What a team event ranks: the whole field on one board, or a contest inside
+// each flight. Only two-player teams can meet inside a flight of four, so a
+// four-player team event is always a board however the field is stored.
+export const tnTeamRank = (tn) =>
+  tnIsTeam(tn) && tnTeamSize(tn) === 2 && tn?.spTeamRank === 'match' ? 'match' : 'board';
+
+// A team's id: its members' ids sorted and joined with '+' — the same
+// collision-proof shape pairKey() gives a casual game, so a team taken apart
+// and put back together the same way finds its scores again.
+export const teamKeyOf = (memberIds) =>
+  [...(memberIds || [])].map(String).sort().join('+');
+
+// Is this sp.players entry a team rather than a person?
+export const isTeamEntry = (p) => p?.kind === 'team';
+
+// A team entry's member ids. Stored as a {pid:true} map rather than an array
+// so the database rules can test membership without iterating.
+export const teamMemberIds = (p) => Object.keys(p?.members || {});
+
+// Every team in the tournament, and every player who is not in one — what the
+// admin's team builder reads.
+export function spTeams(tn) {
+  const players = tn?.sp?.players || {};
+  const teams = [];
+  const claimed = new Set();
+  Object.entries(players).forEach(([pid, p]) => {
+    if (!isTeamEntry(p)) return;
+    const members = teamMemberIds(p);
+    members.forEach(m => claimed.add(m));
+    teams.push({ pid, ...p, memberIds: members });
+  });
+  const free = Object.entries(players)
+    .filter(([pid, p]) => p && !isTeamEntry(p) && !claimed.has(pid))
+    .map(([pid, p]) => ({ pid, ...p }));
+  return { teams, free };
+}
 
 // Which spEntries metric a tournament's board should ask for. Stableford is
 // already played off handicap, so the gross/net toggle does not apply to it.
@@ -105,7 +166,14 @@ export function spEntries(tn, metric = 'gross') {
     return Number.isFinite(n) ? n : null;
   };
 
-  return Object.entries(sp.players).filter(([, p]) => p).map(([pid, p]) => {
+  // A team event ranks teams. Their members stay in sp.players — that is what
+  // carries the flight pointer the database rules read — but they have no card
+  // of their own, so they never appear on the board.
+  const teamOnly = tnIsTeam(tn);
+
+  return Object.entries(sp.players)
+    .filter(([, p]) => p && (!teamOnly || isTeamEntry(p)))
+    .map(([pid, p]) => {
     const perRound = Array.from({ length: roundCount }, (_, i) =>
       roundGross(sp.scores?.[pid]?.[i + 1], pars));
     const hcp = hcpOf(p);
@@ -148,7 +216,9 @@ export function spEntries(tn, metric = 'gross') {
 
     return {
       pid,
-      userId: p.userId || (pid.startsWith('p_') ? null : pid),
+      // A team is nobody's card: leaving userId null keeps the "that's me"
+      // banner, the home tee card and the WHS posting from ever matching it.
+      userId: isTeamEntry(p) ? null : (p.userId || (pid.startsWith('p_') ? null : pid)),
       name: p.name || pid,
       hcp,
       status: p.status || '',
@@ -219,9 +289,13 @@ export function chunkGroups(pids, size = 4) {
  */
 export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = Math.random } = {}) {
   const players = tn?.sp?.players || {};
+  // A team event draws TEAMS into flights; an individual event never draws a
+  // team, even if a stray team entry is left over from a format change.
+  const teamOnly = tnIsTeam(tn);
   const pids = Object.keys(players).filter(pid => {
     const p = players[pid];
-    return p && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
+    if (!p || isTeamEntry(p) !== teamOnly) return false;
+    return !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
   });
 
   if (method === 'hcp') {
