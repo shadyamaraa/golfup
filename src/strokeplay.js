@@ -30,6 +30,7 @@
 import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
 import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
+import { settleMatch, statusText, HALVED } from './matchplay.js';
 
 export const SP_HOLES = 18;
 
@@ -90,6 +91,39 @@ export const isTeamEntry = (p) => p?.kind === 'team';
 // A team entry's member ids. Stored as a {pid:true} map rather than an array
 // so the database rules can test membership without iterating.
 export const teamMemberIds = (p) => Object.keys(p?.members || {});
+
+// A flight of exactly two teams read as a match — the organiser's 'match'
+// choice for a two-player-team event. The hand-entered team handicaps play off
+// the lower, the difference allocated by stroke index, and the holes settle
+// through the same engine the M Cup and the casual game use. null unless the
+// flight holds exactly two teams, so a caller can simply not draw it.
+export function spFlightMatch(tn, round, teamPids) {
+  if (!Array.isArray(teamPids) || teamPids.length !== 2) return null;
+  const players = tn?.sp?.players || {};
+  const [a, b] = teamPids;
+  if (!isTeamEntry(players[a]) || !isTeamEntry(players[b])) return null;
+  const sis = tnSIs(tn);
+  const ha = Number(players[a].hcp);
+  const hb = Number(players[b].hcp);
+  const net = Number.isFinite(ha) && Number.isFinite(hb);
+  const base = net ? Math.min(ha, hb) : 0;
+  const diff = { a: net ? Math.round(ha - base) : 0, b: net ? Math.round(hb - base) : 0 };
+  const sa = tn?.sp?.scores?.[a]?.[round] || {};
+  const sb = tn?.sp?.scores?.[b]?.[round] || {};
+  const holes = {};
+  for (let n = 1; n <= SP_HOLES; n++) {
+    const ga = Number(sa[n]);
+    const gb = Number(sb[n]);
+    // A hole either team has not finished stays absent; settleMatch stops there.
+    if (!(ga > 0) || !(gb > 0)) continue;
+    const si = sis?.[n] ?? null;
+    const na = ga - strokesReceived(diff.a, si);
+    const nb = gb - strokesReceived(diff.b, si);
+    holes[n] = na < nb ? 'a' : nb < na ? 'b' : HALVED;
+  }
+  const settled = settleMatch(holes, SP_HOLES);
+  return { a, b, holes, settled, status: statusText(settled), allowance: { net, base: net ? base : null, ...diff } };
+}
 
 // Every team in the tournament, and every player who is not in one — what the
 // admin's team builder reads.

@@ -11,7 +11,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, scrambleRulesHTML } from './mcup-rules.js';
 import { COURSES, courseByKey } from './strokeplay.js';
 import { courseTees } from './courses.js';
 
@@ -28,6 +28,7 @@ const blank = () => ({
   name: '', format: '',
   startDate: '', endDate: '', venue: '', city: '',
   course: '', tee: '', rounds: '1', par: '72', spScoring: 'strokes', cutAfterRound: '', cutSize: '',
+  spTeamSize: '4', spTeamRank: 'board',
   teamAName: '', teamAShort: '', teamBName: '', teamBShort: ''
 });
 
@@ -70,11 +71,13 @@ function stepHTML() {
     // The two match play kinds carry their rulebook right here, so the choice
     // between plain match play and the Ryder Cup rules is made informed.
     const rules = draft.format === 'ryder' ? ryderRulesHTML()
-      : draft.format === 'match' ? matchRulesHTML() : '';
+      : draft.format === 'match' ? matchRulesHTML()
+        : draft.format === 'scramble' ? scrambleRulesHTML() : '';
     return `
       <h4 style="margin:0 0 10px;">${t('wzType')}</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         ${card('stroke', '⛳', t('wzTypeStroke'), t('wzTypeStrokeDesc'))}
+        ${card('scramble', '🤝', t('wzTypeScramble'), t('wzTypeScrambleDesc'))}
         ${card('match', '🎯', t('wzTypeMatch'), t('wzTypeMatchDesc'))}
         ${card('ryder', '🏆', t('wzTypeRyder'), t('wzTypeRyderDesc'))}
       </div>
@@ -149,8 +152,18 @@ function stepHTML() {
         ${field(t('tnFRounds'), select('rounds', [1, 2, 3, 4].map(n => [String(n), String(n)])))}
         ${field(t('tnFCutAfter'), select('cutAfterRound', cutOptions))}
         ${draft.cutAfterRound ? field(t('tnFCutSize'), input('cutSize', 'number')) : ''}
+        ${draft.format === 'scramble' ? field(t('spTeamSize'), select('spTeamSize', [
+          ['4', t('spTeamSize4')],
+          ['2', t('spTeamSize2')]
+        ])) : ''}
+        ${draft.format === 'scramble' && draft.spTeamSize === '2' ? field(t('spTeamRank'), select('spTeamRank', [
+          ['board', t('spTeamRankBoard')],
+          ['match', t('spTeamRankMatch')]
+        ])) : ''}
       </div>
       <p style="margin:8px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spWizardHint')}</p>
+      ${draft.format === 'scramble'
+        ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spTeamScoreHint')}</p>` : ''}
       ${draft.spScoring === 'stableford'
         ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spStablefordHint')}</p>` : ''}`;
   }
@@ -163,12 +176,12 @@ function stepHTML() {
   return `
     <h4 style="margin:0 0 10px;">${t('wzSummary')}</h4>
     ${line(t('tnFName'), draft.name)}
-    ${line(t('wzType'), { stroke: t('wzTypeStroke'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
+    ${line(t('wzType'), { stroke: t('wzTypeStroke'), scramble: t('wzTypeScramble'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
     ${line(t('date'), [draft.startDate, draft.endDate].filter(Boolean).join(' — '))}
     ${line(t('tnFVenue'), [draft.venue, draft.city].filter(Boolean).join(' · '))}
     ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
-      : draft.format === 'stroke'
+      : draft.format === 'stroke' || draft.format === 'scramble'
         ? line(t('spCourse'), courseByKey(draft.course)?.name || draft.venue || '—')
           + line(t('spTee'), (() => {
             const x = courseTees(draft.course).find(v => v.key === draft.tee);
@@ -176,13 +189,15 @@ function stepHTML() {
           })())
           + line(t('tnFRounds'), draft.rounds)
           + line(t('tnFPar'), draft.par)
+          + (draft.format === 'scramble'
+            ? line(t('spTeamSize'), draft.spTeamSize === '2' ? t('spTeamSize2') : t('spTeamSize4')) : '')
         : ''}`;
 }
 
 // A step's gate: what must be filled before Үргэлжлүүлэх works.
 function stepValid() {
   if (draft.step === 1) return !!draft.name.trim();
-  if (draft.step === 2) return ['stroke', 'match', 'ryder'].includes(draft.format);
+  if (draft.step === 2) return ['stroke', 'scramble', 'match', 'ryder'].includes(draft.format);
   return true;
 }
 
@@ -209,7 +224,9 @@ async function create(ctx) {
     // Participants and matches are added in the editor; nothing to seed.
   } else {
     // Scores are entered in the app (sp node); the round being played starts
-    // at 1 and the admin advances it from the editor.
+    // at 1 and the admin advances it from the editor. A scramble is the same
+    // stroke play pipeline with teams as its entries, plus the two choices
+    // that shape those teams.
     const teeInfo = courseTees(draft.course).find(x => x.key === draft.tee) || null;
     Object.assign(data, {
       course: draft.course,
@@ -221,6 +238,10 @@ async function create(ctx) {
       spScoring: draft.spScoring === 'stableford' ? 'stableford' : 'strokes',
       cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize)
     });
+    if (draft.format === 'scramble') {
+      data.spTeamSize = draft.spTeamSize === '2' ? 2 : 4;
+      data.spTeamRank = data.spTeamSize === 2 && draft.spTeamRank === 'match' ? 'match' : 'board';
+    }
   }
   const id = await store.saveTournament(data);
   resetTnWizard();

@@ -7,7 +7,9 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { drawGroups, spGroupList } from './strokeplay.js';
+import {
+  drawGroups, spGroupList, tnIsTeam, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams
+} from './strokeplay.js';
 import { courseHandicap } from './handicap.js';
 import { addMinutesHHMM } from './matchplay.js';
 import { nameKey, nameMatches } from './tournament-sheet.js';
@@ -29,6 +31,11 @@ const groupRoundFor = new Map();
 const playersOpenFor = new Map();
 // The draw controls' values, so a repaint never resets what was picked.
 const drawCtlFor = new Map();
+// A team event: the players ticked for the next team, and the teams fold.
+const teamPickFor = new Map();
+const teamsOpenFor = new Map();
+// How many teams fit a flight of four: one four-player team, two of two.
+const teamsPerFlight = (tn) => Math.max(1, Math.floor(4 / tnTeamSize(tn)));
 const drawCtl = (tnId) => {
   let c = drawCtlFor.get(tnId);
   if (!c) {
@@ -101,7 +108,7 @@ function rowHTML(tn, pid, p) {
       <select data-sp="status" data-pid="${esc(pid)}" style="${INPUT}width:80px;">
         ${['', 'WD', 'DQ'].map(s => `<option value="${s}"${(p.status || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
       </select>
-      <a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
+      ${tnIsTeam(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
       <button data-sp="del" data-pid="${esc(pid)}" class="btn btn-outline-danger btn-sm">✕</button>
     </div>`;
 }
@@ -118,7 +125,7 @@ function whsHcp(u, tn) {
 function sectionHTML(tn, users) {
   const d = draftFor(tn);
   const rows = Object.entries(d.players)
-    .filter(([, p]) => p)
+    .filter(([, p]) => p && !isTeamEntry(p))
     .sort((a, b) => String(a[1].name || '').localeCompare(String(b[1].name || '')));
   // An empty roster is the one time the fold opens itself — there is
   // nothing else for the admin to do until players exist.
@@ -148,10 +155,79 @@ function sectionHTML(tn, users) {
           </button>` : ''}
         </div>
       </details>
+      ${teamsHTML(tn, d)}
       ${groupsHTML(tn, d)}
       <button data-sp="save" class="btn ${d.dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
         ${t('mpSave')}${d.dirty ? ' *' : ''}
       </button>
+    </div>`;
+}
+
+// ---- Teams section (scramble) ----
+// A team is built from the roster: tick the players, name it, create — and it
+// becomes an sp.players entry of its own, so the draw, the board and the
+// scorer treat it like any competitor. The team handicap is typed by hand;
+// nothing is derived from the members, because a scramble's allowance is the
+// organiser's call and no formula fits both a pair and a four.
+function teamsHTML(tn, d) {
+  if (!tnIsTeam(tn)) return '';
+  const size = tnTeamSize(tn);
+  const { teams, free } = spTeams({ sp: { players: d.players } });
+  const picked = teamPickFor.get(tn.id) || new Set();
+  teamPickFor.set(tn.id, picked);
+  // A pick that was since claimed by another team, or removed, is dropped.
+  const freeIds = new Set(free.map(p => p.pid));
+  [...picked].forEach(pid => { if (!freeIds.has(pid)) picked.delete(pid); });
+  const open = teamsOpenFor.get(tn.id) ?? true;
+  const nameOf = (pid) => d.players[pid]?.name || pid;
+  const autoName = [...picked].map(pid => String(nameOf(pid)).split(' ')[0]).join(' / ');
+
+  const teamRow = (tm) => {
+    const scored = !!Object.keys(tn.sp?.scores?.[tm.pid] || {}).length;
+    return `
+    <div style="border:1px solid var(--border-color);border-radius:8px;padding:8px;margin-top:6px;background:var(--bg-color);">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <input data-spt="tname" data-pid="${esc(tm.pid)}" value="${esc(tm.name || '')}" placeholder="${t('spTeamName')}"
+          style="${INPUT}flex:1;min-width:140px;font-weight:700;" />
+        <input data-spt="hcp" data-pid="${esc(tm.pid)}" type="number" step="1" min="0" max="72"
+          value="${esc(tm.hcp ?? '')}" placeholder="${t('spTeamHcp')}" title="${t('spTeamHcp')}" style="${INPUT}width:84px;" />
+        ${scored ? `<span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
+        <a href="#/spscore/${esc(tn.id)}/${esc(tm.pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
+        <button data-spt="disband" data-pid="${esc(tm.pid)}" class="btn btn-outline-danger btn-sm" title="${t('spTeamDisband')}">✕</button>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+        ${tm.memberIds.map(pid => `<span class="pill-soft" style="font-size:0.72rem;">${esc(nameOf(pid))}</span>`).join('')}
+      </div>
+    </div>`;
+  };
+
+  const chip = (p) => `
+    <button data-spt="pick" data-pid="${esc(p.pid)}" type="button"
+      class="seg-chip${picked.has(p.pid) ? ' active' : ''}"
+      style="flex:0 0 auto;padding:7px 10px;font-size:0.78rem;">${esc(p.name || p.pid)}</button>`;
+
+  return `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
+      <details data-sp-teams${open ? ' open' : ''}>
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spTeams')} — ${teams.length}</summary>
+        <div style="margin-top:8px;">
+          ${teams.map(teamRow).join('')
+            || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoTeams')}</p>`}
+          <div style="margin-top:12px;font-size:0.8rem;font-weight:700;">
+            ${t('spTeamNew')} · ${picked.size}/${size}
+            <span style="font-weight:400;color:var(--text-secondary);">${t('spTeamPick')}</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            ${free.map(chip).join('')
+              || `<span style="font-size:0.74rem;color:var(--text-muted);">— ${t('spTeamFree')}: 0</span>`}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input data-spt="name" placeholder="${t('spTeamName')}" value="${esc(autoName)}"
+              style="${INPUT}flex:1;min-width:0;box-sizing:border-box;" />
+            <button data-spt="create" class="btn btn-primary btn-sm" ${picked.size === size ? '' : 'disabled'}>${t('spTeamCreate')}</button>
+          </div>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -163,8 +239,9 @@ function groupsHTML(tn, d) {
   const groups = groupList(d, round);
   const inGroup = new Set();
   groups.forEach(g => Object.keys(g.players || {}).forEach(pid => inGroup.add(pid)));
+  const team = tnIsTeam(tn);
   const loose = Object.entries(d.players)
-    .filter(([pid, p]) => p && !inGroup.has(pid)
+    .filter(([pid, p]) => p && !inGroup.has(pid) && isTeamEntry(p) === team
       && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase()))
     .sort((a, b) => String(a[1].name || '').localeCompare(String(b[1].name || '')));
 
@@ -219,7 +296,12 @@ function groupsHTML(tn, d) {
         </select>
         ${c.method === 'empty'
           ? `<input data-spg="empty-count" type="number" min="1" max="40" value="${esc(c.count)}" title="${t('spGroups')}" style="${INPUT}width:64px;" />`
-          : `<select data-spg="size" style="${INPUT}font-size:0.78rem;">
+          : team
+            ? `<select data-spg="size" style="${INPUT}font-size:0.78rem;">
+              ${Array.from({ length: teamsPerFlight(tn) }, (_, i) => teamsPerFlight(tn) - i)
+                .map(n => `<option value="${n}"${sel(n, Math.min(Number(c.size) || 4, teamsPerFlight(tn)))}>${n} ${t('spTeamsPerGroup')}</option>`).join('')}
+            </select>`
+            : `<select data-spg="size" style="${INPUT}font-size:0.78rem;">
               ${[4, 3].map(n => `<option value="${n}"${sel(n, c.size)}>${n} ${t('spPerGroup')}</option>`).join('')}
             </select>`}
         <input data-spg="first-tee" type="time" value="${esc(c.firstTee)}" title="${t('mpTee')}" style="${INPUT}width:100px;" />
@@ -252,6 +334,12 @@ async function saveDraft(tn, ctx) {
     Object.entries(groups || {}).forEach(([gid, g]) => {
       Object.keys(g?.players || {}).forEach(pid => {
         (pointers[pid] = pointers[pid] || {})[round] = gid;
+        // A team's members stand in its flight too: the same-flight database
+        // rule is what lets them enter the team's ball, and it reads the
+        // pointer on THEIR player record.
+        teamMemberIds(d.players[pid]).forEach(m => {
+          (pointers[m] = pointers[m] || {})[round] = gid;
+        });
       });
     });
     patch[`sp/groups/${round}`] = groups && Object.keys(groups).length ? groups : null;
@@ -261,6 +349,7 @@ async function saveDraft(tn, ctx) {
     if (!p) return;
     const rec = { name: p.name || '' };
     if (p.userId) rec.userId = p.userId;
+    if (isTeamEntry(p)) { rec.kind = 'team'; rec.members = p.members || {}; }
     if (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined && !isNaN(Number(p.hcp))) rec.hcp = Number(p.hcp);
     if (p.status) rec.status = p.status;
     if (pointers[pid]) rec.groups = pointers[pid];
@@ -325,6 +414,7 @@ function wire(host, tn, ctx) {
   });
 
   wireGroups(host, tn, ctx, d, markDirty);
+  wireTeams(host, tn, ctx, d, markDirty);
 
   // The whole membership in one tap — every active member not already on
   // the roster. Names come through memberName so they read first-name-first.
@@ -421,6 +511,72 @@ function wire(host, tn, ctx) {
   };
 }
 
+// ---- Team wiring ----
+
+function wireTeams(host, tn, ctx, d, markDirty) {
+  if (!tnIsTeam(tn)) return;
+  const size = tnTeamSize(tn);
+  const picked = teamPickFor.get(tn.id) || new Set();
+  teamPickFor.set(tn.id, picked);
+  const repaint = () => paint(host, tn, ctx);
+  host.querySelector('details[data-sp-teams]')?.addEventListener('toggle', (e) => {
+    teamsOpenFor.set(tn.id, e.target.open);
+  });
+
+  host.querySelectorAll('button[data-spt="pick"]').forEach(b => b.onclick = () => {
+    const pid = b.dataset.pid;
+    if (picked.has(pid)) picked.delete(pid);
+    else if (picked.size < size) picked.add(pid);
+    repaint();
+  });
+
+  const nameInp = host.querySelector('input[data-spt="name"]');
+  host.querySelector('button[data-spt="create"]')?.addEventListener('click', () => {
+    if (picked.size !== size) return;
+    const members = [...picked];
+    const key = teamKeyOf(members);
+    if (d.players[key]) { ctx.showToast?.('⚠️ ' + t('spTeamCreate'), 'warning'); return; }
+    const typed = nameInp?.value.trim();
+    d.players[key] = {
+      kind: 'team',
+      name: typed || members.map(pid => String(d.players[pid]?.name || pid).split(' ')[0]).join(' / '),
+      members: Object.fromEntries(members.map(pid => [pid, true])),
+      hcp: ''
+    };
+    picked.clear();
+    markDirty();
+    repaint();
+  });
+
+  host.querySelectorAll('input[data-spt="tname"]').forEach(inp => inp.onchange = () => {
+    const tm = d.players[inp.dataset.pid];
+    if (!tm) return;
+    tm.name = inp.value.trim();
+    markDirty();
+  });
+
+  host.querySelectorAll('input[data-spt="hcp"]').forEach(inp => inp.onchange = () => {
+    const tm = d.players[inp.dataset.pid];
+    if (!tm) return;
+    tm.hcp = inp.value.trim();
+    markDirty();
+  });
+
+  // Disbanding frees the members for another team. A team that has scored
+  // is asked about first — its ball goes with it.
+  host.querySelectorAll('button[data-spt="disband"]').forEach(b => b.onclick = () => {
+    const pid = b.dataset.pid;
+    const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
+    if (scored && !confirm(t('spDelPlayerScored'))) return;
+    delete d.players[pid];
+    Object.values(d.groups).forEach(groups =>
+      Object.values(groups || {}).forEach(g => { if (g?.players) delete g.players[pid]; }));
+    d.removed.add(pid);
+    markDirty();
+    repaint();
+  });
+}
+
 // ---- Group wiring ----
 
 function wireGroups(host, tn, ctx, d, markDirty) {
@@ -478,7 +634,11 @@ function wireGroups(host, tn, ctx, d, markDirty) {
 
     if (Object.keys(d.groups[round] || {}).length && !confirm(t('spRedrawConfirm'))) return;
     const method = c.method;
-    const size = Number(c.size) || 4;
+    // The size control remembers "4" from an individual event; a team event
+    // can never seat more teams than fit a flight of four.
+    const size = tnIsTeam(tn)
+      ? Math.max(1, Math.min(Number(c.size) || teamsPerFlight(tn), teamsPerFlight(tn)))
+      : (Number(c.size) || 4);
     // The draw reads the DRAFT roster (unsaved adds included) but the live
     // scores, so a standings draw ranks on what the board shows.
     const draw = drawGroups(
@@ -552,7 +712,7 @@ function wireGroups(host, tn, ctx, d, markDirty) {
       groups.forEach(g => Object.keys(g.players || {}).forEach(pid => numberOf.set(pid, g.number)));
       const mine = new Set(Object.keys(d.groups[round]?.[gid]?.players || {}));
       return Object.entries(d.players)
-        .filter(([pid, p]) => p && !mine.has(pid)
+        .filter(([pid, p]) => p && !mine.has(pid) && isTeamEntry(p) === tnIsTeam(tn)
           && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase()))
         .map(([pid, p]) => ({
           pid,

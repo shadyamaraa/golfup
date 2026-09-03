@@ -785,3 +785,46 @@ test('a team ranks and cuts through the existing board, untouched', () => {
   assert.equal(cutBoard.find(e => e.pid === 'u3+u4').status, 'CUT');
   assert.equal(cutBoard.find(e => e.pid === 'u1+u2').posLabel, '1');
 });
+
+test('a two-team flight reads as a match, off the hand-entered team handicaps', () => {
+  // Sky Resort's card gives the stroke indexes; both teams level par gross.
+  const tn = TEAM_TN({ course: 'sky', spTeamRank: 'match' });
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  // Team hcp 9 against 5: the difference of four lands on SI 1-4 (holes 9,
+  // 12, 2, 15), so team A wins exactly those and halves the rest — 4 & 3.
+  assert.deepEqual(m.allowance, { net: true, base: 5, a: 4, b: 0 });
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.deepEqual(won, [2, 9, 12, 15]);
+  assert.equal(m.status, '4 & 3');
+  assert.equal(m.settled.winner, 'a');
+  assert.equal(m.settled.thru, 15);
+});
+
+test('the flight match stops at a hole either team has not finished', () => {
+  const tn = TEAM_TN({ course: 'sky' });
+  tn.sp.players['u1+u2'].hcp = 5;                 // level with u3+u4 → gross reading
+  tn.sp.scores['u1+u2'][1] = { 1: 4, 2: 4, 3: 4 };
+  tn.sp.scores['u3+u4'][1] = { 1: 5, 2: 4 };
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.holes[1], 'a');
+  assert.equal(m.holes[2], 'h');
+  assert.equal(m.holes[3], undefined, 'team B has not finished the third');
+  assert.equal(m.settled.thru, 2);
+  assert.equal(m.status, '1 UP');
+  assert.equal(m.allowance.a + m.allowance.b, 0);
+});
+
+test('a missing team handicap makes the flight match gross, and odd flights are no match', () => {
+  const tn = TEAM_TN({ course: 'sky' });
+  delete tn.sp.players['u3+u4'].hcp;
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.allowance.net, false);
+  assert.equal(m.allowance.a, 0);
+  // Level par each, no strokes anywhere: halved all the way.
+  assert.equal(m.status, 'HALVED');
+  // One team, three teams, or a person in the list: nothing to draw.
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4', 'u1']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u1']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, null), null);
+});

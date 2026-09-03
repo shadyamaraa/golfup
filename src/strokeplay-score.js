@@ -7,7 +7,10 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnIsTeam } from './strokeplay.js';
+import {
+  SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnIsTeam, tnTeamRank,
+  isTeamEntry, teamMemberIds, spFlightMatch
+} from './strokeplay.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
@@ -309,6 +312,13 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
                color:var(--text-primary);font-size:1.35rem;font-weight:800;
                ${disabled ? 'opacity:0.35;cursor:default;' : ''}">${label}</button>`;
 
+    // A team's row is the team's — one ball, one stepper — with its members
+    // named underneath so the flight can see who is who.
+    const membersLine = (pid) => isTeamEntry(players[pid]) ? `
+            <span style="display:block;font-size:0.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${esc(teamMemberIds(players[pid]).map(m => players[m]?.name || m).join(' · '))}
+            </span>` : '';
+
     const row = (pid) => {
       const holes = tn.sp.scores?.[pid]?.[round] || {};
       const strokes = holes[hole] ?? null;
@@ -319,6 +329,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">
               ${esc(players[pid].name || pid)}
             </span>
+            ${membersLine(pid)}
             <span data-spgs-total="${esc(pid)}" style="font-size:0.74rem;color:var(--text-secondary);">
               ${tallyText(holes, pid)}
             </span>
@@ -352,6 +363,30 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         }).join('')}
       </div>`;
 
+    // A two-team flight in a 'match' event settles hole by hole as well:
+    // who leads, by how much, or the close-out — the M Cup reading.
+    const matchLineHTML = (live) => {
+      if (tnTeamRank(live) !== 'match') return '';
+      const m = spFlightMatch(live, round, pids);
+      if (!m) return '';
+      const nameOf = (pid) => esc(live.sp.players[pid]?.name || pid);
+      const s = m.settled;
+      const lead = s.leader === 'a' ? nameOf(m.a) : s.leader === 'b' ? nameOf(m.b) : '';
+      const status = s.finished
+        ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved'))
+        : (s.leader ? `${lead} ${esc(m.status)}` : 'AS');
+      const sub = s.finished ? t('mpFinal') : `${t('mpThru')} ${s.thru}${s.dormie ? ` · ${t('mpDormie')}` : ''}`;
+      const allow = !m.allowance.net ? t('gsGrossPlay')
+        : (m.allowance.a || m.allowance.b)
+          ? `${m.allowance.a ? nameOf(m.a) : nameOf(m.b)} +${m.allowance.a || m.allowance.b} ${t('gsStrokesShort')}`
+          : t('gsNet');
+      return `
+        <div data-spgs-match style="margin-top:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card-hover);text-align:center;">
+          <div style="font-size:1.05rem;font-weight:800;">${status}</div>
+          <div style="font-size:0.66rem;color:var(--text-secondary);">${esc(sub)} · ${esc(allow)}</div>
+        </div>`;
+    };
+
     host.innerHTML = `
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
@@ -372,6 +407,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <button data-spgs-nav="1" class="btn btn-outline btn-sm" style="width:52px;" ${hole >= SP_HOLES ? 'disabled' : ''}>›</button>
           </div>
           ${pids.map(row).join('')}
+          ${matchLineHTML(tn)}
           ${stripHTML()}
           ${anyEditable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
         </div>
@@ -415,6 +451,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         cell.style.background = full ? 'var(--gold)' : 'transparent';
         cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
       }
+      const ml = host.querySelector('[data-spgs-match]');
+      if (ml) ml.outerHTML = matchLineHTML(tnLive);
     };
 
     host.querySelectorAll('button[data-spgs-step]').forEach(b => b.onclick = async () => {

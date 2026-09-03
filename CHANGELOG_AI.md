@@ -1,5 +1,45 @@
 # CHANGELOG_AI.md
 
+## 2026-09-03 (Scramble tournaments — the fourth tournament type)
+
+Teams of two or four play one ball, and the field is ranked by team total on
+the ordinary leaderboard. The organiser types each team's handicap, chooses the
+team size, and — for two-player teams — whether a flight is read as a board or
+as a 2 v 2 match settled hole by hole.
+
+- **The whole thing rests on one idea: a team is an `sp.players` entry.** Its
+  one ball lives at the existing `sp.scores[teamKey]` path, so `spEntries`,
+  `rankEntries`, the cut, the ▲/▼ arrows, the board, the schedule, the draw and
+  the same-flight database rule all work untouched — **no new data node and no
+  rules change**. The members stay in `sp.players` too, because their flight
+  pointer is what the rules read; they are simply left off the board. This was
+  estimated at two-plus weeks with a new `teamScores` node and a rules change
+  before the rule was read closely.
+- `strokeplay.js` gained `tnIsTeam`, `tnTeamSize` (4 by default — a flight of
+  four already is a team), `tnTeamRank`, `teamKeyOf`, `isTeamEntry`,
+  `teamMemberIds`, `spTeams` and `spFlightMatch`; `spEntries` and `drawGroups`
+  read teams in a team event and people otherwise.
+- **The admin editor** has a Багууд fold: tick the players, name the team,
+  create; type the team handicap; disband to free the members. `saveDraft`
+  writes `kind`/`members` and stamps every member with their team's flight
+  pointer in the same save. The draw offers *teams per flight* instead of
+  *players per flight*.
+- **The flight scorer** shows one row and one stepper per team with its
+  members named underneath, and in a match event a live status line — *2 UP ·
+  Thru 9*, the M Cup reading — recomputed as scores land.
+- **WHS**: `finalizeSpRoundIfComplete` gained the format guard the casual scorer
+  already had. It was a latent bug — the tournament scorer posted any complete
+  18-hole card with no format check, so the first one-ball tournament would
+  have posted shared shots as individual rounds.
+- **Two facts checked against production before building**: no live tournament
+  carries `format: 'scramble'` (17 records — 7 stroke, 5 ryder, 5 match), so
+  the value was free to take; and one of the five Ryder Cup tournaments is
+  literally named "Scramble" — someone wanted this and had no type for it.
+- Also fixed: `tnFormatText` omitted `ryder`, so every M Cup tournament printed
+  the raw string on its info tab; Korean gained `fmtRyder`.
+
+Tests: `npm run test:mp` is 206 (was 193).
+
 ## 2026-09-03 (Casual formats phase 2 — scramble, fourball, foursome)
 
 The 2 v 2 team formats, and the first thing this app stores that is not a

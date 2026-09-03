@@ -7,7 +7,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
@@ -23,7 +23,7 @@ import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
-import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -1555,9 +1555,14 @@ function tnDatesText(tn) {
     : `${start} – ${months[ed.getMonth()]} ${ed.getDate()}`;
 }
 
+// The tournament's type as a reader's label. Anything unknown prints raw
+// rather than blank, which is how a bug here was once spotted: 'ryder' was
+// missing and M Cup tournaments read "ryder".
 function tnFormatText(tn) {
-  const key = { stroke: 'fmtStroke', match: 'fmtMatch', scramble: 'fmtScramble' }[tn.format];
-  return key ? t(key) : (tn.format || '');
+  const key = {
+    stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder', scramble: 'fmtScramble'
+  }[tn?.format];
+  return key ? t(key) : (tn?.format || '');
 }
 
 // THRU only means something while a round is running; a finished tournament is
@@ -1710,13 +1715,18 @@ function tnInfoHTML(tn) {
     tnKind(tn) === 'stroke'
       ? [t('spScoring'), tnScoring(tn) === 'stableford' ? t('spScoringStableford') : t('spScoringStrokes')]
       : ['', ''],
+    tnIsTeam(tn)
+      ? [t('spTeamSize'), tnTeamSize(tn) === 2 ? t('spTeamSize2') : t('spTeamSize4')]
+      : ['', ''],
     [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
-  // Each match play kind ships its rulebook: the Ryder Cup format carries the
-  // club's full M Cup document, plain match play a Rule 3 primer.
+  // Each kind ships its rulebook: the Ryder Cup format carries the club's full
+  // M Cup document, plain match play a Rule 3 primer, a scramble its own block.
   const kind = tnKind(tn);
-  const rules = kind === 'ryder' ? ryderRulesHTML() : kind === 'match' ? matchRulesHTML() : '';
+  const rules = kind === 'ryder' ? ryderRulesHTML()
+    : kind === 'match' ? matchRulesHTML()
+      : tnIsTeam(tn) ? `<div style="font-size:0.84rem;line-height:1.6;">${scrambleRulesHTML()}</div>` : '';
 
   return `
     <div class="surface-card tn-info">
@@ -2070,7 +2080,7 @@ function renderTnList() {
     <div class="surface-card tn-lb${lbClass}">
       <div class="tn-lb-head">
         <span class="tn-c-pos">${t('tnPos')}</span>
-        <span class="tn-c-name">${t('tnPlayer')}</span>
+        <span class="tn-c-name">${t(tnIsTeam(tn) ? 'tnTeam' : 'tnPlayer')}</span>
         ${multi ? '<span class="tn-rds-head"></span>' : ''}
         <span class="tn-c-tot">${pts ? t('spPoints') : t('tnTotal')}</span>
         <span class="tn-c-thru">${t('tnThru')}</span>
@@ -8042,8 +8052,17 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
         <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
         <option value="ryder"${sel('ryder', tn.format)}>${t('fmtRyder')}</option>
-        ${tn.format === 'scramble' ? `<option value="scramble" selected>${t('fmtScramble')}</option>` : ''}
+        <option value="scramble"${sel('scramble', tn.format)}>${t('fmtScramble')}</option>
       </select>
+      ${tnIsTeam(tn) ? `
+        <select id="${p}-team-size" title="${t('spTeamSize')}" style="${TN_INPUT}">
+          <option value="4"${sel(4, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize4')}</option>
+          <option value="2"${sel(2, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize2')}</option>
+        </select>
+        <select id="${p}-team-rank" title="${t('spTeamRank')}" style="${TN_INPUT}">
+          <option value="board"${sel('board', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankBoard')}</option>
+          <option value="match"${sel('match', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankMatch')}</option>
+        </select>` : ''}
       <select id="${p}-status" style="${TN_INPUT}">
         <option value=""${sel('', tn.status || '')}>${t('tnFStatusAuto')}</option>
         <option value="upcoming"${sel('upcoming', tn.status)}>${t('tnSoon')}</option>
@@ -8076,6 +8095,13 @@ function tnAdminReadForm(p) {
     // and falls back to the default, which changes nothing.
     spScoring: val('sp-scoring') === 'stableford' ? 'stableford' : 'strokes',
     format: val('format'),
+    // The team selects exist on the form only once the tournament IS a
+    // scramble, so a save that switches the type keeps the defaults (4, board)
+    // and the next edit offers the choice.
+    ...(val('team-size') ? {
+      spTeamSize: num('team-size') === 2 ? 2 : 4,
+      spTeamRank: num('team-size') === 2 && val('team-rank') === 'match' ? 'match' : 'board'
+    } : {}),
     status: val('status'),
     cutAfterRound: num('cut-after'),
     cutSize: num('cut-size')
