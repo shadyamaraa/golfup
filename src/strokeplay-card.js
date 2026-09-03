@@ -9,7 +9,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   SP_HOLES, spActive, spEntries, spPlayerGroup, spGroupList, canScoreSp,
-  spPlayerCard, spPlayerStats
+  spPlayerCard, spPlayerStats, tnScoring, tnHigherWins, spMetricFor
 } from './strokeplay.js';
 import { rankEntries, activeRound } from './tournament-sheet.js';
 import { fmtToPar } from './game-score.js';
@@ -29,6 +29,15 @@ const scoreClass = (v) => {
   const n = Number(v);
   return n < 0 ? 'tn-sc-under' : n > 0 ? 'tn-sc-over' : 'tn-sc-even';
 };
+// The leaderboard total: points under Stableford (plain integer, no par
+// vocabulary), to-par otherwise. Every other figure on this card stays to-par.
+const totalText = (v, points) => (points
+  ? (v === null || v === undefined || v === '' ? '–' : String(v))
+  : scoreText(v));
+const totalClass = (v, points) => (points
+  ? (v === null || v === undefined || v === '' ? 'tn-sc-none' : 'tn-sc-over')
+  : scoreClass(v));
+
 const scoreText = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))
   ? '–' : fmtToPar(Number(v)));
 
@@ -38,8 +47,9 @@ const twoDp = (n) => (Math.round(n * 100) / 100).toFixed(2);
 
 // ---- Scorecard tab ----
 
-function nineHTML(card, from, to, segLabel, seg) {
+function nineHTML(card, from, to, segLabel, seg, points = false) {
   const holes = card.holes.slice(from - 1, to);
+  const ptsSum = holes.reduce((n, h) => n + (h.points ?? 0), 0);
   const cell = (h) => {
     const cls = h.cls ? ` is-${h.cls}` : '';
     return `<span class="spc-s">${h.strokes !== null
@@ -66,10 +76,15 @@ function nineHTML(card, from, to, segLabel, seg) {
         <span class="spc-r spc-seg ${scoreClass(holes[holes.length - 1]?.running)}">${
           holes[holes.length - 1]?.running === null || holes[holes.length - 1]?.running === undefined
             ? '' : fmtToPar(holes[holes.length - 1].running)}</span>` : ''}
+
+      ${points && card.hasPars ? `
+        <span class="spc-lbl">${t('spPointsRow')}</span>
+        ${holes.map(h => `<span class="spc-p">${h.points === null ? '' : h.points}</span>`).join('')}
+        <span class="spc-p spc-seg">${ptsSum}</span>` : ''}
     </div>`;
 }
 
-function cardTabHTML(card) {
+function cardTabHTML(card, points = false) {
   const sum = (cap, seg) => `
     <div class="spc-sum-cell">
       <span class="spc-sum-cap">${cap}</span>
@@ -77,8 +92,8 @@ function cardTabHTML(card) {
       ${card.hasPars ? `<span class="spc-sum-sub ${scoreClass(seg.toPar)}">${scoreText(seg.toPar)}</span>` : ''}
     </div>`;
   return `
-    ${nineHTML(card, 1, 9, t('spOut'), card.front)}
-    ${nineHTML(card, 10, SP_HOLES, t('spIn'), card.back)}
+    ${nineHTML(card, 1, 9, t('spOut'), card.front, points)}
+    ${nineHTML(card, 10, SP_HOLES, t('spIn'), card.back, points)}
     <div class="spc-sum">
       ${sum(t('spOut'), card.front)}
       ${sum(t('spIn'), card.back)}
@@ -188,6 +203,7 @@ function statsTabHTML(stats) {
 // ---- Header ----
 
 function headerHTML(tn, tnId, pid, card, entry, round, may, gid) {
+  const points = tnScoring(tn) === 'stableford';
   const group = gid ? spGroupList(tn, round).find(g => g.gid === gid) : null;
   const flight = group
     ? [`${t('spGroup')} ${group.number ?? ''}`,
@@ -214,9 +230,9 @@ function headerHTML(tn, tnId, pid, card, entry, round, may, gid) {
           </div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
-          <div class="spc-sum-cap">${t('tnTotal')}</div>
-          <div class="${scoreClass(entry?.total)}" style="font-size:1.5rem;font-weight:800;">
-            ${scoreText(entry?.total ?? null)}
+          <div class="spc-sum-cap">${points ? t('spPoints') : t('tnTotal')}</div>
+          <div class="${totalClass(entry?.total, points)}" style="font-size:1.5rem;font-weight:800;">
+            ${totalText(entry?.total ?? null, points)}
           </div>
         </div>
       </div>
@@ -265,7 +281,7 @@ export function renderSpPlayerCard(host, tnId, pid, ctx = {}) {
     if (!spActive(tn) || !tn.sp.players[pid]) { empty(t('spNoPlayers')); return; }
 
     const roundCount = Math.max(1, Number(tn.rounds) || 1);
-    const entries = spEntries(tn, ctx.metric === 'net' ? 'net' : 'gross');
+    const entries = spEntries(tn, spMetricFor(tn, ctx.metric === 'net' ? 'net' : 'gross'));
     // The round this player is actually on: their latest with a score, else
     // whatever round the field is playing.
     let live = 0;
@@ -279,8 +295,9 @@ export function renderSpPlayerCard(host, tnId, pid, ctx = {}) {
     const scope = stored === 'all' ? null : round;
 
     const card = spPlayerCard(tn, pid, round);
-    const entry = rankEntries(entries, { cutAfterRound: tn.cutAfterRound, cutSize: tn.cutSize })
-      .find(e => e.pid === pid) || null;
+    const entry = rankEntries(entries, {
+      cutAfterRound: tn.cutAfterRound, cutSize: tn.cutSize, higherWins: tnHigherWins(tn)
+    }).find(e => e.pid === pid) || null;
     const may = canScoreSp(ctx.user, pid, tn.sp.players, round);
     const gid = spPlayerGroup(tn.sp.players, pid, round);
 
@@ -295,7 +312,7 @@ export function renderSpPlayerCard(host, tnId, pid, ctx = {}) {
         </div>
         <div class="surface-card" style="padding:12px;margin-top:10px;">
           ${tab === 'card'
-            ? cardTabHTML(card)
+            ? cardTabHTML(card, tnScoring(tn) === 'stableford')
             : `${roundCount > 1 ? `
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
                   ${Array.from({ length: roundCount }, (_, i) => `

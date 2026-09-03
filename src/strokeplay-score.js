@@ -7,7 +7,8 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs } from './strokeplay.js';
+import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring } from './strokeplay.js';
+import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
 
@@ -37,7 +38,7 @@ function strokeColor(strokes, par) {
 // `toPar` is the running score over exactly the holes entered — known only
 // when the course's per-hole pars are in the registry. Without it a partial
 // round can show nothing more honest than its hole count.
-function totalsHTML(gross, holesIn, par, toPar = null) {
+function totalsHTML(gross, holesIn, par, toPar = null, points = null) {
   const score = toPar !== null && holesIn ? fmtToPar(toPar)
     : holesIn >= SP_HOLES ? fmtToPar(gross - par) : null;
   return `
@@ -46,7 +47,18 @@ function totalsHTML(gross, holesIn, par, toPar = null) {
       ${holesIn >= SP_HOLES
         ? `${t('spHoleOut')} · ${score}`
         : score !== null ? `${score} · ${holesIn}/${SP_HOLES}` : `${holesIn}/${SP_HOLES}`}
-    </span>`;
+    </span>
+    ${points !== null && holesIn
+      // The strokes are still what is entered; the points are the contest.
+      ? `<b style="font-size:0.95rem;margin-left:auto;">${points} ${t('spPoints')}</b>` : ''}`;
+}
+
+// The running points for one card, or null when this tournament is not
+// scored in points (or the course has no card to score against).
+function cardPoints(tn, holes, hcp) {
+  if (tnScoring(tn) !== 'stableford') return null;
+  const r = roundPoints(holes, tnPars(tn), tnSIs(tn), Number(hcp));
+  return r.parsKnown ? r.points : null;
 }
 
 // Once a member's 18 holes for a round are all in (and the tournament knows
@@ -117,7 +129,7 @@ function cardHTML(tn, pid, round, editable) {
       ${nine(1)}
       ${nine(10)}
       <div data-sps-total style="display:flex;gap:12px;align-items:baseline;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color);">
-        ${totalsHTML(gross, holesIn, par, toPar)}
+        ${totalsHTML(gross, holesIn, par, toPar, cardPoints(tn, holes, p?.hcp))}
       </div>
       ${editable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
     </div>`;
@@ -191,7 +203,8 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
           const box = host.querySelector('[data-sps-total]');
           if (box) {
             const { gross, holesIn, toPar } = roundGross(holes, pars);
-            box.innerHTML = totalsHTML(gross, holesIn, Number(tnLive.par) || 72, toPar);
+            box.innerHTML = totalsHTML(gross, holesIn, Number(tnLive.par) || 72, toPar,
+              cardPoints(tnLive, holes, tnLive?.sp?.players?.[pid]?.hcp));
           }
           if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
         }
@@ -272,12 +285,14 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     // The running tally beside each name: to-par when the course's per-hole
     // pars are known (what a marker actually wants to see mid-round), the
     // raw gross otherwise.
-    const tallyText = (holes) => {
+    const tallyText = (holes, pid) => {
       const { gross, holesIn, toPar } = roundGross(holes, pars);
       if (!holesIn) return '–';
-      return toPar !== null
+      const base = toPar !== null
         ? `${fmtToPar(toPar)} · ${holesIn}/${SP_HOLES}`
         : `${gross} · ${holesIn}/${SP_HOLES}`;
+      const pts = cardPoints(tn, holes, players[pid]?.hcp);
+      return pts === null ? base : `${base} · ${pts} ${t('spPoints')}`;
     };
 
     // Same stepper the game scorer taps all day: − / value / +. The + on an
@@ -300,7 +315,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
               ${esc(players[pid].name || pid)}
             </span>
             <span data-spgs-total="${esc(pid)}" style="font-size:0.74rem;color:var(--text-secondary);">
-              ${tallyText(holes)}
+              ${tallyText(holes, pid)}
             </span>
           </span>
           ${canEdit ? stepBtn('minus', pid, '−', strokes === null) : ''}
@@ -378,7 +393,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         val.style.color = strokeColor(strokes, pars?.[hole] || null);
       }
       const tot = host.querySelector(`[data-spgs-total="${CSS.escape(pid)}"]`);
-      if (tot) tot.textContent = tallyText(holes);
+      if (tot) tot.textContent = tallyText(holes, pid);
       const setStep = (kind, disabled) => {
         const btn = host.querySelector(`[data-spgs-step="${kind}"][data-pid="${CSS.escape(pid)}"]`);
         if (!btn) return;

@@ -12,7 +12,7 @@
 //
 // What the format adds to games/{id}, all optional:
 //
-//   format:        'stroke' | 'match' | 'skins'   // missing = 'stroke'
+//   format:        'stroke' | 'match' | 'skins' | 'stableford'  // missing = 'stroke'
 //   pairing:       { [groupIdx]: [playerId, ...] } // the group's playing ORDER:
 //                  //   order[0] v order[1], order[2] v order[3] (Phase 2 team
 //                  //   formats: order[0]+order[1] v order[2]+order[3])
@@ -31,17 +31,23 @@
 // one-sided allowance would be no fairer than none. On a 9-hole card the full
 // difference is allocated against the 18-hole SI of the nine holes actually
 // played (a rough half-allowance, on the hardest holes) — the v1 rule.
+//
+// Stableford is the exception: it is not a contest between these players but
+// each player against par, so every player receives their FULL handicap (see
+// src/stableford.js) and one player's missing handicap only makes THAT player
+// gross. Same allocator either way.
 
 import { settleMatch, statusText, HALVED } from './matchplay.js';
 import { strokesReceived, gameHoleCount } from './handicap.js';
-import { holeSI } from './courses.js';
+import { holePar, holeSI } from './courses.js';
+import { holePoints, strokesOverHoles } from './stableford.js';
 
-export const FORMATS = ['stroke', 'match', 'skins'];
+export const FORMATS = ['stroke', 'match', 'skins', 'stableford'];
 
 // The i18n key each format's name lives under (Phase 2 names included so the
 // label lookup never has to change).
 export const FORMAT_LABEL_KEY = {
-  stroke: 'fmtStroke', match: 'fmtMatch', skins: 'fmtSkins',
+  stroke: 'fmtStroke', match: 'fmtMatch', skins: 'fmtSkins', stableford: 'fmtStableford',
   scramble: 'fmtScramble', fourball: 'fmtFourball', foursome: 'fmtFoursome'
 };
 
@@ -245,4 +251,60 @@ export function skinsResult(game, players, hcps) {
     }
   }
   return { perHole, totals, carry, thru, net: allowance.net, base: allowance.base };
+}
+
+// ---- Stableford ----
+
+// Every player against par, hole by hole, off their FULL playing handicap
+// allocated by stroke index — not against each other, so there is no pairing
+// and nothing to concede. Par is two points; a blow-up hole costs the two and
+// no more. A player without a handicap scores gross, and so does everybody on
+// a course with no stroke index (strokesReceived returns 0 for both).
+//
+// Unlike skins, a hole nobody finished does not stop the walk: a player who
+// picks up simply scores nothing there, which is exactly what Stableford is
+// for. `thru` counts the holes a player actually entered.
+export function stablefordResult(game, players, hcps) {
+  const list = (players || []).filter(Boolean);
+  if (!list.length) return null;
+  const total = gameHoleCount(game);
+  const holeList = Array.from({ length: total }, (_, i) => i + 1);
+  let parsKnown = true;
+  for (const n of holeList) if (!holePar(game, n)) { parsKnown = false; break; }
+  // The card's stroke indexes, keyed by card hole (holeSI maps a back-9 card
+  // through to its physical hole for us).
+  const sis = Object.fromEntries(holeList.map(n => [n, holeSI(game, n)]));
+
+  const perPlayer = {};
+  list.forEach(p => {
+    const hcp = Number.isFinite(Number(hcps?.[p.id])) ? Number(hcps[p.id]) : null;
+    const perHole = [];
+    let points = 0;
+    let thru = 0;
+    holeList.forEach(n => {
+      const strokes = strokesOf(game, p.id, n);
+      const given = hcp === null ? 0 : strokesReceived(hcp, holeSI(game, n));
+      const pts = holePoints(strokes, holePar(game, n), given);
+      if (strokes !== null) thru += 1;
+      if (pts !== null) points += pts;
+      perHole.push({ hole: n, strokes, given, points: pts });
+    });
+    // `given` is the allowance line the panel prints: how many strokes this
+    // handicap gives over the card actually being played.
+    const given = strokesOverHoles(holeList, sis, hcp);
+    perPlayer[p.id] = { points, thru, hcp, given, perHole };
+  });
+
+  const order = list.map(p => p.id).sort((a, b) =>
+    perPlayer[b].points - perPlayer[a].points
+    || perPlayer[b].thru - perPlayer[a].thru
+    || String(list.find(p => p.id === a)?.name || '').localeCompare(String(list.find(p => p.id === b)?.name || '')));
+
+  return {
+    perPlayer,
+    order,
+    thru: Math.max(0, ...list.map(p => perPlayer[p.id].thru)),
+    net: list.some(p => Number.isFinite(Number(hcps?.[p.id]))),
+    parsKnown
+  };
 }

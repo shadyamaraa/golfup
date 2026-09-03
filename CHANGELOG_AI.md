@@ -1,5 +1,56 @@
 # CHANGELOG_AI.md
 
+## 2026-09-03 (Stableford — casual games and stroke play tournaments)
+
+Points scoring, on both surfaces. Each hole is scored against par after the
+player's full handicap by stroke index: par 2, birdie 3, bogey 1, double bogey
+or worse 0. A level-par round is 36 points gross, and a round played to
+handicap is 36 net — the two benchmarks the tests pin. Higher is better, which
+is the one thing the stroke play stack had never had to do.
+
+- New pure module `src/stableford.js` — `holePoints`, `roundPoints`,
+  `strokesOverHoles`. It takes plain hole/par/SI maps rather than a game or a
+  tournament, which is what lets one engine serve both surfaces without a
+  cycle (`stableford.js` → `handicap.js` → `courses.js`).
+- **Casual games**: a fourth format beside Strokeplay / Match play / Skins.
+  `stablefordResult()` in `src/game-formats.js`, a scorer panel with the
+  standings chips and the leader's per-hole points, a game-page board, a
+  printed report, and the format chips on create and edit. Unlike match/skins
+  it is per player — no pairing, no overrides, nothing new stored. Also fixed
+  a latent bug: `scorecard.js` chose its printed report with a binary ternary,
+  so any third non-stroke format would have printed the skins table; it is a
+  map now. The edit form's hardcoded format list is `FORMATS`.
+- **Tournaments**: the organiser chooses it and it is stored as
+  `tournaments/{id}.spScoring` (`'strokes'` | `'stableford'`, missing reads as
+  strokes, never backfilled) — on the creation wizard's stroke step and in the
+  admin editor. `spEntries(tn, 'stableford')` puts points in `rounds[]` and
+  `total` while `gross`/`netTotal`/`thru` keep their stroke meanings.
+- **The ranking flips without a second sorting path.** `rankEntries` and
+  `cutSet` take a `higherWins` flag and negate the sort key once, so the
+  ascending sort, the `Infinity` "no score sorts last" sentinel, the tie
+  counting and the `T1` labels all keep reading as they do for strokes.
+  `tnWithDeltas` negates the same way, so the ▲/▼ arrows point the right way,
+  and the standings draw reads points so "leaders last" still means leaders.
+- **Display**: `tnScoreText`/`tnScoreClass` gained a points mode — plain
+  integers, no `E`/`+`/`−` and no red (which here means under par). The TOT
+  column is headed ОНОО, the Net toggle is replaced by a `Stableford · Net`
+  label since the contest is already net, the player card header shows points
+  with an extra STB row per nine, and both scorers carry the running points
+  beside the gross. A venue with no course card cannot be scored in points at
+  all and says so rather than showing zeros.
+- WHS posting untouched: it reads strokes and never looks at the format. A
+  player who picks up leaves the card incomplete, which correctly does not post.
+- i18n mn/en/kr for the format name and the `gs*` strings; mn/en for the `sp*`
+  tournament strings (Korean has never carried `sp*` and falls back).
+- New `docs/stableford.md`; `docs/casual-formats.md` extended. No database
+  rules change and no store change — `saveTournament` has no field whitelist.
+
+Verified: `npm run test:mp` 144 → **173**, `npm run build`, and a localStorage
+walk-through of both surfaces — a Stableford casual game scoring 46 / 36 / 10
+for handicaps 10 / 0 / none, and a two-round Stableford tournament ranking
+74 · 68 · 64 · 52 with the cut on the two lowest, the arrows correct and the
+Net toggle gone.
+
 ## 2026-09-03 (Casual games: Match play and Skins formats)
 
 A casual game now carries a **format**. Stroke play is what every game was

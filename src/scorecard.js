@@ -17,7 +17,7 @@ import { t } from './i18n.js';
 import { gameHoleCount } from './handicap.js';
 import { holePar, holeSI, coursePar, courseTees, physicalHole } from './courses.js';
 import { gameScoreLine, gamePlayingHcp, isCompMode, splitHcp, fmtToPar, groupsOf } from './game-score.js';
-import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult } from './game-formats.js';
+import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult, stablefordResult } from './game-formats.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
@@ -233,10 +233,60 @@ function skinsReportHTML(game, usersById) {
   }).filter(Boolean).join('');
 }
 
+// Stableford: each group's players by points, with the hole-by-hole points
+// beside them so the card can be checked against the paper one.
+function stablefordReportHTML(game, usersById) {
+  const holeCount = gameHoleCount(game);
+  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const groups = groupsOf(game);
+  return groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
+    const r = stablefordResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    if (!r.parsKnown) return `<div style="margin-top:16px;font-size:0.8rem;">${t('gsNoCourseCard')}</div>`;
+    const rows = r.order.map((pid, i) => {
+      const p = players.find(x => x.id === pid) || { id: pid };
+      const e = r.perPlayer[pid];
+      const cells = e.perHole.map(h => `<td${h.given ? ' style="font-weight:700;"' : ''}>${h.points === null ? '' : h.points}</td>`).join('');
+      return `
+        <tr${i === 0 ? ' style="font-weight:700;background:#f3ecd9;"' : ''}>
+          <td>${i + 1}</td>
+          <td style="text-align:left;white-space:nowrap;">${name(p)}</td>
+          <td>${typeof e.hcp === 'number' ? e.hcp : ''}</td>
+          <td style="font-weight:700;">${e.points}</td>
+          ${cells}
+        </tr>`;
+    }).join('');
+    return `
+      <div style="margin-top:16px;">
+        <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${t('fmtStableford')}${groups.length > 1 ? ` — ${t('group')} ${gi + 1}` : ''}
+          <span style="font-weight:400;color:#777;font-size:0.78rem;"> · ${r.net ? t('gsNet') : t('gsGrossPlay')}</span></div>
+        <div class="sc-scroll"><table style="margin-top:5px;">
+          <thead>
+          <tr class="sc-head">
+            <th style="width:24px;">#</th><th class="sc-lbl" style="text-align:left;">${t('tnPlayer')}</th>
+            <th style="width:44px;">HCP</th><th style="width:52px;">${t('gsPoints')}</th>
+            ${Array.from({ length: holeCount }, (_, i) => `<th style="width:22px;">${i + 1}</th>`).join('')}
+          </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  }).filter(Boolean).join('');
+}
+
+// Which printed report each format gets. A map, not a ternary: a format with
+// no entry here prints nothing rather than another format's table.
+const FORMAT_REPORT = {
+  match: matchReportHTML,
+  skins: skinsReportHTML,
+  stableford: stablefordReportHTML,
+};
+
 function reportsHTML(game, players, usersById) {
   const fmt = gameFormat(game);
   if (fmt !== 'stroke') {
-    const body = fmt === 'match' ? matchReportHTML(game, usersById) : skinsReportHTML(game, usersById);
+    const body = FORMAT_REPORT[fmt] ? FORMAT_REPORT[fmt](game, usersById) : '';
     if (!body) return '';
     return `
       <div class="sc-page-break" style="margin-top:20px;border-top:2px solid #999;padding-top:8px;">

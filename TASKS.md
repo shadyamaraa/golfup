@@ -38,3 +38,4 @@
 - [x] Filter history by the selected home tab.
 - [x] Upgrade Firebase Functions runtime to Node.js 22.
 - [x] M Cup live match tracking (team match play) — phase 1 of the spec.
+- [x] Stableford scoring for casual games and stroke play tournaments.

@@ -19,7 +19,8 @@ import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './h
 import { holePar, holeSI } from './courses.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import {
-  gameFormat, groupPairs, groupMatches, nextPairing, pairingOptions, skinsResult, allowanceTotal
+  gameFormat, groupPairs, groupMatches, nextPairing, pairingOptions, skinsResult, allowanceTotal,
+  stablefordResult
 } from './game-formats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -494,11 +495,70 @@ function skinsPanelHTML(game, players, usersById) {
     </div>`;
 }
 
+// Stableford: every player against par off their full handicap. The chips
+// carry each player's running points; the strip shows the hole's points for
+// whoever leads the card, so the group can see at a glance which holes paid.
+// Par is two points, and a hole nobody finished simply scores nothing.
+function stablefordPanelHTML(game, players, usersById) {
+  const hcps = hcpsFor(game, players, usersById);
+  const r = stablefordResult(game, players, hcps);
+  if (!r) return '';
+  const nameOf = (pid) => shortName(players.find(x => x.id === pid) || { id: pid }, usersById?.[pid]);
+
+  if (!r.parsKnown) {
+    return `
+      <div id="gs-format" style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:12px;padding:10px 12px;margin-top:10px;">
+        <b style="font-size:0.8rem;">${t('fmtStableford')}</b>
+        <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px;">${t('gsNoCourseCard')}</div>
+      </div>`;
+  }
+
+  const standing = r.order.map(pid => {
+    const e = r.perPlayer[pid];
+    return `
+      <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border-color);border-radius:999px;padding:2px 9px;font-size:0.76rem;font-weight:700;">
+        ${esc(nameOf(pid))} <b style="font-size:0.92rem;">${e.points}</b>
+        ${e.given ? `<span style="font-weight:600;color:var(--text-secondary);font-size:0.66rem;">+${e.given}</span>` : ''}
+      </span>`;
+  }).join('');
+
+  // The strip reads the leader's card — one row cannot show four players, and
+  // the leader is the line the group is chasing.
+  const lead = r.perPlayer[r.order[0]];
+  const cells = lead.perHole.map(h => {
+    const pts = h.points;
+    const paid = pts !== null && pts >= 2;
+    return `
+      <button data-gs="goto" data-hole="${h.hole}"
+        style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
+               border:1px solid var(--border-color);background:${paid ? 'var(--gold)' : 'transparent'};
+               color:${paid ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
+        <div style="font-size:0.58rem;opacity:0.75;">${h.hole}${h.given ? '•' : ''}</div>${pts === null ? '·' : pts}
+      </button>`;
+  }).join('');
+
+  const netText = r.net ? t('gsNet') : t('gsGrossPlay');
+  return `
+    <div id="gs-format" style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;margin-top:10px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <b style="font-size:0.8rem;">${t('fmtStableford')}</b>
+        <span style="font-size:0.7rem;color:var(--text-secondary);">${esc(netText)}</span>
+        <span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('mpThru')} ${r.thru}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${standing}</div>
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:10px;">${cells}</div>
+      <div style="font-size:0.66rem;color:var(--text-muted);margin-top:5px;text-align:center;">
+        ${esc(nameOf(r.order[0]))} · ${t('gsPoints')} · ${t('gsStablefordHint')}
+      </div>
+    </div>`;
+}
+
 // Empty for stroke play — the strokes table is the whole screen there.
 function formatPanelHTML(game, groupIdx, players, user, usersById) {
   const fmt = gameFormat(game);
   if (fmt === 'match') return matchPanelHTML(game, groupIdx, players, user, usersById);
   if (fmt === 'skins') return skinsPanelHTML(game, players, usersById);
+  if (fmt === 'stableford') return stablefordPanelHTML(game, players, usersById);
   return '';
 }
 
@@ -531,6 +591,21 @@ function formatReportHTML(game, players, usersById, groupIdx) {
           <span>${nameOf(p)}</span><b>${r.totals[p.id]}</b>
         </div>`).join('')
         + (r.carry ? `<div style="font-size:0.72rem;color:var(--text-secondary);padding-top:4px;">${t('gsSkinsCarry')} ${r.carry} · ${t('gsSkinsUnclaimed')}</div>` : '');
+    }
+  } else if (fmt === 'stableford') {
+    const r = stablefordResult(game, players, hcps);
+    if (r && r.parsKnown) {
+      body = r.order.map(pid => {
+        const p = players.find(x => x.id === pid) || { id: pid };
+        const e = r.perPlayer[pid];
+        return `
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--border-color);font-size:0.84rem;">
+          <span>${nameOf(p)}${e.given ? `<span style="color:var(--text-secondary);font-size:0.72rem;"> +${e.given}</span>` : ''}</span>
+          <b>${e.points} ${t('gsPoints').toLowerCase()}</b>
+        </div>`;
+      }).join('');
+    } else if (r) {
+      body = `<div style="font-size:0.76rem;color:var(--text-secondary);padding-top:4px;">${t('gsNoCourseCard')}</div>`;
     }
   }
   return body ? `<div style="margin:4px 0 8px;">${body}</div>` : '';

@@ -6,9 +6,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
-  holeDiffClass, spSegment, spPlayerCard, spPlayerStats
+  holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
+  tnScoring, tnHigherWins, spMetricFor
 } from '../src/strokeplay.js';
-import { rankEntries } from '../src/tournament-sheet.js';
+import { rankEntries, cutSet } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
 import { roundFromTournament, courseHandicap } from '../src/handicap.js';
 
@@ -527,4 +528,120 @@ test('spPlayerStats reports the field average over the same scope', () => {
     { u1: { 1: fullRound(4) }, u2: { 1: fullRound(5) }, u3: { 1: { 1: 4 } } });
   const s = spPlayerStats(tn, 'u1', null);
   assert.equal(s.fieldAvg, (72 + 90) / 2);   // only complete rounds count
+});
+
+// ---- stableford ----
+
+// SKY() above already builds a one-round tournament on the registry course,
+// so pars and stroke indexes are known throughout this section.
+
+test('tnScoring: missing or unknown reads as strokes, and drives the direction', () => {
+  assert.equal(tnScoring({}), 'strokes');
+  assert.equal(tnScoring({ spScoring: 'nonsense' }), 'strokes');
+  assert.equal(tnScoring({ spScoring: 'stableford' }), 'stableford');
+  assert.equal(tnHigherWins({}), false);
+  assert.equal(tnHigherWins({ spScoring: 'stableford' }), true);
+});
+
+test('spMetricFor: Stableford ignores the viewer gross/net toggle', () => {
+  const sf = { spScoring: 'stableford' };
+  assert.equal(spMetricFor(sf, 'net'), 'stableford');
+  assert.equal(spMetricFor(sf, 'gross'), 'stableford');
+  assert.equal(spMetricFor({}, 'net'), 'net');
+  assert.equal(spMetricFor({}, 'gross'), 'gross');
+});
+
+test('spEntries stableford: total carries points, strokes keep their meaning', () => {
+  const tn = SKY({ u1: { name: 'Бат', hcp: 10 } }, { u1: { 1: fullRound(4) } });
+  const [gross] = spEntries(tn, 'gross');
+  const [pts] = spEntries(tn, 'stableford');
+  assert.equal(gross.total, 72 - 72);             // level par on a par 72
+  assert.equal(pts.total, 36 + 10);               // playing to a 10 handicap
+  // The stroke figures are untouched, so the card and the scorers read on.
+  assert.equal(pts.gross, gross.gross);
+  assert.equal(pts.thru, gross.thru);
+  assert.equal(pts.netTotal, gross.netTotal);
+  assert.equal(pts.hcp, 10);
+});
+
+test('spEntries stableford: a round in progress already posts points', () => {
+  // The to-par path needs a whole round without registry pars; points do not.
+  const tn = SKY({ u1: { name: 'Бат' } }, { u1: { 1: { 1: 5, 2: 4 } } });
+  const [e] = spEntries(tn, 'stableford');
+  assert.equal(e.total, 4);
+  assert.equal(e.thru, '2');
+});
+
+test('spEntries stableford: no course card means no points at all', () => {
+  const tn = TN({ u1: { name: 'Бат', hcp: 4 } }, { u1: { 1: fullRound(4) } }, { rounds: 1 });
+  assert.equal(spEntries(tn, 'stableford')[0].total, null);
+  // Strokes still rank as they always did.
+  assert.equal(spEntries(tn, 'gross')[0].total, 0);
+});
+
+test('spEntries stableford feeds rankEntries: the order is the other way up', () => {
+  const rough = fullRound(4); rough[1] = 9;
+  const tn = SKY(
+    { u1: { name: 'Бат' }, u2: { name: 'Дорж' } },
+    { u1: { 1: rough }, u2: { 1: fullRound(4) } });
+  const byGross = rankEntries(spEntries(tn, 'gross'), {});
+  assert.equal(byGross[0].name, 'Дорж');
+  const byPoints = rankEntries(spEntries(tn, 'stableford'), { higherWins: true });
+  assert.equal(byPoints[0].name, 'Дорж');   // still ahead — more points too
+  assert.equal(byPoints[0].posLabel, '1');
+  // Flip it: a player who scores more points must lead the points board even
+  // though they took more strokes than nobody-scored.
+  assert.ok(byPoints[0].total > byPoints[1].total);
+});
+
+test('rankEntries higherWins: ties, no-scores and withdrawals all hold', () => {
+  const E = (name, total, thru = 'F', status = '') => ({ name, total, thru, status, rounds: [total] });
+  const ranked = rankEntries([
+    E('a', 30), E('b', 30), E('c', 20), E('none', null, ''), E('gone', 12, 'F', 'WD')
+  ], { higherWins: true });
+  assert.deepEqual(ranked.map(e => e.posLabel), ['T1', 'T1', '3', '–', 'WD']);
+  assert.deepEqual(ranked.map(e => e.name), ['a', 'b', 'c', 'none', 'gone']);
+});
+
+test('the cut keeps the top N and ties whichever way the board runs', () => {
+  const E = (name, r1, r2) => ({ name, total: r1 + r2, thru: 'F', rounds: [r1, r2] });
+  const points = rankEntries(
+    [E('p1', 40, 5), E('p2', 35, 5), E('p3', 35, 5), E('p4', 10, 5)],
+    { cutAfterRound: 1, cutSize: 2, higherWins: true });
+  assert.deepEqual(points.filter(e => e.status === 'CUT').map(e => e.name), ['p4']);
+  const strokes = rankEntries(
+    [E('p1', -4, 1), E('p2', 0, 1), E('p3', 0, 1), E('p4', 9, 1)],
+    { cutAfterRound: 1, cutSize: 2 });
+  assert.deepEqual(strokes.filter(e => e.status === 'CUT').map(e => e.name), ['p4']);
+  // cutSet on its own agrees with what rankEntries stamped.
+  const field = [E('p1', 40, 5), E('p2', 35, 5), E('p3', 35, 5), E('p4', 10, 5)];
+  const out = cutSet(field, { cutAfterRound: 1, cutSize: 2, higherWins: true });
+  assert.equal(out.size, 1);
+  assert.ok(out.has(field[3]));
+});
+
+test('the standings draw sends the points leader out last too', () => {
+  const tn = SKY({
+    u1: { name: 'Бат' }, u2: { name: 'Дорж' }, u3: { name: 'Сараа' }, u4: { name: 'Тулга' }
+  }, {
+    u1: { 1: fullRound(6) },   // fewest points
+    u2: { 1: fullRound(5) },
+    u3: { 1: fullRound(4) },
+    u4: { 1: fullRound(3) }    // most points
+  }, { spScoring: 'stableford' });
+  const groups = drawGroups(tn, { method: 'standings', size: 2 });
+  assert.equal(groups.at(-1).at(-1), 'u4');
+  // The same field scored in strokes puts the LOW scorer out last.
+  const strokes = drawGroups({ ...tn, spScoring: 'strokes' }, { method: 'standings', size: 2 });
+  assert.equal(strokes.at(-1).at(-1), 'u4');
+});
+
+test('spPlayerCard carries the Stableford reading of every hole', () => {
+  const tn = SKY({ u1: { name: 'Бат', hcp: 10 } }, { u1: { 1: fullRound(4) } });
+  const card = spPlayerCard(tn, 'u1', 1);
+  assert.equal(card.holes.reduce((n, h) => n + (h.points ?? 0), 0), 46);
+  assert.equal(card.holes.filter(h => h.given).length, 10);
+  const si1 = card.holes.find(h => h.si === 1);
+  assert.equal(si1.given, 1);
+  assert.equal(si1.points, 3);   // net birdie on the hardest hole
 });

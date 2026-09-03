@@ -1,4 +1,4 @@
-# Casual game formats — stroke play, match play, skins
+# Casual game formats — stroke play, match play, skins, Stableford
 
 How a casual game's format works, for whoever runs game days and whoever
 maintains the code next. The M Cup counterpart is `docs/mcup-match-play.md`.
@@ -20,6 +20,10 @@ scorecard differently.
   `AS`, `4 & 3`, `HALVED`.
 - **Skins** (`'skins'`) — every hole is a pot for the whole group: the unique
   lowest score takes it, a tie carries it to the next hole.
+- **Stableford** (`'stableford'`) — each player against par for points: par 2,
+  birdie 3, bogey 1, double bogey or worse 0, off their full handicap. Higher
+  is better, and a blow-up hole costs two points and no more. See
+  `docs/stableford.md` — the same engine also scores stroke play tournaments.
 - Phase 2 (not built): **Scramble**, **Fourball**, **Foursome** — 2 v 2 pairs
   inside the group. See the end of this file.
 
@@ -44,7 +48,10 @@ the member's WHS index converted for the course (`gamePlayingHcp`).
 
 - Net only when **everyone involved** has a handicap: one missing makes that
   match (or the whole skins game) gross — a one-sided allowance would be no
-  fairer than none.
+  fairer than none. **Stableford is the exception**: each player is measured
+  against par rather than against the others, so every player receives their
+  **full** handicap and one player's missing handicap only makes that player
+  gross.
 - A course with no card (no SI) plays gross automatically.
 - On a **9-hole card** the full difference is allocated against the 18-hole
   SI of the nine holes actually played — roughly a half-allowance, on the
@@ -77,6 +84,11 @@ the allowance ("Дорж +5 цох." or "Гросс"), and a hole strip (A / B /
 initial on gold with the pot beside the hole number, a tie shows ↷, and
 "Дамжсан N" is the pot still carrying.
 
+**Stableford** — standings chips with each player's running points and their
+allowance ("+10"), and a strip of the leader's points hole by hole; a hole where
+they take a stroke is marked with a dot. A hole nobody finished simply scores
+nothing and stops nothing — unlike skins, the walk carries on.
+
 Who may score is unchanged: yourself, your group, the game's creator, admin
 and marshal (`canScoreGamePlayer`).
 
@@ -105,7 +117,7 @@ Under `games/{id}`, all optional:
 
 | Path | Holds |
 | --- | --- |
-| `format` | `'stroke'` \| `'match'` \| `'skins'` — missing reads as stroke, never backfilled |
+| `format` | `'stroke'` \| `'match'` \| `'skins'` \| `'stableford'` — missing reads as stroke, never backfilled |
 | `pairing/{groupIdx}` | the group's playing ORDER as player ids: `order[0]` v `order[1]`, `order[2]` v `order[3]` |
 | `holeOverrides/{pairKey}/{hole}` | a hand-set hole: the winner's player id, or `'h'` |
 | `scoreAudit` | existing trail, plus `kind: 'override'` entries |
@@ -123,7 +135,8 @@ scorer wrote. No database-rules change: `games` is wide open.
 
 | File | Responsibility |
 | --- | --- |
-| `src/game-formats.js` | The rules. Pure functions: format, pairing, allowance, match, skins. |
+| `src/game-formats.js` | The rules. Pure functions: format, pairing, allowance, match, skins, Stableford. |
+| `src/stableford.js` | The points themselves, shared with the tournament board. |
 | `src/game-score.js` | The scorer: format panels, the hand-set chooser, ⇄. |
 | `src/app.js` | Create/edit format chips, the game page's boards, the pills. |
 | `src/scorecard.js` | The printed match / skins reports. |
