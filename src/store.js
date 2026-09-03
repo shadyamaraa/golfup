@@ -152,10 +152,11 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game). Every caller passes the full record, so the named
+    // the same game, and so do the match play pairing and hole overrides the
+    // scorer writes). Every caller passes the full record, so the named
     // top-level keys are still replaced wholesale — only the scoring
     // branches are spared.
-    const { scores, scoreAudit, hcp, ...rest } = game;
+    const { scores, scoreAudit, hcp, pairing, holeOverrides, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -213,6 +214,55 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   game.hcp = game.hcp || {};
   if (hcp === null || hcp === undefined) delete game.hcp[playerId];
   else game.hcp[playerId] = hcp;
+  setLocalGames(games);
+  return game;
+}
+
+// The order a group plays its matches in (see src/game-formats.js): the
+// scorer's ⇄ writes it, null clears it. Path-scoped like a score tap.
+export async function saveGamePairing(gameId, groupIdx, orderIds) {
+  if (useFirebase && db) {
+    const r = ref(db, `games/${gameId}/pairing/${groupIdx}`);
+    if (!orderIds) await remove(r);
+    else await set(r, orderIds);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.pairing = game.pairing || {};
+  if (!orderIds) delete game.pairing[groupIdx];
+  else game.pairing[groupIdx] = orderIds;
+  setLocalGames(games);
+  return game;
+}
+
+// A hand-set match play hole (a conceded hole): the winner's player id or
+// 'h' for halved under the pair's key, null to go back to the derived
+// result. Same discipline as saveGameScoreHole — path-scoped, audited.
+export async function saveGameHoleOverride(gameId, pairKey, hole, value, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/holeOverrides/${pairKey}/${hole}`);
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (value === null || value === undefined || value === '') {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, value);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, kind: 'override', pairKey, hole, value: value || null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.holeOverrides = game.holeOverrides || {};
+  const pair = (game.holeOverrides[pairKey] = game.holeOverrides[pairKey] || {});
+  if (value === null || value === undefined || value === '') delete pair[hole];
+  else pair[hole] = value;
+  if (!Object.keys(pair).length) delete game.holeOverrides[pairKey];
   setLocalGames(games);
   return game;
 }

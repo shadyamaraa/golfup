@@ -131,7 +131,12 @@ Games:
   isPrivate,
   targetCommunities,
   invitedIds,
-  bookingStatus
+  holes,       // 'full18' | 'front9' | 'back9'
+  scoreMode,   // 'normal' | 'comp' (stroke play only)
+  format,      // 'stroke' (default when missing) | 'match' | 'skins' — docs/casual-formats.md
+  course,      // { name, rating, slope, par, tee } when known
+  // Written by the scorer, path-scoped, and excluded from saveGame():
+  // scores, scoreAudit, hcp, pairing, holeOverrides
 }
 ```
 

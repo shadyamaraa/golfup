@@ -17,6 +17,10 @@ import * as store from './store.js';
 import { t, getLang } from './i18n.js';
 import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './handicap.js';
 import { holePar, holeSI } from './courses.js';
+import { holeTimeline, HALVED } from './matchplay.js';
+import {
+  gameFormat, groupPairs, groupMatches, nextPairing, pairingOptions, skinsResult, allowanceTotal
+} from './game-formats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -28,10 +32,13 @@ const DEFAULT_STROKES = 4;
 // somebody in the group still has open); a number means they stepped back.
 let viewHole = null;
 let saving = false;
+// Which match play hole has its hand-set chooser open: { key, hole } or null.
+let ovOpen = null;
 
 export function resetGameScorerView() {
   viewHole = null;
   saving = false;
+  ovOpen = null;
 }
 
 // ---- Group helpers (same array/object tolerance as app.js ensureGroups) ----
@@ -90,7 +97,7 @@ export function gamePlayingHcp(game, playerId, userRec) {
 // and the 18 counted as three separate contests? Chosen at game creation;
 // only meaningful on an 18-hole game (a 9-hole game has one segment anyway).
 export function isCompMode(game) {
-  return game?.scoreMode === 'comp' && gameHoleCount(game) === 18;
+  return game?.scoreMode === 'comp' && gameHoleCount(game) === 18 && gameFormat(game) === 'stroke';
 }
 
 // Competition handicap split across the nines: even halves evenly (12 → 6/6),
@@ -289,7 +296,7 @@ function canFinishGame(user, game) {
 // The final-results report shown under the score table once the round is
 // finished: per player, gross and net for F9 / B9 / the 18 in competition
 // mode, or just the 18 in normal mode.
-function reportHTML(game, players, usersById) {
+function reportHTML(game, players, usersById, groupIdx = 0) {
   if (!game?.finishedAt) return '';
   const comp = isCompMode(game);
   const rows = players.map(p => {
@@ -308,6 +315,7 @@ function reportHTML(game, players, usersById) {
         🏁 ${t('gsReport')}
         <span style="margin-left:auto;font-size:0.66rem;font-weight:600;color:var(--text-secondary);">G · N</span>
       </div>
+      ${formatReportHTML(game, players, usersById, groupIdx)}
       <table style="width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums;font-size:0.82rem;">
         <tr>
           <th style="padding:4px;text-align:left;font-size:0.62rem;letter-spacing:0.06em;color:var(--text-secondary);"></th>
@@ -322,6 +330,210 @@ function reportHTML(game, players, usersById) {
           </tr>`).join('')}
       </table>
     </div>`;
+}
+
+// ---- Format panels: match play and skins, derived from the strokes above ----
+
+const MP_A = '#1f6f43';
+const MP_B = '#b3382c';
+
+function hcpsFor(game, players, usersById) {
+  return Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById?.[p.id])]));
+}
+
+// A match's per-hole strip: A / B / – like the M Cup scorer's, a small dot
+// after a hand-set hole, a dashed ring on the hole the walk is waiting for.
+// Tapping a cell opens the hand-set chooser — the concession affordance.
+function matchStripHTML(m, editable) {
+  const rows = holeTimeline({ holes: m.holes, totalHoles: m.totalHoles });
+  const cell = (r) => {
+    const res = r.result;
+    const bg = res === 'a' ? MP_A : res === 'b' ? MP_B : 'transparent';
+    const fg = res === 'a' || res === 'b' ? '#fff' : 'var(--text-secondary)';
+    const mark = res === 'a' ? 'A' : res === 'b' ? 'B' : res === HALVED ? '–' : '·';
+    const hand = m.source[r.hole] === 'override';
+    const on = ovOpen && ovOpen.key === m.pair.key && ovOpen.hole === r.hole;
+    const gap = m.gapHole === r.hole;
+    return `
+      <button data-gs="ov-open" data-key="${esc(m.pair.key)}" data-hole="${r.hole}" ${editable ? '' : 'disabled'}
+        style="min-width:30px;padding:5px 0;border-radius:6px;cursor:${editable ? 'pointer' : 'default'};font-family:var(--font);
+               border:${on ? '2px solid var(--text-primary)' : gap ? '2px dashed var(--amber)' : '1px solid var(--border-color)'};
+               background:${bg};color:${fg};font-size:0.7rem;font-weight:700;">
+        <div style="font-size:0.58rem;opacity:0.75;">${r.hole}</div>${mark}${hand ? '<span style="font-size:0.5rem;vertical-align:top;">•</span>' : ''}
+      </button>`;
+  };
+  return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:10px;">${rows.map(cell).join('')}</div>`;
+}
+
+// The four-way chooser for one hole: A won / halved / B won / back to auto.
+function overrideChooserHTML(m, usersById) {
+  const hole = ovOpen.hole;
+  const cur = m.holes[hole] ?? null;
+  const hand = m.source[hole] === 'override';
+  const btn = (value, label, color, active) => `
+    <button data-gs="ov-set" data-key="${esc(m.pair.key)}" data-hole="${hole}" data-value="${esc(value)}"
+      style="flex:1;min-width:62px;padding:10px 6px;border-radius:10px;cursor:pointer;font-family:var(--font);
+             border:2px solid ${color};background:${active ? color : 'transparent'};
+             color:${active ? '#fff' : 'var(--text-primary)'};font-size:0.8rem;font-weight:800;">${esc(label)}</button>`;
+  return `
+    <div style="margin-top:8px;padding:8px;border:1px dashed var(--border-color);border-radius:10px;">
+      <div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">${t('mpHole')} ${hole} · ${t('gsHandSet')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${btn(m.pair.a.id, shortName(m.pair.a, usersById?.[m.pair.a.id]), MP_A, hand && cur === 'a')}
+        ${btn(HALVED, t('mpHalved'), 'var(--text-secondary)', hand && cur === HALVED)}
+        ${btn(m.pair.b.id, shortName(m.pair.b, usersById?.[m.pair.b.id]), MP_B, hand && cur === 'b')}
+        ${btn('', t('gsAuto'), 'var(--border-color)', !hand)}
+      </div>
+    </div>`;
+}
+
+// One match: names either side of the status line, the allowance, the strip.
+function matchCardHTML(game, m, editable, usersById) {
+  const aName = shortName(m.pair.a, usersById?.[m.pair.a.id]);
+  const bName = shortName(m.pair.b, usersById?.[m.pair.b.id]);
+  const s = m.settled;
+  const leadName = s.leader === 'a' ? aName : s.leader === 'b' ? bName : '';
+  const status = s.finished
+    ? (s.winner ? `${leadName} ${m.status}` : t('mpHalved'))
+    : (s.leader ? `${leadName} ${m.status}` : 'AS');
+  const sub = s.finished ? t('mpFinal') : `${t('mpThru')} ${m.thru}${s.dormie ? ` · ${t('mpDormie')}` : ''}`;
+  const al = m.allowance;
+  const diff = al.a || al.b;
+  const allowText = !al.net ? t('gsGrossPlay')
+    : !diff ? t('gsNet')
+      : `${al.a ? aName : bName} +${allowanceTotal(game, diff)} ${t('gsStrokesShort')}`;
+  const open = ovOpen && ovOpen.key === m.pair.key;
+  return `
+    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;margin-top:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${MP_A};">${esc(aName)}</span>
+        <span style="flex:0 0 auto;text-align:center;">
+          <div style="font-size:1.05rem;font-weight:800;line-height:1.2;">${esc(status)}</div>
+          <div style="font-size:0.64rem;color:var(--text-secondary);">${esc(sub)}</div>
+        </span>
+        <span style="flex:1;min-width:0;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${MP_B};">${esc(bName)}</span>
+      </div>
+      <div style="font-size:0.68rem;color:var(--text-secondary);text-align:center;margin-top:3px;">${esc(allowText)}</div>
+      ${m.gapHole && editable ? `
+        <div style="font-size:0.72rem;color:var(--amber);font-weight:700;text-align:center;margin-top:6px;">
+          ${esc(t('gsGapHint').replace('{n}', m.gapHole))}
+        </div>` : ''}
+      ${matchStripHTML(m, editable)}
+      <div style="font-size:0.66rem;color:var(--text-muted);margin-top:5px;text-align:center;">
+        A = ${esc(aName)} · B = ${esc(bName)} · – = ${t('mpHalved')}${editable ? ` · ${t('gsTapHoleHint')}` : ''}
+      </div>
+      ${open && editable ? overrideChooserHTML(m, usersById) : ''}
+    </div>`;
+}
+
+function matchPanelHTML(game, groupIdx, players, user, usersById) {
+  const hcps = hcpsFor(game, players, usersById);
+  const { matches, unpaired } = groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
+  if (!matches.length && !unpaired.length) return '';
+  const cards = matches.map(m => {
+    const editable = canScoreGamePlayer(user, game, m.pair.a.id) && canScoreGamePlayer(user, game, m.pair.b.id);
+    return matchCardHTML(game, m, editable, usersById);
+  }).join('');
+  const odd = unpaired.map(p => `
+    <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:6px;padding:0 4px;">
+      ${esc(shortName(p, usersById?.[p.id]))} · ${t('gsNoMatch')}
+    </div>`).join('');
+  // Four players can be split three ways; whoever can score this group may
+  // pick the split — the pairing is settled on the first tee by the people
+  // standing there, and cycling it loses nothing (strokes are per player,
+  // hand-set holes are per pair).
+  const canRepair = pairingOptions(players).length > 1 && players.some(p => canScoreGamePlayer(user, game, p.id));
+  const pairingLine = pairingOptions(players).length > 1 ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 4px;font-size:0.72rem;color:var(--text-secondary);">
+      <span style="flex:1;min-width:0;">${t('gsPairing')}: ${matches.map(m =>
+        `${esc(shortName(m.pair.a, usersById?.[m.pair.a.id]))}–${esc(shortName(m.pair.b, usersById?.[m.pair.b.id]))}`).join(' · ')}</span>
+      ${canRepair ? `<button data-gs="repair" class="btn btn-outline btn-sm" style="font-size:0.68rem;flex-shrink:0;">⇄ ${t('gsRepair')}</button>` : ''}
+    </div>` : '';
+  return `<div id="gs-format" style="margin-top:10px;">${cards}${odd}${pairingLine}</div>`;
+}
+
+// Skins: standings chips, then the strip — a won hole carries the winner's
+// initial on gold with the pot beside the hole number, a tie shows the carry
+// arrow, and the cells still jump to the hole like the strokes strip below.
+function skinsPanelHTML(game, players, usersById) {
+  const hcps = hcpsFor(game, players, usersById);
+  const r = skinsResult(game, players, hcps);
+  if (!r) return '';
+  const nameOf = (pid) => shortName(players.find(x => x.id === pid) || { id: pid }, usersById?.[pid]);
+  const standing = [...players]
+    .sort((x, y) => r.totals[y.id] - r.totals[x.id])
+    .map(p => `
+      <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border-color);border-radius:999px;padding:2px 9px;font-size:0.76rem;font-weight:700;">
+        ${esc(nameOf(p.id))} <b style="font-size:0.92rem;">${r.totals[p.id]}</b>
+      </span>`).join('');
+  const holeCount = gameHoleCount(game);
+  const byHole = Object.fromEntries(r.perHole.map(h => [h.hole, h]));
+  const cells = [];
+  for (let n = 1; n <= holeCount; n++) {
+    const h = byHole[n];
+    const won = !!(h && h.winner);
+    const mark = !h ? '·' : won ? esc(nameOf(h.winner).charAt(0).toUpperCase()) : '↷';
+    cells.push(`
+      <button data-gs="goto" data-hole="${n}"
+        style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
+               border:1px solid var(--border-color);background:${won ? 'var(--gold)' : 'transparent'};
+               color:${won ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
+        <div style="font-size:0.58rem;opacity:0.75;">${n}${h ? ` · ${h.pot}` : ''}</div>${mark}
+      </button>`);
+  }
+  const netText = r.net ? `${t('gsNet')} · HCP ${r.base}` : t('gsGrossPlay');
+  return `
+    <div id="gs-format" style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;margin-top:10px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <b style="font-size:0.8rem;">${t('fmtSkins')}</b>
+        <span style="font-size:0.7rem;color:var(--text-secondary);">${esc(netText)}</span>
+        ${r.carry ? `<span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('gsSkinsCarry')} ${r.carry}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${standing}</div>
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:10px;">${cells.join('')}</div>
+    </div>`;
+}
+
+// Empty for stroke play — the strokes table is the whole screen there.
+function formatPanelHTML(game, groupIdx, players, user, usersById) {
+  const fmt = gameFormat(game);
+  if (fmt === 'match') return matchPanelHTML(game, groupIdx, players, user, usersById);
+  if (fmt === 'skins') return skinsPanelHTML(game, players, usersById);
+  return '';
+}
+
+// The format's own result lines at the top of the final report; the strokes
+// table stays under them — the strokes were entered and remain the record.
+function formatReportHTML(game, players, usersById, groupIdx) {
+  const fmt = gameFormat(game);
+  if (fmt === 'stroke') return '';
+  const hcps = hcpsFor(game, players, usersById);
+  const nameOf = (p) => esc(shortName(p, usersById?.[p.id]));
+  let body = '';
+  if (fmt === 'match') {
+    const { matches } = groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
+    body = matches.filter(m => m.thru > 0).map(m => {
+      const a = nameOf(m.pair.a);
+      const b = nameOf(m.pair.b);
+      const s = m.settled;
+      const line = s.finished
+        ? (s.winner === 'a' ? `<b>${a}</b> ${esc(m.status)} ${b}`
+          : s.winner === 'b' ? `${a} ${esc(m.status)} <b>${b}</b>`
+            : `${a} · ${t('mpHalved')} · ${b}`)
+        : `${a} – ${b} · ${esc(m.status)} · ${t('mpThru')} ${m.thru}`;
+      return `<div style="padding:5px 0;border-top:1px solid var(--border-color);font-size:0.84rem;">${line}</div>`;
+    }).join('');
+  } else if (fmt === 'skins') {
+    const r = skinsResult(game, players, hcps);
+    if (r) {
+      body = [...players].sort((x, y) => r.totals[y.id] - r.totals[x.id]).map(p => `
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--border-color);font-size:0.84rem;">
+          <span>${nameOf(p)}</span><b>${r.totals[p.id]}</b>
+        </div>`).join('')
+        + (r.carry ? `<div style="font-size:0.72rem;color:var(--text-secondary);padding-top:4px;">${t('gsSkinsCarry')} ${r.carry} · ${t('gsSkinsUnclaimed')}</div>` : '');
+    }
+  }
+  return body ? `<div style="margin:4px 0 8px;">${body}</div>` : '';
 }
 
 // The hole header: "3-р Нүх · Пар 4 · SI 9" over a small "3 / 18" where the
@@ -364,7 +576,9 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
           || `<div style="padding:14px 0;color:var(--text-secondary);">${t('emptySlot')}</div>`}
       </div>
 
-      ${reportHTML(game, players, usersById)}
+      ${formatPanelHTML(game, groupIdx, players, user, usersById)}
+
+      ${reportHTML(game, players, usersById, groupIdx)}
 
       ${stripHTML(game, players, hole)}
       ${canFinishGame(user, game) ? `
@@ -379,7 +593,9 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
 // Once a player's card is full, mirror it into rounds/{ghinNumber}/{gameId}
 // and refresh their cached WHS index. Fire-and-forget: nothing here may block
 // or fail the score entry itself. Players without a GHIN number simply keep
-// their in-game scores.
+// their in-game scores. Match play and skins change nothing here: the strokes
+// are real individual scores, and a conceded hole with no strokes leaves the
+// card incomplete, so nothing posts — the right WHS outcome for a pick-up.
 async function finalizeRoundIfComplete(game, playerId) {
   try {
     const round = roundFromGame(game, playerId);
@@ -424,7 +640,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   let paintedKey = null;
 
   const structureKey = (players) =>
-    groupIdx + '|' + (data.finishedAt ? 'fin' : 'live') + '|'
+    groupIdx + '|' + (data.finishedAt ? 'fin' : 'live') + '|' + gameFormat(data) + '|'
     + players.map(p => p.id + (canScoreGamePlayer(ctx.user, data, p.id) ? '+' : '-')).join(',');
 
   const notFound = (msg, back) => {
@@ -476,7 +692,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     }
     // The final report recomputes with every correction while it is shown.
     const report = host.querySelector('#gs-report');
-    if (report) report.outerHTML = reportHTML(data, players, usersById);
+    if (report) report.outerHTML = reportHTML(data, players, usersById, groupIdx);
+    // The format panel has no persistent focus and an arbitrary shape (a
+    // chooser may be open, the pairing may have changed), so it is replaced
+    // wholesale and re-wired below rather than patched.
+    const panel = host.querySelector('#gs-format');
+    if (panel) panel.outerHTML = formatPanelHTML(data, groupIdx, players, ctx.user, usersById);
     for (let n = 1; n <= holeCount; n++) {
       const cell = host.querySelector(`button[data-gs="goto"][data-hole="${n}"]`);
       if (!cell) continue;
@@ -487,6 +708,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
       cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${holePar(data, n) ?? (entered || '·')}`;
     }
+    // onclick assignment is idempotent, so re-wiring the whole screen only
+    // gives the freshly inserted panel and report their handlers.
+    wire();
   };
 
   const paint = () => {
@@ -546,6 +770,49 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     } catch (err) {
       console.error('[gscore]', err);
       if (note) note.textContent = '⚠ ' + (err?.message || t('mpSaveFailed'));
+      ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+    } finally {
+      saving = false;
+    }
+  };
+
+  // A hand-set match play hole (or its removal). Not a stroke, so no
+  // handicap round can complete from it.
+  const writeOverride = async (key, hole, value) => {
+    if (saving) return;
+    saving = true;
+    try {
+      const local = await store.saveGameHoleOverride(gameId, key, hole, value || null, ctx.user?.id);
+      if (local) data = local;
+      else {
+        data.holeOverrides = data.holeOverrides || {};
+        const pair = (data.holeOverrides[key] = data.holeOverrides[key] || {});
+        if (!value) delete pair[hole]; else pair[hole] = value;
+      }
+      ovOpen = null;
+      paint();
+    } catch (err) {
+      console.error('[gscore]', err);
+      ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+    } finally {
+      saving = false;
+    }
+  };
+
+  const writePairing = async (order) => {
+    if (saving) return;
+    saving = true;
+    try {
+      const local = await store.saveGamePairing(gameId, groupIdx, order);
+      if (local) data = local;
+      else {
+        data.pairing = data.pairing || {};
+        data.pairing[groupIdx] = order;
+      }
+      ovOpen = null;
+      paint();
+    } catch (err) {
+      console.error('[gscore]', err);
       ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
     } finally {
       saving = false;
@@ -621,6 +888,21 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       } else if (kind === 'goto') {
         viewHole = Number(b.dataset.hole);
         paint();
+      } else if (kind === 'ov-open') {
+        const key = b.dataset.key;
+        const h = Number(b.dataset.hole);
+        ovOpen = ovOpen && ovOpen.key === key && ovOpen.hole === h ? null : { key, hole: h };
+        paint();
+      } else if (kind === 'ov-set') {
+        // Permission is re-checked at click time against the pair as it
+        // stands now, not as it was rendered.
+        const key = b.dataset.key;
+        const pair = groupPairs(data, groupIdx, players).pairs.find(p => p.key === key);
+        if (!pair || !canScoreGamePlayer(ctx.user, data, pair.a.id) || !canScoreGamePlayer(ctx.user, data, pair.b.id)) return;
+        writeOverride(key, Number(b.dataset.hole), b.dataset.value || null);
+      } else if (kind === 'repair') {
+        if (!players.some(p => canScoreGamePlayer(ctx.user, data, p.id))) return;
+        writePairing(nextPairing(data, groupIdx, players));
       }
     });
   };
