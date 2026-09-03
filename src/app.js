@@ -1555,9 +1555,16 @@ function tnDatesText(tn) {
     : `${start} – ${months[ed.getMonth()]} ${ed.getDate()}`;
 }
 
+// The tournament's type as a reader's label. 'scramble' is a legacy value some
+// older records still carry — the admin form keeps it selectable for exactly
+// those (see tnAdminFormHTML) — so it stays here even though the wizard has
+// never offered it. Anything unknown prints raw rather than blank, which is how
+// this bug was spotted: 'ryder' was missing and M Cup tournaments read "ryder".
 function tnFormatText(tn) {
-  const key = { stroke: 'fmtStroke', match: 'fmtMatch', scramble: 'fmtScramble' }[tn.format];
-  return key ? t(key) : (tn.format || '');
+  const key = {
+    stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder', scramble: 'fmtScramble'
+  }[tn?.format];
+  return key ? t(key) : (tn?.format || '');
 }
 
 // THRU only means something while a round is running; a finished tournament is

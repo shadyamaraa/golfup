@@ -630,7 +630,7 @@ const T = {
     pfSince: '가입', pfStats: '통계', pfMyGames: '내 게임', pfCreated: '생성', pfCircles: '서클', pfInvited: '초대됨',
     appearance: '테마', themeLight: '밝게', themeDark: '어둡게', language: '언어', organizer: '주최자',
     createSub: '새 라운드 설정', dateTime: '날짜 및 시간', gameFormat: '형식', numHoles: '홀',
-    fmtStroke: '스트로크', fmtMatch: '매치', fmtScramble: '스크램블',
+    fmtStroke: '스트로크', fmtMatch: '매치', fmtRyder: '라이더컵', fmtScramble: '스크램블',
     fmtSkins: '스킨스', fmtFourball: '포볼', fmtFoursome: '포섬', fmtStableford: '스테이블포드',
     holesFront9: 'H9', holesBack9: 'Value9', holesFull18: 'H18',
     publishGame: '게임 게시', optional: '선택',
