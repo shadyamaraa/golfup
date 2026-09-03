@@ -1,22 +1,26 @@
 # CHANGELOG_AI.md
 
-## 2026-08-29 (User manuals: score entry for stroke play and M Cup)
+## 2026-09-03 (User manuals: score entry for stroke play and M Cup)
 
 Two step-by-step user manuals (Mongolian, A4 PDF, screenshots with dummy
 data) added under `docs/manuals/`:
 
-- `ubgolf-strokeplay-onoo-oruulah-garin-avlaga.pdf` — entering stroke play
-  tournament scores: sign-in, finding the tournament, the Оноо оруулах
-  button, the flight (group) scorecard hole by hole, the personal card,
-  the Хуваарь tab, corrections, and the live leaderboard.
-- `ubgolf-mcup-onoo-oruulah-garin-avlaga.pdf` — entering M Cup match play
-  scores: Match Center, the three-button scorer screen, auto-advance,
-  undo/corrections, the correction-consent flow, suspend/close-out, and
-  what else lives on the Match Center.
+- `ubgolf-strokeplay-onoo-oruulah-garin-avlaga.pdf` (5 pages) — entering
+  stroke play tournament scores: sign-in, finding the tournament, the Оноо
+  оруулах button, the flight scorecard's − / + steppers (the first + seeds
+  the hole's par), the hole strip and follow mode, the personal card, the
+  Хуваарь tab, the player card with its Scorecard/Статистик tabs,
+  corrections, and the live leaderboard.
+- `ubgolf-mcup-onoo-oruulah-garin-avlaga.pdf` (4 pages) — entering M Cup
+  match play scores: Match Center, the three-button scorer screen,
+  auto-advance, undo/corrections, the correction-consent flow,
+  suspend/close-out, and what else lives on the Match Center.
 
 Documentation only — no code changes. Screenshots were captured against
 the localhost demo tournaments with Firebase disabled locally, so no
-production data was touched or written.
+production data was touched or written. They reflect the group scorecard
+steppers (PR #60) and the player card (PR #61) as they stand on `main`.
+
 ## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
 
 Members reported that updating the ranking showed no up/down arrows — nothing
