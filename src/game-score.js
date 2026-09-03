@@ -19,8 +19,10 @@ import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './h
 import { holePar, holeSI } from './courses.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import {
-  gameFormat, groupPairs, groupMatches, nextPairing, pairingOptions, skinsResult, allowanceTotal,
-  stablefordResult
+  gameFormat, FORMAT_LABEL_KEY, isTeamFormat, isOneBallFormat,
+  groupOrder, groupPairs, groupMatches, nextPairing, pairingOptions, allowanceTotal,
+  groupTeams, teamContests, groupTeamMatches, teamStrokesOf, teamBallLine, teamHcp,
+  skinsResult, stablefordResult
 } from './game-formats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -157,12 +159,40 @@ export function gameScoreLine(game, playerId, hcp) {
   };
 }
 
+// What this screen is entering scores FOR: one unit per player, or — in a
+// one-ball format — one per team plus one for any player with no team. Three
+// places used to ask "has everybody done this hole?" by counting players, and
+// in a scramble no player ever has a stroke of their own.
+function scoreUnits(game, groupIdx, players) {
+  const playerUnit = (p) => ({
+    kind: 'player', key: p.id, players: [p],
+    has: (n) => !!game?.scores?.[p.id]?.holes?.[n]
+  });
+  if (!isOneBallFormat(game)) return (players || []).map(playerUnit);
+  const { teams, unpaired } = groupTeams(game, groupIdx, players);
+  return [
+    ...teams.map(tm => ({
+      kind: 'team', key: tm.id, players: tm.players,
+      has: (n) => teamStrokesOf(game, tm.id, n) !== null
+    })),
+    ...unpaired.map(playerUnit)
+  ];
+}
+
+// Is every unit's score in for this hole? The strip's gold fill, in one place
+// so the first render and the in-place patch can never disagree.
+function holeComplete(units, n) {
+  return units.length > 0 && units.every(u => u.has(n));
+}
+
 // The first hole somebody in the group has not entered yet — where a group
 // arriving on the next tee wants to be without tapping anything.
-function followHole(game, players) {
+function followHole(game, players, groupIdx = 0) {
   const holeCount = gameHoleCount(game);
+  const units = scoreUnits(game, groupIdx, players);
+  if (!units.length) return 1;
   for (let n = 1; n <= holeCount; n++) {
-    if (players.some(p => !game?.scores?.[p.id]?.holes?.[n])) return n;
+    if (!holeComplete(units, n)) return n;
   }
   return holeCount;
 }
@@ -207,6 +237,22 @@ function hcpChipLabel(game, pid, userRec) {
 // stepper, so the full "Овог Нэр" doesn't fit on a phone.
 function shortName(p, userRec) {
   return userRec?.firstName || p.name || '?';
+}
+
+// A match side's name: a player's first name, or a team's two partners joined.
+// Every match renderer below takes sides rather than players, so one card, one
+// strip and one chooser serve both the 1 v 1 and the 2 v 2 formats.
+function sideName(side, usersById) {
+  if (side?.players) return side.players.map(p => shortName(p, usersById?.[p.id])).join(' + ');
+  return shortName(side, usersById?.[side?.id]);
+}
+
+const sidePlayers = (side) => (side?.players || (side ? [side] : []));
+
+// A side is yours to mark only if every player in it is.
+function canScoreSide(user, game, side) {
+  const list = sidePlayers(side);
+  return list.length > 0 && list.every(p => canScoreGamePlayer(user, game, p.id));
 }
 
 // The score the player is "walking on" right now, shown beside their name:
@@ -261,14 +307,89 @@ function playerRowHTML(game, p, hole, editable, userRec) {
     </div>`;
 }
 
+// One team's row in a one-ball format: the two partners' names, the team's own
+// running ball and a single stepper — because a scramble team writes one score,
+// not two.
+//
+// The per-partner HCP chips underneath are load-bearing, not decoration: the
+// individual rows are gone in these formats, so this is the only place a
+// marker can set a playing handicap, and without one the team has no average
+// and the contest silently plays gross.
+function teamRowHTML(game, team, hole, editable, usersById, hcps, diff) {
+  const strokes = teamStrokesOf(game, team.id, hole);
+  const line = teamBallLine(game, team.id, diff || 0);
+  const avg = teamHcp(hcps, team);
+  const run = !line.thru ? { text: '', color: 'var(--text-secondary)' }
+    : line.toPar !== null
+      ? {
+        text: fmtToPar(line.toPar),
+        color: line.toPar < 0 ? 'var(--red)' : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'
+      }
+      : { text: String(line.total), color: 'var(--text-primary)' };
+  const stepBtn = (kind, label, disabled) => `
+    <button data-gs="${kind}" data-team="${esc(team.id)}" ${disabled ? 'disabled' : ''}
+      style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
+             border:2px solid var(--border-color);background:var(--bg-card-hover);
+             color:var(--text-primary);font-size:1.35rem;font-weight:800;
+             ${disabled ? 'opacity:0.35;cursor:default;' : ''}">${label}</button>`;
+  const partnerChip = (p) => editable ? `
+    <button data-gs="hcp" data-pid="${esc(p.id)}"
+      style="border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);
+             border-radius:999px;padding:1px 8px;font-size:0.62rem;font-weight:700;cursor:pointer;
+             font-family:var(--font);flex-shrink:0;">${esc(shortName(p, usersById?.[p.id]))} ${hcpChipLabel(game, p.id, usersById?.[p.id])}</button>`
+    : '';
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(sideName(team, usersById))}</span>
+          <b data-gs-trun="${esc(team.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
+          <span data-gs-thcp="${esc(team.id)}" style="font-size:0.66rem;color:var(--text-secondary);flex-shrink:0;">${avg === null ? '' : `HCP ${avg}`}</span>
+        </div>
+        <div data-gs-ttot="${esc(team.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
+          ${esc(teamLineText(line))}
+        </div>
+        ${editable ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${team.players.map(partnerChip).join('')}</div>` : ''}
+      </div>
+      ${editable ? stepBtn('tminus', '−', strokes === null) : ''}
+      <div data-gs-tval="${esc(team.id)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;color:${strokeColor(strokes, holePar(game, hole))};">
+        ${strokes ?? '·'}
+      </div>
+      ${editable ? stepBtn('tplus', '+', strokes !== null && strokes >= MAX_STROKES) : ''}
+    </div>`;
+}
+
+// The rows this screen enters scores on: one per player, or — in a one-ball
+// format — one per team plus one for any player with no team.
+function scoreRowsHTML(game, groupIdx, players, hole, user, usersById) {
+  if (!isOneBallFormat(game)) {
+    return players.map(p => playerRowHTML(game, p, hole,
+      canScoreGamePlayer(user, game, p.id), usersById?.[p.id])).join('');
+  }
+  const hcps = hcpsFor(game, players, usersById);
+  const { teams, unpaired } = groupTeams(game, groupIdx, players);
+  // Each team's allowance comes from the contest it is playing, so read it off
+  // the settled matches rather than working it out a second time here.
+  const diffs = {};
+  groupTeamMatches(game, groupIdx, players, hcps, game.holeOverrides).matches.forEach(m => {
+    diffs[m.pair.a.id] = m.allowance.a;
+    diffs[m.pair.b.id] = m.allowance.b;
+  });
+  return teams.map(tm => teamRowHTML(game, tm, hole,
+    canScoreSide(user, game, tm), usersById, hcps, diffs[tm.id])).join('')
+    + unpaired.map(p => playerRowHTML(game, p, hole,
+      canScoreGamePlayer(user, game, p.id), usersById?.[p.id])).join('');
+}
+
 // A compact strip of every hole: the number and how many of the group have it
 // entered. Tapping a hole jumps to it — that is the correction affordance.
-function stripHTML(game, players, hole) {
+function stripHTML(game, players, hole, groupIdx = 0) {
   const holeCount = gameHoleCount(game);
+  const units = scoreUnits(game, groupIdx, players);
   const cells = [];
   for (let n = 1; n <= holeCount; n++) {
-    const entered = players.filter(p => game?.scores?.[p.id]?.holes?.[n]).length;
-    const full = players.length > 0 && entered >= players.length;
+    const entered = units.filter(u => u.has(n)).length;
+    const full = holeComplete(units, n);
     const on = n === hole;
     // Gold bg + navy ink for a completed hole — the app's on-gold convention
     // (.filter-tab.active), legible in both themes; #fff would wash out on
@@ -314,9 +435,10 @@ function reportHTML(game, players, usersById, groupIdx = 0) {
     <div id="gs-report" style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 14px;margin-top:10px;">
       <div style="font-weight:800;font-size:0.85rem;display:flex;align-items:center;gap:6px;">
         🏁 ${t('gsReport')}
-        <span style="margin-left:auto;font-size:0.66rem;font-weight:600;color:var(--text-secondary);">G · N</span>
+        ${rows.length ? '<span style="margin-left:auto;font-size:0.66rem;font-weight:600;color:var(--text-secondary);">G · N</span>' : ''}
       </div>
       ${formatReportHTML(game, players, usersById, groupIdx)}
+      ${!rows.length ? '' : `
       <table style="width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums;font-size:0.82rem;">
         <tr>
           <th style="padding:4px;text-align:left;font-size:0.62rem;letter-spacing:0.06em;color:var(--text-secondary);"></th>
@@ -329,7 +451,7 @@ function reportHTML(game, players, usersById, groupIdx = 0) {
               ? cell(r.grossF, r.netF) + cell(r.grossB, r.netB) + cell(r.total, r.netToPar)
               : cell(r.total, r.netToPar)}
           </tr>`).join('')}
-      </table>
+      </table>`}
     </div>`;
 }
 
@@ -380,18 +502,32 @@ function overrideChooserHTML(m, usersById) {
     <div style="margin-top:8px;padding:8px;border:1px dashed var(--border-color);border-radius:10px;">
       <div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">${t('mpHole')} ${hole} · ${t('gsHandSet')}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${btn(m.pair.a.id, shortName(m.pair.a, usersById?.[m.pair.a.id]), MP_A, hand && cur === 'a')}
+        ${btn(m.pair.a.id, sideName(m.pair.a, usersById), MP_A, hand && cur === 'a')}
         ${btn(HALVED, t('mpHalved'), 'var(--text-secondary)', hand && cur === HALVED)}
-        ${btn(m.pair.b.id, shortName(m.pair.b, usersById?.[m.pair.b.id]), MP_B, hand && cur === 'b')}
+        ${btn(m.pair.b.id, sideName(m.pair.b, usersById), MP_B, hand && cur === 'b')}
         ${btn('', t('gsAuto'), 'var(--border-color)', !hand)}
       </div>
     </div>`;
 }
 
+// One team's own ball as a line under its name — scramble and foursome only,
+// where no player has a card of their own to read it off.
+function teamLineText(line) {
+  if (!line || !line.thru) return '—';
+  let out = `${t('gsTotal')} ${line.total}`;
+  if (line.toPar !== null) out += ` (${fmtToPar(line.toPar)})`;
+  if (line.given) {
+    out += ` · ${t('gsNet')} ${line.netToPar !== null ? fmtToPar(line.netToPar) : line.net}`;
+  }
+  return out;
+}
+
 // One match: names either side of the status line, the allowance, the strip.
+// A "side" is a player in the 1 v 1 format and a two-player team in the 2 v 2
+// ones, which is why nothing here reads .name or .id directly.
 function matchCardHTML(game, m, editable, usersById) {
-  const aName = shortName(m.pair.a, usersById?.[m.pair.a.id]);
-  const bName = shortName(m.pair.b, usersById?.[m.pair.b.id]);
+  const aName = sideName(m.pair.a, usersById);
+  const bName = sideName(m.pair.b, usersById);
   const s = m.settled;
   const leadName = s.leader === 'a' ? aName : s.leader === 'b' ? bName : '';
   const status = s.finished
@@ -400,9 +536,12 @@ function matchCardHTML(game, m, editable, usersById) {
   const sub = s.finished ? t('mpFinal') : `${t('mpThru')} ${m.thru}${s.dormie ? ` · ${t('mpDormie')}` : ''}`;
   const al = m.allowance;
   const diff = al.a || al.b;
+  // Fourball's allowance is four separate differences off the lowest of the
+  // four, which does not fit one line — name the base the way skins does.
   const allowText = !al.net ? t('gsGrossPlay')
-    : !diff ? t('gsNet')
-      : `${al.a ? aName : bName} +${allowanceTotal(game, diff)} ${t('gsStrokesShort')}`;
+    : al.strokes ? `${t('gsNet')} · HCP ${al.base}`
+      : !diff ? t('gsNet')
+        : `${al.a ? aName : bName} +${allowanceTotal(game, diff)} ${t('gsStrokesShort')}`;
   const open = ovOpen && ovOpen.key === m.pair.key;
   return `
     <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;margin-top:8px;">
@@ -415,6 +554,11 @@ function matchCardHTML(game, m, editable, usersById) {
         <span style="flex:1;min-width:0;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${MP_B};">${esc(bName)}</span>
       </div>
       <div style="font-size:0.68rem;color:var(--text-secondary);text-align:center;margin-top:3px;">${esc(allowText)}</div>
+      ${m.lines ? `
+        <div style="display:flex;gap:8px;margin-top:5px;font-size:0.7rem;color:var(--text-secondary);">
+          <span style="flex:1;min-width:0;">${esc(teamLineText(m.lines.a))}</span>
+          <span style="flex:1;min-width:0;text-align:right;">${esc(teamLineText(m.lines.b))}</span>
+        </div>` : ''}
       ${m.gapHole && editable ? `
         <div style="font-size:0.72rem;color:var(--amber);font-weight:700;text-align:center;margin-top:6px;">
           ${esc(t('gsGapHint').replace('{n}', m.gapHole))}
@@ -427,27 +571,36 @@ function matchCardHTML(game, m, editable, usersById) {
     </div>`;
 }
 
+// The panel every match format shows: one card per contest, a note for whoever
+// has nobody to play, and the ⇄ that re-splits the group. It serves the 1 v 1
+// match and all three 2 v 2 team formats — only where the contests come from
+// differs, because a team match settles through the same engine.
 function matchPanelHTML(game, groupIdx, players, user, usersById) {
   const hcps = hcpsFor(game, players, usersById);
-  const { matches, unpaired } = groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
-  if (!matches.length && !unpaired.length) return '';
-  const cards = matches.map(m => {
-    const editable = canScoreGamePlayer(user, game, m.pair.a.id) && canScoreGamePlayer(user, game, m.pair.b.id);
-    return matchCardHTML(game, m, editable, usersById);
-  }).join('');
-  const odd = unpaired.map(p => `
+  const team = isTeamFormat(game);
+  const { matches, unpaired, spareTeams = [] } = team
+    ? groupTeamMatches(game, groupIdx, players, hcps, game.holeOverrides)
+    : groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
+  if (!matches.length && !unpaired.length && !spareTeams.length) return '';
+  const cards = matches.map(m => matchCardHTML(game, m,
+    canScoreSide(user, game, m.pair.a) && canScoreSide(user, game, m.pair.b), usersById)).join('');
+  const noContest = (side, label) => `
     <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:6px;padding:0 4px;">
-      ${esc(shortName(p, usersById?.[p.id]))} · ${t('gsNoMatch')}
-    </div>`).join('');
+      ${esc(sideName(side, usersById))} · ${label}
+    </div>`;
+  // A team with nobody to play still keeps its ball; so does a player with no
+  // team, exactly as the odd player of a 1 v 1 group does.
+  const odd = spareTeams.map(tm => noContest(tm, t('gsNoTeamMatch'))).join('')
+    + unpaired.map(p => noContest(p, t('gsNoMatch'))).join('');
   // Four players can be split three ways; whoever can score this group may
   // pick the split — the pairing is settled on the first tee by the people
-  // standing there, and cycling it loses nothing (strokes are per player,
-  // hand-set holes are per pair).
+  // standing there, and cycling it loses nothing (strokes are per player or
+  // per team, and hand-set holes are per contest).
   const canRepair = pairingOptions(players).length > 1 && players.some(p => canScoreGamePlayer(user, game, p.id));
   const pairingLine = pairingOptions(players).length > 1 ? `
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 4px;font-size:0.72rem;color:var(--text-secondary);">
-      <span style="flex:1;min-width:0;">${t('gsPairing')}: ${matches.map(m =>
-        `${esc(shortName(m.pair.a, usersById?.[m.pair.a.id]))}–${esc(shortName(m.pair.b, usersById?.[m.pair.b.id]))}`).join(' · ')}</span>
+      <span style="flex:1;min-width:0;">${t(team ? 'gsTeams' : 'gsPairing')}: ${matches.map(m =>
+        `${esc(sideName(m.pair.a, usersById))}–${esc(sideName(m.pair.b, usersById))}`).join(' · ')}</span>
       ${canRepair ? `<button data-gs="repair" class="btn btn-outline btn-sm" style="font-size:0.68rem;flex-shrink:0;">⇄ ${t('gsRepair')}</button>` : ''}
     </div>` : '';
   return `<div id="gs-format" style="margin-top:10px;">${cards}${odd}${pairingLine}</div>`;
@@ -556,7 +709,19 @@ function stablefordPanelHTML(game, players, usersById) {
 // Empty for stroke play — the strokes table is the whole screen there.
 function formatPanelHTML(game, groupIdx, players, user, usersById) {
   const fmt = gameFormat(game);
-  if (fmt === 'match') return matchPanelHTML(game, groupIdx, players, user, usersById);
+  if (fmt === 'match' || isTeamFormat(game)) {
+    const html = matchPanelHTML(game, groupIdx, players, user, usersById);
+    if (html) return html;
+    // A team panel must never come back empty. updateInPlace replaces
+    // #gs-format by outerHTML, so an empty string deletes the node for good —
+    // and whether a team panel is empty turns on the pairing, which a repaint
+    // does not necessarily follow. Say why there is no contest instead.
+    return isTeamFormat(game) ? `
+      <div id="gs-format" style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;margin-top:10px;">
+        <b style="font-size:0.8rem;">${t(FORMAT_LABEL_KEY[fmt])}</b>
+        <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px;">${t('gsNoTeams')}</div>
+      </div>` : '';
+  }
   if (fmt === 'skins') return skinsPanelHTML(game, players, usersById);
   if (fmt === 'stableford') return stablefordPanelHTML(game, players, usersById);
   return '';
@@ -570,18 +735,26 @@ function formatReportHTML(game, players, usersById, groupIdx) {
   const hcps = hcpsFor(game, players, usersById);
   const nameOf = (p) => esc(shortName(p, usersById?.[p.id]));
   let body = '';
-  if (fmt === 'match') {
-    const { matches } = groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
+  if (fmt === 'match' || isTeamFormat(game)) {
+    const { matches } = isTeamFormat(game)
+      ? groupTeamMatches(game, groupIdx, players, hcps, game.holeOverrides)
+      : groupMatches(game, groupIdx, players, hcps, game.holeOverrides);
     body = matches.filter(m => m.thru > 0).map(m => {
-      const a = nameOf(m.pair.a);
-      const b = nameOf(m.pair.b);
+      const a = esc(sideName(m.pair.a, usersById));
+      const b = esc(sideName(m.pair.b, usersById));
       const s = m.settled;
       const line = s.finished
         ? (s.winner === 'a' ? `<b>${a}</b> ${esc(m.status)} ${b}`
           : s.winner === 'b' ? `${a} ${esc(m.status)} <b>${b}</b>`
             : `${a} · ${t('mpHalved')} · ${b}`)
         : `${a} – ${b} · ${esc(m.status)} · ${t('mpThru')} ${m.thru}`;
-      return `<div style="padding:5px 0;border-top:1px solid var(--border-color);font-size:0.84rem;">${line}</div>`;
+      // A one-ball format has no individual cards under this, so the teams'
+      // own balls are the only strokes the report can show.
+      const balls = m.lines ? `
+        <div style="font-size:0.72rem;color:var(--text-secondary);">
+          ${a}: ${esc(teamLineText(m.lines.a))} · ${b}: ${esc(teamLineText(m.lines.b))}
+        </div>` : '';
+      return `<div style="padding:5px 0;border-top:1px solid var(--border-color);font-size:0.84rem;">${line}${balls}</div>`;
     }).join('');
   } else if (fmt === 'skins') {
     const r = skinsResult(game, players, hcps);
@@ -624,7 +797,7 @@ function holeHeaderHTML(game, hole, holeCount) {
 function screenHTML(game, groupIdx, user, fade, usersById) {
   const players = groupsOf(game)[groupIdx] || [];
   const holeCount = gameHoleCount(game);
-  const hole = Math.min(viewHole ?? followHole(game, players), holeCount);
+  const hole = Math.min(viewHole ?? followHole(game, players, groupIdx), holeCount);
   return `
     <div class="detail-container${fade ? ' fade-in' : ''}" style="max-width:560px;">
       <a href="#/game/${esc(game.id)}" class="back-link">${t('back')}</a>
@@ -647,7 +820,7 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
       </div>
 
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:4px 14px;margin-top:10px;">
-        ${players.map(p => playerRowHTML(game, p, hole, canScoreGamePlayer(user, game, p.id), usersById?.[p.id])).join('')
+        ${scoreRowsHTML(game, groupIdx, players, hole, user, usersById)
           || `<div style="padding:14px 0;color:var(--text-secondary);">${t('emptySlot')}</div>`}
       </div>
 
@@ -655,7 +828,7 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
 
       ${reportHTML(game, players, usersById, groupIdx)}
 
-      ${stripHTML(game, players, hole)}
+      ${stripHTML(game, players, hole, groupIdx)}
       ${canFinishGame(user, game) ? `
         <button data-gs="finish" class="btn ${game.finishedAt ? 'btn-outline' : 'btn-primary'} btn-sm"
           style="width:100%;margin-top:14px;gap:6px;">🏁 ${game.finishedAt ? t('gsResume') : t('gsFinish')}</button>` : ''}
@@ -668,10 +841,17 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
 // Once a player's card is full, mirror it into rounds/{ghinNumber}/{gameId}
 // and refresh their cached WHS index. Fire-and-forget: nothing here may block
 // or fail the score entry itself. Players without a GHIN number simply keep
-// their in-game scores. Match play and skins change nothing here: the strokes
-// are real individual scores, and a conceded hole with no strokes leaves the
-// card incomplete, so nothing posts — the right WHS outcome for a pick-up.
+// their in-game scores. Match play, skins, Stableford and fourball change
+// nothing here: the strokes are real individual scores, and a conceded hole
+// with no strokes leaves the card incomplete, so nothing posts — the right WHS
+// outcome for a pick-up.
 async function finalizeRoundIfComplete(game, playerId) {
+  // Scramble and foursome play one ball a team, so no player has a card of
+  // their own and nothing may post — a "complete" round there would be partly
+  // somebody else's shots. The check lives here rather than in handicap.js
+  // because game-formats.js imports handicap.js, and asking handicap.js for
+  // the format would close that circle.
+  if (isOneBallFormat(game)) return;
   try {
     const round = roundFromGame(game, playerId);
     if (!round) return;
@@ -714,8 +894,13 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   // event, which read as the page "refreshing" mid-round.
   let paintedKey = null;
 
+  // The playing ORDER is part of the structure, not just the roster: a ⇄ moves
+  // which players are on a team, and team rows live outside #gs-format, so an
+  // in-place patch would leave the old teams on screen. Including it forces a
+  // full repaint on a re-split.
   const structureKey = (players) =>
     groupIdx + '|' + (data.finishedAt ? 'fin' : 'live') + '|' + gameFormat(data) + '|'
+    + groupOrder(data, groupIdx, players).join('>') + '|'
     + players.map(p => p.id + (canScoreGamePlayer(ctx.user, data, p.id) ? '+' : '-')).join(',');
 
   const notFound = (msg, back) => {
@@ -737,7 +922,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
   // replaced, so their listeners survive and nothing flashes or reflows.
   const updateInPlace = (players) => {
     const holeCount = gameHoleCount(data);
-    const hole = Math.min(viewHole ?? followHole(data, players), holeCount);
+    const hole = Math.min(viewHole ?? followHole(data, players, groupIdx), holeCount);
     const label = host.querySelector('#gs-hole-label');
     if (label) label.innerHTML = holeHeaderHTML(data, hole, holeCount);
     const prev = host.querySelector('button[data-gs="prev"]');
@@ -765,6 +950,44 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       setStep(host.querySelector(`button[data-gs="minus"][data-pid="${p.id}"]`), strokes === null);
       setStep(host.querySelector(`button[data-gs="plus"][data-pid="${p.id}"]`), strokes !== null && strokes >= MAX_STROKES);
     }
+    // Team rows in a one-ball format, patched the same way. The per-partner
+    // HCP chips inside them carry data-pid and were refreshed by the loop
+    // above; only the team's own ball is left.
+    if (isOneBallFormat(data)) {
+      const hcps = hcpsFor(data, players, usersById);
+      const diffs = {};
+      groupTeamMatches(data, groupIdx, players, hcps, data.holeOverrides).matches.forEach(m => {
+        diffs[m.pair.a.id] = m.allowance.a;
+        diffs[m.pair.b.id] = m.allowance.b;
+      });
+      for (const tm of groupTeams(data, groupIdx, players).teams) {
+        const strokes = teamStrokesOf(data, tm.id, hole);
+        const val = host.querySelector(`[data-gs-tval="${tm.id}"]`);
+        if (val) {
+          val.textContent = strokes ?? '·';
+          val.style.color = strokeColor(strokes, holePar(data, hole));
+        }
+        const line = teamBallLine(data, tm.id, diffs[tm.id] || 0);
+        const tot = host.querySelector(`[data-gs-ttot="${tm.id}"]`);
+        if (tot) tot.textContent = teamLineText(line);
+        const run = host.querySelector(`[data-gs-trun="${tm.id}"]`);
+        if (run) {
+          run.textContent = !line.thru ? ''
+            : line.toPar !== null ? fmtToPar(line.toPar) : String(line.total);
+          run.style.color = line.toPar !== null && line.toPar < 0 ? 'var(--red)'
+            : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)';
+        }
+        // The team's average moves whenever a partner's handicap is edited from
+        // the chips inside this very row, so it is patched like any other total.
+        const chip = host.querySelector(`[data-gs-thcp="${tm.id}"]`);
+        if (chip) {
+          const avg = teamHcp(hcps, tm);
+          chip.textContent = avg === null ? '' : `HCP ${avg}`;
+        }
+        setStep(host.querySelector(`button[data-gs="tminus"][data-team="${tm.id}"]`), strokes === null);
+        setStep(host.querySelector(`button[data-gs="tplus"][data-team="${tm.id}"]`), strokes !== null && strokes >= MAX_STROKES);
+      }
+    }
     // The final report recomputes with every correction while it is shown.
     const report = host.querySelector('#gs-report');
     if (report) report.outerHTML = reportHTML(data, players, usersById, groupIdx);
@@ -773,11 +996,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     // wholesale and re-wired below rather than patched.
     const panel = host.querySelector('#gs-format');
     if (panel) panel.outerHTML = formatPanelHTML(data, groupIdx, players, ctx.user, usersById);
+    const units = scoreUnits(data, groupIdx, players);
     for (let n = 1; n <= holeCount; n++) {
       const cell = host.querySelector(`button[data-gs="goto"][data-hole="${n}"]`);
       if (!cell) continue;
-      const entered = players.filter(p => data.scores?.[p.id]?.holes?.[n]).length;
-      const full = players.length > 0 && entered >= players.length;
+      const entered = units.filter(u => u.has(n)).length;
+      const full = holeComplete(units, n);
       cell.style.border = n === hole ? '2px solid var(--text-primary)' : '1px solid var(--border-color)';
       cell.style.background = full ? 'var(--gold)' : 'transparent';
       cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
@@ -851,6 +1075,34 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     }
   };
 
+  // One tap on a team row: the strokes a scramble or foursome team's single
+  // ball took. Deliberately never calls finalizeRoundIfComplete — a team ball
+  // is nobody's card, so there is no WHS round to complete from it.
+  const writeTeamHole = async (teamKey, hole, strokes) => {
+    if (saving) return;
+    saving = true;
+    const note = document.getElementById('gs-note');
+    try {
+      const local = await store.saveGameTeamScoreHole(gameId, teamKey, hole, strokes, ctx.user?.id);
+      if (local) data = local;
+      else {
+        data.teamScores = data.teamScores || {};
+        const tm = (data.teamScores[teamKey] = data.teamScores[teamKey] || {});
+        tm.holes = tm.holes || {};
+        if (strokes === null) delete tm.holes[hole];
+        else tm.holes[hole] = strokes;
+      }
+      if (note) note.textContent = '';
+      paint();
+    } catch (err) {
+      console.error('[gscore]', err);
+      if (note) note.textContent = '⚠ ' + (err?.message || t('mpSaveFailed'));
+      ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+    } finally {
+      saving = false;
+    }
+  };
+
   // A hand-set match play hole (or its removal). Not a stroke, so no
   // handicap round can complete from it.
   const writeOverride = async (key, hole, value) => {
@@ -902,7 +1154,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       if (!data) return;
       const players = groupsOf(data)[groupIdx] || [];
       const holeCount = gameHoleCount(data);
-      const hole = Math.min(viewHole ?? followHole(data, players), holeCount);
+      const hole = Math.min(viewHole ?? followHole(data, players, groupIdx), holeCount);
       if (kind === 'plus' || kind === 'minus') {
         const pid = b.dataset.pid;
         if (!canScoreGamePlayer(ctx.user, data, pid)) return;
@@ -919,6 +1171,18 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         if (kind === 'plus') next = cur === null ? (holePar(data, hole) ?? DEFAULT_STROKES) : Math.min(MAX_STROKES, cur + 1);
         else next = cur === null ? null : (cur <= 1 ? null : cur - 1);
         if (next !== cur) write(pid, hole, next);
+      } else if (kind === 'tplus' || kind === 'tminus') {
+        // The team stepper, the same shape as a player's: pin the hole being
+        // entered, seed an empty hole at its par, and clear below one.
+        const teamId = b.dataset.team;
+        const team = groupTeams(data, groupIdx, players).teams.find(x => x.id === teamId);
+        if (!team || !canScoreSide(ctx.user, data, team)) return;
+        viewHole = hole;
+        const cur = teamStrokesOf(data, teamId, hole);
+        let next;
+        if (kind === 'tplus') next = cur === null ? (holePar(data, hole) ?? DEFAULT_STROKES) : Math.min(MAX_STROKES, cur + 1);
+        else next = cur === null ? null : (cur <= 1 ? null : cur - 1);
+        if (next !== cur) writeTeamHole(teamId, hole, next);
       } else if (kind === 'hcp') {
         const pid = b.dataset.pid;
         if (!canScoreGamePlayer(ctx.user, data, pid)) return;
@@ -969,11 +1233,14 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         ovOpen = ovOpen && ovOpen.key === key && ovOpen.hole === h ? null : { key, hole: h };
         paint();
       } else if (kind === 'ov-set') {
-        // Permission is re-checked at click time against the pair as it
-        // stands now, not as it was rendered.
+        // Permission is re-checked at click time against the contest as it
+        // stands now, not as it was rendered — and a team contest needs all
+        // four players, not two.
         const key = b.dataset.key;
-        const pair = groupPairs(data, groupIdx, players).pairs.find(p => p.key === key);
-        if (!pair || !canScoreGamePlayer(ctx.user, data, pair.a.id) || !canScoreGamePlayer(ctx.user, data, pair.b.id)) return;
+        const contest = (isTeamFormat(data)
+          ? teamContests(data, groupIdx, players).contests
+          : groupPairs(data, groupIdx, players).pairs).find(c => c.key === key);
+        if (!contest || !canScoreSide(ctx.user, data, contest.a) || !canScoreSide(ctx.user, data, contest.b)) return;
         writeOverride(key, Number(b.dataset.hole), b.dataset.value || null);
       } else if (kind === 'repair') {
         if (!players.some(p => canScoreGamePlayer(ctx.user, data, p.id))) return;

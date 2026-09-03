@@ -1,4 +1,6 @@
-# Casual game formats — stroke play, match play, skins, Stableford
+# Casual game formats
+
+Stroke play, match play, skins, Stableford, scramble, fourball, foursome.
 
 How a casual game's format works, for whoever runs game days and whoever
 maintains the code next. The M Cup counterpart is `docs/mcup-match-play.md`.
@@ -24,8 +26,18 @@ scorecard differently.
   birdie 3, bogey 1, double bogey or worse 0, off their full handicap. Higher
   is better, and a blow-up hole costs two points and no more. See
   `docs/stableford.md` — the same engine also scores stroke play tournaments.
-- Phase 2 (not built): **Scramble**, **Fourball**, **Foursome** — 2 v 2 pairs
-  inside the group. See the end of this file.
+- **Scramble** (`'scramble'`) — 2 v 2. Both partners tee off, the better ball
+  is chosen and both play on from there; the team writes **one score** per
+  hole. No individual card, so **nothing posts to WHS**.
+- **Fourball** (`'fourball'`) — 2 v 2. Every player plays their own ball and a
+  side's score on a hole is its **best net ball**. Nothing new is stored and
+  WHS posting is unaffected.
+- **Foursome** (`'foursome'`) — 2 v 2, one ball a side, played alternate shot.
+  One team score per hole, and again **nothing posts to WHS**.
+
+The three team formats settle **hole by hole**, through the same engine match
+play uses, so they carry dormie, close-outs (`3 & 2`) and the conceded-hole
+affordance. See "Teams" at the end of this file.
 
 ## The one rule that explains the rest
 
@@ -46,12 +58,19 @@ player receives their difference to the group's lowest. The playing handicap
 is the one the scorer already knows — the hand-entered per-game value, else
 the member's WHS index converted for the course (`gamePlayingHcp`).
 
+- A **team's** handicap is the **average** of its two players, and the higher
+  team receives the **difference**, rounded to a whole stroke and allocated by
+  stroke index — the same "off the low man" idiom, one level up. Half a stroke
+  rounds up to the team receiving it.
+- **Fourball is the exception among the team formats**: every player is still
+  playing their own ball, so it uses the individual allowance off the **lowest
+  of the four in the contest**, exactly as match play and skins do.
 - Net only when **everyone involved** has a handicap: one missing makes that
-  match (or the whole skins game) gross — a one-sided allowance would be no
-  fairer than none. **Stableford is the exception**: each player is measured
-  against par rather than against the others, so every player receives their
-  **full** handicap and one player's missing handicap only makes that player
-  gross.
+  match (or the whole skins game, or the whole team contest) gross — a
+  one-sided allowance would be no fairer than none. **Stableford is the
+  exception**: each player is measured against par rather than against the
+  others, so every player receives their **full** handicap and one player's
+  missing handicap only makes that player gross.
 - A course with no card (no SI) plays gross automatically.
 - On a **9-hole card** the full difference is allocated against the 18-hole
   SI of the nine holes actually played — roughly a half-allowance, on the
@@ -89,6 +108,19 @@ allowance ("+10"), and a strip of the leader's points hole by hole; a hole where
 they take a stroke is marked with a dot. A hole nobody finished simply scores
 nothing and stops nothing — unlike skins, the walk carries on.
 
+**Scramble / Foursome** — the four player rows are replaced by **two team
+rows**: both partners' names, the team's running ball, and one − / + stepper,
+because a team writes one score. Under each team's name sit its two partners'
+**HCP chips** — with no individual rows, that is the only place a marker can
+set a playing handicap, and without one the team has no average and the contest
+quietly plays gross. The panel is the match card, plus each team's gross and
+net line. Everything else — the strip, the ⇄, tapping a hole to concede it —
+works exactly as it does for a 1 v 1 match.
+
+**Fourball** — the four player rows and the stepper are **completely
+unchanged**; only the panel is added, showing the side-by-side match off the
+best net ball.
+
 Who may score is unchanged: yourself, your group, the game's creator, admin
 and marshal (`canScoreGamePlayer`).
 
@@ -106,10 +138,19 @@ and marshal (`canScoreGamePlayer`).
 
 ## WHS posting
 
-Unchanged. A player's card still posts to `rounds/{ghin}` when every hole
-has strokes. A conceded hole with no strokes leaves the card incomplete, so
-nothing posts — the right outcome for a pick-up. Phase 2's one-ball formats
-(scramble, foursome) will skip posting altogether.
+A player's card posts to `rounds/{ghin}` when every hole has strokes. A
+conceded hole with no strokes leaves the card incomplete, so nothing posts —
+the right outcome for a pick-up. Match play, skins, Stableford and **fourball**
+are all unchanged by this: in every one of them each player played their own
+ball for every hole.
+
+**Scramble and foursome never post.** One ball a team means no player has a
+card of their own, and a "complete" round there would be partly somebody else's
+shots. The check is `isOneBallFormat()` at the top of `finalizeRoundIfComplete`
+in `src/game-score.js` — deliberately not in `handicap.js`, because
+`game-formats.js` imports `handicap.js` and asking it for the format would close
+that circle. The one cost: the odd player of a three- or five-player scramble
+group, who really is playing their own ball, stops posting too.
 
 ## Data model
 
@@ -117,19 +158,30 @@ Under `games/{id}`, all optional:
 
 | Path | Holds |
 | --- | --- |
-| `format` | `'stroke'` \| `'match'` \| `'skins'` \| `'stableford'` — missing reads as stroke, never backfilled |
-| `pairing/{groupIdx}` | the group's playing ORDER as player ids: `order[0]` v `order[1]`, `order[2]` v `order[3]` |
-| `holeOverrides/{pairKey}/{hole}` | a hand-set hole: the winner's player id, or `'h'` |
-| `scoreAudit` | existing trail, plus `kind: 'override'` entries |
+| `format` | `'stroke'` \| `'match'` \| `'skins'` \| `'stableford'` \| `'scramble'` \| `'fourball'` \| `'foursome'` — missing reads as stroke, never backfilled |
+| `pairing/{groupIdx}` | the group's playing ORDER as player ids: singles `order[0]` v `order[1]`; teams `order[0]+order[1]` v `order[2]+order[3]` |
+| `holeOverrides/{key}/{hole}` | a hand-set hole: the winning side's id, or `'h'` |
+| `teamScores/{teamKey}/holes/{hole}` | one team's ball — scramble and foursome only |
+| `scoreAudit` | existing trail, plus `kind: 'override'` and `kind: 'team'` entries |
 
-`pairKey` is the two ids sorted and joined with `+`. A pairing is honoured
-only while it names exactly the group's current players; otherwise the join
-order applies. Overrides under a pair that is not currently playing each
-other are never read.
+`pairKey` is two ids sorted and joined with `+`. A **team's id is its two
+partners' pair key**, and a team contest's override key is `pairKey` of the two
+team ids — so a singles key has one `+` and a team-vs-team key three, and they
+can never collide. A pairing is honoured only while it names exactly the
+group's current players; otherwise the join order applies. Overrides under a
+side that is not currently playing are never read.
 
-`saveGame()` strips `pairing` and `holeOverrides` (as it already did
-`scores`, `scoreAudit`, `hcp`) so an Edit / join / leave never wipes what the
-scorer wrote. No database-rules change: `games` is wide open.
+**`teamScores` is keyed by the team, not by the group index.** The earlier
+sketch in this file said `teamScores/{groupIdx}/{teamKey}`, and that was wrong:
+`reflowGroupsBySize()` re-packs every player into fresh groups on an Edit save,
+so changing the group size or removing one player renumbers everybody. A
+pairing survives that because it self-heals back to join order — **scores
+cannot**, because they are the input rather than a derived reading, and would
+simply be orphaned. The team key survives a renumber and a ⇄ alike.
+
+`saveGame()` strips `pairing`, `holeOverrides` and `teamScores` (as it already
+did `scores`, `scoreAudit`, `hcp`) so an Edit / join / leave never wipes what
+the scorer wrote. No database-rules change: `games` is wide open.
 
 ## Code map
 
@@ -140,17 +192,39 @@ scorer wrote. No database-rules change: `games` is wide open.
 | `src/game-score.js` | The scorer: format panels, the hand-set chooser, ⇄. |
 | `src/app.js` | Create/edit format chips, the game page's boards, the pills. |
 | `src/scorecard.js` | The printed match / skins reports. |
-| `src/store.js` | `saveGamePairing`, `saveGameHoleOverride`, the `saveGame` strip list. |
+| `src/store.js` | `saveGamePairing`, `saveGameHoleOverride`, `saveGameTeamScoreHole`, the `saveGame` strip list. |
+| `src/mcup-rules.js` | The Mongolian rulebook blocks, one export per format, shown on the game page. |
 
 Tests: `npm run test:mp` runs `scripts/test-game-formats.mjs` with the rest.
 
-## Phase 2 — scramble, fourball, foursome
+## Teams
 
-Two-player teams from the same order (`order[0]+order[1]` v
-`order[2]+order[3]`), the same ⇄. Fourball is derived from individual
-strokes (best net ball per side); scramble and foursome play one ball, so
-they need a team score path (`games/{id}/teamScores/{groupIdx}/{teamKey}/holes`),
-team rows on the scorer, and no WHS posting. Overrides reuse `pairKey` on
-the two team keys. The M Cup rulebook in `src/mcup-rules.js` already
-describes fourball and foursomes; splitting it into per-format exports gives
-the game page its blurb.
+One sentence covers every group size: **teams are consecutive pairs of the
+playing order, contests are consecutive pairs of teams, and anything left over
+keeps its own ball and has no opponent.** That is the rule `groupPairs` already
+applies to players, applied once more to the teams it produces — which is why
+`groupTeams` and `teamContests` are six lines between them.
+
+The group size is the organiser's choice up to `APP_CONFIG.maxGroupSize` (8),
+so the odd cases are reachable and all of them read honestly:
+
+| Players | Teams | Contests | The scorer shows |
+| --- | --- | --- | --- |
+| 0–1 | 0 | 0 | the format's name and "2 v 2 needs four players" |
+| 2 | 1 | 0 | one team ball, totalled, with no opponent |
+| 3 | 1 + spare | 0 | one team ball plus the third player's own row |
+| **4** | **2** | **1** | the normal case |
+| 5 | 2 | 1 | one contest plus the fifth player's own row |
+| 6 | 3 | 1 | one contest plus a third team with nobody to play |
+| 8 | 4 | 2 | two contests, both settled |
+
+The **⇄** cycles a four-player group through its three splits, and it is
+lossless for teams exactly as it is for singles: a team's ball lives under its
+own key and its conceded holes under the contest key, so a split that comes
+back brings both with it.
+
+## Phase 3 (not built)
+
+A **cross-group scramble leaderboard** — every team in the game ranked by net
+total, rather than only the 2 v 2 inside each tee group. The numbers are already
+derived; only the board is missing.

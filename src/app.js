@@ -12,7 +12,10 @@ import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
-import { gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult } from './game-formats.js';
+import {
+  gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult,
+  isTeamFormat, groupTeamMatches, gameHasAnyScore
+} from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
@@ -20,7 +23,7 @@ import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
-import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -2745,11 +2748,9 @@ async function renderCreateGame() {
 
           <div class="create-section">
             <div class="cs-label">${t('gameFormat')}</div>
-            <div class="chip-row" id="format-chips">
-              <button type="button" class="seg-chip active" data-format="stroke">${t('fmtStroke')}</button>
-              <button type="button" class="seg-chip" data-format="match">${t('fmtMatch')}</button>
-              <button type="button" class="seg-chip" data-format="skins">${t('fmtSkins')}</button>
-              <button type="button" class="seg-chip" data-format="stableford">${t('fmtStableford')}</button>
+            <div class="chip-row chip-wrap" id="format-chips">
+              ${FORMATS.map(f => `
+                <button type="button" class="seg-chip ${f === 'stroke' ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
             </div>
             <p class="auto-group-hint" id="format-hint" style="display:none;">${t('gsFormatHint')}</p>
           </div>
@@ -3441,9 +3442,9 @@ function renderGameView(game) {
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
           ${(() => {
             // The printable scorecard: once anyone has scored, or the game
-            // is over — a blank card still prints.
-            const hasScores = !!game.scores && Object.values(game.scores)
-              .some(s => s?.holes && Object.keys(s.holes).length > 0);
+            // is over — a blank card still prints. "Anyone" includes a team,
+            // since in a scramble no player has a card of their own.
+            const hasScores = gameHasAnyScore(game);
             return `
           ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}`;
           })()}
@@ -3459,6 +3460,11 @@ function renderGameView(game) {
         })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">${icon('scorecard', { size: 13 })} Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
+        ${isTeamFormat(game) ? `
+          <details style="margin-top:10px;">
+            <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('mpRulesTitle')}</summary>
+            ${casualTeamRulesHTML(gameFormat(game))}
+          </details>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">${icon('ball-tee', { size: 13 })} ${t('bookCode')}</span>
@@ -3663,28 +3669,39 @@ function renderGroupCard(players, groupIndex, game, isPast) {
 // net the board ranks by net — that is the game being "played on handicap".
 // Match play: one line per pair in each group — who leads and by how much,
 // or the result — the same reading the group scorer shows.
+// The 2 v 2 team formats read through the very same board: a team is just a
+// side with two players in it, so only the name and an extra ball line differ.
 function gameMatchBoardHTML(game) {
   const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  const team = isTeamFormat(game);
   const shortName = (p) => allUsersMap[p.id]?.firstName || p.name || '?';
+  const sideName = (side) => side?.players
+    ? side.players.map(shortName).join(' + ') : shortName(side);
   const blocks = groups.map((players, gi) => {
     const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
-    const { matches } = groupMatches(game, gi, players, hcps, game.holeOverrides);
+    const { matches } = team
+      ? groupTeamMatches(game, gi, players, hcps, game.holeOverrides)
+      : groupMatches(game, gi, players, hcps, game.holeOverrides);
     const live = matches.filter(m => m.thru > 0);
     if (!live.length) return '';
     const rows = live.map(m => {
-      const a = esc(shortName(m.pair.a));
-      const b = esc(shortName(m.pair.b));
+      const a = esc(sideName(m.pair.a));
+      const b = esc(sideName(m.pair.b));
       const s = m.settled;
       const lead = s.leader === 'a' ? a : s.leader === 'b' ? b : '';
       const status = s.finished ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved')) : (lead ? `${lead} ${esc(m.status)}` : 'AS');
+      // A one-ball format has no individual rows anywhere on this page, so the
+      // team's own gross is the only score a reader can see.
+      const ball = (line) => line && line.thru
+        ? `<div style="font-size:0.64rem;color:var(--text-secondary);font-weight:600;">${line.total}${line.toPar !== null ? ` (${fmtToPar(line.toPar)})` : ''}</div>` : '';
       return `
         <div class="player-row filled" style="gap:8px;">
-          <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${a}</span>
+          <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${a}${ball(m.lines?.a)}</span>
           <span style="text-align:center;flex:0 0 auto;">
             <b style="font-size:0.95rem;">${status}</b>
             <div style="font-size:0.64rem;color:var(--text-secondary);">${s.finished ? t('mpFinal') : `${t('mpThru')} ${m.thru}`}</div>
           </span>
-          <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${b}</span>
+          <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${b}${ball(m.lines?.b)}</span>
         </div>`;
     }).join('');
     return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}`;
@@ -3693,8 +3710,8 @@ function gameMatchBoardHTML(game) {
   return `
     <div class="group-card glass-card">
       <div class="group-header">
-        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsMatches')}${game.finishedAt ? ' 🏁' : ''}</h3>
-        <span class="group-count">${t('fmtMatch')}</span>
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t(team ? 'gsTeams' : 'gsMatches')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t(FORMAT_LABEL_KEY[gameFormat(game)])}</span>
       </div>
       <div class="player-list">${blocks}</div>
     </div>`;
@@ -3783,7 +3800,7 @@ function gameScoreboardHTML(game) {
   // The match play family reads the same strokes differently — see
   // src/game-formats.js; stroke play keeps the ranked table below.
   const fmt = gameFormat(game);
-  if (fmt === 'match') return gameMatchBoardHTML(game);
+  if (fmt === 'match' || isTeamFormat(game)) return gameMatchBoardHTML(game);
   if (fmt === 'skins') return gameSkinsBoardHTML(game);
   if (fmt === 'stableford') return gameStablefordBoardHTML(game);
   const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
@@ -5144,7 +5161,7 @@ async function renderEditGame(gameId) {
           </div>
           <div class="input-group">
             <label>${t('gameFormat')}</label>
-            <div class="chip-row" id="edit-format-chips" style="margin-top:6px;">
+            <div class="chip-row chip-wrap" id="edit-format-chips" style="margin-top:6px;">
               ${FORMATS.map(f => `
                 <button type="button" class="seg-chip ${gameFormat(game) === f ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
             </div>

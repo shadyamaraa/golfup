@@ -17,7 +17,11 @@ import { t } from './i18n.js';
 import { gameHoleCount } from './handicap.js';
 import { holePar, holeSI, coursePar, courseTees, physicalHole } from './courses.js';
 import { gameScoreLine, gamePlayingHcp, isCompMode, splitHcp, fmtToPar, groupsOf } from './game-score.js';
-import { gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult, stablefordResult } from './game-formats.js';
+import {
+  gameFormat, FORMAT_LABEL_KEY, groupMatches, skinsResult, stablefordResult,
+  isTeamFormat, isOneBallFormat, groupTeams, groupTeamMatches, teamBallLine, teamHcp,
+  gameHasAnyScore
+} from './game-formats.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
@@ -44,23 +48,26 @@ function scoreCellStyle(strokes, par) {
 const toParColor = (v) => v === null || v === 0 ? '#666' : v < 0 ? '#c0392b' : '#2e6da4';
 
 // Sum of entered strokes over card holes from..to; thru counts entries.
-function segGross(game, playerId, from, to) {
-  const holes = game?.scores?.[playerId]?.holes || {};
+function segSum(holes, from, to) {
   let gross = 0, thru = 0;
   for (let n = from; n <= to; n++) {
-    const s = holes[n];
-    if (s) { gross += s; thru++; }
+    const score = holes?.[n];
+    if (score) { gross += score; thru++; }
   }
   return { gross, thru };
 }
 
-// ---- Player card (Best Approach layout) ----
+function segGross(game, playerId, from, to) {
+  return segSum(game?.scores?.[playerId]?.holes, from, to);
+}
 
-function playerCardHTML(game, p, userRec) {
+// ---- Score card (Best Approach layout) ----
+
+// The printed grid, for a player's card or a team's ball. Everything it needs
+// comes in as a plain hole map and a heading, so one table serves both rather
+// than the one-ball formats growing a copy of it.
+function scoreCardHTML(game, { title, sub, holes, line }) {
   const holeCount = gameHoleCount(game);
-  const holes = game?.scores?.[p.id]?.holes || {};
-  const hcp = gamePlayingHcp(game, p.id, userRec);
-  const line = gameScoreLine(game, p.id, hcp);
   const hasPars = holePar(game, 1) !== null;
   const two9 = holeCount === 18;
 
@@ -79,7 +86,7 @@ function playerCardHTML(game, p, userRec) {
       siCells.push(`<td>${holeSI(game, n) ?? ''}</td>`);
     }
     if (seg.label) {
-      const g = segGross(game, p.id, seg.from, seg.to);
+      const g = segSum(holes, seg.from, seg.to);
       holeCells.push(`<th class="sc-sum">${seg.label}</th>`);
       scoreCells.push(`<td class="sc-sum">${g.thru ? g.gross : ''}</td>`);
       parCells.push(`<td class="sc-sum">${hasPars ? segPar : ''}</td>`);
@@ -94,14 +101,12 @@ function playerCardHTML(game, p, userRec) {
 
   const badge = line.toPar !== null && line.thru
     ? `<span style="font-weight:800;font-size:0.95rem;color:${toParColor(line.toPar)};">${fmtToPar(line.toPar)}</span>` : '';
-  const sub = typeof hcp === 'number'
-    ? `<span style="font-size:0.7rem;color:#666;">HCP ${hcp}${line.net !== null ? ` · Net ${line.net}` : ''}</span>` : '';
 
   return `
     <div class="sc-block" style="margin-top:14px;">
       <div style="display:flex;align-items:baseline;gap:10px;">
-        <span style="font-weight:700;font-size:0.95rem;">${esc(userRec?.username || p.name || '?')}</span>
-        ${sub}
+        <span style="font-weight:700;font-size:0.95rem;">${esc(title)}</span>
+        ${sub || ''}
         <span style="margin-left:auto;">${badge}</span>
       </div>
       <div class="sc-scroll" style="margin-top:5px;">
@@ -113,6 +118,31 @@ function playerCardHTML(game, p, userRec) {
         </table>
       </div>
     </div>`;
+}
+
+function playerCardHTML(game, p, userRec) {
+  const hcp = gamePlayingHcp(game, p.id, userRec);
+  const line = gameScoreLine(game, p.id, hcp);
+  return scoreCardHTML(game, {
+    title: userRec?.username || p.name || '?',
+    sub: typeof hcp === 'number'
+      ? `<span style="font-size:0.7rem;color:#666;">HCP ${hcp}${line.net !== null ? ` · Net ${line.net}` : ''}</span>` : '',
+    holes: game?.scores?.[p.id]?.holes || {},
+    line
+  });
+}
+
+// A scramble or foursome team's one ball, printed as a card of its own —
+// neither partner has an individual card to print.
+function teamCardHTML(game, team, usersById, hcps) {
+  const avg = teamHcp(hcps, team);
+  const line = teamBallLine(game, team.id);
+  return scoreCardHTML(game, {
+    title: team.players.map(p => usersById[p.id]?.username || p.name || '?').join(' + '),
+    sub: avg === null ? '' : `<span style="font-size:0.7rem;color:#666;">HCP ${avg}</span>`,
+    holes: game?.teamScores?.[team.id]?.holes || {},
+    line
+  });
 }
 
 // ---- Reports: the three contests (F9 / B9 / 18 net) ----
@@ -151,15 +181,22 @@ function reportTableHTML(title, entries) {
     </div>`;
 }
 
-// Match play: one table per group — each match, its result, and the hole-by-
-// hole reading (A / B / –), hand-set holes starred.
+// Match play, and the three 2 v 2 team formats: one table per group — each
+// contest, its result, and the hole-by-hole reading (A / B / –), hand-set holes
+// starred. A side is a player in the 1 v 1 format and a two-player team in the
+// others, which is the only difference between them here.
 function matchReportHTML(game, usersById) {
   const holeCount = gameHoleCount(game);
-  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const team = isTeamFormat(game);
+  const name = (side) => side?.players
+    ? side.players.map(p => esc(usersById[p.id]?.username || p.name || '?')).join(' + ')
+    : esc(usersById[side?.id]?.username || side?.name || '?');
   const groups = groupsOf(game);
   const tables = groups.map((players, gi) => {
     const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
-    const { matches } = groupMatches(game, gi, players, hcps, game.holeOverrides);
+    const { matches } = team
+      ? groupTeamMatches(game, gi, players, hcps, game.holeOverrides)
+      : groupMatches(game, gi, players, hcps, game.holeOverrides);
     const live = matches.filter(m => m.thru > 0);
     if (!live.length) return '';
     let starred = false;
@@ -174,16 +211,20 @@ function matchReportHTML(game, usersById) {
       const result = s.finished
         ? (s.winner === 'a' ? `<b>${name(m.pair.a)}</b> ${esc(m.status)}` : s.winner === 'b' ? `<b>${name(m.pair.b)}</b> ${esc(m.status)}` : 'HALVED')
         : `${esc(m.status)} (${m.thru}/${holeCount})`;
+      // The one-ball formats have no individual cards on this sheet, so each
+      // team's own gross rides along with its name.
+      const ball = (line) => line && line.thru
+        ? ` <span style="color:#777;font-weight:400;">${line.total}${line.toPar !== null ? ` (${fmtToPar(line.toPar)})` : ''}</span>` : '';
       return `
         <tr>
-          <td style="text-align:left;white-space:nowrap;">${name(m.pair.a)}<br><span style="color:#777;">v</span> ${name(m.pair.b)}</td>
+          <td style="text-align:left;white-space:nowrap;">${name(m.pair.a)}${ball(m.lines?.a)}<br><span style="color:#777;">v</span> ${name(m.pair.b)}${ball(m.lines?.b)}</td>
           <td style="text-align:left;white-space:nowrap;">${result}</td>
           ${cells}
         </tr>`;
     }).join('');
     return `
       <div style="margin-top:16px;">
-        <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${t('gsMatches')}${groups.length > 1 ? ` — ${t('group')} ${gi + 1}` : ''}</div>
+        <div style="font-weight:800;font-size:0.9rem;letter-spacing:0.03em;">${t(team ? 'gsTeams' : 'gsMatches')}${groups.length > 1 ? ` — ${t('group')} ${gi + 1}` : ''}</div>
         <div class="sc-scroll"><table style="margin-top:5px;">
           <thead>
           <tr class="sc-head">
@@ -281,6 +322,11 @@ const FORMAT_REPORT = {
   match: matchReportHTML,
   skins: skinsReportHTML,
   stableford: stablefordReportHTML,
+  // The three 2 v 2 formats settle as matches, so they print as matches — with
+  // teams in the Match column and, for the one-ball pair, each team's gross.
+  scramble: matchReportHTML,
+  fourball: matchReportHTML,
+  foursome: matchReportHTML,
 };
 
 function reportsHTML(game, players, usersById) {
@@ -381,7 +427,12 @@ export async function renderScorecardPage(gameId, ctx) {
 
   setPageTitle(ctx, `${game.course?.name || game.location || ''} ${game.date || ''} — ${t('gsTitle')}`);
 
-  const groups = groupsOf(game).filter(g => g.length > 0);
+  // Empty groups are not printed, but the group INDEX still has to be the real
+  // one: pairing (and so the teams) is stored per group index, and printing a
+  // different split from the one the scorer shows would be worse than useless.
+  const allGroups = groupsOf(game);
+  const groups = allGroups.filter(g => g.length > 0);
+  const groupIdxOf = (grp) => allGroups.indexOf(grp);
   const players = groups.flat();
 
   // Fresher usernames and the WHS-index → course-handicap fallback. Loaded
@@ -394,11 +445,22 @@ export async function renderScorecardPage(gameId, ctx) {
   } catch (_) { }
 
   const url = pageUrl(`#/scorecard/${gameId}`);
-  const anyScores = players.some(p => segGross(game, p.id, 1, gameHoleCount(game)).thru > 0);
+  const anyScores = gameHasAnyScore(game);
+
+  // A one-ball format prints one card per TEAM — a player card there would be
+  // blank, since no player has strokes of their own — plus an individual card
+  // for anyone with no team.
+  const groupCards = (grp, gi) => {
+    if (!isOneBallFormat(game)) return grp.map(p => playerCardHTML(game, p, usersById[p.id])).join('');
+    const hcps = Object.fromEntries(grp.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
+    const { teams, unpaired } = groupTeams(game, gi, grp);
+    return teams.map(tm => teamCardHTML(game, tm, usersById, hcps)).join('')
+      + unpaired.map(p => playerCardHTML(game, p, usersById[p.id])).join('');
+  };
 
   const cardsHTML = groups.map((grp, i) => `
-    ${groups.length > 1 ? `<div style="margin-top:18px;font-weight:800;font-size:0.85rem;color:#555;letter-spacing:0.05em;">${t('group')} ${i + 1}</div>` : ''}
-    ${grp.map(p => playerCardHTML(game, p, usersById[p.id])).join('')}
+    ${groups.length > 1 ? `<div style="margin-top:18px;font-weight:800;font-size:0.85rem;color:#555;letter-spacing:0.05em;">${t('group')} ${groupIdxOf(grp) + 1}</div>` : ''}
+    ${groupCards(grp, groupIdxOf(grp))}
   `).join('');
 
   host.innerHTML = `
