@@ -1,5 +1,62 @@
 # CHANGELOG_AI.md
 
+## 2026-09-03 (Casual formats phase 2 — scramble, fourball, foursome)
+
+The 2 v 2 team formats, and the first thing this app stores that is not a
+player's own card. Teams come from the same playing order the ⇄ already cycles:
+`order[0]+order[1]` against `order[2]+order[3]`. All three settle **hole by
+hole** through the match engine that already shipped, so dormie, close-outs
+(`3 & 2`) and the conceded-hole chooser came free — and a scramble crowd still
+reads its team total, because that is a line on the card, not a second contest.
+
+- **One rule, applied twice.** `groupPairs` pairs consecutive players; the new
+  `groupTeams` reuses it and `teamContests` pairs consecutive *teams*. That is
+  the whole of the group-size story: 4 players are one contest, 8 are two, 6 are
+  one contest and a team with nobody to play, and anyone left over keeps their
+  own ball. `matchHoles` was factored into a shared `walkHoles` so the override
+  precedence and the "stop at the first gap" rule are literally the same code
+  for a 1 v 1 and a 2 v 2 — the existing match play tests are the guard.
+- **Handicaps.** A team plays off the **average** of its two players, and the
+  higher team receives the **difference**, rounded to a whole stroke by stroke
+  index — "off the low man", one level up. Fourball is the exception: every
+  player still plays their own ball, so it uses the individual allowance off the
+  lowest of the four, exactly as match play and skins do, and a side's score on
+  a hole is its **best net ball** (one ball is enough — a partner who picked up
+  leaves a blank, which is ordinary fourball).
+- **The one new path**, `games/{id}/teamScores/{teamKey}/holes/{hole}`, keyed by
+  the team and **not** by the group index. `reflowGroupsBySize()` renumbers every
+  group on an Edit save; a pairing survives that because it self-heals to join
+  order, but scores are input, not a reading, and would simply be orphaned.
+  `saveGame`'s strip list gained `teamScores` in the same commit.
+- **The scorer** replaces the four player rows with two team rows in the
+  one-ball formats — one stepper per team, and each partner's HCP chip
+  underneath, which is load-bearing: with no individual rows that is the only
+  place a marker can set a handicap. Fourball's rows and write path are
+  untouched. Three places counted "has everybody done this hole?" by counting
+  players and now count scoring units instead, so the hole strip goes gold and
+  the scorer stops opening on hole 1 forever.
+- **`structureKey` gained the playing order**, so a ⇄ forces a full repaint;
+  without it the team rows, which live outside `#gs-format`, went stale.
+- **WHS.** Scramble and foursome never post — one ball a team means no player
+  has a card, and a "complete" round would be partly somebody else's shots.
+  Fourball still posts. The check sits in `finalizeRoundIfComplete`, not in
+  `handicap.js`, because `game-formats.js` imports `handicap.js`.
+- **The rulebook split.** `src/mcup-rules.js` now exports its FOURBALL,
+  FOURSOMES, SINGLES and concepts blocks one at a time, with a new Mongolian
+  SCRAMBLE block written for this, and a `casualTeamRulesHTML()` that frames one
+  for a single tee group. `ryderRulesHTML()` composes the same blocks and its
+  output is **byte-identical** to before — the club's own document has not
+  moved, and a test now pins that.
+- Two blind spots fixed on the way: the printable-scorecard button and the
+  printed card both asked whether any *player* had scored, so a finished
+  scramble read as unplayed; both now ask `gameHasAnyScore()`. The printed card
+  also prints one card per team rather than four blanks, and takes the real
+  group index rather than the index after empty groups are filtered out.
+- The create form's format chips were the last hardcoded enumeration and now map
+  `FORMATS`; both chip rows wrap, so seven chips fit a 390px phone.
+
+Tests: `npm run test:mp` is 193 (was 173).
+
 ## 2026-09-03 (Stableford — casual games and stroke play tournaments)
 
 Points scoring, on both surfaces. Each hole is scored against par after the

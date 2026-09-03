@@ -5,9 +5,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FORMATS, gameFormat, isStrokeFormat, pairKey, pairingOptions, groupOrder, groupPairs,
-  nextPairing, pairAllowance, groupAllowance, netStrokes, allowanceTotal,
-  matchHoles, matchResult, groupMatches, skinsResult, stablefordResult
+  FORMATS, TEAM_FORMATS, gameFormat, isStrokeFormat, isTeamFormat, isOneBallFormat,
+  pairKey, pairingOptions, groupOrder, groupPairs, groupTeams, teamContests,
+  nextPairing, pairAllowance, groupAllowance, teamHcp, teamAllowance,
+  netStrokes, allowanceTotal, teamStrokesOf, teamBallLine, gameHasAnyScore,
+  matchHoles, matchResult, groupMatches, groupTeamMatches, skinsResult, stablefordResult
 } from '../src/game-formats.js';
 import { HALVED } from '../src/matchplay.js';
 import { strokesReceived } from '../src/handicap.js';
@@ -27,6 +29,9 @@ const G = (extra = {}) => ({
 const withScores = (game, scores) => ({
   ...game, scores: Object.fromEntries(Object.entries(scores).map(([pid, holes]) => [pid, { holes }]))
 });
+const withTeamScores = (game, teams) => ({
+  ...game, teamScores: Object.fromEntries(Object.entries(teams).map(([key, holes]) => [key, { holes }]))
+});
 
 // ---- format ----
 
@@ -38,8 +43,25 @@ test('gameFormat: missing or unknown reads as stroke play', () => {
   assert.equal(gameFormat({ format: 'skins' }), 'skins');
   assert.ok(isStrokeFormat({}));
   assert.ok(!isStrokeFormat({ format: 'skins' }));
-  assert.deepEqual(FORMATS, ['stroke', 'match', 'skins', 'stableford']);
+  assert.deepEqual(FORMATS,
+    ['stroke', 'match', 'skins', 'stableford', 'scramble', 'fourball', 'foursome']);
   assert.equal(gameFormat({ format: 'stableford' }), 'stableford');
+});
+
+test('team formats are named, and only scramble/foursome play one ball', () => {
+  assert.deepEqual(TEAM_FORMATS, ['scramble', 'fourball', 'foursome']);
+  for (const f of TEAM_FORMATS) assert.ok(isTeamFormat({ format: f }), f);
+  for (const f of ['stroke', 'match', 'skins', 'stableford', 'nonsense']) {
+    assert.ok(!isTeamFormat({ format: f }), f);
+    assert.ok(!isOneBallFormat({ format: f }), f);
+  }
+  assert.ok(isOneBallFormat({ format: 'scramble' }));
+  assert.ok(isOneBallFormat({ format: 'foursome' }));
+  // Fourball is a team format built from four ordinary cards, so it still
+  // posts a WHS round — the distinction the whole handicap path hangs on.
+  assert.ok(isTeamFormat({ format: 'fourball' }));
+  assert.ok(!isOneBallFormat({ format: 'fourball' }));
+  assert.ok(!isTeamFormat({}) && !isOneBallFormat({}));
 });
 
 // ---- pairing ----
@@ -404,4 +426,241 @@ test('stableford: order is points first, then who has played more', () => {
   const r = stablefordResult(g, [P1, P2, P3], {});
   assert.deepEqual(r.order, ['p3', 'p1', 'p2']);   // 36 · 4 (thru 2) · 2 (thru 1)
   assert.equal(stablefordResult(g, [], {}), null);
+});
+
+// ---- team formats: scramble, fourball, foursome ----
+
+const TA = pairKey('p1', 'p2');            // team A's id, in join order
+const TB = pairKey('p3', 'p4');            // team B's
+const TKEY = pairKey(TA, TB);              // the contest's override key
+const P5 = P('p5', 'Ганаа'), P6 = P('p6', 'Оюу');
+const P7 = P('p7', 'Ням'), P8 = P('p8', 'Цэрэн');
+
+// The one contest a four-player group plays, settled.
+const teamMatch = (game, players, hcps, overrides) =>
+  groupTeamMatches(game, 0, players, hcps, overrides).matches[0];
+
+test('groupTeams: consecutive pairs of the playing order', () => {
+  const info = groupTeams(G(), 0, FOUR);
+  assert.deepEqual(info.teams.map(t => t.id), [TA, TB]);
+  assert.deepEqual(info.teams.map(t => t.players.map(p => p.id)), [['p1', 'p2'], ['p3', 'p4']]);
+  assert.deepEqual(info.unpaired, []);
+  assert.equal(teamContests(G(), 0, FOUR).contests[0].key, TKEY);
+});
+
+test('groupTeams follows the same pairing the ⇄ writes', () => {
+  const g = G({ pairing: { 0: ['p1', 'p3', 'p2', 'p4'] } });
+  assert.deepEqual(groupTeams(g, 0, FOUR).teams.map(t => t.players.map(p => p.id)),
+    [['p1', 'p3'], ['p2', 'p4']]);
+  assert.equal(teamContests(g, 0, FOUR).contests[0].key,
+    pairKey(pairKey('p1', 'p3'), pairKey('p2', 'p4')));
+  // A stored order naming somebody who is no longer here is ignored, exactly
+  // as it is for singles — the group falls back to join order.
+  const stale = G({ pairing: { 0: ['p1', 'p9', 'p2', 'p4'] } });
+  assert.deepEqual(groupTeams(stale, 0, FOUR).teams.map(t => t.id), [TA, TB]);
+});
+
+test('teamContests: teams are pairs of players, contests are pairs of teams', () => {
+  const at = (players) => {
+    const c = teamContests(G(), 0, players);
+    return [c.teams.length, c.contests.length, c.spareTeams.length, c.unpaired.length];
+  };
+  assert.deepEqual(at([P1]), [0, 0, 0, 1]);
+  assert.deepEqual(at([P1, P2]), [1, 0, 1, 0]);              // a team, no opponent
+  assert.deepEqual(at([P1, P2, P3]), [1, 0, 1, 1]);
+  assert.deepEqual(at(FOUR), [2, 1, 0, 0]);                  // the normal case
+  assert.deepEqual(at([...FOUR, P5]), [2, 1, 0, 1]);
+  assert.deepEqual(at([...FOUR, P5, P6]), [3, 1, 1, 0]);
+  assert.deepEqual(at([...FOUR, P5, P6, P7, P8]), [4, 2, 0, 0]);
+  assert.deepEqual(teamContests(G(), 0, [...FOUR, P5, P6, P7, P8]).contests.map(c => c.key),
+    [TKEY, pairKey(pairKey('p5', 'p6'), pairKey('p7', 'p8'))]);
+});
+
+test('a team plays off the average of its two handicaps', () => {
+  const [tA] = groupTeams(G(), 0, FOUR).teams;
+  assert.equal(teamHcp({ p1: 12, p2: 8 }, tA), 10);
+  assert.equal(teamHcp({ p1: 12, p2: 7 }, tA), 9.5);
+  assert.equal(teamHcp({ p1: 0, p2: 0 }, tA), 0);
+  // One partner without a handicap leaves the team without one.
+  assert.equal(teamHcp({ p1: 10 }, tA), null);
+  assert.equal(teamHcp({}, tA), null);
+  assert.equal(teamHcp({}, null), null);
+});
+
+test('the higher team receives the difference, rounded, off the lower', () => {
+  const [c] = teamContests(G(), 0, FOUR).contests;
+  assert.deepEqual(teamAllowance({ p1: 12, p2: 8, p3: 6, p4: 4 }, c),
+    { net: true, base: 5, hcpA: 10, hcpB: 5, a: 5, b: 0 });
+  // Half a stroke is not half a stroke on a card: 9.5 against 5 rounds UP to
+  // the team receiving it, the way courseHandicap already rounds.
+  assert.equal(teamAllowance({ p1: 12, p2: 7, p3: 6, p4: 4 }, c).a, 5);
+  // The same teams the other way round.
+  assert.deepEqual(teamAllowance({ p1: 6, p2: 4, p3: 12, p4: 8 }, c),
+    { net: true, base: 5, hcpA: 5, hcpB: 10, a: 0, b: 5 });
+  // Level teams play level, even out of very unlevel players.
+  assert.equal(teamAllowance({ p1: 4, p2: 12, p3: 8, p4: 8 }, c).a, 0);
+  // One missing handicap of the four makes the whole contest gross.
+  assert.deepEqual(teamAllowance({ p1: 10, p2: 13, p3: 6 }, c),
+    { net: false, base: null, hcpA: 11.5, hcpB: null, a: 0, b: 0 });
+});
+
+test('teamStrokesOf ignores cleared and junk holes the way RTDB drops them', () => {
+  const g = withTeamScores(G(), { [TA]: { 1: 4, 2: 0, 3: null, 4: 'x' } });
+  assert.equal(teamStrokesOf(g, TA, 1), 4);
+  assert.equal(teamStrokesOf(g, TA, 2), null);
+  assert.equal(teamStrokesOf(g, TA, 3), null);
+  assert.equal(teamStrokesOf(g, TA, 4), null);
+  assert.equal(teamStrokesOf(g, 'nobody', 1), null);
+  assert.equal(teamStrokesOf({}, TA, 1), null);
+});
+
+test('scramble: the team ball decides the hole, off the team allowance', () => {
+  // Both teams play every hole in par, so gross the match is all square. Team A
+  // averages 11.5 against 8, so it is owed four strokes and wins exactly the
+  // four lowest-SI holes.
+  const g = withTeamScores(G({ format: 'scramble' }), { [TA]: levelPar(), [TB]: levelPar() });
+  const m = teamMatch(g, FOUR, { p1: 10, p2: 13, p3: 6, p4: 10 }, null);
+  assert.equal(m.allowance.a, 4);
+  assert.equal(m.allowance.b, 0);
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.deepEqual(won, [2, 9, 12, 15]);          // Sky's SI 1-4
+  assert.ok(Object.entries(m.holes).every(([h, v]) => won.includes(Number(h)) || v === HALVED));
+  // Four up with three to play closes the match out on the 15th.
+  assert.equal(m.status, '4 & 3');
+  assert.equal(m.settled.winner, 'a');
+  assert.equal(m.thru, 15);
+});
+
+test('scramble: the team line reads the one ball they played', () => {
+  const g = withTeamScores(G({ format: 'scramble' }), {
+    [TA]: { ...levelPar(), 1: 4 },               // a birdie on the par-5 first
+    [TB]: levelPar()
+  });
+  const m = teamMatch(g, FOUR, {}, null);
+  assert.deepEqual(m.lines.a, { total: 71, thru: 18, toPar: -1, given: 0, net: 71, netToPar: -1 });
+  assert.deepEqual(m.lines.b, { total: 72, thru: 18, toPar: 0, given: 0, net: 72, netToPar: 0 });
+  // The allowance comes off the net reading, not off the strokes.
+  assert.deepEqual(teamBallLine(g, TA, 7), { total: 71, thru: 18, toPar: -1, given: 7, net: 64, netToPar: -8 });
+  // A partial round is honest, and a team that has played nothing has no line.
+  assert.deepEqual(teamBallLine(withTeamScores(G(), { [TA]: { 1: 4, 2: 4 } }), TA),
+    { total: 8, thru: 2, toPar: -1, given: 0, net: 8, netToPar: -1 });
+  assert.deepEqual(teamBallLine(G(), TA), { total: 0, thru: 0, toPar: null, given: 0, net: null, netToPar: null });
+  // Fourball's numbers are the players' own cards, so it carries no team line.
+  assert.equal(teamMatch(withScores(G({ format: 'fourball' }), { p1: { 1: 4 } }), FOUR, {}, null).lines, null);
+});
+
+test('foursome walks the same one-ball path as scramble', () => {
+  const g = withTeamScores(G({ format: 'foursome' }), { [TA]: same(18, 4), [TB]: same(18, 5) });
+  const m = teamMatch(g, FOUR, {}, null);
+  assert.ok(isOneBallFormat(g));
+  assert.equal(m.settled.winner, 'a');
+  assert.equal(m.allowance.net, false);          // no handicaps → gross
+});
+
+test('a nine-hole team card allocates against the holes actually played', () => {
+  // Value9 is the back nine, so card hole n is physical hole n + 9.
+  const g = withTeamScores(G({ format: 'scramble', holes: 'back9' }),
+    { [TA]: same(9, 4), [TB]: same(9, 4) });
+  const m = teamMatch(g, FOUR, { p1: 8, p2: 10, p3: 4, p4: 4 }, null);
+  assert.equal(m.allowance.a, 5);                // averages 9 and 4
+  // The v1 rule: the FULL difference is allocated against the 18-hole stroke
+  // index of the nine holes played, so only the strokes that land count —
+  // physical 12 (SI 2) and 15 (SI 4), which are card holes 3 and 6.
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.deepEqual(won, [3, 6]);
+  assert.equal(allowanceTotal(g, 5), 2);
+  assert.equal(m.totalHoles, 9);
+});
+
+test('fourball: the allowance is off the lowest of the four in the contest', () => {
+  const g = withScores(G({ format: 'fourball' }),
+    { p1: levelPar(), p2: levelPar(), p3: levelPar(), p4: levelPar() });
+  const m = teamMatch(g, FOUR, { p1: 4, p2: 8, p3: 4, p4: 4 }, null);
+  assert.equal(m.allowance.base, 4);
+  assert.deepEqual(m.allowance.strokes, { p1: 0, p2: 4, p3: 0, p4: 0 });
+  // Everyone is level par gross, so team A wins exactly the holes p2's four
+  // strokes fall on — Sky's SI 1-4 again.
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.deepEqual(won, [2, 9, 12, 15]);
+  // One missing handicap of the four makes the whole fourball gross.
+  assert.equal(teamMatch(g, FOUR, { p1: 4, p2: 8, p3: 4 }, null).allowance.net, false);
+});
+
+test('fourball: a side plays its best net ball, and one ball is enough', () => {
+  const g = withScores(G({ format: 'fourball' }), {
+    p1: { 1: 6, 2: 4, 3: 5 }, p2: { 1: 4, 2: 6 },      // A: 4, 4, then only p1's 5
+    p3: { 1: 5, 2: 5, 3: 4 }, p4: { 1: 5, 2: 5, 3: 6 } // B: 5, 5, 4
+  });
+  const m = teamMatch(g, FOUR, {}, null);
+  assert.equal(m.holes[1], 'a');                 // 4 beats 5
+  assert.equal(m.holes[2], 'a');                 // p1's 4 beats both of B's 5s
+  // p2 picked up on the third: A still has p1's ball, and B's 4 takes the hole.
+  assert.equal(m.holes[3], 'b');
+  assert.equal(m.thru, 3);
+});
+
+test('fourball: a side with neither ball in has not finished the hole', () => {
+  const g = withScores(G({ format: 'fourball' }), {
+    p1: { 1: 4 }, p2: { 1: 4 }, p3: { 1: 5, 2: 5 }, p4: { 1: 5, 2: 5 }
+  });
+  const m = teamMatch(g, FOUR, {}, null);
+  assert.equal(m.holes[1], 'a');
+  assert.equal(m.holes[2], undefined);
+  assert.equal(m.thru, 1);
+});
+
+test('a team hole can be conceded by hand, with no strokes at all', () => {
+  const g = withTeamScores(G({ format: 'scramble' }), { [TA]: { 1: 4 }, [TB]: { 1: 5 } });
+  const m = teamMatch(g, FOUR, {}, { [TKEY]: { 2: TB, 3: HALVED } });
+  assert.equal(m.holes[1], 'a');
+  assert.equal(m.holes[2], 'b');
+  assert.equal(m.holes[3], HALVED);
+  assert.equal(m.source[1], 'derived');
+  assert.equal(m.source[2], 'override');
+  // The walk carries past holes nobody entered, as a singles match does.
+  assert.equal(m.thru, 3);
+  assert.equal(m.settled.leader, null);          // one each and a half
+  // A gap the walk is waiting on is named, and a concession fills it.
+  const gap = teamMatch(withTeamScores(G({ format: 'scramble' }),
+    { [TA]: { 1: 4, 3: 4 }, [TB]: { 1: 5, 3: 5 } }), FOUR, {}, null);
+  assert.equal(gap.thru, 1);
+  assert.equal(gap.gapHole, 2);
+});
+
+test('cycling the pairing is lossless for team balls and hand-set holes', () => {
+  const base = withTeamScores(G({ format: 'scramble' }), { [TA]: { 1: 4 }, [TB]: { 1: 5 } });
+  const overrides = { [TKEY]: { 2: TA } };
+  const before = teamMatch(base, FOUR, {}, overrides);
+  assert.equal(before.thru, 2);
+
+  // Swap to p1+p3 against p2+p4 — teams that have played nothing …
+  const swapped = { ...base, pairing: { 0: nextPairing(base, 0, FOUR) } };
+  const mid = teamMatch(swapped, FOUR, {}, overrides);
+  assert.notEqual(mid.pair.key, before.pair.key);
+  assert.deepEqual(mid.holes, {});
+
+  // … and back again: the same teams read exactly what they read before.
+  const back = { ...base, pairing: { 0: ['p1', 'p2', 'p3', 'p4'] } };
+  assert.deepEqual(teamMatch(back, FOUR, {}, overrides).holes, before.holes);
+  assert.equal(teamStrokesOf(back, TA, 1), 4);
+});
+
+test('a group that cannot field two teams has no contest, not an empty one', () => {
+  const g = withTeamScores(G({ format: 'foursome' }), { [TA]: { 1: 4 } });
+  const r = groupTeamMatches(g, 0, [P1, P2, P3], {}, null);
+  assert.deepEqual(r.matches, []);
+  assert.deepEqual(r.spareTeams.map(t => t.id), [TA]);
+  assert.deepEqual(r.unpaired.map(p => p.id), ['p3']);
+  // Nothing entered is lost — the one team's ball still reads.
+  assert.deepEqual(teamBallLine(g, TA).toPar, -1);
+});
+
+test('gameHasAnyScore sees a team ball as well as a player card', () => {
+  assert.equal(gameHasAnyScore(G()), false);
+  assert.equal(gameHasAnyScore(withScores(G(), { p1: { 1: 4 } })), true);
+  assert.equal(gameHasAnyScore(withTeamScores(G(), { [TA]: { 1: 4 } })), true);
+  // A hole cleared back to nothing is not a score.
+  assert.equal(gameHasAnyScore(withTeamScores(G(), { [TA]: { 1: 0 } })), false);
+  assert.equal(gameHasAnyScore(withScores(G(), { p1: {} })), false);
+  assert.equal(gameHasAnyScore(null), false);
 });

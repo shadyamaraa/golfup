@@ -18,10 +18,8 @@
       database rules, not only in the UI. See `docs/mcup-match-play.md`.
 - [ ] M Cup phase 2 (spec §27): push notifications, player and pair
       statistics, historical results.
-- [ ] Casual game formats phase 2: scramble / fourball / foursome — 2 v 2
-      inside a tee group, one-ball team scores under
-      `games/{id}/teamScores`, no WHS posting for scramble/foursome.
-      See `docs/casual-formats.md`.
+- [ ] Casual formats phase 3: a cross-group scramble leaderboard — rank every
+      team in the game by net total, not only the 2 v 2 inside each group.
 
 ## In Progress
 
@@ -37,5 +35,8 @@
 - [x] Fix duplicate notification creation.
 - [x] Filter history by the selected home tab.
 - [x] Upgrade Firebase Functions runtime to Node.js 22.
+- [x] Casual game formats phase 2: scramble / fourball / foursome — 2 v 2
+      inside a tee group, one-ball team scores under `games/{id}/teamScores`,
+      no WHS posting for scramble/foursome.
 - [x] M Cup live match tracking (team match play) — phase 1 of the spec.
 - [x] Stableford scoring for casual games and stroke play tournaments.
