@@ -1,5 +1,60 @@
 # CHANGELOG_AI.md
 
+## 2026-09-03 (MTBogd booking: no more silent unbooked games; every step logged; attach and check)
+
+A member's game for 2026-09-03 13:40 at Sky Resort was created with no MTBogd
+booking and no trace of why. The live data explained it: the create form's
+default time is 08:00 and the manual time selects are hidden on the MTBogd
+course, so 13:40 could only have come from `selectSlot()`. The member picked
+the 13:40 slot, then a date change (or the clear button, or a location toggle)
+silently reset `selectedTeeSlot` while the hidden hour/minute selects kept
+13:40, and the submit handler had no branch for "MTBogd course but no slot" —
+so the game saved at the stale time with no booking, no error and no log.
+Since 28 June, 24 of 197 MTBogd-course games had no booking (10 by real
+members); 36 of 95 deleted-with-booking games never had their cancellation
+confirmed. MTBogd itself exposes `GET /bookings/{id|code}` (verified live)
+but no way to list bookings by date.
+
+**The soft guard.** On the MTBogd course with no slot selected, submit now
+opens a dialog: pick a time (opens the picker, submit stays enabled) or
+create without booking. The dialog knows whether a choice was lost or never
+made (`slotEverSelected`) and says so. Either way the game records why
+(`booking.status = 'none'`, `reason = 'slot_lost' | 'user_skipped'`). With a
+slot selected, or on any other course, the submit path is byte-for-byte what
+it was.
+
+**The trail.** New `src/booking-sync.js` (pure, 12 tests) derives a game's
+booking state from its fields and compares it with MTBogd's record. Every
+step appends to `games/{id}/bookingLog` (hold, confirm, booked later, player
+sync, check, attach, cancel — each with the HTTP status on failure); a hold or
+confirm that fails before a game exists lands in the new `bookingAttempts`
+node (one additive line in `database.rules.json`). `saveGame` strips
+`bookingLog` from full-record writes so a stale copy can never overwrite it.
+`booking.js` now returns the HTTP status on errors and normalises MTBogd's
+`{ booking, matchedBy }` wrapper.
+
+**Two-way, by hand.** On the game page (creator or admin): **MTBogd шалгах**
+fetches MTBogd's record and stores the verdict (`confirmed` or `mismatch`
+with named issues: cancelled, date, time, slot, player count, not found);
+**Кодоор холбох** attaches a booking made by phone or in MTBogd's app by its
+code, refusing a different date, a cancelled booking or a deleted game. A
+successful cancel now marks `bookingCancelled` itself (previously only the
+webhook did; nothing in the client read it); a failed cancel records
+`cancel_failed`. Admin → **MTBogd** tab groups every recent MTBogd game by
+state (no booking / cancel failed / cancelled on MTBogd / mismatch /
+unchecked / linked) with check-all, per-row check/attach/open, and the
+failed attempts underneath. Legacy games read neutrally ("not checked"),
+never as a problem.
+
+Verified in a browser with a fixture MTBogd: the regression cases first (slot
+selected → no dialog, identical fields saved; other course → untouched), then
+every branch above, and a negative run with the guard removed that
+reproduces the original silent save. Build clean, tests 120 → 132.
+
+Automatic discovery in the MTBogd → UBGolf direction is not possible without
+a list endpoint or a `created` webhook (Functions); attach-by-code covers it
+by hand. Cloud Functions were not touched.
+
 ## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
 
 Members reported that updating the ranking showed no up/down arrows — nothing

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, update, remove, onValue, push } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, push, query, limitToLast } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -155,7 +155,9 @@ export async function saveGame(game) {
     // the same game). Every caller passes the full record, so the named
     // top-level keys are still replaced wholesale — only the scoring
     // branches are spared.
-    const { scores, scoreAudit, hcp, ...rest } = game;
+    // bookingLog is append-only (see appendBookingLog); a full-record save
+    // from a stale copy must never overwrite it.
+    const { scores, scoreAudit, hcp, bookingLog, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -389,6 +391,78 @@ export async function saveBookingQuote(id, quote) {
     const games = getLocalGames();
     if (games[id]) { games[id].bookingQuote = quote; setLocalGames(games); }
   }
+}
+
+// ---- MTBogd booking sync (see src/booking-sync.js) ----
+// `booking` records how the booking came to be and what the last check
+// against MTBogd found; `bookingLog` is the append-only trail of every step.
+// Both are path-scoped so a concurrent full-record save cannot clobber them.
+
+export async function saveBookingState(id, partial) {
+  const patch = { ...partial, updatedAt: Date.now() };
+  if (useFirebase && db) {
+    await update(ref(db, `games/${id}/booking`), patch);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].booking = { ...(games[id].booking || {}), ...patch }; setLocalGames(games); }
+  }
+}
+
+export async function appendBookingLog(id, entry) {
+  if (useFirebase && db) {
+    await push(ref(db, `games/${id}/bookingLog`), entry);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) {
+      games[id].bookingLog = games[id].bookingLog || {};
+      games[id].bookingLog['l_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)] = entry;
+      setLocalGames(games);
+    }
+  }
+}
+
+// Link an MTBogd booking made elsewhere (by phone, in MTBogd's own app) to a
+// game after the fact. Writes the same three fields the create flow writes.
+export async function attachBooking(id, { bookingId, bookingCode, bookingSlotId }) {
+  const fields = { bookingId: bookingId || null, bookingCode: bookingCode || null, bookingSlotId: bookingSlotId || null };
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), fields);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { Object.assign(games[id], fields); setLocalGames(games); }
+  }
+  await saveBookingState(id, { status: 'confirmed', source: 'attached' });
+}
+
+// Our own cancel request succeeded — mark it so a check does not have to.
+export async function markBookingCancelled(id) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), { bookingCancelled: true });
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].bookingCancelled = true; setLocalGames(games); }
+  }
+}
+
+// A hold or confirm that failed BEFORE a game existed has no game to log
+// under, so it lands here for the admin's MTBogd tab.
+export async function logBookingAttempt(entry) {
+  if (useFirebase && db) {
+    await push(ref(db, 'bookingAttempts'), entry);
+  } else {
+    const list = JSON.parse(localStorage.getItem('golfup_bookingAttempts') || '[]');
+    list.push(entry);
+    localStorage.setItem('golfup_bookingAttempts', JSON.stringify(list.slice(-100)));
+  }
+}
+
+export async function loadBookingAttempts(limit = 50) {
+  if (useFirebase && db) {
+    const snap = await get(query(ref(db, 'bookingAttempts'), limitToLast(limit)));
+    if (!snap.exists()) return [];
+    return Object.entries(snap.val()).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+  }
+  return JSON.parse(localStorage.getItem('golfup_bookingAttempts') || '[]').slice(-limit).reverse();
 }
 
 export function onGameChanged(id, callback) {
