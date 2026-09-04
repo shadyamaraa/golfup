@@ -8046,6 +8046,10 @@ async function renderAdminRankingTab() {
 
 // Which tournament's editor is open in the admin list.
 let adminOpenTn = null;
+// The admin list is folded by state — live, draft (upcoming), past — and each
+// fold remembers whether the admin opened it, because the tab re-renders on
+// every edit. Past starts closed: it is the long tail nobody scrolls past.
+const adminTnSectionOpen = { live: true, upcoming: true, final: false };
 // The editor's meta-fields fold: collapsed by default so opening a
 // tournament lands on its players/lineup, not the name-and-dates form.
 let tnFormOpen = false;
@@ -8293,8 +8297,33 @@ async function renderAdminTournamentsTab() {
       </div>`;
   };
 
+  // Three folds by state. Upcoming reads soonest first, past most recent
+  // first; live is whatever is on today. A fold holding the tournament whose
+  // editor is open is forced open, or the editor would vanish under it.
+  const byState = { live: [], upcoming: [], final: [] };
+  list.forEach(tn => (byState[tnStatus(tn)] || byState.upcoming).push(tn));
+  byState.upcoming.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')));
+  const sectionHTML = (key, label) => {
+    const rows = byState[key];
+    if (!rows.length) return '';
+    const open = adminTnSectionOpen[key] || rows.some(tn => tn.id === adminOpenTn);
+    return `
+      <details data-tn-section="${key}"${open ? ' open' : ''} style="margin-bottom:14px;">
+        <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 0;font-weight:800;font-size:0.95rem;list-style:none;">
+          <span class="tn-sec-chev" style="color:var(--text-secondary);font-size:0.85rem;display:inline-block;transition:transform .2s;">▼</span>
+          ${label}
+          <span class="pill-soft" style="font-size:0.7rem;">${rows.length}</span>
+        </summary>
+        <div style="margin-top:6px;">${rows.map(rowHTML).join('')}</div>
+      </details>`;
+  };
+  const sectionsHTML = sectionHTML('live', t('tnAdmLive'))
+    + sectionHTML('upcoming', t('tnAdmDraft'))
+    + sectionHTML('final', t('tnAdmPast'));
+
   el.innerHTML = `
     ${errBanner}
+    <style>details[data-tn-section]:not([open]) > summary .tn-sec-chev{transform:rotate(-90deg);}</style>
     <div id="tn-devices"></div>
     <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
       <button type="button" id="tn-create-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
@@ -8305,7 +8334,12 @@ async function renderAdminTournamentsTab() {
     </div>
     ${list.length === 0
       ? `<p style="color:var(--text-secondary);">${t('tnAdminEmpty')}</p>`
-      : list.map(rowHTML).join('')}`;
+      : sectionsHTML}`;
+
+  // A fold's state outlives the next re-render.
+  el.querySelectorAll('details[data-tn-section]').forEach(d => d.addEventListener('toggle', () => {
+    adminTnSectionOpen[d.dataset.tnSection] = d.open;
+  }));
 
   // Create — the Squabbit-style wizard: pick the type early, and only that
   // type's questions follow. Its draft lives in the module, so toggling or
