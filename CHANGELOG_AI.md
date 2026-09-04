@@ -335,6 +335,41 @@ Automatic discovery in the MTBogd → UBGolf direction is not possible without
 a list endpoint or a `created` webhook (Functions); attach-by-code covers it
 by hand. Cloud Functions were not touched.
 
+## 2026-09-04 (User manuals refreshed, and a team-format section)
+
+Both manuals re-shot against today's build — every screenshot in them now
+matches what a member actually sees. The stroke play manual gained a **Багийн
+форматууд** section covering the three team tournament types that have shipped
+since it was written: one row and one + / − per team in a scramble or foursome,
+per-player rows in a fourball with the pair's best ball derived, the flight
+match line, the ТОГЛОГЧ → БАГ column head, and the fact that a scramble or
+foursome round does not post to WHS while a fourball one does.
+
+The demo the shots are taken against is seeded into localStorage rather than
+patched into `TN_DEMO`, so the capture writes nothing to any database and the
+app source is untouched by it.
+
+## 2026-09-03 (User manuals: score entry for stroke play and M Cup)
+
+Two step-by-step user manuals (Mongolian, A4 PDF, screenshots with dummy
+data) added under `docs/manuals/`:
+
+- `ubgolf-strokeplay-onoo-oruulah-garin-avlaga.pdf` (5 pages) — entering
+  stroke play tournament scores: sign-in, finding the tournament, the Оноо
+  оруулах button, the flight scorecard's − / + steppers (the first + seeds
+  the hole's par), the hole strip and follow mode, the personal card, the
+  Хуваарь tab, the player card with its Scorecard/Статистик tabs,
+  corrections, and the live leaderboard.
+- `ubgolf-mcup-onoo-oruulah-garin-avlaga.pdf` (4 pages) — entering M Cup
+  match play scores: Match Center, the three-button scorer screen,
+  auto-advance, undo/corrections, the correction-consent flow,
+  suspend/close-out, and what else lives on the Match Center.
+
+Documentation only — no code changes. Screenshots were captured against
+the localhost demo tournaments with Firebase disabled locally, so no
+production data was touched or written. They reflect the group scorecard
+steppers (PR #60) and the player card (PR #61) as they stand on `main`.
+
 
 ## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
 
