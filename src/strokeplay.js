@@ -15,11 +15,22 @@
 //     scores:  { pid: { [round]: { [hole]: strokes } } }
 //   }
 //
+// A TEAM event (scramble) needs no second data model: a team is simply another
+// sp.players entry — kind:'team', its members listed, and the organiser's
+// hand-entered team handicap — so its one ball lives at the ordinary
+// sp.scores[teamKey] path, the leaderboard ranks it like any other entry, and
+// the database rules already let anyone in the flight write it. Its members
+// stay in sp.players too (that is what carries the flight pointer the rules
+// read) and are simply left off the board.
+//
 // The board keeps riding the existing pure ranking in tournament-sheet.js
 // (rankEntries / cutSet / activeRound): spEntries() emits exactly the entry
 // shape those functions and the leaderboard render already consume.
 
 import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
+import { holePoints, roundPoints } from './stableford.js';
+import { strokesReceived } from './handicap.js';
+import { settleMatch, statusText, HALVED } from './matchplay.js';
 
 export const SP_HOLES = 18;
 
@@ -36,6 +47,198 @@ export const courseByKey = (key) => resolveCourse(key);
 // when its typed venue ("Mt. Bogd") is a registry alias.
 export const tnPars = (tn) => coursePars(tn?.course) || coursePars(tn?.venue);
 export const tnSIs = (tn) => courseSIs(tn?.course) || courseSIs(tn?.venue);
+
+// How the organiser chose to score this tournament. Stableford ranks POINTS,
+// highest first — the whole board, the cut and the movement arrows follow
+// this, so every reader goes through here rather than testing the field.
+// A record without the field is stroke play, and is never backfilled.
+export const tnScoring = (tn) => (tn?.spScoring === 'stableford' ? 'stableford' : 'strokes');
+
+// Whether a bigger total is a better one.
+export const tnHigherWins = (tn) => tnScoring(tn) === 'stableford';
+
+// ---- Team events (scramble, fourball, foursome) ----
+//
+// The TEAM is the scoring unit and the ranked entry. The whole strokeplay
+// stack — spEntries, rankEntries, the cut, the movement arrows, the board, the
+// schedule — needs no change for that, because a team is stored as an
+// sp.players entry and therefore already looks like a competitor to every one
+// of them. Only the scorer and the admin have to know an entry is a team
+// rather than a person.
+//
+// Scramble and foursome play ONE ball: the team's strokes live under the team
+// key and no member has a card, so nothing posts to WHS. Fourball is a team
+// event too, but each member plays their own ball on their own ordinary card,
+// and the team's score is DERIVED — its best ball on every hole — so the
+// members' cards post exactly as stroke play does.
+
+export const TN_TEAM_FORMATS = ['scramble', 'fourball', 'foursome'];
+
+// Is this tournament played by teams rather than individuals?
+export const tnIsTeam = (tn) => TN_TEAM_FORMATS.includes(tn?.format);
+
+// One ball a team — the team's score is stored, not derived, and no member has
+// a card of their own.
+export const tnOneBall = (tn) => tn?.format === 'scramble' || tn?.format === 'foursome';
+
+// How many players to a team. A scramble is the organiser's choice, missing
+// reads as 4 — the club scramble, because that is what a flight of four
+// already is. Fourball and foursome are pairs by definition.
+export const tnTeamSize = (tn) => {
+  if (tn?.format === 'fourball' || tn?.format === 'foursome') return 2;
+  return Number(tn?.spTeamSize) === 2 ? 2 : 4;
+};
+
+// What a team event ranks: the whole field on one board, or a contest inside
+// each flight. Only two-player teams can meet inside a flight of four, so a
+// four-player team event is always a board however the field is stored.
+export const tnTeamRank = (tn) =>
+  tnIsTeam(tn) && tnTeamSize(tn) === 2 && tn?.spTeamRank === 'match' ? 'match' : 'board';
+
+// A team's id: its members' ids sorted and joined with '+' — the same
+// collision-proof shape pairKey() gives a casual game, so a team taken apart
+// and put back together the same way finds its scores again.
+export const teamKeyOf = (memberIds) =>
+  [...(memberIds || [])].map(String).sort().join('+');
+
+// Is this sp.players entry a team rather than a person?
+export const isTeamEntry = (p) => p?.kind === 'team';
+
+// A team entry's member ids. Stored as a {pid:true} map rather than an array
+// so the database rules can test membership without iterating.
+export const teamMemberIds = (p) => Object.keys(p?.members || {});
+
+// Fourball: a team's round, derived from its members' own cards. On every hole
+// the team scores its BEST ball — best gross for the gross reading, best net
+// with each member off their FULL playing handicap by stroke index (the same
+// full allowance a Stableford tournament gives), best points for Stableford.
+// One ball is enough: a partner who picked up leaves a blank, which is ordinary
+// fourball; a hole with neither ball in stays absent. The three tallies come
+// back in the shapes roundGross() and roundPoints() return, so spEntries only
+// has to choose them.
+export function fourballRound(tn, team, round) {
+  const players = tn?.sp?.players || {};
+  const sis = tnSIs(tn);
+  const pars = tnPars(tn);
+  const members = teamMemberIds(team);
+  const gross = {};
+  let netSum = 0, parIn = 0, holesIn = 0, pts = 0;
+  let parKnown = !!pars;
+  let pointsKnown = !!pars;
+  for (let n = 1; n <= SP_HOLES; n++) {
+    const si = sis?.[n] ?? null;
+    const par = Number(pars?.[n]);
+    let bg = null, bn = null, bp = null;
+    members.forEach(m => {
+      const strokes = Number(tn?.sp?.scores?.[m]?.[round]?.[n]);
+      if (!(strokes > 0)) return;
+      const h = Number(players[m]?.hcp);
+      const given = Number.isFinite(h) ? strokesReceived(h, si) : 0;
+      if (bg === null || strokes < bg) bg = strokes;
+      if (bn === null || strokes - given < bn) bn = strokes - given;
+      const p = Number.isFinite(par) ? holePoints(strokes, par, given) : null;
+      if (p !== null && (bp === null || p > bp)) bp = p;
+    });
+    if (bg === null) continue;
+    holesIn += 1;
+    gross[n] = bg;
+    netSum += bn;
+    if (Number.isFinite(par)) parIn += par; else parKnown = false;
+    if (bp === null) pointsKnown = false; else pts += bp;
+  }
+  return {
+    grossRound: roundGross(gross, pars),
+    netRound: { gross: netSum, holesIn, toPar: parKnown && holesIn ? netSum - parIn : null },
+    pointsRound: { points: pts, holesIn, parsKnown: pointsKnown }
+  };
+}
+
+// A flight of exactly two teams read as a match — the organiser's 'match'
+// choice for a two-player-team event. The hand-entered team handicaps play off
+// the lower, the difference allocated by stroke index, and the holes settle
+// through the same engine the M Cup and the casual game use. null unless the
+// flight holds exactly two teams, so a caller can simply not draw it.
+export function spFlightMatch(tn, round, teamPids) {
+  if (!Array.isArray(teamPids) || teamPids.length !== 2) return null;
+  const players = tn?.sp?.players || {};
+  const [a, b] = teamPids;
+  if (!isTeamEntry(players[a]) || !isTeamEntry(players[b])) return null;
+  const sis = tnSIs(tn);
+
+  if (tn?.format === 'fourball') {
+    // Each member plays their own ball, and a side's score on a hole is its
+    // best net ball — everyone off the LOWEST of the four in the flight, the
+    // reading the casual game and the M Cup give a fourball match. One ball
+    // is enough; a side with neither ball in has not finished the hole.
+    const sides = [teamMemberIds(players[a]), teamMemberIds(players[b])];
+    const hs = sides.flat().map(m => Number(players[m]?.hcp));
+    const net = hs.length === 4 && hs.every(Number.isFinite);
+    const base = net ? Math.min(...hs) : 0;
+    const diffOf = (m) => (net ? Math.round(Number(players[m].hcp) - base) : 0);
+    const best = (members, n, si) => {
+      const nets = members.map(m => {
+        const strokes = Number(tn?.sp?.scores?.[m]?.[round]?.[n]);
+        return strokes > 0 ? strokes - strokesReceived(diffOf(m), si) : null;
+      }).filter(v => v !== null);
+      return nets.length ? Math.min(...nets) : null;
+    };
+    const holes = {};
+    for (let n = 1; n <= SP_HOLES; n++) {
+      const si = sis?.[n] ?? null;
+      const na = best(sides[0], n, si);
+      const nb = best(sides[1], n, si);
+      if (na === null || nb === null) continue;
+      holes[n] = na < nb ? 'a' : nb < na ? 'b' : HALVED;
+    }
+    const settled = settleMatch(holes, SP_HOLES);
+    const strokes = Object.fromEntries(sides.flat().map(m => [m, diffOf(m)]));
+    return { a, b, holes, settled, status: statusText(settled), allowance: { net, base: net ? base : null, a: 0, b: 0, strokes } };
+  }
+
+  const ha = Number(players[a].hcp);
+  const hb = Number(players[b].hcp);
+  const net = Number.isFinite(ha) && Number.isFinite(hb);
+  const base = net ? Math.min(ha, hb) : 0;
+  const diff = { a: net ? Math.round(ha - base) : 0, b: net ? Math.round(hb - base) : 0 };
+  const sa = tn?.sp?.scores?.[a]?.[round] || {};
+  const sb = tn?.sp?.scores?.[b]?.[round] || {};
+  const holes = {};
+  for (let n = 1; n <= SP_HOLES; n++) {
+    const ga = Number(sa[n]);
+    const gb = Number(sb[n]);
+    // A hole either team has not finished stays absent; settleMatch stops there.
+    if (!(ga > 0) || !(gb > 0)) continue;
+    const si = sis?.[n] ?? null;
+    const na = ga - strokesReceived(diff.a, si);
+    const nb = gb - strokesReceived(diff.b, si);
+    holes[n] = na < nb ? 'a' : nb < na ? 'b' : HALVED;
+  }
+  const settled = settleMatch(holes, SP_HOLES);
+  return { a, b, holes, settled, status: statusText(settled), allowance: { net, base: net ? base : null, ...diff } };
+}
+
+// Every team in the tournament, and every player who is not in one — what the
+// admin's team builder reads.
+export function spTeams(tn) {
+  const players = tn?.sp?.players || {};
+  const teams = [];
+  const claimed = new Set();
+  Object.entries(players).forEach(([pid, p]) => {
+    if (!isTeamEntry(p)) return;
+    const members = teamMemberIds(p);
+    members.forEach(m => claimed.add(m));
+    teams.push({ pid, ...p, memberIds: members });
+  });
+  const free = Object.entries(players)
+    .filter(([pid, p]) => p && !isTeamEntry(p) && !claimed.has(pid))
+    .map(([pid, p]) => ({ pid, ...p }));
+  return { teams, free };
+}
+
+// Which spEntries metric a tournament's board should ask for. Stableford is
+// already played off handicap, so the gross/net toggle does not apply to it.
+export const spMetricFor = (tn, uiMetric) =>
+  (tnScoring(tn) === 'stableford' ? 'stableford' : (uiMetric === 'net' ? 'net' : 'gross'));
 
 // One round's tally from its hole map: total strokes entered, how many holes
 // they cover, and — when the course's per-hole pars are known — the running
@@ -67,8 +270,10 @@ const completeRounds = (perRound) => perRound.filter(r => r.holesIn >= SP_HOLES)
 /**
  * The leaderboard's entries, computed from sp. `metric` picks what `total`
  * and `rounds[]` carry:
- *   'gross' — to-par as posted;
- *   'net'   — to-par less the player's HCP per completed round.
+ *   'gross'      — to-par as posted;
+ *   'net'        — to-par less the player's HCP per completed round;
+ *   'stableford' — POINTS, where higher is better (see src/stableford.js).
+ *                  Rank these with rankEntries({ higherWins: true }).
  * Every entry also carries gross/net stroke totals and hcp for display, plus
  * pid/userId so a row can be tied to the signed-in member without name
  * matching. Entries with nothing to post have total null (rankEntries sorts
@@ -80,17 +285,42 @@ export function spEntries(tn, metric = 'gross') {
   if (!sp?.players) return [];
   const par = Number(tn?.par) || 72;
   const pars = tnPars(tn);
+  const sis = tnSIs(tn);
   const roundCount = Math.max(1, Number(tn?.rounds) || 1);
   const hcpOf = (p) => {
     const n = Number(p?.hcp);
     return Number.isFinite(n) ? n : null;
   };
 
-  return Object.entries(sp.players).filter(([, p]) => p).map(([pid, p]) => {
-    const perRound = Array.from({ length: roundCount }, (_, i) =>
-      roundGross(sp.scores?.[pid]?.[i + 1], pars));
-    const hcp = hcpOf(p);
+  // A team event ranks teams. Their members stay in sp.players — that is what
+  // carries the flight pointer the database rules read — but they have no card
+  // of their own, so they never appear on the board.
+  const teamOnly = tnIsTeam(tn);
+
+  const fourball = tn?.format === 'fourball';
+
+  return Object.entries(sp.players)
+    .filter(([, p]) => p && (!teamOnly || isTeamEntry(p)))
+    .map(([pid, p]) => {
+    // A fourball team has no card of its own: its rounds are derived from its
+    // members' cards, best ball by best ball, and it has no team handicap —
+    // the net reading is already inside the derived round.
+    const fb = fourball && isTeamEntry(p);
+    const fbRounds = fb ? Array.from({ length: roundCount }, (_, i) => fourballRound(tn, p, i + 1)) : null;
+    const grossRounds = fb
+      ? fbRounds.map(r => r.grossRound)
+      : Array.from({ length: roundCount }, (_, i) => roundGross(sp.scores?.[pid]?.[i + 1], pars));
+    const perRound = fb && metric === 'net' ? fbRounds.map(r => r.netRound) : grossRounds;
+    const hcp = fb ? null : hcpOf(p);
     const net = metric === 'net' && hcp !== null;
+    // Stableford counts points per hole off the full handicap by stroke
+    // index, so a round in progress already has an honest total — and a
+    // course with no card cannot be scored in points at all.
+    const points = metric === 'stableford'
+      ? (fb ? fbRounds.map(r => r.pointsRound)
+        : Array.from({ length: roundCount }, (_, i) =>
+          roundPoints(sp.scores?.[pid]?.[i + 1], pars, sis, hcp)))
+      : null;
 
     // With the registry's per-hole pars an in-progress round posts its
     // running to-par (net keeps the club's flat reading: the full HCP comes
@@ -100,9 +330,14 @@ export function spEntries(tn, metric = 'gross') {
       if (r.toPar !== null && r.holesIn > 0) return r.toPar - (net ? hcp : 0);
       return r.holesIn >= SP_HOLES ? r.gross - par - (net ? hcp : 0) : null;
     };
-    const rounds = perRound.map(roundToPar);
-    const done = completeRounds(perRound);
+    const rounds = points
+      ? points.map(r => (r.holesIn > 0 && r.parsKnown ? r.points : null))
+      : perRound.map(roundToPar);
+    const done = completeRounds(grossRounds);
     const grossTotal = done.length ? done.reduce((a, r) => a + r.gross, 0) : null;
+    // A fourball team's net total is the sum of its complete net rounds; it has
+    // no flat handicap to take off.
+    const fbNet = fb ? completeRounds(fbRounds.map(r => r.netRound)) : null;
     const started = rounds.filter(v => v !== null);
     const total = started.length
       ? started.reduce((a, v) => a + v, 0)
@@ -111,23 +346,27 @@ export function spEntries(tn, metric = 'gross') {
     // Thru of the latest round anyone has touched: 'F' once that round is
     // complete, the hole count while it runs, '' before the first score.
     let thru = '';
-    for (let i = perRound.length - 1; i >= 0; i--) {
-      if (perRound[i].holesIn > 0) {
-        thru = perRound[i].holesIn >= SP_HOLES ? 'F' : String(perRound[i].holesIn);
+    for (let i = grossRounds.length - 1; i >= 0; i--) {
+      if (grossRounds[i].holesIn > 0) {
+        thru = grossRounds[i].holesIn >= SP_HOLES ? 'F' : String(grossRounds[i].holesIn);
         break;
       }
     }
 
     return {
       pid,
-      userId: p.userId || (pid.startsWith('p_') ? null : pid),
+      // A team is nobody's card: leaving userId null keeps the "that's me"
+      // banner, the home tee card and the WHS posting from ever matching it.
+      userId: isTeamEntry(p) ? null : (p.userId || (pid.startsWith('p_') ? null : pid)),
       name: p.name || pid,
       hcp,
       status: p.status || '',
       rounds,
       total,
       gross: grossTotal,
-      netTotal: grossTotal !== null && hcp !== null ? grossTotal - hcp * done.length : null,
+      netTotal: fb
+        ? (fbNet.length ? fbNet.reduce((a, r) => a + r.gross, 0) : null)
+        : (grossTotal !== null && hcp !== null ? grossTotal - hcp * done.length : null),
       thru
     };
   });
@@ -191,9 +430,13 @@ export function chunkGroups(pids, size = 4) {
  */
 export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = Math.random } = {}) {
   const players = tn?.sp?.players || {};
+  // A team event draws TEAMS into flights; an individual event never draws a
+  // team, even if a stray team entry is left over from a format change.
+  const teamOnly = tnIsTeam(tn);
   const pids = Object.keys(players).filter(pid => {
     const p = players[pid];
-    return p && !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
+    if (!p || isTeamEntry(p) !== teamOnly) return false;
+    return !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
   });
 
   if (method === 'hcp') {
@@ -214,14 +457,17 @@ export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = M
   }
 
   if (method === 'standings') {
-    const totals = new Map(spEntries(tn, 'gross').map(e => [e.pid, e.total]));
+    // Whatever the tournament actually ranks by: a Stableford draw has to
+    // read points, or "leaders last" would send the field out backwards.
+    const higher = tnHigherWins(tn);
+    const totals = new Map(spEntries(tn, higher ? 'stableford' : 'gross').map(e => [e.pid, e.total]));
     // Worst first: the leaders land in the LAST group, teeing off last.
-    pids.sort((a, b) => {
-      const ta = totals.get(a); const tb = totals.get(b);
-      const va = ta === null || ta === undefined ? -Infinity : ta;
-      const vb = tb === null || tb === undefined ? -Infinity : tb;
-      return vb - va;
-    });
+    const key = (pid) => {
+      const v = totals.get(pid);
+      if (v === null || v === undefined) return -Infinity;
+      return higher ? -v : v;
+    };
+    pids.sort((a, b) => key(b) - key(a));
     return chunkGroups(pids, size);
   }
 
@@ -324,7 +570,12 @@ export function spPlayerCard(tn, pid, round) {
       cls: holeDiffClass(strokes, par),
       // Only a hole that was actually played against a known par carries a
       // running figure; the rest print blank.
-      running: diff !== null ? run : null
+      running: diff !== null ? run : null,
+      // The Stableford reading of the same hole — computed for every card
+      // because it is cheap and pure; the view decides whether to show it.
+      given: Number.isFinite(hcpN) ? strokesReceived(hcpN, Number(sis?.[hole]) || null) : 0,
+      points: holePoints(strokes, par,
+        Number.isFinite(hcpN) ? strokesReceived(hcpN, Number(sis?.[hole]) || null) : 0)
     };
   });
 

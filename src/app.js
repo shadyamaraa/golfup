@@ -2,16 +2,24 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
+import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
+import {
+  mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide
+} from './tournament-media.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
+import {
+  gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult,
+  isTeamFormat, groupTeamMatches, gameHasAnyScore
+} from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { gameHoleCount } from './handicap.js';
@@ -19,7 +27,7 @@ import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
-import { ryderRulesHTML, matchRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -1109,17 +1117,22 @@ function tnInitial(name) {
 
 // Scores are stored relative to par. Rendering follows golf reading rather than
 // app semantics: under par is red, level is muted, over par is ink.
-function tnScoreText(v) {
+// `points` switches the reading from to-par to Stableford points: a plain
+// integer where bigger is better, so none of the E / +n / −n vocabulary — and
+// no red, which on this board means "under par".
+function tnScoreText(v, points = false) {
   if (v === undefined || v === null || v === '') return '–';
   const n = Number(v);
   if (isNaN(n)) return String(v);
+  if (points) return String(n);
   if (n === 0) return 'E';
   return n < 0 ? `−${Math.abs(n)}` : `+${n}`;
 }
 
-function tnScoreClass(v) {
+function tnScoreClass(v, points = false) {
   const n = Number(v);
   if (v === undefined || v === null || v === '' || isNaN(n)) return 'tn-sc-none';
+  if (points) return 'tn-sc-over';   // plain ink: points carry no par colour
   if (n < 0) return 'tn-sc-under';
   if (n > 0) return 'tn-sc-over';
   return 'tn-sc-even';
@@ -1165,10 +1178,12 @@ function tnRanked(tn) {
   // In-app scoring recomputes its entries from tn.sp on every call; a
   // legacy record ranks its stored snapshot.
   const b = tnForBoard(tn);
+  const higherWins = tnHigherWins(tn);
   return tnWithDeltas(tsheet.rankEntries(b?.entries, {
     cutAfterRound: b?.cutAfterRound,
-    cutSize: b?.cutSize
-  }));
+    cutSize: b?.cutSize,
+    higherWins
+  }), higherWins);
 }
 
 // The round actually being played: the highest one anybody has posted a score
@@ -1183,7 +1198,7 @@ function tnActiveRound(tn) {
 // ranking the field on the rounds finished BEFORE the current one gives the
 // "before" position with no stored history — the arrows appear on their own as
 // soon as round two starts landing, and reset when a new round opens.
-function tnWithDeltas(ranked) {
+function tnWithDeltas(ranked, higherWins = false) {
   let current = 0;
   ranked.forEach(e => (e.rounds || []).forEach((v, i) => {
     if (v !== null && v !== undefined && v !== '') current = Math.max(current, i + 1);
@@ -1198,7 +1213,7 @@ function tnWithDeltas(ranked) {
   };
   const prior = ranked.map(e => ({ e, v: prevTotal(e) }))
     .filter(x => x.v !== null && x.e.rank !== Infinity)
-    .sort((a, b) => a.v - b.v);
+    .sort((a, b) => (higherWins ? b.v - a.v : a.v - b.v));
 
   const prevRank = new Map();
   let pos = 0;
@@ -1239,7 +1254,9 @@ let tnSpMetric = 'gross';
 // per-hole truth on every paint; anything else shows its stored snapshot.
 function tnForBoard(tn) {
   if (!spActive(tn)) return tn;
-  const metric = tnSpMetric === 'net' && spHasHcp(tn) ? 'net' : 'gross';
+  // Stableford is the tournament's own setting and is already played off
+  // handicap, so the viewer's gross/net preference does not reach it.
+  const metric = spMetricFor(tn, tnSpMetric === 'net' && spHasHcp(tn) ? 'net' : 'gross');
   return { ...tn, entries: spEntries(tn, metric) };
 }
 
@@ -1362,6 +1379,7 @@ async function renderTournamentStrip(list) {
 
 function tournamentStripHTML(tn) {
   const state = tnStatus(tn);
+  const pts = tnScoring(tn) === 'stableford';
   const ranked = tnRanked(tn);
   const badge = state === 'upcoming'
     ? tnShortDate(tn.startDate)
@@ -1375,8 +1393,8 @@ function tournamentStripHTML(tn) {
       <span class="tn-pos">${esc(e.posLabel)}</span>
       <span class="tn-av">${avatarInner(mine ? currentUser?.avatar : e.avatar, tnInitial(e.name))}</span>
       <span class="tn-pname">${esc(e.name || '')}</span>
-      <span class="tn-cap">${t('tnTotal')}</span>
-      <span class="tn-sc ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+      <span class="tn-cap">${pts ? t('spPoints') : t('tnTotal')}</span>
+      <span class="tn-sc ${tnScoreClass(e.total, pts)}">${tnScoreText(e.total, pts)}</span>
       ${state === 'live' ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
     </span>`;
   };
@@ -1541,9 +1559,22 @@ function tnDatesText(tn) {
     : `${start} – ${months[ed.getMonth()]} ${ed.getDate()}`;
 }
 
+// The tournament's type as a reader's label. Anything unknown prints raw
+// rather than blank, which is how a bug here was once spotted: 'ryder' was
+// missing and M Cup tournaments read "ryder".
 function tnFormatText(tn) {
-  const key = { stroke: 'fmtStroke', match: 'fmtMatch', scramble: 'fmtScramble' }[tn.format];
-  return key ? t(key) : (tn.format || '');
+  const key = {
+    stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder',
+    scramble: 'fmtScramble', fourball: 'fmtFourball', foursome: 'fmtFoursome'
+  }[tn?.format];
+  return key ? t(key) : (tn?.format || '');
+}
+
+// A team event's rulebook block — the club's own text for fourball and
+// foursomes, the scramble block written for the casual game.
+function tnTeamRulesHTML(tn) {
+  const block = { scramble: scrambleRulesHTML, fourball: fourballRulesHTML, foursome: foursomesRulesHTML }[tn?.format];
+  return block ? `<div style="font-size:0.84rem;line-height:1.6;">${block()}</div>` : '';
 }
 
 // THRU only means something while a round is running; a finished tournament is
@@ -1638,7 +1669,10 @@ function paintTournamentPage(tn) {
   const roundsFact = !tn.rounds ? ''
     : tnKind(tn) === 'stroke' ? `${tn.rounds * SP_HOLES} ${t('tnHoles').toLowerCase()}`
       : `${tn.rounds} ${t('tnRounds')}`;
-  const facts = [tnDatesText(tn), tnFormatText(tn), roundsFact]
+  const formatFact = tnIsTeam(tn)
+    ? `${tnFormatText(tn)} · ${tnTeamSize(tn)} ${t('tnPlayers')}`
+    : tnFormatText(tn);
+  const facts = [tnDatesText(tn), formatFact, roundsFact]
     .filter(Boolean).join(' · ');
 
   main().innerHTML = `
@@ -1646,7 +1680,11 @@ function paintTournamentPage(tn) {
       <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
 
       <div class="surface-card tn-hero">
-        <div class="tn-crest">${icon('leaderboard', { size: 30 })}</div>
+        <div class="tn-crest"${tnLogo(tn) ? ' style="background:#fff;padding:7px;"' : ''}>
+          ${tnLogo(tn)
+            ? `<img src="${tnLogo(tn)}" alt="" style="width:100%;height:100%;object-fit:contain;display:block;" />`
+            : icon('leaderboard', { size: 30 })}
+        </div>
         <div class="tn-hero-body">
           <div class="tn-head">
             ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
@@ -1660,6 +1698,13 @@ function paintTournamentPage(tn) {
           </div>
         </div>
       </div>
+
+      ${tnHasGuide(tn) ? `
+        <button data-tn-guide class="btn btn-outline btn-sm" style="width:100%;gap:6px;margin-bottom:14px;">
+          📋 ${t('tnGuide')}
+        </button>` : ''}
+
+      ${tnSponsorsHTML(tn)}
 
       ${tnTabsFor(tn).length > 1 ? `
       <div class="seg-tabs tn-tabs">
@@ -1675,6 +1720,8 @@ function paintTournamentPage(tn) {
       ${tn.id === TN_DEMO.id || tn.id === MP_DEMO_ID ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
 
+  const guideBtn = document.querySelector('[data-tn-guide]');
+  if (guideBtn) guideBtn.onclick = () => openTnGuide(tn);
   document.querySelectorAll('[data-tn-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       tnPageTab = btn.dataset.tnTab;
@@ -1693,13 +1740,21 @@ function tnInfoHTML(tn) {
     tnKind(tn) === 'stroke'
       ? [t('tnHoles'), tn.rounds ? tn.rounds * SP_HOLES : null]
       : [t('tnRounds'), tn.rounds],
+    tnKind(tn) === 'stroke'
+      ? [t('spScoring'), tnScoring(tn) === 'stableford' ? t('spScoringStableford') : t('spScoringStrokes')]
+      : ['', ''],
+    tnIsTeam(tn)
+      ? [t('spTeamSize'), tnTeamSize(tn) === 2 ? t('spTeamSize2') : t('spTeamSize4')]
+      : ['', ''],
     [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
-  // Each match play kind ships its rulebook: the Ryder Cup format carries the
-  // club's full M Cup document, plain match play a Rule 3 primer.
+  // Each kind ships its rulebook: the Ryder Cup format carries the club's full
+  // M Cup document, plain match play a Rule 3 primer, a scramble its own block.
   const kind = tnKind(tn);
-  const rules = kind === 'ryder' ? ryderRulesHTML() : kind === 'match' ? matchRulesHTML() : '';
+  const rules = kind === 'ryder' ? ryderRulesHTML()
+    : kind === 'match' ? matchRulesHTML()
+      : tnTeamRulesHTML(tn);
 
   return `
     <div class="surface-card tn-info">
@@ -1770,6 +1825,43 @@ async function paintTnHistory(tn) {
 
 // Tab body: the leaderboard's stable chrome (search, filters, own position)
 // plus the #tn-list host that renderTnList() fills.
+// A two-player-team scramble the organiser reads as a match: every two-team
+// flight of the round settled hole by hole, in the M Cup's reading — who
+// leads, by how much, or the close-out. It sits above the totals rather than
+// replacing them, because a scramble still has team totals. Flights of one
+// team, and four-player-team events, have nobody to play and draw nothing.
+function tnFlightMatchesHTML(tn, round) {
+  if (tnTeamRank(tn) !== 'match') return '';
+  const nameOf = (pid) => esc(tn.sp?.players?.[pid]?.name || pid);
+  const rows = spGroupList(tn, round).map(g => {
+    const m = spFlightMatch(tn, round, Object.keys(g.players || {}));
+    if (!m || !m.settled.thru) return '';
+    const s = m.settled;
+    const lead = s.leader === 'a' ? nameOf(m.a) : s.leader === 'b' ? nameOf(m.b) : '';
+    const status = s.finished
+      ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved'))
+      : (lead ? `${lead} ${esc(m.status)}` : 'AS');
+    return `
+      <div class="player-row filled" style="gap:8px;">
+        <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${nameOf(m.a)}</span>
+        <span style="text-align:center;flex:0 0 auto;">
+          <b style="font-size:0.95rem;">${status}</b>
+          <div style="font-size:0.64rem;color:var(--text-secondary);">${s.finished ? t('mpFinal') : `${t('mpThru')} ${s.thru}`}</div>
+        </span>
+        <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${nameOf(m.b)}</span>
+      </div>`;
+  }).filter(Boolean).join('');
+  if (!rows) return '';
+  return `
+    <div class="surface-card" style="margin-bottom:10px;">
+      <div class="section-head tn-section" style="margin-bottom:4px;">
+        <h2>${t('spFlightMatches')}</h2>
+        <span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('tnRoundShort')}${round}</span>
+      </div>
+      <div class="player-list">${rows}</div>
+    </div>`;
+}
+
 function renderTnBoard() {
   const host = document.getElementById('tn-board');
   const tn = tnPageData;
@@ -1891,8 +1983,10 @@ function renderTnBoard() {
   }
 
   // The leaderboard (Тэргүүлэгчид): gross standings, with Net as a toggle
-  // on the list's own header when handicaps exist.
+  // on the list's own header when handicaps exist — or Stableford points,
+  // which the organiser set on the tournament and which rank the other way up.
   const ranked = tnRanked(tn);
+  const spPts = tnScoring(tn) === 'stableford';
   if (!ranked.length) {
     host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
     return;
@@ -1901,6 +1995,10 @@ function renderTnBoard() {
 
   host.innerHTML = `
     ${ctaHTML}
+    ${spPts && !tnPars(tn) ? `
+      <div style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:0.78rem;">
+        ${t('spNoParsStableford')}
+      </div>` : ''}
     <div class="search-field tn-search">
       ${icon('search', { size: 18 })}
       <input id="tn-q" type="text" placeholder="${t('tnSearchPlayer')}" value="${esc(tnPageQuery)}" />
@@ -1913,19 +2011,29 @@ function renderTnBoard() {
           <span class="tn-me-name">${esc(me.posLabel)} · ${esc(me.name || '')}</span>
         </span>
         <span class="tn-me-score">
-          <span class="tn-sc ${tnScoreClass(me.total)}">${tnScoreText(me.total)}</span>
+          <span class="tn-sc ${tnScoreClass(me.total, spPts)}">${tnScoreText(me.total, spPts)}</span>
           <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
         </span>
       </div>` : ''}
+    ${tnFlightMatchesHTML(tn, spRound)}
     <div class="section-head tn-section">
       <h2>${t('tnAllPlayers')}</h2>
-      ${spActive(tn) && spHasHcp(tn) ? `
+      ${spPts
+        // Stableford is played off handicap already, so there is no gross to
+        // toggle to — the board says what it is instead.
+        ? `<span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('spScoringStableford')} · ${t('spNet')}</span>`
+        : spActive(tn) && spHasHcp(tn) ? `
         <button data-sp-metric class="btn ${tnSpMetric === 'net' ? 'btn-primary' : 'btn-outline'} btn-sm"
           style="font-size:0.72rem;margin-left:auto;">${t('spNet')}</button>` : ''}
       <span class="pill-soft" id="tn-count"></span>
     </div>
     <div id="tn-list"></div>
-    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
+    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}
+    ${tnIsTeam(tn) ? `
+      <details style="margin-top:12px;">
+        <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('mpRulesTitle')}</summary>
+        ${tnTeamRulesHTML(tn)}
+      </details>` : ''}`;
 
   const input = host.querySelector('#tn-q');
   input?.addEventListener('input', () => {
@@ -1946,6 +2054,7 @@ function renderTnList() {
   const tn = tnPageData;
   if (!host || !tn) return;
 
+  const pts = tnScoring(tn) === 'stableford';
   const ranked = tnRanked(tn);
   const q = tnPageQuery.trim().toLowerCase();
   const shown = q
@@ -2004,7 +2113,7 @@ function renderTnList() {
         // empty chip in gold only draws the eye to nothing.
         return `<span class="tn-rd${n === activeRound && !empty ? ' tn-rd-live' : ''}">
           <i>${t('tnRoundShort')}${n}</i>
-          <b class="${tnScoreClass(v)}">${tnScoreText(v)}</b>
+          <b class="${tnScoreClass(v, pts)}">${tnScoreText(v, pts)}</b>
         </span>`;
       }).join('')}
     </span>`;
@@ -2028,9 +2137,9 @@ function renderTnList() {
           // noise, but the cell has to stay so TOT and THRU keep their columns.
           ? (hasAnyRound(e) ? roundsHTML(e) : '<span class="tn-rds"></span>')
           : ''}
-        <span class="tn-c-tot ${tnScoreClass(e.total)}">${tnScoreText(e.total)}</span>
+        <span class="tn-c-tot ${tnScoreClass(e.total, pts)}">${tnScoreText(e.total, pts)}</span>
         <span class="tn-c-thru">${esc(tnThruText(tn, e))}</span>
-        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null)}</span>`}`;
+        ${multi ? '' : `<span class="tn-c-rd">${tnScoreText(Array.isArray(e.rounds) ? e.rounds[0] : null, pts)}</span>`}`;
     // An anchor rather than a click handler: the list repaints on every live
     // score, and an href survives that without rebinding.
     return open
@@ -2042,9 +2151,9 @@ function renderTnList() {
     <div class="surface-card tn-lb${lbClass}">
       <div class="tn-lb-head">
         <span class="tn-c-pos">${t('tnPos')}</span>
-        <span class="tn-c-name">${t('tnPlayer')}</span>
+        <span class="tn-c-name">${t(tnIsTeam(tn) ? 'tnTeam' : 'tnPlayer')}</span>
         ${multi ? '<span class="tn-rds-head"></span>' : ''}
-        <span class="tn-c-tot">${t('tnTotal')}</span>
+        <span class="tn-c-tot">${pts ? t('spPoints') : t('tnTotal')}</span>
         <span class="tn-c-thru">${t('tnThru')}</span>
         ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
       </div>
@@ -2604,6 +2713,7 @@ function renderGamesCards(games, isPast = false) {
             </div>
             ${g.creatorName ? `<div class="gc-meta">${icon('profile', { size: 13 })}<span>${esc(g.creatorName)}</span></div>` : ''}
             ${gameCommunities.length > 0 ? `<div class="gc-audience"><span class="pill-soft" title="${esc(communityAudienceLabel(gameCommunities))}">${esc(communityAudienceLabel(gameCommunities))}</span></div>` : ''}
+            ${gameFormat(g) !== 'stroke' ? `<div class="gc-audience"><span class="pill-soft">${t(FORMAT_LABEL_KEY[gameFormat(g)])}</span></div>` : ''}
           </div>
           <div class="gc-top-right">
             ${g.isPrivate ? `<span class="gc-lock" title="${t('gamePrivate')}">${icon('lock', { size: 15 })}</span>` : ''}
@@ -2658,6 +2768,7 @@ async function renderCreateGame() {
   let selectedInviteIds = [];
   let selectedHoles = 'full18';
   let selectedScoreMode = 'normal';
+  let selectedFormat = 'stroke';
 
   main().innerHTML = `
     <div class="create-container fade-in">
@@ -2717,6 +2828,15 @@ async function renderCreateGame() {
           </div>
 
           <div class="create-section">
+            <div class="cs-label">${t('gameFormat')}</div>
+            <div class="chip-row chip-wrap" id="format-chips">
+              ${FORMATS.map(f => `
+                <button type="button" class="seg-chip ${f === 'stroke' ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
+            </div>
+            <p class="auto-group-hint" id="format-hint" style="display:none;">${t('gsFormatHint')}</p>
+          </div>
+
+          <div class="create-section" id="mode-section">
             <div class="cs-label">${t('gsMode')}</div>
             <div class="chip-row" id="mode-chips">
               <button type="button" class="seg-chip active" data-mode="normal">${t('gsModeNormal')}</button>
@@ -2779,6 +2899,9 @@ async function renderCreateGame() {
     </div>`;
 
   let selectedTeeSlot = null;
+  // Set the first time a slot is picked in this form; tells the no-slot guard
+  // whether the member lost a choice (date change, clear) or never made one.
+  let slotEverSelected = false;
   let teeHoles = 18;
 
   function updateSelectedSlotDisplay() {
@@ -2834,6 +2957,31 @@ async function renderCreateGame() {
     fetchTeeTimes().catch(() => {});
   }
 
+  // The no-slot guard's dialog. Resolves 'pick' | 'skip' | 'dismiss'. The
+  // backdrop is handled here, before the global overlay handler removes the
+  // node, so every way out re-enables the submit button.
+  function askNoSlot(lost) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'popup-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      overlay.innerHTML = `
+        <div class="glass-card fade-in" style="width:100%;max-width:420px;padding:20px;">
+          <h3 style="margin:0 0 8px;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookNoSlotTitle')}</h3>
+          <p style="margin:0 0 14px;font-size:0.9rem;color:var(--text-secondary);">${lost ? t('bookNoSlotLostHint') : t('bookNoSlotSkippedHint')}</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="ns-pick" class="btn btn-primary" style="flex:1;">${t('bookNoSlotPick')}</button>
+            <button type="button" id="ns-skip" class="btn btn-outline" style="flex:1;">${t('bookNoSlotSkip')}</button>
+          </div>
+        </div>`;
+      const done = (v) => { overlay.remove(); resolve(v); };
+      overlay.querySelector('#ns-pick').onclick = () => done('pick');
+      overlay.querySelector('#ns-skip').onclick = () => done('skip');
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) done('dismiss'); });
+      document.body.appendChild(overlay);
+    });
+  }
+
   async function openTeeTimePopup() {
     const overlay = document.createElement('div');
     overlay.className = 'popup-overlay';
@@ -2871,6 +3019,7 @@ async function renderCreateGame() {
 
       function selectSlot(slot) {
         selectedTeeSlot = slot;
+        slotEverSelected = true;
         const [h, m] = (slot.time || '08:00').split(':');
         document.getElementById('game-hour').value = h;
         document.getElementById('game-minute').value = m;
@@ -2988,6 +3137,24 @@ async function renderCreateGame() {
       document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       selectedScoreMode = chip.dataset.mode;
+    });
+  });
+
+  // Format: stroke play, or a match play family format read off the same
+  // strokes (see src/game-formats.js). Competition 9/9 is a stroke play
+  // idea, so the mode row leaves with it.
+  document.querySelectorAll('#format-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#format-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      selectedFormat = chip.dataset.format;
+      const stroke = selectedFormat === 'stroke';
+      document.getElementById('format-hint').style.display = stroke ? 'none' : '';
+      document.getElementById('mode-section').style.display = stroke ? '' : 'none';
+      if (!stroke) {
+        selectedScoreMode = 'normal';
+        document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.toggle('active', c.dataset.mode === 'normal'));
+      }
     });
   });
 
@@ -3136,14 +3303,36 @@ async function renderCreateGame() {
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
+    // How this booking came to be — saved on the game, logged step by step.
+    let booking = null;
+    const bookingLog = [];
+    const isMtCourse = document.getElementById('game-location').value.trim() === MTBOGD_CONFIG.locationName;
+
+    // The soft guard. An MTBogd-course game with no slot is almost always a
+    // slot that a date change or a clear silently dropped: the hidden time
+    // selects keep the old value, so the game would save at that time with no
+    // booking and no trace — exactly what happened on 2026-09-03 13:40.
+    if (isMtCourse && !selectedTeeSlot) {
+      const choice = await askNoSlot(slotEverSelected);
+      if (choice !== 'skip') {
+        document.getElementById('create-submit-btn').disabled = false;
+        if (choice === 'pick') openTeeTimePopup();
+        return;
+      }
+      booking = { status: 'none', reason: bookingReason(slotEverSelected), source: 'app' };
+      bookingLog.push(logEntry('no_slot', { by: currentUser.id, detail: booking.reason }));
+    }
 
     if (selectedTeeSlot) {
       const submitBtn = document.getElementById('create-submit-btn');
       submitBtn.textContent = t('bookingInProgress');
+      let step = 'hold';
       try {
         const playerName = store.memberName(currentUser) || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
+        bookingLog.push(logEntry('hold_ok', { by: currentUser.id, detail: hold?.holdId ?? null }));
+        step = 'confirm';
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         // Always confirm the booking now (MTBogd: status confirmed, paymentStatus
         // pending). QPay is an optional payment step after, handled by MTBogd.
@@ -3153,8 +3342,15 @@ async function renderCreateGame() {
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
+        booking = { status: 'confirmed', source: 'app' };
+        bookingLog.push(logEntry('confirm_ok', { by: currentUser.id, detail: bookingCode || bookingId || null }));
         showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
+        // No game exists yet, so this lands in bookingAttempts for the admin.
+        store.logBookingAttempt(logEntry(step + '_failed', {
+          by: currentUser.id, userId: currentUser.id, date: document.getElementById('game-date').value,
+          slotId: selectedTeeSlot.slotId, step, error: String(err?.message || err), httpStatus: err?.status ?? null
+        })).catch(() => {});
         showToast(t('bookFailed') + ': ' + err.message, 'error');
         submitBtn.textContent = t('create');
         submitBtn.disabled = false;
@@ -3173,6 +3369,7 @@ async function renderCreateGame() {
       groupSize: groupSize,
       holes: selectedHoles,
       scoreMode: selectedScoreMode,
+      format: selectedFormat,
       ...(() => {
         // Course rating/slope/par power the handicap math; a game without them
         // still scores fine, it just produces no differential.
@@ -3191,7 +3388,8 @@ async function renderCreateGame() {
       isPrivate,
       targetCommunities,
       invitedIds,
-      ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
+      ...(bookingCode && { bookingCode, bookingId, bookingSlotId }),
+      ...(booking && { booking })
     };
 
     // Notifications reference the game, so they fire right after it is saved.
@@ -3223,6 +3421,7 @@ async function renderCreateGame() {
     };
 
     await store.saveGame(game);
+    bookingLog.forEach(e => store.appendBookingLog(game.id, e).catch(() => {}));
     await sendCreateNotifications();
 
     // QPay tee-time: the booking is already confirmed above; show MTBogd's QPay
@@ -3371,7 +3570,7 @@ function renderGameView(game) {
             ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
-        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''}</h2>
+        <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''} ${gameFormat(game) !== 'stroke' ? '<span class="pill-soft">' + t(FORMAT_LABEL_KEY[gameFormat(game)]) + '</span>' : ''}</h2>
         <div class="detail-meta">
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('time', { size: 15 })} ${game.time}</span>
           <span style="display:inline-flex;align-items:center;gap:5px;">${icon('profile', { size: 15 })} ${t('createdBy')}: ${esc(game.creatorName || '-')}</span>
@@ -3384,9 +3583,9 @@ function renderGameView(game) {
           ${!isReadOnly && isCreator && game.location === MTBOGD_CONFIG.locationName && !game.bookingCode ? `<button class="btn btn-outline" id="book-teetime-btn" style="gap:6px;">${icon('ball-tee', { size: 16 })} ${t('bookTeeTimeBtn')}</button>` : ''}
           ${(() => {
             // The printable scorecard: once anyone has scored, or the game
-            // is over — a blank card still prints.
-            const hasScores = !!game.scores && Object.values(game.scores)
-              .some(s => s?.holes && Object.keys(s.holes).length > 0);
+            // is over — a blank card still prints. "Anyone" includes a team,
+            // since in a scramble no player has a card of their own.
+            const hasScores = gameHasAnyScore(game);
             return `
           ${hasScores || isPast ? `<a href="#/scorecard/${game.id}" class="btn btn-outline" style="gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsTitle')}</a>` : ''}`;
           })()}
@@ -3402,6 +3601,11 @@ function renderGameView(game) {
         })()}
         ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">${icon('scorecard', { size: 13 })} Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
+        ${isTeamFormat(game) ? `
+          <details style="margin-top:10px;">
+            <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('mpRulesTitle')}</summary>
+            ${casualTeamRulesHTML(gameFormat(game))}
+          </details>` : ''}
         ${isCreator && game.bookingCode ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">${icon('ball-tee', { size: 13 })} ${t('bookCode')}</span>
@@ -3415,6 +3619,30 @@ function renderGameView(game) {
                 : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
             </div>
           </div>` : ''}
+        ${(() => {
+          // MTBogd sync state — creator and admin only. Legacy games read as
+          // neutral (never checked) rather than as a problem.
+          const canSync = !!currentUser && (isCreator || currentUser.role === 'admin');
+          const st = bookingState(game);
+          if (!canSync || st === 'na') return '';
+          const b = game.booking && typeof game.booking === 'object' ? game.booking : {};
+          const tone = { synced: 'var(--emerald)', none: 'var(--amber)', unverified: 'var(--text-secondary)', cancelled_remote: 'var(--danger-color)', cancel_failed: 'var(--danger-color)', mismatch: 'var(--amber)' }[st] || 'var(--text-secondary)';
+          const label = { synced: t('bookStateSynced'), none: t('bookStateNone'), unverified: t('bookStateUnverified'), cancelled_remote: t('bookStateCancelledRemote'), cancel_failed: t('bookStateCancelFailed'), mismatch: t('bookStateMismatch') }[st] || st;
+          const reason = st === 'none' && b.reason ? ` · ${b.reason === 'slot_lost' ? t('bookReasonSlotLost') : t('bookReasonSkipped')}` : '';
+          const issues = st === 'mismatch' && Array.isArray(b.issues) && b.issues.length ? ` · ${b.issues.map(i => t('bookIssue_' + i)).join(', ')}` : '';
+          const log = Object.values(game.bookingLog || {}).filter(e => e && e.at).sort((x, y) => y.at - x.at).slice(0, 5);
+          return `
+          <div class="game-description" style="margin-top:10px;">
+            <span class="desc-label">${icon('ball-tee', { size: 13 })} MTBogd</span>
+            <span style="margin-left:8px;font-size:0.88rem;font-weight:600;color:${tone};">${esc(label)}</span><span style="font-size:0.8rem;color:var(--text-secondary);">${esc(reason + issues)}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+              ${game.bookingId ? `<button type="button" class="btn btn-outline btn-sm" id="booking-verify-btn">${t('bookVerify')}</button>` : ''}
+              ${!game.bookingId && !isReadOnly ? `<button type="button" class="btn btn-outline btn-sm" id="booking-attach-btn">${t('bookAttach')}</button>` : ''}
+            </div>
+            ${log.length ? `<details style="margin-top:8px;"><summary style="font-size:0.78rem;color:var(--text-secondary);cursor:pointer;">${t('bookLogTitle')} (${log.length})</summary>
+              <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px;">${log.map(e => `<div>${esc(new Date(e.at).toLocaleString())} · ${esc(e.event)}${e.detail != null ? ' · ' + esc(String(e.detail)) : ''}${e.error ? ' · ' + esc(String(e.error)) : ''}</div>`).join('')}</div></details>` : ''}
+          </div>`;
+        })()}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">${icon('members', { size: 13 })} ${t('manageInvites')} (${game.invitedIds.length})</span>
@@ -3508,6 +3736,8 @@ function renderGameView(game) {
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
   document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
   document.getElementById('book-teetime-btn')?.addEventListener('click', () => handleBookTeeTime(game));
+  document.getElementById('booking-verify-btn')?.addEventListener('click', () => handleBookingVerify(game));
+  document.getElementById('booking-attach-btn')?.addEventListener('click', () => handleBookingAttach(game));
   document.querySelectorAll('.remove-player-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       if (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || e.currentTarget.dataset.id === currentUser?.id) {
@@ -3604,7 +3834,142 @@ function renderGroupCard(players, groupIndex, game, isPast) {
 // where the course card is known; net (from the per-game hand-entered
 // handicap, or the profile index) shows per player, and once EVERY row has a
 // net the board ranks by net — that is the game being "played on handicap".
+// Match play: one line per pair in each group — who leads and by how much,
+// or the result — the same reading the group scorer shows.
+// The 2 v 2 team formats read through the very same board: a team is just a
+// side with two players in it, so only the name and an extra ball line differ.
+function gameMatchBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  const team = isTeamFormat(game);
+  const shortName = (p) => allUsersMap[p.id]?.firstName || p.name || '?';
+  const sideName = (side) => side?.players
+    ? side.players.map(shortName).join(' + ') : shortName(side);
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const { matches } = team
+      ? groupTeamMatches(game, gi, players, hcps, game.holeOverrides)
+      : groupMatches(game, gi, players, hcps, game.holeOverrides);
+    const live = matches.filter(m => m.thru > 0);
+    if (!live.length) return '';
+    const rows = live.map(m => {
+      const a = esc(sideName(m.pair.a));
+      const b = esc(sideName(m.pair.b));
+      const s = m.settled;
+      const lead = s.leader === 'a' ? a : s.leader === 'b' ? b : '';
+      const status = s.finished ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved')) : (lead ? `${lead} ${esc(m.status)}` : 'AS');
+      // A one-ball format has no individual rows anywhere on this page, so the
+      // team's own gross is the only score a reader can see.
+      const ball = (line) => line && line.thru
+        ? `<div style="font-size:0.64rem;color:var(--text-secondary);font-weight:600;">${line.total}${line.toPar !== null ? ` (${fmtToPar(line.toPar)})` : ''}</div>` : '';
+      return `
+        <div class="player-row filled" style="gap:8px;">
+          <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${a}${ball(m.lines?.a)}</span>
+          <span style="text-align:center;flex:0 0 auto;">
+            <b style="font-size:0.95rem;">${status}</b>
+            <div style="font-size:0.64rem;color:var(--text-secondary);">${s.finished ? t('mpFinal') : `${t('mpThru')} ${m.thru}`}</div>
+          </span>
+          <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${b}${ball(m.lines?.b)}</span>
+        </div>`;
+    }).join('');
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}`;
+  }).join('');
+  if (!blocks) return '';
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t(team ? 'gsTeams' : 'gsMatches')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t(FORMAT_LABEL_KEY[gameFormat(game)])}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
+// Skins: each group's standings by skins won, the carry-over noted.
+function gameSkinsBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const r = skinsResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    const rows = [...players].sort((x, y) => r.totals[y.id] - r.totals[x.id]).map((p, i) => `
+      <div class="player-row filled">
+        <span class="player-order">${i + 1}</span>
+        <span class="player-name">${esc(displayUsername(allUsersMap[p.id] || p))}
+          ${typeof hcps[p.id] === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${hcps[p.id]}</span>` : ''}
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:0.72rem;color:var(--text-secondary);">${r.thru < gameHoleCount(game) ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
+          <b style="font-size:1.05rem;">${r.totals[p.id]}</b>
+        </div>
+      </div>`).join('');
+    const carry = r.carry ? `<div style="font-size:0.72rem;color:var(--text-secondary);padding:4px 0 2px;">${t('gsSkinsCarry')} ${r.carry}${r.thru >= gameHoleCount(game) ? ` · ${t('gsSkinsUnclaimed')}` : ''}</div>` : '';
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}${carry}`;
+  }).join('');
+  if (!blocks) return '';
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t('fmtSkins')}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
+// Stableford: each group's players by points won, highest first.
+function gameStablefordBoardHTML(game) {
+  const groups = ensureGroups(game.groups).map(g => ensureArray(g).filter(Boolean));
+  let noCard = false;
+  const blocks = groups.map((players, gi) => {
+    const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, allUsersMap[p.id])]));
+    const r = stablefordResult(game, players, hcps);
+    if (!r || !r.thru) return '';
+    if (!r.parsKnown) { noCard = true; return ''; }
+    const rows = r.order.map((pid, i) => {
+      const p = players.find(x => x.id === pid) || { id: pid };
+      const e = r.perPlayer[pid];
+      return `
+      <div class="player-row filled">
+        <span class="player-order">${i + 1}</span>
+        <span class="player-name">${esc(displayUsername(allUsersMap[pid] || p))}
+          ${typeof e.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${e.hcp}</span>` : ''}
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:0.72rem;color:var(--text-secondary);">${e.thru < gameHoleCount(game) ? `${t('mpThru')} ${e.thru}` : 'F'}</span>
+          <b style="font-size:1.05rem;">${e.points}</b>
+        </div>
+      </div>`;
+    }).join('');
+    return `${groups.length > 1 ? `<div style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);padding:6px 0 2px;">${t('group')} ${gi + 1}</div>` : ''}${rows}`;
+  }).join('');
+  if (!blocks) {
+    // A venue with no course card cannot be scored in points at all — say so
+    // rather than leaving the page looking as if nobody has played.
+    return noCard ? `
+      <div class="group-card glass-card">
+        <div class="group-header">
+          <h3 class="group-title">${t('fmtStableford')}</h3>
+        </div>
+        <div class="player-list"><p style="font-size:0.8rem;color:var(--text-secondary);padding:4px 0;">${t('gsNoCourseCard')}</p></div>
+      </div>` : '';
+  }
+  return `
+    <div class="group-card glass-card">
+      <div class="group-header">
+        <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
+        <span class="group-count">${t('fmtStableford')}</span>
+      </div>
+      <div class="player-list">${blocks}</div>
+    </div>`;
+}
+
 function gameScoreboardHTML(game) {
+  // The match play family reads the same strokes differently — see
+  // src/game-formats.js; stroke play keeps the ranked table below.
+  const fmt = gameFormat(game);
+  if (fmt === 'match' || isTeamFormat(game)) return gameMatchBoardHTML(game);
+  if (fmt === 'skins') return gameSkinsBoardHTML(game);
+  if (fmt === 'stableford') return gameStablefordBoardHTML(game);
   const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
   const rows = players
     .map(p => {
@@ -3935,9 +4300,14 @@ async function handleDelete(game) {
   if (game.bookingId) {
     try {
       await mtbogd.cancelBooking(game.id);
+      // Our request went through; record it so nobody has to re-check MTBogd.
+      store.markBookingCancelled(game.id).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('cancel_ok', { by: currentUser.id })).catch(() => {});
     } catch (err) {
       // Auto-cancel failed — the game is still deleted, but tell the user to
       // cancel the MTBogd booking manually so the slot is freed.
+      store.saveBookingState(game.id, { status: 'cancel_failed' }).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('cancel_failed', { by: currentUser.id, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
       showToast(t('bookingCancelFailed'), 'warning');
     }
   }
@@ -4097,6 +4467,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
           <button id="admin-tab-btn-tn" class="btn btn-outline btn-sm" style="gap:5px;">${icon('hole', { size: 14 })} ${t('tnAdminTab')}</button>
           <button id="admin-tab-btn-sched" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</button>
+          <button id="admin-tab-btn-mtbogd" class="btn btn-outline btn-sm" style="gap:5px;">${icon('ball-tee', { size: 14 })} ${t('adminMtbogdTab')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -4211,6 +4582,7 @@ async function renderAdminPanel() {
           <div id="admin-tn-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
 
+        <div id="admin-tab-mtbogd" style="display:none;"></div>
         <div id="admin-tab-sched" style="display:none;">
           <div id="admin-sched-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
@@ -4229,6 +4601,7 @@ async function renderAdminPanel() {
   const tabRank = document.getElementById('admin-tab-btn-rank');
   const tabTn = document.getElementById('admin-tab-btn-tn');
   const tabSched = document.getElementById('admin-tab-btn-sched');
+  const tabMtbogd = document.getElementById('admin-tab-btn-mtbogd');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -4239,8 +4612,9 @@ async function renderAdminPanel() {
   const sectionRank = document.getElementById('admin-tab-rank');
   const sectionTn = document.getElementById('admin-tab-tn');
   const sectionSched = document.getElementById('admin-tab-sched');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched];
+  const sectionMtbogd = document.getElementById('admin-tab-mtbogd');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched, tabMtbogd];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched, sectionMtbogd];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -4274,6 +4648,10 @@ async function renderAdminPanel() {
   tabSched.addEventListener('click', async () => {
     switchTab(tabSched, sectionSched);
     await renderAdminScheduleTab();
+  });
+  tabMtbogd.addEventListener('click', async () => {
+    switchTab(tabMtbogd, sectionMtbogd);
+    await renderAdminMtbogdTab();
   });
 
   // No-circle tab: open edit modal
@@ -4962,6 +5340,14 @@ async function renderEditGame(gameId) {
             </div>
           </div>
           <div class="input-group">
+            <label>${t('gameFormat')}</label>
+            <div class="chip-row chip-wrap" id="edit-format-chips" style="margin-top:6px;">
+              ${FORMATS.map(f => `
+                <button type="button" class="seg-chip ${gameFormat(game) === f ? 'active' : ''}" data-format="${f}">${t(FORMAT_LABEL_KEY[f])}</button>`).join('')}
+            </div>
+            <p class="auto-group-hint" style="margin-top:6px;">${t('gsFormatEditHint')}</p>
+          </div>
+          <div class="input-group" id="edit-mode-group" ${gameFormat(game) === 'stroke' ? '' : 'style="display:none;"'}>
             <label>${t('gsMode')}</label>
             <div class="chip-row" id="edit-mode-chips" style="margin-top:6px;">
               <button type="button" class="seg-chip ${(game.scoreMode || 'normal') === 'normal' ? 'active' : ''}" data-mode="normal">${t('gsModeNormal')}</button>
@@ -5042,6 +5428,13 @@ async function renderEditGame(gameId) {
       chip.classList.add('active');
     });
   });
+  document.querySelectorAll('#edit-format-chips .seg-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#edit-format-chips .seg-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      document.getElementById('edit-mode-group').style.display = chip.dataset.format === 'stroke' ? '' : 'none';
+    });
+  });
 
   const editSizeInput = document.getElementById('edit-group-size');
   document.getElementById('edit-size-minus').addEventListener('click', () => {
@@ -5105,7 +5498,13 @@ async function renderEditGame(gameId) {
     reflowGroupsBySize(game);
     fillFromWaitingList(game);
     game.description = document.getElementById('edit-desc').value.trim();
-    game.scoreMode = document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal';
+    // Safe to change after scores exist: the format only decides how the
+    // stored strokes are read. An untouched old record keeps no format key.
+    const chosenFormat = document.querySelector('#edit-format-chips .seg-chip.active')?.dataset.format || 'stroke';
+    if (chosenFormat !== gameFormat(game)) game.format = chosenFormat;
+    game.scoreMode = chosenFormat === 'stroke'
+      ? (document.querySelector('#edit-mode-chips .seg-chip.active')?.dataset.mode || 'normal')
+      : 'normal';
     {
       const rating = parseFloat(document.getElementById('edit-course-rating').value);
       const slope = parseInt(document.getElementById('edit-course-slope').value, 10);
@@ -5300,11 +5699,17 @@ async function handleBookTeeTime(game) {
       game.bookingCode = confirmed.bookingCode;
       game.bookingId = confirmed.bookingId;
       game.bookingSlotId = btSlot.slotId;
+      game.booking = { status: 'confirmed', source: 'app' };
       await store.saveGame(game);
+      store.appendBookingLog(game.id, logEntry('booked_later', { by: currentUser.id, detail: confirmed.bookingCode || confirmed.bookingId || null })).catch(() => {});
       overlay.remove();
       showToast(t('bookConfirmed') + ' ' + confirmed.bookingCode, 'success');
       renderGameView(game);
     } catch (err) {
+      store.logBookingAttempt(logEntry('book_later_failed', {
+        by: currentUser.id, userId: currentUser.id, gameId: game.id, date: game.date,
+        slotId: btSlot?.slotId ?? null, step: 'book_later', error: String(err?.message || err), httpStatus: err?.status ?? null
+      })).catch(() => {});
       errEl.innerHTML = `<p style="color:var(--danger-color);margin-top:8px;font-size:0.85rem;">${t('bookFailed')}: ${err.message}</p>`;
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = t('bookSubmit'); }
     }
@@ -5615,6 +6020,76 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
   showToast('❌ Removed', 'info');
 }
 
+// ---- MTBogd booking: check and attach (see src/booking-sync.js) ----
+// Both read MTBogd through the existing proxy. Results land on the game's
+// `booking` object and its log; the live listener repaints the page. They are
+// also called from the admin MTBogd tab, so nothing here assumes the game
+// page is on screen.
+async function handleBookingVerify(game) {
+  if (!game?.bookingId) return;
+  const btn = document.getElementById('booking-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = t('bookVerifying'); }
+  const by = currentUser?.id || null;
+  try {
+    const remote = await mtbogd.getBooking(game.bookingId);
+    const { status, issues } = verifyOutcome(game, remote);
+    await store.saveBookingState(game.id, { status, issues, verifiedAt: Date.now(), mtbogd: remoteSummary(remote) });
+    store.appendBookingLog(game.id, logEntry('verified', { by, detail: status, issues: issues.length ? issues.join(',') : null })).catch(() => {});
+    if (status === 'confirmed') showToast('✅ ' + t('bookVerified'), 'success');
+    else showToast('⚠️ ' + t('bookStateMismatch') + ': ' + issues.map(i => t('bookIssue_' + i)).join(', '), 'warning');
+  } catch (err) {
+    if (err?.status === 404) {
+      await store.saveBookingState(game.id, { status: 'mismatch', issues: ['not_found'], verifiedAt: Date.now(), mtbogd: null }).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('verified', { by, detail: 'not_found' })).catch(() => {});
+      showToast('⚠️ ' + t('bookIssue_not_found'), 'warning');
+    } else {
+      store.appendBookingLog(game.id, logEntry('verify_failed', { by, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
+      showToast('⚠️ ' + t('bookVerifyFailed') + ': ' + (err?.message || ''), 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t('bookVerify'); }
+    // No listener in localStorage mode: repaint only if this game is on screen.
+    if (!store.isUsingFirebase() && location.hash === '#/game/' + game.id) {
+      const fresh = await store.loadGame?.(game.id);
+      if (fresh) renderGameView(fresh);
+    }
+  }
+}
+
+async function handleBookingAttach(game) {
+  if (!game || game.bookingId) return;
+  const code = (prompt(t('bookAttachPrompt')) || '').trim();
+  if (!code) return;
+  const by = currentUser?.id || null;
+  const btn = document.getElementById('booking-attach-btn');
+  if (btn) btn.disabled = true;
+  try {
+    let remote = null;
+    try { remote = await mtbogd.getBooking(code); }
+    catch (err) { if (err?.status !== 404) throw err; }
+    const check = attachable(game, remote);
+    if (!check.ok) {
+      const key = { not_found: 'bookAttachNotFound', no_id: 'bookAttachNotFound', date_differs: 'bookAttachDateMismatch',
+        remote_cancelled: 'bookAttachCancelled', game_deleted: 'bookAttachDeleted' }[check.reason] || 'bookAttachNotFound';
+      showToast('⚠️ ' + t(key), 'warning');
+      return;
+    }
+    await store.attachBooking(game.id, { bookingId: remote.bookingId, bookingCode: remote.bookingCode || null, bookingSlotId: remote.slotId || null });
+    await store.saveBookingState(game.id, { verifiedAt: Date.now(), mtbogd: remoteSummary(remote) });
+    store.appendBookingLog(game.id, logEntry('attached', { by, detail: remote.bookingCode || remote.bookingId })).catch(() => {});
+    showToast('✅ ' + t('bookAttached'), 'success');
+  } catch (err) {
+    store.appendBookingLog(game.id, logEntry('attach_failed', { by, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
+    showToast('⚠️ ' + t('bookVerifyFailed') + ': ' + (err?.message || ''), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (!store.isUsingFirebase() && location.hash === '#/game/' + game.id) {
+      const fresh = await store.loadGame?.(game.id);
+      if (fresh) renderGameView(fresh);
+    }
+  }
+}
+
 // ---- Utilities ----
 async function syncBookingPlayers(game) {
   if (!game.bookingId) return;
@@ -5628,7 +6103,9 @@ async function syncBookingPlayers(game) {
       return { name: displayFullName(u), ...(phone && { phone }) };
     });
     await mtbogd.updateBookingPlayers(game.id, allPlayers);
+    store.appendBookingLog(game.id, logEntry('players_sync_ok', { by: currentUser?.id || null, detail: allPlayers.length })).catch(() => {});
   } catch (err) {
+    store.appendBookingLog(game.id, logEntry('players_sync_failed', { by: currentUser?.id || null, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
     showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
   }
 }
@@ -7718,6 +8195,72 @@ function rankingBaselineHTML(current) {
 }
 
 // Admin → Чансаа: current ranking + Excel upload (▲/▼ vs the last real change).
+// ---- Admin → MTBogd: every recent MTBogd-course game against its booking ----
+// Groups by bookingState(); the actions reuse the game page's handlers.
+async function renderAdminMtbogdTab() {
+  const host = document.getElementById('admin-tab-mtbogd');
+  if (!host) return;
+  host.innerHTML = `<div class="loading-spinner" style="margin:20px auto;"></div>`;
+  const [games, attempts] = await Promise.all([
+    store.loadAllGamesAdmin(),
+    store.loadBookingAttempts(50).catch(() => []),
+  ]);
+  const sinceD = new Date(); sinceD.setDate(sinceD.getDate() - 7);
+  const since = sinceD.toISOString().slice(0, 10);
+  const rows = games
+    .filter(g => g && g.location === MTBOGD_CONFIG.locationName && (g.date || '') >= since)
+    .map(g => ({ g, st: bookingState(g) }))
+    .filter(r => r.st !== 'na' && (r.g.status !== 'deleted' || r.st === 'cancel_failed'))
+    .sort((a, b) => `${a.g.date} ${a.g.time || ''}`.localeCompare(`${b.g.date} ${b.g.time || ''}`));
+  const groups = [
+    ['none', t('adminMtbogdGroupNone'), 'var(--amber)'],
+    ['cancel_failed', t('adminMtbogdGroupCancelFailed'), 'var(--danger-color)'],
+    ['cancelled_remote', t('bookStateCancelledRemote'), 'var(--danger-color)'],
+    ['mismatch', t('adminMtbogdGroupMismatch'), 'var(--amber)'],
+    ['unverified', t('adminMtbogdGroupUnverified'), 'var(--text-secondary)'],
+    ['synced', t('adminMtbogdGroupOk'), 'var(--emerald)'],
+  ];
+  const row = ({ g }) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--bg-card-hover);border-radius:6px;font-size:0.85rem;">
+      <span style="min-width:96px;font-family:monospace;">${esc(g.date)} ${esc(g.time || '')}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(g.creatorName || g.createdBy || '')}${g.status === 'deleted' ? ' · <s>deleted</s>' : ''}${g.bookingCode ? ` · <span style="font-family:monospace;">${esc(g.bookingCode)}</span>` : ''}</span>
+      ${g.bookingId ? `<button class="btn btn-sm btn-outline" data-mt-verify="${esc(g.id)}">${t('bookVerify')}</button>` : ''}
+      ${!g.bookingId && g.status !== 'deleted' ? `<button class="btn btn-sm btn-outline" data-mt-attach="${esc(g.id)}">${t('bookAttach')}</button>` : ''}
+      <a class="btn btn-sm btn-outline" href="#/game/${esc(g.id)}">${t('adminMtbogdOpen')}</a>
+    </div>`;
+  host.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <h3 style="margin:0;">MTBogd</h3>
+      <span style="font-size:0.8rem;color:var(--text-secondary);">${rows.length}</span>
+      <button class="btn btn-sm btn-primary" id="mt-check-all" style="margin-left:auto;" ${rows.some(r => r.g.bookingId) ? '' : 'disabled'}>${t('adminMtbogdCheckAll')}</button>
+    </div>
+    ${rows.length === 0 ? `<p style="color:var(--text-secondary);font-size:0.85rem;">${t('adminMtbogdEmpty')}</p>` : ''}
+    ${groups.map(([key, label, color]) => {
+      const list = rows.filter(r => r.st === key);
+      if (!list.length) return '';
+      return `<div style="margin-bottom:14px;"><div style="font-size:0.8rem;font-weight:700;color:${color};margin-bottom:6px;">${esc(label)} · ${list.length}</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">${list.map(row).join('')}</div></div>`;
+    }).join('')}
+    <div style="margin-top:18px;">
+      <div style="font-size:0.8rem;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">${t('adminMtbogdAttempts')} · ${attempts.length}</div>
+      ${attempts.length === 0 ? `<p style="color:var(--text-secondary);font-size:0.8rem;margin:0;">—</p>`
+        : `<div style="display:flex;flex-direction:column;gap:4px;font-size:0.78rem;color:var(--text-secondary);">${attempts.map(a =>
+            `<div>${esc(new Date(a.at || 0).toLocaleString())} · ${esc(a.userId || a.by || '')} · ${esc(a.date || '')} ${esc(a.slotId || '')} · ${esc(a.step || a.event || '')} · ${esc(a.error || '')}${a.httpStatus ? ` (${esc(String(a.httpStatus))})` : ''}</div>`).join('')}</div>`}
+    </div>`;
+  const byId = Object.fromEntries(rows.map(r => [r.g.id, r.g]));
+  host.querySelectorAll('[data-mt-verify]').forEach(b => b.onclick = async () => { await handleBookingVerify(byId[b.dataset.mtVerify]); await renderAdminMtbogdTab(); });
+  host.querySelectorAll('[data-mt-attach]').forEach(b => b.onclick = async () => { await handleBookingAttach(byId[b.dataset.mtAttach]); await renderAdminMtbogdTab(); });
+  document.getElementById('mt-check-all')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    // One at a time with a pause: the proxy is shared with members booking.
+    for (const r of rows.filter(r => r.g.bookingId)) {
+      await handleBookingVerify(r.g);
+      await new Promise(res => setTimeout(res, 250));
+    }
+    await renderAdminMtbogdTab();
+  });
+}
+
 async function renderAdminRankingTab() {
   const el = document.getElementById('admin-rank-content');
   if (!el) return;
@@ -7763,6 +8306,10 @@ async function renderAdminRankingTab() {
 
 // Which tournament's editor is open in the admin list.
 let adminOpenTn = null;
+// The admin list is folded by state — live, draft (upcoming), past — and each
+// fold remembers whether the admin opened it, because the tab re-renders on
+// every edit. Past starts closed: it is the long tail nobody scrolls past.
+const adminTnSectionOpen = { live: true, upcoming: true, final: false };
 // The editor's meta-fields fold: collapsed by default so opening a
 // tournament lands on its players/lineup, not the name-and-dates form.
 let tnFormOpen = false;
@@ -7803,6 +8350,10 @@ function tnAdminFormHTML(p, tn = {}) {
           ${courseTees(tn.course || '').map(x => `<option value="${x.key}"${sel(x.key, tn.tee)}>${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('')}
         </select>
         <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
+        <select id="${p}-sp-scoring" title="${t('spScoring')}" style="${TN_INPUT}">
+          <option value="strokes"${sel('strokes', tn.spScoring || 'strokes')}>${t('spScoring')}: ${t('spScoringStrokes')}</option>
+          <option value="stableford"${sel('stableford', tn.spScoring || 'strokes')}>${t('spScoring')}: ${t('spScoringStableford')}</option>
+        </select>
         <select id="${p}-rounds" title="${t('tnFRounds')}" style="${TN_INPUT}">
           ${[1, 2, 3, 4].map(n => `<option value="${n}"${sel(n, rounds)}>${t('tnFRounds')}: ${n}</option>`).join('')}
         </select>
@@ -7819,8 +8370,20 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value="stroke"${sel('stroke', tn.format)}>${t('fmtStroke')}</option>
         <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
         <option value="ryder"${sel('ryder', tn.format)}>${t('fmtRyder')}</option>
-        ${tn.format === 'scramble' ? `<option value="scramble" selected>${t('fmtScramble')}</option>` : ''}
+        <option value="scramble"${sel('scramble', tn.format)}>${t('fmtScramble')}</option>
+        <option value="fourball"${sel('fourball', tn.format)}>${t('fmtFourball')}</option>
+        <option value="foursome"${sel('foursome', tn.format)}>${t('fmtFoursome')}</option>
       </select>
+      ${tn.format === 'scramble' ? `
+        <select id="${p}-team-size" title="${t('spTeamSize')}" style="${TN_INPUT}">
+          <option value="4"${sel(4, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize4')}</option>
+          <option value="2"${sel(2, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize2')}</option>
+        </select>` : ''}
+      ${tnIsTeam(tn) ? `
+        <select id="${p}-team-rank" title="${t('spTeamRank')}" style="${TN_INPUT}">
+          <option value="board"${sel('board', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankBoard')}</option>
+          <option value="match"${sel('match', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankMatch')}</option>
+        </select>` : ''}
       <select id="${p}-status" style="${TN_INPUT}">
         <option value=""${sel('', tn.status || '')}>${t('tnFStatusAuto')}</option>
         <option value="upcoming"${sel('upcoming', tn.status)}>${t('tnSoon')}</option>
@@ -7849,7 +8412,19 @@ function tnAdminReadForm(p) {
     rounds: num('rounds'),
     currentRound: num('round-now'),
     par: num('par'),
+    // Only meaningful for stroke play; a match play form has no such select
+    // and falls back to the default, which changes nothing.
+    spScoring: val('sp-scoring') === 'stableford' ? 'stableford' : 'strokes',
     format: val('format'),
+    // The team selects exist on the form only once the tournament IS a
+    // scramble, so a save that switches the type keeps the defaults (4, board)
+    // and the next edit offers the choice.
+    // The team selects exist on the form only for a team event — the size
+    // one only for a scramble — so a save that switches the type keeps the
+    // defaults and the next edit offers the choice. tnTeamRank() reads 'match'
+    // only for pairs, so a stale value on a four-player scramble is inert.
+    ...(val('team-size') ? { spTeamSize: num('team-size') === 2 ? 2 : 4 } : {}),
+    ...(val('team-rank') ? { spTeamRank: val('team-rank') === 'match' ? 'match' : 'board' } : {}),
     status: val('status'),
     cutAfterRound: num('cut-after'),
     cutSize: num('cut-size')
@@ -7975,6 +8550,7 @@ async function renderAdminTournamentsTab() {
                 <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
               </div>
             </details>
+            <div id="tn-media-${esc(tn.id)}"></div>
             ${tnKind(tn) !== 'stroke'
               ? `<div id="mp-adm-${esc(tn.id)}"></div>`
               : `<div id="sp-adm-${esc(tn.id)}"></div>`}
@@ -7982,8 +8558,33 @@ async function renderAdminTournamentsTab() {
       </div>`;
   };
 
+  // Three folds by state. Upcoming reads soonest first, past most recent
+  // first; live is whatever is on today. A fold holding the tournament whose
+  // editor is open is forced open, or the editor would vanish under it.
+  const byState = { live: [], upcoming: [], final: [] };
+  list.forEach(tn => (byState[tnStatus(tn)] || byState.upcoming).push(tn));
+  byState.upcoming.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')));
+  const sectionHTML = (key, label) => {
+    const rows = byState[key];
+    if (!rows.length) return '';
+    const open = adminTnSectionOpen[key] || rows.some(tn => tn.id === adminOpenTn);
+    return `
+      <details data-tn-section="${key}"${open ? ' open' : ''} style="margin-bottom:14px;">
+        <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 0;font-weight:800;font-size:0.95rem;list-style:none;">
+          <span class="tn-sec-chev" style="color:var(--text-secondary);font-size:0.85rem;display:inline-block;transition:transform .2s;">▼</span>
+          ${label}
+          <span class="pill-soft" style="font-size:0.7rem;">${rows.length}</span>
+        </summary>
+        <div style="margin-top:6px;">${rows.map(rowHTML).join('')}</div>
+      </details>`;
+  };
+  const sectionsHTML = sectionHTML('live', t('tnAdmLive'))
+    + sectionHTML('upcoming', t('tnAdmDraft'))
+    + sectionHTML('final', t('tnAdmPast'));
+
   el.innerHTML = `
     ${errBanner}
+    <style>details[data-tn-section]:not([open]) > summary .tn-sec-chev{transform:rotate(-90deg);}</style>
     <div id="tn-devices"></div>
     <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
       <button type="button" id="tn-create-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
@@ -7994,7 +8595,12 @@ async function renderAdminTournamentsTab() {
     </div>
     ${list.length === 0
       ? `<p style="color:var(--text-secondary);">${t('tnAdminEmpty')}</p>`
-      : list.map(rowHTML).join('')}`;
+      : sectionsHTML}`;
+
+  // A fold's state outlives the next re-render.
+  el.querySelectorAll('details[data-tn-section]').forEach(d => d.addEventListener('toggle', () => {
+    adminTnSectionOpen[d.dataset.tnSection] = d.open;
+  }));
 
   // Create — the Squabbit-style wizard: pick the type early, and only that
   // type's questions follow. Its draft lives in the module, so toggling or
@@ -8023,7 +8629,7 @@ async function renderAdminTournamentsTab() {
     // Closing the editor drops any unsaved setup draft. Keeping it would
     // let an hour-old snapshot sit around and then overwrite newer work the
     // next time somebody opened that tournament and pressed Save.
-    if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); }
+    if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); discardTnMediaDraft(id); }
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
     // The editor renders below the row's actions, which on a long list can
@@ -8115,6 +8721,7 @@ async function renderAdminTournamentsTab() {
       const ctx = { showToast, users, rerender: renderAdminTournamentsTab };
       if (mpHost) mountMpAdmin(mpHost, tn, ctx);
       if (spHost) mountSpAdmin(spHost, tn, ctx);
+      mountTnMedia(document.getElementById(`tn-media-${tn.id}`), tn, ctx);
     }
     // Picking a course fills PAR (and blank venue/city) on the spot, and
     // rebuilds the tee options — a tee belongs to its course.

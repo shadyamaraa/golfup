@@ -1,5 +1,340 @@
 # CHANGELOG_AI.md
 
+## 2026-09-04 (Tournament crest, sponsors and удирдамж)
+
+Three things a tournament can now carry of its own, all inside its record.
+
+- **A crest.** Picked in the wizard when the tournament is created, so it has a
+  face from the moment it exists, and changeable later in the editor. It fills
+  the hero's `.tn-crest` beside the name; without one the generic icon stays.
+- **Partner organisations.** Name, logo and an optional website, in order, up
+  to twelve. They render as a section of their own under the hero — headed
+  *Хамтрагч байгууллагууд* in the board's own section type rather than boxed in
+  a card, and **one organisation to a row** so no mark reads as smaller than
+  another. Each sits centred on a white plaque, because most logos are
+  dark-on-transparent and would vanish on the app's navy page. The plaque's
+  height and padding set the ceiling on the mark (104 − 2×16 = 72px), so a
+  square crest fills its row as fully as a wordmark does. A link opens in a new
+  tab, `rel="noopener"`.
+- **The удирдамж.** Free text plus an optional picture of the document. A
+  📋 Удирдамж button appears on the tournament page only when there is one, and
+  opens a popup that keeps the organiser's own line and paragraph breaks
+  (`white-space: pre-wrap`) with the picture underneath.
+
+New `src/media.js` holds the shrinking and the caps — the crest at 192px and a
+sponsor mark at 240px as webp (which keeps a logo's transparency), the guide
+picture at 1000px as jpeg on a white ground. `matchplay-admin.js` dropped its
+private copy of the same code and now uses it, so the M Cup team logos and
+these shrink identically. Everything is capped and an oversized file is refused
+with a toast rather than quietly bloating a record `loadTournaments()` reads in
+full — a real crest, two sponsors and a guide came to 4 KB in testing.
+
+`media.js` also validates on the way OUT as well as in: `validImageData` and
+`safeLink` mean a hand-edited record cannot put anything but an image into an
+`<img src>` or anything but http(s) into an `href`. Driven in the browser,
+including a record hand-edited to carry `javascript:` and a `data:text/html`
+payload — both refused, neither rendered.
+
+The editor grew a 🖼 fold beside the ⚙ form with its own draft and Save, so a
+half-built sponsor list survives the tab's re-render.
+
+## 2026-09-04 (Admin tournaments tab folded by state)
+
+The admin's tournament list is now three folds — **Явагдаж байна** (live),
+**Ноорог (удахгүй)** (draft / upcoming), **Өнгөрсөн** (past) — each with its
+count, in that order. Draft reads soonest first, past most recent first. Past
+starts **closed**: it is the long tail nobody scrolls past, and one tap on its
+title opens it. Each fold remembers what the admin did with it, because the tab
+re-renders on every edit, and a fold holding the tournament whose editor is
+open is forced open so the editor cannot vanish under it. Driven in the
+browser: the state survives opening and closing an editor either side of it.
+
+## 2026-09-04 (Fourball and Foursome tournaments)
+
+The two remaining 2 v 2 types, on the rails the scramble tournament laid: a
+team is an `sp.players` entry, its members carry the flight pointer, and the
+board, the cut, the draw and the database rules are untouched.
+
+- **Foursome** is a scramble for pairs with the club's FOURSOMES rulebook: one
+  ball under the team key, the team handicap typed by the organiser, board or
+  flight match, no WHS posting. `tnTeamSize` is 2 whatever the size field says.
+- **Fourball** is the different one. Each member plays their own ball on their
+  own ordinary card, and the pair's round is *derived* — `fourballRound()` takes
+  the best ball on every hole: best gross for the gross reading, best net with
+  every member off their **full** playing handicap by stroke index (the
+  allowance a Stableford tournament gives), best points for Stableford. It
+  returns the shapes `roundGross()`/`roundPoints()` return, so `spEntries` only
+  chooses which to rank on. A pair has no team handicap: the editor hides that
+  field and the roster's per-player HCPs do the work. One ball is enough, as in
+  real fourball. The flight scorer shows the four members' rows with each pair's
+  best ball underneath; a flight match settles off the lowest of the four, the
+  casual game's and the M Cup's reading.
+- **WHS**: the guard became `tnOneBall()`. A foursome team ball never posts; a
+  fourball member's complete card posts exactly as stroke play does — both
+  driven in the browser, with the whole fourball organiser flow (wizard → pairs
+  → draw → flight scorer → board) alongside.
+- `tnFormatText`, the wizard's cards and summary, the admin form's selects
+  (team size only for a scramble, the rank select for every team type) and the
+  rulebook fold under the board all learned the two names; the i18n format
+  labels already existed.
+
+Tests: `npm run test:mp` is 215 (was 206).
+
+## 2026-09-03 (Scramble tournaments — the fourth tournament type)
+
+Teams of two or four play one ball, and the field is ranked by team total on
+the ordinary leaderboard. The organiser types each team's handicap, chooses the
+team size, and — for two-player teams — whether a flight is read as a board or
+as a 2 v 2 match settled hole by hole.
+
+- **The whole thing rests on one idea: a team is an `sp.players` entry.** Its
+  one ball lives at the existing `sp.scores[teamKey]` path, so `spEntries`,
+  `rankEntries`, the cut, the ▲/▼ arrows, the board, the schedule, the draw and
+  the same-flight database rule all work untouched — **no new data node and no
+  rules change**. The members stay in `sp.players` too, because their flight
+  pointer is what the rules read; they are simply left off the board. This was
+  estimated at two-plus weeks with a new `teamScores` node and a rules change
+  before the rule was read closely.
+- `strokeplay.js` gained `tnIsTeam`, `tnTeamSize` (4 by default — a flight of
+  four already is a team), `tnTeamRank`, `teamKeyOf`, `isTeamEntry`,
+  `teamMemberIds`, `spTeams` and `spFlightMatch`; `spEntries` and `drawGroups`
+  read teams in a team event and people otherwise.
+- **The admin editor** has a Багууд fold: tick the players, name the team,
+  create; type the team handicap; disband to free the members. `saveDraft`
+  writes `kind`/`members` and stamps every member with their team's flight
+  pointer in the same save. The draw offers *teams per flight* instead of
+  *players per flight*.
+- **The flight scorer** shows one row and one stepper per team with its
+  members named underneath, and in a match event a live status line — *2 UP ·
+  Thru 9*, the M Cup reading — recomputed as scores land.
+- **The tournament page** ranks the teams on the ordinary board (column head
+  Баг), and in a match event a *Flight matches* card above it settles each
+  two-team flight hole by hole. The team size sits on the facts line under the
+  title and the scramble rulebook in a fold under the board — a stroke-kind
+  tournament has no info tab (the members asked for it to go), so the rows the
+  first cut of this added there were unreachable. Driven end to end in the
+  browser: wizard → team builder → draw → flight scorer → board, with every
+  member stamped with their team's flight pointer, which is what the database
+  rule reads.
+- **WHS**: `finalizeSpRoundIfComplete` gained the format guard the casual scorer
+  already had. It was a latent bug — the tournament scorer posted any complete
+  18-hole card with no format check, so the first one-ball tournament would
+  have posted shared shots as individual rounds.
+- **Two facts checked against production before building**: no live tournament
+  carries `format: 'scramble'` (17 records — 7 stroke, 5 ryder, 5 match), so
+  the value was free to take; and one of the five Ryder Cup tournaments is
+  literally named "Scramble" — someone wanted this and had no type for it.
+- Also fixed: `tnFormatText` omitted `ryder`, so every M Cup tournament printed
+  the raw string on its info tab; Korean gained `fmtRyder`.
+
+Tests: `npm run test:mp` is 206 (was 193).
+
+## 2026-09-03 (Casual formats phase 2 — scramble, fourball, foursome)
+
+The 2 v 2 team formats, and the first thing this app stores that is not a
+player's own card. Teams come from the same playing order the ⇄ already cycles:
+`order[0]+order[1]` against `order[2]+order[3]`. All three settle **hole by
+hole** through the match engine that already shipped, so dormie, close-outs
+(`3 & 2`) and the conceded-hole chooser came free — and a scramble crowd still
+reads its team total, because that is a line on the card, not a second contest.
+
+- **One rule, applied twice.** `groupPairs` pairs consecutive players; the new
+  `groupTeams` reuses it and `teamContests` pairs consecutive *teams*. That is
+  the whole of the group-size story: 4 players are one contest, 8 are two, 6 are
+  one contest and a team with nobody to play, and anyone left over keeps their
+  own ball. `matchHoles` was factored into a shared `walkHoles` so the override
+  precedence and the "stop at the first gap" rule are literally the same code
+  for a 1 v 1 and a 2 v 2 — the existing match play tests are the guard.
+- **Handicaps.** A team plays off the **average** of its two players, and the
+  higher team receives the **difference**, rounded to a whole stroke by stroke
+  index — "off the low man", one level up. Fourball is the exception: every
+  player still plays their own ball, so it uses the individual allowance off the
+  lowest of the four, exactly as match play and skins do, and a side's score on
+  a hole is its **best net ball** (one ball is enough — a partner who picked up
+  leaves a blank, which is ordinary fourball).
+- **The one new path**, `games/{id}/teamScores/{teamKey}/holes/{hole}`, keyed by
+  the team and **not** by the group index. `reflowGroupsBySize()` renumbers every
+  group on an Edit save; a pairing survives that because it self-heals to join
+  order, but scores are input, not a reading, and would simply be orphaned.
+  `saveGame`'s strip list gained `teamScores` in the same commit.
+- **The scorer** replaces the four player rows with two team rows in the
+  one-ball formats — one stepper per team, and each partner's HCP chip
+  underneath, which is load-bearing: with no individual rows that is the only
+  place a marker can set a handicap. Fourball's rows and write path are
+  untouched. Three places counted "has everybody done this hole?" by counting
+  players and now count scoring units instead, so the hole strip goes gold and
+  the scorer stops opening on hole 1 forever.
+- **`structureKey` gained the playing order**, so a ⇄ forces a full repaint;
+  without it the team rows, which live outside `#gs-format`, went stale.
+- **WHS.** Scramble and foursome never post — one ball a team means no player
+  has a card, and a "complete" round would be partly somebody else's shots.
+  Fourball still posts. The check sits in `finalizeRoundIfComplete`, not in
+  `handicap.js`, because `game-formats.js` imports `handicap.js`.
+- **The rulebook split.** `src/mcup-rules.js` now exports its FOURBALL,
+  FOURSOMES, SINGLES and concepts blocks one at a time, with a new Mongolian
+  SCRAMBLE block written for this, and a `casualTeamRulesHTML()` that frames one
+  for a single tee group. `ryderRulesHTML()` composes the same blocks and its
+  output is **byte-identical** to before — the club's own document has not
+  moved, and a test now pins that.
+- Two blind spots fixed on the way: the printable-scorecard button and the
+  printed card both asked whether any *player* had scored, so a finished
+  scramble read as unplayed; both now ask `gameHasAnyScore()`. The printed card
+  also prints one card per team rather than four blanks, and takes the real
+  group index rather than the index after empty groups are filtered out.
+- The create form's format chips were the last hardcoded enumeration and now map
+  `FORMATS`; both chip rows wrap, so seven chips fit a 390px phone.
+
+Tests: `npm run test:mp` is 193 (was 173).
+
+## 2026-09-03 (Stableford — casual games and stroke play tournaments)
+
+Points scoring, on both surfaces. Each hole is scored against par after the
+player's full handicap by stroke index: par 2, birdie 3, bogey 1, double bogey
+or worse 0. A level-par round is 36 points gross, and a round played to
+handicap is 36 net — the two benchmarks the tests pin. Higher is better, which
+is the one thing the stroke play stack had never had to do.
+
+- New pure module `src/stableford.js` — `holePoints`, `roundPoints`,
+  `strokesOverHoles`. It takes plain hole/par/SI maps rather than a game or a
+  tournament, which is what lets one engine serve both surfaces without a
+  cycle (`stableford.js` → `handicap.js` → `courses.js`).
+- **Casual games**: a fourth format beside Strokeplay / Match play / Skins.
+  `stablefordResult()` in `src/game-formats.js`, a scorer panel with the
+  standings chips and the leader's per-hole points, a game-page board, a
+  printed report, and the format chips on create and edit. Unlike match/skins
+  it is per player — no pairing, no overrides, nothing new stored. Also fixed
+  a latent bug: `scorecard.js` chose its printed report with a binary ternary,
+  so any third non-stroke format would have printed the skins table; it is a
+  map now. The edit form's hardcoded format list is `FORMATS`.
+- **Tournaments**: the organiser chooses it and it is stored as
+  `tournaments/{id}.spScoring` (`'strokes'` | `'stableford'`, missing reads as
+  strokes, never backfilled) — on the creation wizard's stroke step and in the
+  admin editor. `spEntries(tn, 'stableford')` puts points in `rounds[]` and
+  `total` while `gross`/`netTotal`/`thru` keep their stroke meanings.
+- **The ranking flips without a second sorting path.** `rankEntries` and
+  `cutSet` take a `higherWins` flag and negate the sort key once, so the
+  ascending sort, the `Infinity` "no score sorts last" sentinel, the tie
+  counting and the `T1` labels all keep reading as they do for strokes.
+  `tnWithDeltas` negates the same way, so the ▲/▼ arrows point the right way,
+  and the standings draw reads points so "leaders last" still means leaders.
+- **Display**: `tnScoreText`/`tnScoreClass` gained a points mode — plain
+  integers, no `E`/`+`/`−` and no red (which here means under par). The TOT
+  column is headed ОНОО, the Net toggle is replaced by a `Stableford · Net`
+  label since the contest is already net, the player card header shows points
+  with an extra STB row per nine, and both scorers carry the running points
+  beside the gross. A venue with no course card cannot be scored in points at
+  all and says so rather than showing zeros.
+- WHS posting untouched: it reads strokes and never looks at the format. A
+  player who picks up leaves the card incomplete, which correctly does not post.
+- i18n mn/en/kr for the format name and the `gs*` strings; mn/en for the `sp*`
+  tournament strings (Korean has never carried `sp*` and falls back).
+- New `docs/stableford.md`; `docs/casual-formats.md` extended. No database
+  rules change and no store change — `saveTournament` has no field whitelist.
+
+Verified: `npm run test:mp` 144 → **173**, `npm run build`, and a localStorage
+walk-through of both surfaces — a Stableford casual game scoring 46 / 36 / 10
+for handicaps 10 / 0 / none, and a two-round Stableford tournament ranking
+74 · 68 · 64 · 52 with the cut on the two lowest, the arrows correct and the
+Net toggle gone.
+
+## 2026-09-03 (Casual games: Match play and Skins formats)
+
+A casual game now carries a **format**. Stroke play is what every game was
+and stays the default — a record without the field reads as stroke play and
+is never backfilled. The match play family reads the same scorecard
+differently; see `docs/casual-formats.md`.
+
+- `games/{id}.format`: `'stroke' | 'match' | 'skins'`, chosen with a chip row
+  on the create form (between holes and scoring mode) and editable on the
+  edit form. Competition 9/9 is a stroke play idea, so its row hides for the
+  other formats and `scoreMode` is forced to `normal`.
+- New pure module `src/game-formats.js`: pairing by group order (a four
+  splits three ways, `pairing/{groupIdx}` stores the order and is honoured
+  only while it names the group's current players), the "off the low man"
+  allowance by stroke index, `matchResult()` on top of `settleMatch()`, and
+  `skinsResult()` with carry-over. 24 tests in `scripts/test-game-formats.mjs`
+  (120 → 144).
+- Scorer (`src/game-score.js`): the strokes stepper is unchanged; a format
+  panel appears under it. Match play shows one card per pair with the status,
+  the allowance and an A / B / – strip; **tapping a hole sets it by hand** (A /
+  ТЭНЦСЭН / B / Авто) — how a conceded hole is recorded without strokes; a
+  gap in the walk is named. **Хос солих ⇄** cycles a four's three splits.
+  Skins shows standings chips and a pot strip. `isCompMode()` now requires
+  stroke play, which retires comp mode everywhere at once for the others.
+- Game page: a format pill in the title; the scoreboard becomes the matches
+  (name · status · name) or the skins standings. Home cards carry the pill.
+  The printed `#/scorecard/` replaces the F9/B9/18 net reports with a match
+  table (hand-set holes starred) or a skins table.
+- `src/store.js`: `saveGamePairing`, `saveGameHoleOverride` (path-scoped,
+  audited, localStorage fallback), and — the data-safety point —
+  `saveGame()` now also strips `pairing` and `holeOverrides` so an Edit,
+  join or leave never wipes what the scorer wrote.
+- i18n mn/en/kr: `fmtSkins/fmtFourball/fmtFoursome` and the `gs*` strings the
+  panels use; `mpHalved` gains its Korean.
+- WHS posting unchanged: a conceded hole with no strokes leaves the card
+  incomplete, so nothing posts. No database-rules change.
+
+Verified: `npm run test:mp` 144/144, `npm run build`, and a localStorage
+walk-through (Firebase off) of create → score → hand-set hole → re-pair →
+finish → game page → printed card for both formats, plus edit back to stroke
+play with nothing lost. Phase 2 (scramble / fourball / foursome) is outlined
+in the doc and on the backlog.
+
+## 2026-09-03 (MTBogd booking: no more silent unbooked games; every step logged; attach and check)
+
+A member's game for 2026-09-03 13:40 at Sky Resort was created with no MTBogd
+booking and no trace of why. The live data explained it: the create form's
+default time is 08:00 and the manual time selects are hidden on the MTBogd
+course, so 13:40 could only have come from `selectSlot()`. The member picked
+the 13:40 slot, then a date change (or the clear button, or a location toggle)
+silently reset `selectedTeeSlot` while the hidden hour/minute selects kept
+13:40, and the submit handler had no branch for "MTBogd course but no slot" —
+so the game saved at the stale time with no booking, no error and no log.
+Since 28 June, 24 of 197 MTBogd-course games had no booking (10 by real
+members); 36 of 95 deleted-with-booking games never had their cancellation
+confirmed. MTBogd itself exposes `GET /bookings/{id|code}` (verified live)
+but no way to list bookings by date.
+
+**The soft guard.** On the MTBogd course with no slot selected, submit now
+opens a dialog: pick a time (opens the picker, submit stays enabled) or
+create without booking. The dialog knows whether a choice was lost or never
+made (`slotEverSelected`) and says so. Either way the game records why
+(`booking.status = 'none'`, `reason = 'slot_lost' | 'user_skipped'`). With a
+slot selected, or on any other course, the submit path is byte-for-byte what
+it was.
+
+**The trail.** New `src/booking-sync.js` (pure, 12 tests) derives a game's
+booking state from its fields and compares it with MTBogd's record. Every
+step appends to `games/{id}/bookingLog` (hold, confirm, booked later, player
+sync, check, attach, cancel — each with the HTTP status on failure); a hold or
+confirm that fails before a game exists lands in the new `bookingAttempts`
+node (one additive line in `database.rules.json`). `saveGame` strips
+`bookingLog` from full-record writes so a stale copy can never overwrite it.
+`booking.js` now returns the HTTP status on errors and normalises MTBogd's
+`{ booking, matchedBy }` wrapper.
+
+**Two-way, by hand.** On the game page (creator or admin): **MTBogd шалгах**
+fetches MTBogd's record and stores the verdict (`confirmed` or `mismatch`
+with named issues: cancelled, date, time, slot, player count, not found);
+**Кодоор холбох** attaches a booking made by phone or in MTBogd's app by its
+code, refusing a different date, a cancelled booking or a deleted game. A
+successful cancel now marks `bookingCancelled` itself (previously only the
+webhook did; nothing in the client read it); a failed cancel records
+`cancel_failed`. Admin → **MTBogd** tab groups every recent MTBogd game by
+state (no booking / cancel failed / cancelled on MTBogd / mismatch /
+unchecked / linked) with check-all, per-row check/attach/open, and the
+failed attempts underneath. Legacy games read neutrally ("not checked"),
+never as a problem.
+
+Verified in a browser with a fixture MTBogd: the regression cases first (slot
+selected → no dialog, identical fields saved; other course → untouched), then
+every branch above, and a negative run with the guard removed that
+reproduces the original silent save. Build clean, tests 120 → 132.
+
+Automatic discovery in the MTBogd → UBGolf direction is not possible without
+a list endpoint or a `created` webhook (Functions); attach-by-code covers it
+by hand. Cloud Functions were not touched.
+
 ## 2026-09-03 (User manuals: score entry for stroke play and M Cup)
 
 Two step-by-step user manuals (Mongolian, A4 PDF, screenshots with dummy
@@ -20,6 +355,7 @@ Documentation only — no code changes. Screenshots were captured against
 the localhost demo tournaments with Firebase disabled locally, so no
 production data was touched or written. They reflect the group scorecard
 steppers (PR #60) and the player card (PR #61) as they stand on `main`.
+
 
 ## 2026-09-02 (Ranking ▲/▼: the baseline advances only when the ranking really changes)
 

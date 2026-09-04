@@ -131,7 +131,37 @@ Games:
   isPrivate,
   targetCommunities,
   invitedIds,
-  bookingStatus
+  holes,       // 'full18' | 'front9' | 'back9'
+  scoreMode,   // 'normal' | 'comp' (stroke play only)
+  format,      // 'stroke' (default when missing) | 'match' | 'skins' | 'stableford'
+               // | 'scramble' | 'fourball' | 'foursome' — docs/casual-formats.md
+  course,      // { name, rating, slope, par, tee } when known
+  // Written by the scorer, path-scoped, and excluded from saveGame():
+  // scores, scoreAudit, hcp, pairing, holeOverrides, teamScores
+}
+```
+
+Tournaments (`tournaments/{id}`, the in-app stroke play node — see
+`docs/tournament-cut.md`, `docs/stableford.md`, `docs/tournament-scramble.md`):
+
+```js
+{
+  format,        // 'stroke' | 'match' | 'ryder' | 'scramble' | 'fourball' | 'foursome'
+                 // — tnKind() branches on it; the three team types ride the stroke rails
+  logo,          // data URI — the crest; see src/media.js for the size caps
+  sponsors,      // [ { name, logo, link } ] — partner organisations, shown as a strip
+  guide,         // { text, image } — the удирдамж, opened in a popup
+  spScoring,     // 'strokes' (default when missing) | 'stableford'
+  spTeamSize,    // scramble only: 2 | 4 (4 when missing)
+  spTeamRank,    // scramble only: 'board' (default) | 'match' — two-player teams only
+  sp: {
+    players: {   // pid → { name, userId?, hcp?, status?, groups: { round: gid } }
+                 // a TEAM is a player entry too: { kind: 'team', members: {pid: true}, hcp }
+                 // and its members keep their own entries for the flight pointer
+    },
+    scores,      // pid → round → hole → strokes  (a team's ball lives under its teamKey)
+    groups       // round → gid → { number, teeTime, startHole?, players: {pid: true} }
+  }
 }
 ```
 

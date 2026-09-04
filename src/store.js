@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, update, remove, onValue, push } from 'firebase/database';
+import { getDatabase, ref, set, get, update, remove, onValue, push, query, limitToLast } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 
@@ -152,10 +152,13 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game). Every caller passes the full record, so the named
-    // top-level keys are still replaced wholesale — only the scoring
-    // branches are spared.
-    const { scores, scoreAudit, hcp, ...rest } = game;
+    // the same game, and so do the match play pairing, the hole overrides and
+    // the team ball a scramble or foursome plays). Every caller passes the
+    // full record, so the named top-level keys are still replaced wholesale —
+    // only the scoring branches are spared.
+    // bookingLog is append-only (see appendBookingLog); a full-record save
+    // from a stale copy must never overwrite it either.
+    const { scores, scoreAudit, hcp, pairing, holeOverrides, teamScores, bookingLog, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -214,6 +217,87 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   if (hcp === null || hcp === undefined) delete game.hcp[playerId];
   else game.hcp[playerId] = hcp;
   setLocalGames(games);
+  return game;
+}
+
+// The order a group plays its matches in (see src/game-formats.js): the
+// scorer's ⇄ writes it, null clears it. Path-scoped like a score tap.
+export async function saveGamePairing(gameId, groupIdx, orderIds) {
+  if (useFirebase && db) {
+    const r = ref(db, `games/${gameId}/pairing/${groupIdx}`);
+    if (!orderIds) await remove(r);
+    else await set(r, orderIds);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.pairing = game.pairing || {};
+  if (!orderIds) delete game.pairing[groupIdx];
+  else game.pairing[groupIdx] = orderIds;
+  setLocalGames(games);
+  return game;
+}
+
+// A hand-set match play hole (a conceded hole): the winner's player id or
+// 'h' for halved under the pair's key, null to go back to the derived
+// result. Same discipline as saveGameScoreHole — path-scoped, audited.
+export async function saveGameHoleOverride(gameId, pairKey, hole, value, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/holeOverrides/${pairKey}/${hole}`);
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (value === null || value === undefined || value === '') {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, value);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, kind: 'override', pairKey, hole, value: value || null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.holeOverrides = game.holeOverrides || {};
+  const pair = (game.holeOverrides[pairKey] = game.holeOverrides[pairKey] || {});
+  if (value === null || value === undefined || value === '') delete pair[hole];
+  else pair[hole] = value;
+  if (!Object.keys(pair).length) delete game.holeOverrides[pairKey];
+  setLocalGames(games);
+  return game;
+}
+
+// One tap on a TEAM row: the strokes a scramble or foursome team's single ball
+// took on one hole, or null to clear it. Same discipline as saveGameScoreHole —
+// path-scoped and audited — but keyed by the team rather than a player, because
+// in a one-ball format no player has a card of their own.
+export async function saveGameTeamScoreHole(gameId, teamKey, hole, strokes, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/teamScores/${teamKey}/holes/${hole}`);
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (strokes === null || strokes === undefined) {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, strokes);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, kind: 'team', teamKey, hole, value: strokes ?? null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.teamScores = game.teamScores || {};
+  const team = (game.teamScores[teamKey] = game.teamScores[teamKey] || { holes: {} });
+  team.holes = team.holes || {};
+  if (strokes === null || strokes === undefined) delete team.holes[hole];
+  else team.holes[hole] = strokes;
+  setLocalGames(games);
+  // No listener fires in localStorage mode — the caller repaints from this.
   return game;
 }
 
@@ -389,6 +473,78 @@ export async function saveBookingQuote(id, quote) {
     const games = getLocalGames();
     if (games[id]) { games[id].bookingQuote = quote; setLocalGames(games); }
   }
+}
+
+// ---- MTBogd booking sync (see src/booking-sync.js) ----
+// `booking` records how the booking came to be and what the last check
+// against MTBogd found; `bookingLog` is the append-only trail of every step.
+// Both are path-scoped so a concurrent full-record save cannot clobber them.
+
+export async function saveBookingState(id, partial) {
+  const patch = { ...partial, updatedAt: Date.now() };
+  if (useFirebase && db) {
+    await update(ref(db, `games/${id}/booking`), patch);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].booking = { ...(games[id].booking || {}), ...patch }; setLocalGames(games); }
+  }
+}
+
+export async function appendBookingLog(id, entry) {
+  if (useFirebase && db) {
+    await push(ref(db, `games/${id}/bookingLog`), entry);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) {
+      games[id].bookingLog = games[id].bookingLog || {};
+      games[id].bookingLog['l_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)] = entry;
+      setLocalGames(games);
+    }
+  }
+}
+
+// Link an MTBogd booking made elsewhere (by phone, in MTBogd's own app) to a
+// game after the fact. Writes the same three fields the create flow writes.
+export async function attachBooking(id, { bookingId, bookingCode, bookingSlotId }) {
+  const fields = { bookingId: bookingId || null, bookingCode: bookingCode || null, bookingSlotId: bookingSlotId || null };
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), fields);
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { Object.assign(games[id], fields); setLocalGames(games); }
+  }
+  await saveBookingState(id, { status: 'confirmed', source: 'attached' });
+}
+
+// Our own cancel request succeeded — mark it so a check does not have to.
+export async function markBookingCancelled(id) {
+  if (useFirebase && db) {
+    await update(ref(db, 'games/' + id), { bookingCancelled: true });
+  } else {
+    const games = getLocalGames();
+    if (games[id]) { games[id].bookingCancelled = true; setLocalGames(games); }
+  }
+}
+
+// A hold or confirm that failed BEFORE a game existed has no game to log
+// under, so it lands here for the admin's MTBogd tab.
+export async function logBookingAttempt(entry) {
+  if (useFirebase && db) {
+    await push(ref(db, 'bookingAttempts'), entry);
+  } else {
+    const list = JSON.parse(localStorage.getItem('golfup_bookingAttempts') || '[]');
+    list.push(entry);
+    localStorage.setItem('golfup_bookingAttempts', JSON.stringify(list.slice(-100)));
+  }
+}
+
+export async function loadBookingAttempts(limit = 50) {
+  if (useFirebase && db) {
+    const snap = await get(query(ref(db, 'bookingAttempts'), limitToLast(limit)));
+    if (!snap.exists()) return [];
+    return Object.entries(snap.val()).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+  }
+  return JSON.parse(localStorage.getItem('golfup_bookingAttempts') || '[]').slice(-limit).reverse();
 }
 
 export function onGameChanged(id, callback) {

@@ -7,7 +7,11 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs } from './strokeplay.js';
+import {
+  SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnOneBall, tnTeamRank,
+  isTeamEntry, teamMemberIds, spFlightMatch, fourballRound
+} from './strokeplay.js';
+import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
 
@@ -37,7 +41,7 @@ function strokeColor(strokes, par) {
 // `toPar` is the running score over exactly the holes entered — known only
 // when the course's per-hole pars are in the registry. Without it a partial
 // round can show nothing more honest than its hole count.
-function totalsHTML(gross, holesIn, par, toPar = null) {
+function totalsHTML(gross, holesIn, par, toPar = null, points = null) {
   const score = toPar !== null && holesIn ? fmtToPar(toPar)
     : holesIn >= SP_HOLES ? fmtToPar(gross - par) : null;
   return `
@@ -46,7 +50,18 @@ function totalsHTML(gross, holesIn, par, toPar = null) {
       ${holesIn >= SP_HOLES
         ? `${t('spHoleOut')} · ${score}`
         : score !== null ? `${score} · ${holesIn}/${SP_HOLES}` : `${holesIn}/${SP_HOLES}`}
-    </span>`;
+    </span>
+    ${points !== null && holesIn
+      // The strokes are still what is entered; the points are the contest.
+      ? `<b style="font-size:0.95rem;margin-left:auto;">${points} ${t('spPoints')}</b>` : ''}`;
+}
+
+// The running points for one card, or null when this tournament is not
+// scored in points (or the course has no card to score against).
+function cardPoints(tn, holes, hcp) {
+  if (tnScoring(tn) !== 'stableford') return null;
+  const r = roundPoints(holes, tnPars(tn), tnSIs(tn), Number(hcp));
+  return r.parsKnown ? r.points : null;
 }
 
 // Once a member's 18 holes for a round are all in (and the tournament knows
@@ -55,6 +70,12 @@ function totalsHTML(gross, holesIn, par, toPar = null) {
 // finalizeRoundIfComplete, so tournament golf counts toward the handicap
 // the same way an evening game does. Corrections re-post the same key.
 async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
+  // A one-ball event (scramble, foursome) has no player with a card of their
+  // own, so nothing may post — a "complete" round there would be partly
+  // somebody else's shots, and would corrupt the WHS index it landed on. A
+  // fourball member's card is their own and posts as stroke play does. The
+  // casual scorer guards the same way (isOneBallFormat in game-score.js).
+  if (tnOneBall(tn)) return;
   try {
     if (!tn?.rating || !tn?.slope) return;
     const holes = tn.sp?.scores?.[pid]?.[round];
@@ -117,7 +138,7 @@ function cardHTML(tn, pid, round, editable) {
       ${nine(1)}
       ${nine(10)}
       <div data-sps-total style="display:flex;gap:12px;align-items:baseline;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color);">
-        ${totalsHTML(gross, holesIn, par, toPar)}
+        ${totalsHTML(gross, holesIn, par, toPar, cardPoints(tn, holes, p?.hcp))}
       </div>
       ${editable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
     </div>`;
@@ -191,7 +212,8 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
           const box = host.querySelector('[data-sps-total]');
           if (box) {
             const { gross, holesIn, toPar } = roundGross(holes, pars);
-            box.innerHTML = totalsHTML(gross, holesIn, Number(tnLive.par) || 72, toPar);
+            box.innerHTML = totalsHTML(gross, holesIn, Number(tnLive.par) || 72, toPar,
+              cardPoints(tnLive, holes, tnLive?.sp?.players?.[pid]?.hcp));
           }
           if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
         }
@@ -259,9 +281,17 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     }
 
     const players = tn.sp.players || {};
-    const pids = Object.keys(g.players || {})
+    const flightPids = Object.keys(g.players || {})
       .filter(pid => players[pid])
       .sort((a, b) => String(players[a].name || '').localeCompare(String(players[b].name || '')));
+    // A fourball flight lists its TEAMS, but the members score their own
+    // cards: the rows are the members, kept in team order, and each team's
+    // best ball is read off them underneath.
+    const fourball = tn.format === 'fourball';
+    const pids = fourball
+      ? flightPids.flatMap(pid => isTeamEntry(players[pid])
+        ? teamMemberIds(players[pid]).filter(m => players[m]) : [pid])
+      : flightPids;
     const pars = tnPars(tn);
     const sis = tnSIs(tn);
     const anyEditable = pids.some(pid => canScoreSp(ctx.user, pid, players, round));
@@ -272,12 +302,14 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     // The running tally beside each name: to-par when the course's per-hole
     // pars are known (what a marker actually wants to see mid-round), the
     // raw gross otherwise.
-    const tallyText = (holes) => {
+    const tallyText = (holes, pid) => {
       const { gross, holesIn, toPar } = roundGross(holes, pars);
       if (!holesIn) return '–';
-      return toPar !== null
+      const base = toPar !== null
         ? `${fmtToPar(toPar)} · ${holesIn}/${SP_HOLES}`
         : `${gross} · ${holesIn}/${SP_HOLES}`;
+      const pts = cardPoints(tn, holes, players[pid]?.hcp);
+      return pts === null ? base : `${base} · ${pts} ${t('spPoints')}`;
     };
 
     // Same stepper the game scorer taps all day: − / value / +. The + on an
@@ -289,6 +321,13 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
                color:var(--text-primary);font-size:1.35rem;font-weight:800;
                ${disabled ? 'opacity:0.35;cursor:default;' : ''}">${label}</button>`;
 
+    // A team's row is the team's — one ball, one stepper — with its members
+    // named underneath so the flight can see who is who.
+    const membersLine = (pid) => isTeamEntry(players[pid]) ? `
+            <span style="display:block;font-size:0.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${esc(teamMemberIds(players[pid]).map(m => players[m]?.name || m).join(' · '))}
+            </span>` : '';
+
     const row = (pid) => {
       const holes = tn.sp.scores?.[pid]?.[round] || {};
       const strokes = holes[hole] ?? null;
@@ -299,8 +338,9 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">
               ${esc(players[pid].name || pid)}
             </span>
+            ${membersLine(pid)}
             <span data-spgs-total="${esc(pid)}" style="font-size:0.74rem;color:var(--text-secondary);">
-              ${tallyText(holes)}
+              ${tallyText(holes, pid)}
             </span>
           </span>
           ${canEdit ? stepBtn('minus', pid, '−', strokes === null) : ''}
@@ -332,6 +372,50 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         }).join('')}
       </div>`;
 
+    // A fourball's teams under their members' rows: each pair's best ball so
+    // far, gross and net, the number a marker actually wants to see.
+    const teamLinesHTML = (live) => {
+      if (!fourball) return '';
+      const lines = flightPids.filter(pid => isTeamEntry(live.sp.players[pid])).map(pid => {
+        const r = fourballRound(live, live.sp.players[pid], round);
+        const gr = r.grossRound;
+        const name = esc(live.sp.players[pid].name || pid);
+        if (!gr.holesIn) return `<div><b>${name}</b> · –</div>`;
+        const grossTxt = gr.toPar !== null ? fmtToPar(gr.toPar) : String(gr.gross);
+        const netTxt = r.netRound.toPar !== null ? fmtToPar(r.netRound.toPar) : String(r.netRound.gross);
+        return `<div><b>${name}</b> · ${grossTxt} · ${t('spNet')} ${netTxt} · ${gr.holesIn}/${SP_HOLES}</div>`;
+      }).join('');
+      return `
+        <div data-spgs-teams style="margin-top:10px;padding:8px 12px;border:1px dashed var(--border-color);border-radius:10px;font-size:0.74rem;color:var(--text-secondary);">
+          <div style="font-size:0.62rem;letter-spacing:0.06em;font-weight:700;margin-bottom:2px;">${t('spTeamBestBall')}</div>
+          ${lines}
+        </div>`;
+    };
+
+    // A two-team flight in a 'match' event settles hole by hole as well:
+    // who leads, by how much, or the close-out — the M Cup reading.
+    const matchLineHTML = (live) => {
+      if (tnTeamRank(live) !== 'match') return '';
+      const m = spFlightMatch(live, round, flightPids);
+      if (!m) return '';
+      const nameOf = (pid) => esc(live.sp.players[pid]?.name || pid);
+      const s = m.settled;
+      const lead = s.leader === 'a' ? nameOf(m.a) : s.leader === 'b' ? nameOf(m.b) : '';
+      const status = s.finished
+        ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved'))
+        : (s.leader ? `${lead} ${esc(m.status)}` : 'AS');
+      const sub = s.finished ? t('mpFinal') : `${t('mpThru')} ${s.thru}${s.dormie ? ` · ${t('mpDormie')}` : ''}`;
+      const allow = !m.allowance.net ? t('gsGrossPlay')
+        : (m.allowance.a || m.allowance.b)
+          ? `${m.allowance.a ? nameOf(m.a) : nameOf(m.b)} +${m.allowance.a || m.allowance.b} ${t('gsStrokesShort')}`
+          : t('gsNet');
+      return `
+        <div data-spgs-match style="margin-top:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card-hover);text-align:center;">
+          <div style="font-size:1.05rem;font-weight:800;">${status}</div>
+          <div style="font-size:0.66rem;color:var(--text-secondary);">${esc(sub)} · ${esc(allow)}</div>
+        </div>`;
+    };
+
     host.innerHTML = `
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
@@ -352,6 +436,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <button data-spgs-nav="1" class="btn btn-outline btn-sm" style="width:52px;" ${hole >= SP_HOLES ? 'disabled' : ''}>›</button>
           </div>
           ${pids.map(row).join('')}
+          ${teamLinesHTML(tn)}
+          ${matchLineHTML(tn)}
           ${stripHTML()}
           ${anyEditable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
         </div>
@@ -378,7 +464,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         val.style.color = strokeColor(strokes, pars?.[hole] || null);
       }
       const tot = host.querySelector(`[data-spgs-total="${CSS.escape(pid)}"]`);
-      if (tot) tot.textContent = tallyText(holes);
+      if (tot) tot.textContent = tallyText(holes, pid);
       const setStep = (kind, disabled) => {
         const btn = host.querySelector(`[data-spgs-step="${kind}"][data-pid="${CSS.escape(pid)}"]`);
         if (!btn) return;
@@ -395,6 +481,10 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         cell.style.background = full ? 'var(--gold)' : 'transparent';
         cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
       }
+      const ml = host.querySelector('[data-spgs-match]');
+      if (ml) ml.outerHTML = matchLineHTML(tnLive);
+      const tl = host.querySelector('[data-spgs-teams]');
+      if (tl) tl.outerHTML = teamLinesHTML(tnLive);
     };
 
     host.querySelectorAll('button[data-spgs-step]').forEach(b => b.onclick = async () => {

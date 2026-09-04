@@ -297,3 +297,39 @@ test('the sample renders the whole board', () => {
   assert.match(host.innerHTML, /ALTAI 3 &amp; 2/);
   assert.equal((host.innerHTML.match(/data-mpv="open"/g) || []).length, 24);
 });
+
+// ---- the rulebook ----
+
+const rules = await import('../src/mcup-rules.js');
+
+test('the M Cup rulebook still composes its five blocks in order', () => {
+  // The per-format blocks are exported one by one so a casual scramble,
+  // fourball or foursome game can show just its own. The club's document must
+  // not have moved as a result — same blocks, same numbers, same order.
+  const html = rules.ryderRulesHTML();
+  const at = (needle) => html.indexOf(needle);
+  const marks = ['1. FOURBALL', '2. FOURSOMES', '3. SINGLES',
+    'Match play-ийн чухал ойлголтууд', 'Гол зарчим'].map(at);
+  assert.ok(marks.every(i => i > 0), 'every section is present');
+  assert.deepEqual(marks, [...marks].sort((x, y) => x - y), 'and in the document order');
+  // Numbering belongs to the M Cup document, not to the blocks themselves.
+  assert.ok(rules.fourballRulesHTML().includes('>FOURBALL'));
+  assert.ok(rules.foursomesRulesHTML().includes('>FOURSOMES'));
+  assert.ok(rules.singlesRulesHTML().includes('>SINGLES'));
+});
+
+test('a casual team game gets its own format blurb, and nothing else does', () => {
+  for (const [fmt, needle] of [['scramble', 'SCRAMBLE'], ['fourball', 'FOURBALL'], ['foursome', 'FOURSOMES']]) {
+    const html = rules.casualTeamRulesHTML(fmt);
+    assert.ok(html.includes(needle), fmt);
+    assert.ok(html.includes('Группын дотор 2 v 2'), `${fmt} is framed for one tee group`);
+    // One format's blurb never carries another's.
+    assert.ok(!html.includes('SINGLES'), fmt);
+  }
+  // Scramble is new text, so pin the two facts a player has to read off it.
+  const sc = rules.scrambleRulesHTML();
+  assert.ok(sc.includes('дундаж'), 'the team handicap is the average');
+  assert.ok(sc.includes('WHS'), 'and it says the round does not post');
+  assert.equal(rules.casualTeamRulesHTML('match'), '');
+  assert.equal(rules.casualTeamRulesHTML(undefined), '');
+});
