@@ -828,3 +828,147 @@ test('a missing team handicap makes the flight match gross, and odd flights are 
   assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u1']), null);
   assert.equal(TEAM.spFlightMatch(tn, 1, null), null);
 });
+
+// ---- Fourball and foursome tournaments ----
+
+// A fourball: two pairs, every member on their own card. Sky's card gives the
+// stroke indexes (SI 1 = hole 9, SI 18 = hole 10).
+const FB_TN = (extra = {}) => ({
+  format: 'fourball', course: 'sky', par: 72, rounds: 1, spTeamRank: 'board',
+  sp: {
+    players: {
+      'u1+u2': { kind: 'team', name: 'Бат / Дорж', members: { u1: true, u2: true }, groups: { 1: 'g1' } },
+      'u3+u4': { kind: 'team', name: 'Сараа / Тулга', members: { u3: true, u4: true }, groups: { 1: 'g1' } },
+      u1: { name: 'Бат', userId: 'u1', hcp: 12, groups: { 1: 'g1' } },
+      u2: { name: 'Дорж', userId: 'u2', hcp: 6, groups: { 1: 'g1' } },
+      u3: { name: 'Сараа', userId: 'u3', hcp: 4, groups: { 1: 'g1' } },
+      u4: { name: 'Тулга', userId: 'u4', hcp: 4, groups: { 1: 'g1' } }
+    },
+    scores: {},
+    groups: { 1: { g1: { number: 1, teeTime: '08:00', players: { 'u1+u2': true, 'u3+u4': true } } } }
+  },
+  ...extra
+});
+
+test('fourball and foursome are team events; only scramble and foursome play one ball', () => {
+  for (const f of ['scramble', 'fourball', 'foursome']) assert.ok(TEAM.tnIsTeam({ format: f }), f);
+  for (const f of ['stroke', 'match', 'ryder']) assert.ok(!TEAM.tnIsTeam({ format: f }), f);
+  assert.ok(TEAM.tnOneBall({ format: 'scramble' }));
+  assert.ok(TEAM.tnOneBall({ format: 'foursome' }));
+  // The distinction the WHS guard turns on: a fourball member's card is real.
+  assert.ok(!TEAM.tnOneBall({ format: 'fourball' }));
+  assert.ok(!TEAM.tnOneBall({ format: 'stroke' }));
+  assert.deepEqual(TEAM.TN_TEAM_FORMATS, ['scramble', 'fourball', 'foursome']);
+});
+
+test('fourball and foursome are pairs whatever the size field says', () => {
+  assert.equal(TEAM.tnTeamSize({ format: 'fourball', spTeamSize: 4 }), 2);
+  assert.equal(TEAM.tnTeamSize({ format: 'foursome' }), 2);
+  assert.equal(TEAM.tnTeamSize({ format: 'scramble' }), 4);
+  // So both can be read as a flight match, which a four-player team never can.
+  assert.equal(TEAM.tnTeamRank({ format: 'fourball', spTeamRank: 'match' }), 'match');
+  assert.equal(TEAM.tnTeamRank({ format: 'foursome', spTeamRank: 'match' }), 'match');
+});
+
+test('fourball: the team scores its best ball on every hole, off full handicaps by SI', () => {
+  const tn = FB_TN();
+  // Hole 9 is SI 1: Бат (12) and Дорж (6) both get a stroke there. Hole 10 is
+  // SI 18: nobody does. Everyone else is quiet.
+  tn.sp.scores = { u1: { 1: { 9: 5, 10: 4 } }, u2: { 1: { 9: 5, 10: 6 } } };
+  const r = TEAM.fourballRound(tn, tn.sp.players['u1+u2'], 1);
+  assert.deepEqual(r.grossRound, { gross: 9, holesIn: 2, toPar: 1 });   // 5 + 4 against pars 4 + 4
+  assert.deepEqual(r.netRound, { gross: 8, holesIn: 2, toPar: 0 });     // (5 − 1) + 4
+  // Par 4 with a stroke is a net par, two points; a plain par is two points.
+  assert.deepEqual(r.pointsRound, { points: 4, holesIn: 2, parsKnown: true });
+});
+
+test('fourball: one ball is enough, and a hole with neither ball stays open', () => {
+  const tn = FB_TN();
+  tn.sp.scores = { u1: { 1: { 1: 6 } }, u2: { 1: { 2: 4 } } };
+  const r = TEAM.fourballRound(tn, tn.sp.players['u1+u2'], 1);
+  assert.equal(r.grossRound.holesIn, 2);
+  assert.equal(r.grossRound.gross, 10);
+  // Nothing on hole 3 from either partner: the round is thru 2, not 3.
+  const e = spEntries(tn, 'gross').find(x => x.pid === 'u1+u2');
+  assert.equal(e.thru, '2');
+});
+
+test('fourball: the board ranks the pairs by their derived best ball, gross and net', () => {
+  const tn = FB_TN();
+  // Level par from everyone, except Бат bogeys the first and Дорж birdies the ninth.
+  const level = fullRound(4);
+  tn.sp.scores = {
+    u1: { 1: { ...level, 1: 5 } }, u2: { 1: { ...level, 9: 3 } },
+    u3: { 1: { ...level } }, u4: { 1: { ...level } }
+  };
+  const gross = spEntries(tn, 'gross');
+  assert.deepEqual(gross.map(e => e.pid).sort(), ['u1+u2', 'u3+u4']);
+  const a = gross.find(e => e.pid === 'u1+u2');
+  // Best ball: 4 on the first (Дорж), 3 on the ninth (Дорж), 4 everywhere else = 71.
+  assert.equal(a.gross, 71);
+  assert.equal(a.total, -1);
+  assert.equal(a.thru, 'F');
+  assert.equal(a.hcp, null, 'a fourball team carries no team handicap');
+  assert.equal(a.userId, null);
+  // Net: every member off their full handicap by SI. Бат 12 + Дорж 6 give the
+  // pair a stroke on every one of the 12 hardest holes at least, so the net
+  // total is well under the gross.
+  const net = spEntries(tn, 'net').find(e => e.pid === 'u1+u2');
+  assert.ok(net.total < a.total, `net ${net.total} beats gross ${a.total}`);
+  assert.equal(net.netTotal, 71 + net.total - a.total);
+  // The members themselves are never on the board.
+  assert.ok(!gross.some(e => e.pid === 'u1'));
+});
+
+test('fourball: Stableford takes the best points ball on every hole', () => {
+  const tn = FB_TN({ spScoring: 'stableford' });
+  const level = fullRound(4);
+  tn.sp.scores = { u1: { 1: level }, u2: { 1: level }, u3: { 1: level }, u4: { 1: level } };
+  const pts = spEntries(tn, 'stableford');
+  const a = pts.find(e => e.pid === 'u1+u2');
+  const b = pts.find(e => e.pid === 'u3+u4');
+  // Level par gross is 36 points; the higher-handicap pair banks Бат's 12
+  // strokes as net birdies on the 12 hardest holes: 36 + 12.
+  assert.equal(a.total, 48);
+  assert.equal(b.total, 40);              // Сараа/Тулга, 4 strokes each on the same four holes
+});
+
+test('fourball flight match: best net ball a side, everyone off the lowest of the four', () => {
+  const tn = FB_TN({ spTeamRank: 'match' });
+  const level = fullRound(4);
+  tn.sp.scores = { u1: { 1: level }, u2: { 1: level }, u3: { 1: level }, u4: { 1: level } };
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.allowance.net, true);
+  assert.equal(m.allowance.base, 4);
+  assert.deepEqual(m.allowance.strokes, { u1: 8, u2: 2, u3: 0, u4: 0 });
+  // Level par all round: Бат's eight strokes on SI 1–8 win those holes for
+  // the pair, and nothing else moves. Eight up with ten to play is not yet a
+  // close-out at the eighth of them, so count the holes instead.
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.equal(won.length, 8);
+  assert.equal(m.settled.winner, 'a');
+  assert.ok(m.status.includes('&'), m.status);   // closed out before the 18th
+});
+
+test('fourball flight match: one ball is enough, neither ball stops the walk', () => {
+  const tn = FB_TN({ spTeamRank: 'match' });
+  tn.sp.players.u1.hcp = tn.sp.players.u2.hcp = tn.sp.players.u3.hcp = tn.sp.players.u4.hcp = 4;   // gross reading
+  tn.sp.scores = { u1: { 1: { 1: 4, 2: 4 } }, u2: { 1: { 1: 5 } }, u3: { 1: { 1: 5, 2: 5 } }, u4: { 1: { 1: 5 } } };
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.holes[1], 'a');
+  assert.equal(m.holes[2], 'a', 'Дорж picked up on the second — Бат\'s ball still counts');
+  assert.equal(m.settled.thru, 2);
+  delete tn.sp.scores.u3[1][2];
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']).settled.thru, 1, 'the third team has no ball on the second');
+});
+
+test('a foursome is a scramble with a different rulebook: one ball under the team key', () => {
+  const tn = TEAM_TN({ format: 'foursome', course: 'sky' });
+  const entries = spEntries(tn, 'gross');
+  assert.deepEqual(entries.map(e => e.pid).sort(), ['u1+u2', 'u3+u4']);
+  assert.equal(entries[0].gross, 72);
+  assert.ok(TEAM.tnOneBall(tn));
+  assert.equal(TEAM.tnTeamSize(tn), 2);
+  // And the flight match settles off the hand-entered team handicaps.
+  assert.equal(TEAM.spFlightMatch({ ...tn, spTeamRank: 'match' }, 1, ['u1+u2', 'u3+u4']).status, '4 & 3');
+});

@@ -8,7 +8,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import {
-  drawGroups, spGroupList, tnIsTeam, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams
+  drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams
 } from './strokeplay.js';
 import { courseHandicap } from './handicap.js';
 import { addMinutesHHMM } from './matchplay.js';
@@ -108,7 +108,7 @@ function rowHTML(tn, pid, p) {
       <select data-sp="status" data-pid="${esc(pid)}" style="${INPUT}width:80px;">
         ${['', 'WD', 'DQ'].map(s => `<option value="${s}"${(p.status || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
       </select>
-      ${tnIsTeam(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
+      ${tnOneBall(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
       <button data-sp="del" data-pid="${esc(pid)}" class="btn btn-outline-danger btn-sm">✕</button>
     </div>`;
 }
@@ -189,10 +189,10 @@ function teamsHTML(tn, d) {
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <input data-spt="tname" data-pid="${esc(tm.pid)}" value="${esc(tm.name || '')}" placeholder="${t('spTeamName')}"
           style="${INPUT}flex:1;min-width:140px;font-weight:700;" />
-        <input data-spt="hcp" data-pid="${esc(tm.pid)}" type="number" step="1" min="0" max="72"
-          value="${esc(tm.hcp ?? '')}" placeholder="${t('spTeamHcp')}" title="${t('spTeamHcp')}" style="${INPUT}width:84px;" />
+        ${tn.format === 'fourball' ? '' : `<input data-spt="hcp" data-pid="${esc(tm.pid)}" type="number" step="1" min="0" max="72"
+          value="${esc(tm.hcp ?? '')}" placeholder="${t('spTeamHcp')}" title="${t('spTeamHcp')}" style="${INPUT}width:84px;" />`}
         ${scored ? `<span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
-        <a href="#/spscore/${esc(tn.id)}/${esc(tm.pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>
+        ${tn.format === 'fourball' ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(tm.pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
         <button data-spt="disband" data-pid="${esc(tm.pid)}" class="btn btn-outline-danger btn-sm" title="${t('spTeamDisband')}">✕</button>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
