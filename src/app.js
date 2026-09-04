@@ -9,6 +9,9 @@ import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
+import {
+  mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide
+} from './tournament-media.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
@@ -1676,7 +1679,11 @@ function paintTournamentPage(tn) {
       <a href="#/" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
 
       <div class="surface-card tn-hero">
-        <div class="tn-crest">${icon('leaderboard', { size: 30 })}</div>
+        <div class="tn-crest"${tnLogo(tn) ? ' style="background:#fff;padding:7px;"' : ''}>
+          ${tnLogo(tn)
+            ? `<img src="${tnLogo(tn)}" alt="" style="width:100%;height:100%;object-fit:contain;display:block;" />`
+            : icon('leaderboard', { size: 30 })}
+        </div>
         <div class="tn-hero-body">
           <div class="tn-head">
             ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
@@ -1690,6 +1697,13 @@ function paintTournamentPage(tn) {
           </div>
         </div>
       </div>
+
+      ${tnHasGuide(tn) ? `
+        <button data-tn-guide class="btn btn-outline btn-sm" style="width:100%;gap:6px;margin-bottom:14px;">
+          📋 ${t('tnGuide')}
+        </button>` : ''}
+
+      ${tnSponsorsHTML(tn)}
 
       ${tnTabsFor(tn).length > 1 ? `
       <div class="seg-tabs tn-tabs">
@@ -1705,6 +1719,8 @@ function paintTournamentPage(tn) {
       ${tn.id === TN_DEMO.id || tn.id === MP_DEMO_ID ? `<p class="tn-demo-note">${t('tnDemoNote')}</p>` : ''}
     </div>`;
 
+  const guideBtn = document.querySelector('[data-tn-guide]');
+  if (guideBtn) guideBtn.onclick = () => openTnGuide(tn);
   document.querySelectorAll('[data-tn-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       tnPageTab = btn.dataset.tnTab;
@@ -8290,6 +8306,7 @@ async function renderAdminTournamentsTab() {
                 <button class="btn btn-primary btn-sm tn-adm-save" data-tn="${esc(tn.id)}" style="margin-top:10px;">${t('save')}</button>
               </div>
             </details>
+            <div id="tn-media-${esc(tn.id)}"></div>
             ${tnKind(tn) !== 'stroke'
               ? `<div id="mp-adm-${esc(tn.id)}"></div>`
               : `<div id="sp-adm-${esc(tn.id)}"></div>`}
@@ -8368,7 +8385,7 @@ async function renderAdminTournamentsTab() {
     // Closing the editor drops any unsaved setup draft. Keeping it would
     // let an hour-old snapshot sit around and then overwrite newer work the
     // next time somebody opened that tournament and pressed Save.
-    if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); }
+    if (adminOpenTn === id) { discardMpDraft(id); discardSpDraft(id); discardTnMediaDraft(id); }
     adminOpenTn = adminOpenTn === id ? null : id;
     await renderAdminTournamentsTab();
     // The editor renders below the row's actions, which on a long list can
@@ -8460,6 +8477,7 @@ async function renderAdminTournamentsTab() {
       const ctx = { showToast, users, rerender: renderAdminTournamentsTab };
       if (mpHost) mountMpAdmin(mpHost, tn, ctx);
       if (spHost) mountSpAdmin(spHost, tn, ctx);
+      mountTnMedia(document.getElementById(`tn-media-${tn.id}`), tn, ctx);
     }
     // Picking a course fills PAR (and blank venue/city) on the spot, and
     // rebuilds the tee options — a tee belongs to its course.

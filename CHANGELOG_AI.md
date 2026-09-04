@@ -1,5 +1,38 @@
 # CHANGELOG_AI.md
 
+## 2026-09-04 (Tournament crest, sponsors and удирдамж)
+
+Three things a tournament can now carry of its own, all inside its record.
+
+- **A crest.** Picked in the wizard when the tournament is created, so it has a
+  face from the moment it exists, and changeable later in the editor. It fills
+  the hero's `.tn-crest` beside the name; without one the generic icon stays.
+- **Partner organisations.** Name, logo and an optional website, in order, up
+  to twelve. They render as a strip under the hero — each mark on a white
+  plaque, because most logos are dark-on-transparent and would vanish on the
+  app's navy card. A link opens in a new tab, `rel="noopener"`.
+- **The удирдамж.** Free text plus an optional picture of the document. A
+  📋 Удирдамж button appears on the tournament page only when there is one, and
+  opens a popup that keeps the organiser's own line and paragraph breaks
+  (`white-space: pre-wrap`) with the picture underneath.
+
+New `src/media.js` holds the shrinking and the caps — the crest at 192px and a
+sponsor mark at 240px as webp (which keeps a logo's transparency), the guide
+picture at 1000px as jpeg on a white ground. `matchplay-admin.js` dropped its
+private copy of the same code and now uses it, so the M Cup team logos and
+these shrink identically. Everything is capped and an oversized file is refused
+with a toast rather than quietly bloating a record `loadTournaments()` reads in
+full — a real crest, two sponsors and a guide came to 4 KB in testing.
+
+`media.js` also validates on the way OUT as well as in: `validImageData` and
+`safeLink` mean a hand-edited record cannot put anything but an image into an
+`<img src>` or anything but http(s) into an `href`. Driven in the browser,
+including a record hand-edited to carry `javascript:` and a `data:text/html`
+payload — both refused, neither rendered.
+
+The editor grew a 🖼 fold beside the ⚙ form with its own draft and Save, so a
+half-built sponsor list survives the tab's re-render.
+
 ## 2026-09-04 (Admin tournaments tab folded by state)
 
 The admin's tournament list is now three folds — **Явагдаж байна** (live),

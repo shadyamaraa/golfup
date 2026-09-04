@@ -16,6 +16,7 @@ import { ryderRulesHTML, matchRulesHTML, scrambleRulesHTML, fourballRulesHTML, f
 // The 2 v 2 tournament types, all on the stroke play rails.
 const TEAM_TYPES = ['scramble', 'fourball', 'foursome'];
 import { COURSES, courseByKey } from './strokeplay.js';
+import { readImageFile, validImageData } from './media.js';
 import { courseTees } from './courses.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -28,7 +29,7 @@ const STEPS = 5;
 
 const blank = () => ({
   step: 1,
-  name: '', format: '',
+  name: '', format: '', logo: null,
   startDate: '', endDate: '', venue: '', city: '',
   course: '', tee: '', rounds: '1', par: '72', spScoring: 'strokes', cutAfterRound: '', cutSize: '',
   spTeamSize: '4', spTeamRank: 'board',
@@ -103,6 +104,18 @@ function stepHTML() {
         ${field(t('tnFEnd'), input('endDate', 'date'))}
         ${field(t('tnFVenue'), input('venue', 'text'))}
         ${field(t('tnFCity'), input('city', 'text'))}
+      </div>
+      <div style="margin-top:10px;">
+        <span style="display:block;font-size:0.72rem;color:var(--text-secondary);margin-bottom:5px;">${t('tnLogoLabel')}</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${draft.logo
+            ? `<span style="display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;padding:4px;">
+                 <img src="${draft.logo}" alt="" style="max-height:40px;max-width:90px;object-fit:contain;display:block;" /></span>`
+            : `<span style="font-size:0.74rem;color:var(--text-muted);">—</span>`}
+          <button type="button" data-wz-logo="pick" class="btn btn-outline btn-sm">${draft.logo ? t('mpLogoChange') : t('mpLogoUpload')}</button>
+          ${draft.logo ? `<button type="button" data-wz-logo="clear" class="btn btn-outline-danger btn-sm">✕</button>` : ''}
+          <input data-wz-logo-input type="file" accept="image/*" style="display:none;" />
+        </div>
       </div>`;
   }
 
@@ -189,6 +202,7 @@ function stepHTML() {
     ${line(t('wzType'), { stroke: t('wzTypeStroke'), scramble: t('wzTypeScramble'), fourball: t('wzTypeFourball'), foursome: t('wzTypeFoursome'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
     ${line(t('date'), [draft.startDate, draft.endDate].filter(Boolean).join(' — '))}
     ${line(t('tnFVenue'), [draft.venue, draft.city].filter(Boolean).join(' · '))}
+    ${draft.logo ? line(t('tnLogoLabel'), '✓') : ''}
     ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
       : draft.format === 'stroke' || TEAM_TYPES.includes(draft.format)
@@ -220,6 +234,7 @@ async function create(ctx) {
     format: draft.format,
     startDate: draft.startDate, endDate: draft.endDate,
     venue: draft.venue.trim(), city: draft.city.trim(),
+    ...(validImageData(draft.logo) ? { logo: draft.logo } : {}),
     entries: [],
     createdAt: Date.now()
   };
@@ -309,6 +324,25 @@ function paint(host, ctx) {
       paint(host, ctx);
     };
   });
+
+  // The crest: picked here so a tournament has its face from the moment it
+  // exists; sponsors and the удирдамж are bulkier and belong in the editor.
+  host.querySelector('button[data-wz-logo="pick"]')
+    ?.addEventListener('click', () => host.querySelector('input[data-wz-logo-input]')?.click());
+  host.querySelector('button[data-wz-logo="clear"]')
+    ?.addEventListener('click', () => { draft.logo = null; paint(host, ctx); });
+  const logoInput = host.querySelector('input[data-wz-logo-input]');
+  if (logoInput) logoInput.onchange = async () => {
+    const file = logoInput.files && logoInput.files[0];
+    logoInput.value = '';
+    if (!file) return;
+    try {
+      draft.logo = await readImageFile(file, { px: 192 });
+      paint(host, ctx);
+    } catch (err) {
+      ctx.showToast?.('⚠️ ' + t(err?.message === 'too-big' ? 'mpLogoTooBig' : 'mpLogoBad'), 'error');
+    }
+  };
 
   host.querySelectorAll('button[data-wz-type]').forEach(b => b.onclick = () => {
     draft.format = b.dataset.wzType;
