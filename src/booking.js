@@ -10,7 +10,9 @@ async function checkOk(r) {
     const body = await r.json();
     msg = body?.error?.message || body?.message || msg;
   } catch (_) {}
-  throw new Error(msg);
+  const err = new Error(msg);
+  err.status = r.status; // the booking log records the HTTP status alongside the message
+  throw err;
 }
 
 export async function getPublicSettings() {
@@ -49,6 +51,16 @@ export async function createQpayInvoice(bookingId) {
 // Payment status polling fallback (webhook is the primary signal).
 export async function getQpayStatus(bookingId) {
   return checkOk(await fetch(`${BASE}/bookings/${bookingId}/qpay-status`));
+}
+
+// MTBogd's own record of a booking, by bookingId or by the member-facing
+// bookingCode (the response says which matched). 404 → error with status 404.
+export async function getBooking(idOrCode) {
+  const data = await checkOk(await fetch(`${BASE}/bookings/${encodeURIComponent(String(idOrCode).trim())}`));
+  // MTBogd wraps the record ({ booking, matchedBy }); tolerate a flat one too.
+  return data && data.booking && typeof data.booking === 'object'
+    ? { ...data.booking, matchedBy: data.matchedBy ?? null }
+    : data;
 }
 
 // gameId (Firebase) is sent; server looks up bookingId from RTDB.

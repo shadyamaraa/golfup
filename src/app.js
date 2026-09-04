@@ -2,6 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
+import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
@@ -2898,6 +2899,9 @@ async function renderCreateGame() {
     </div>`;
 
   let selectedTeeSlot = null;
+  // Set the first time a slot is picked in this form; tells the no-slot guard
+  // whether the member lost a choice (date change, clear) or never made one.
+  let slotEverSelected = false;
   let teeHoles = 18;
 
   function updateSelectedSlotDisplay() {
@@ -2953,6 +2957,31 @@ async function renderCreateGame() {
     fetchTeeTimes().catch(() => {});
   }
 
+  // The no-slot guard's dialog. Resolves 'pick' | 'skip' | 'dismiss'. The
+  // backdrop is handled here, before the global overlay handler removes the
+  // node, so every way out re-enables the submit button.
+  function askNoSlot(lost) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'popup-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      overlay.innerHTML = `
+        <div class="glass-card fade-in" style="width:100%;max-width:420px;padding:20px;">
+          <h3 style="margin:0 0 8px;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookNoSlotTitle')}</h3>
+          <p style="margin:0 0 14px;font-size:0.9rem;color:var(--text-secondary);">${lost ? t('bookNoSlotLostHint') : t('bookNoSlotSkippedHint')}</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="ns-pick" class="btn btn-primary" style="flex:1;">${t('bookNoSlotPick')}</button>
+            <button type="button" id="ns-skip" class="btn btn-outline" style="flex:1;">${t('bookNoSlotSkip')}</button>
+          </div>
+        </div>`;
+      const done = (v) => { overlay.remove(); resolve(v); };
+      overlay.querySelector('#ns-pick').onclick = () => done('pick');
+      overlay.querySelector('#ns-skip').onclick = () => done('skip');
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) done('dismiss'); });
+      document.body.appendChild(overlay);
+    });
+  }
+
   async function openTeeTimePopup() {
     const overlay = document.createElement('div');
     overlay.className = 'popup-overlay';
@@ -2990,6 +3019,7 @@ async function renderCreateGame() {
 
       function selectSlot(slot) {
         selectedTeeSlot = slot;
+        slotEverSelected = true;
         const [h, m] = (slot.time || '08:00').split(':');
         document.getElementById('game-hour').value = h;
         document.getElementById('game-minute').value = m;
@@ -3273,14 +3303,36 @@ async function renderCreateGame() {
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
+    // How this booking came to be — saved on the game, logged step by step.
+    let booking = null;
+    const bookingLog = [];
+    const isMtCourse = document.getElementById('game-location').value.trim() === MTBOGD_CONFIG.locationName;
+
+    // The soft guard. An MTBogd-course game with no slot is almost always a
+    // slot that a date change or a clear silently dropped: the hidden time
+    // selects keep the old value, so the game would save at that time with no
+    // booking and no trace — exactly what happened on 2026-09-03 13:40.
+    if (isMtCourse && !selectedTeeSlot) {
+      const choice = await askNoSlot(slotEverSelected);
+      if (choice !== 'skip') {
+        document.getElementById('create-submit-btn').disabled = false;
+        if (choice === 'pick') openTeeTimePopup();
+        return;
+      }
+      booking = { status: 'none', reason: bookingReason(slotEverSelected), source: 'app' };
+      bookingLog.push(logEntry('no_slot', { by: currentUser.id, detail: booking.reason }));
+    }
 
     if (selectedTeeSlot) {
       const submitBtn = document.getElementById('create-submit-btn');
       submitBtn.textContent = t('bookingInProgress');
+      let step = 'hold';
       try {
         const playerName = store.memberName(currentUser) || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
         const hold = await mtbogd.createHold(selectedTeeSlot.slotId, groupSize, teeHoles);
+        bookingLog.push(logEntry('hold_ok', { by: currentUser.id, detail: hold?.holdId ?? null }));
+        step = 'confirm';
         const playerList = Array.from({ length: groupSize }, () => ({ name: playerName }));
         // Always confirm the booking now (MTBogd: status confirmed, paymentStatus
         // pending). QPay is an optional payment step after, handled by MTBogd.
@@ -3290,8 +3342,15 @@ async function renderCreateGame() {
         bookingCode = confirmed.bookingCode || null;
         bookingId = confirmed.bookingId || null;
         bookingSlotId = selectedTeeSlot.slotId;
+        booking = { status: 'confirmed', source: 'app' };
+        bookingLog.push(logEntry('confirm_ok', { by: currentUser.id, detail: bookingCode || bookingId || null }));
         showToast(t('bookConfirmed') + (bookingCode ? ` (${bookingCode})` : ''), 'success');
       } catch (err) {
+        // No game exists yet, so this lands in bookingAttempts for the admin.
+        store.logBookingAttempt(logEntry(step + '_failed', {
+          by: currentUser.id, userId: currentUser.id, date: document.getElementById('game-date').value,
+          slotId: selectedTeeSlot.slotId, step, error: String(err?.message || err), httpStatus: err?.status ?? null
+        })).catch(() => {});
         showToast(t('bookFailed') + ': ' + err.message, 'error');
         submitBtn.textContent = t('create');
         submitBtn.disabled = false;
@@ -3329,7 +3388,8 @@ async function renderCreateGame() {
       isPrivate,
       targetCommunities,
       invitedIds,
-      ...(bookingCode && { bookingCode, bookingId, bookingSlotId })
+      ...(bookingCode && { bookingCode, bookingId, bookingSlotId }),
+      ...(booking && { booking })
     };
 
     // Notifications reference the game, so they fire right after it is saved.
@@ -3361,6 +3421,7 @@ async function renderCreateGame() {
     };
 
     await store.saveGame(game);
+    bookingLog.forEach(e => store.appendBookingLog(game.id, e).catch(() => {}));
     await sendCreateNotifications();
 
     // QPay tee-time: the booking is already confirmed above; show MTBogd's QPay
@@ -3558,6 +3619,30 @@ function renderGameView(game) {
                 : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
             </div>
           </div>` : ''}
+        ${(() => {
+          // MTBogd sync state — creator and admin only. Legacy games read as
+          // neutral (never checked) rather than as a problem.
+          const canSync = !!currentUser && (isCreator || currentUser.role === 'admin');
+          const st = bookingState(game);
+          if (!canSync || st === 'na') return '';
+          const b = game.booking && typeof game.booking === 'object' ? game.booking : {};
+          const tone = { synced: 'var(--emerald)', none: 'var(--amber)', unverified: 'var(--text-secondary)', cancelled_remote: 'var(--danger-color)', cancel_failed: 'var(--danger-color)', mismatch: 'var(--amber)' }[st] || 'var(--text-secondary)';
+          const label = { synced: t('bookStateSynced'), none: t('bookStateNone'), unverified: t('bookStateUnverified'), cancelled_remote: t('bookStateCancelledRemote'), cancel_failed: t('bookStateCancelFailed'), mismatch: t('bookStateMismatch') }[st] || st;
+          const reason = st === 'none' && b.reason ? ` · ${b.reason === 'slot_lost' ? t('bookReasonSlotLost') : t('bookReasonSkipped')}` : '';
+          const issues = st === 'mismatch' && Array.isArray(b.issues) && b.issues.length ? ` · ${b.issues.map(i => t('bookIssue_' + i)).join(', ')}` : '';
+          const log = Object.values(game.bookingLog || {}).filter(e => e && e.at).sort((x, y) => y.at - x.at).slice(0, 5);
+          return `
+          <div class="game-description" style="margin-top:10px;">
+            <span class="desc-label">${icon('ball-tee', { size: 13 })} MTBogd</span>
+            <span style="margin-left:8px;font-size:0.88rem;font-weight:600;color:${tone};">${esc(label)}</span><span style="font-size:0.8rem;color:var(--text-secondary);">${esc(reason + issues)}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+              ${game.bookingId ? `<button type="button" class="btn btn-outline btn-sm" id="booking-verify-btn">${t('bookVerify')}</button>` : ''}
+              ${!game.bookingId && !isReadOnly ? `<button type="button" class="btn btn-outline btn-sm" id="booking-attach-btn">${t('bookAttach')}</button>` : ''}
+            </div>
+            ${log.length ? `<details style="margin-top:8px;"><summary style="font-size:0.78rem;color:var(--text-secondary);cursor:pointer;">${t('bookLogTitle')} (${log.length})</summary>
+              <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px;">${log.map(e => `<div>${esc(new Date(e.at).toLocaleString())} · ${esc(e.event)}${e.detail != null ? ' · ' + esc(String(e.detail)) : ''}${e.error ? ' · ' + esc(String(e.error)) : ''}</div>`).join('')}</div></details>` : ''}
+          </div>`;
+        })()}
         ${isCreator && Array.isArray(game.invitedIds) && game.invitedIds.length > 0 ? `
           <div class="game-description" style="margin-top:10px;">
             <span class="desc-label">${icon('members', { size: 13 })} ${t('manageInvites')} (${game.invitedIds.length})</span>
@@ -3651,6 +3736,8 @@ function renderGameView(game) {
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
   document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
   document.getElementById('book-teetime-btn')?.addEventListener('click', () => handleBookTeeTime(game));
+  document.getElementById('booking-verify-btn')?.addEventListener('click', () => handleBookingVerify(game));
+  document.getElementById('booking-attach-btn')?.addEventListener('click', () => handleBookingAttach(game));
   document.querySelectorAll('.remove-player-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       if (game.createdBy === currentUser?.id || currentUser?.role === 'admin' || e.currentTarget.dataset.id === currentUser?.id) {
@@ -4213,9 +4300,14 @@ async function handleDelete(game) {
   if (game.bookingId) {
     try {
       await mtbogd.cancelBooking(game.id);
+      // Our request went through; record it so nobody has to re-check MTBogd.
+      store.markBookingCancelled(game.id).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('cancel_ok', { by: currentUser.id })).catch(() => {});
     } catch (err) {
       // Auto-cancel failed — the game is still deleted, but tell the user to
       // cancel the MTBogd booking manually so the slot is freed.
+      store.saveBookingState(game.id, { status: 'cancel_failed' }).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('cancel_failed', { by: currentUser.id, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
       showToast(t('bookingCancelFailed'), 'warning');
     }
   }
@@ -4375,6 +4467,7 @@ async function renderAdminPanel() {
           <button id="admin-tab-btn-rank" class="btn btn-outline btn-sm" style="gap:5px;">${icon('scorecard', { size: 14 })} ${t('rankingTitle')}</button>
           <button id="admin-tab-btn-tn" class="btn btn-outline btn-sm" style="gap:5px;">${icon('hole', { size: 14 })} ${t('tnAdminTab')}</button>
           <button id="admin-tab-btn-sched" class="btn btn-outline btn-sm" style="gap:5px;">${icon('time', { size: 14 })} ${t('scScheduleTitle')}</button>
+          <button id="admin-tab-btn-mtbogd" class="btn btn-outline btn-sm" style="gap:5px;">${icon('ball-tee', { size: 14 })} ${t('adminMtbogdTab')}</button>
         </div>
 
         <div id="admin-tab-users">
@@ -4489,6 +4582,7 @@ async function renderAdminPanel() {
           <div id="admin-tn-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
 
+        <div id="admin-tab-mtbogd" style="display:none;"></div>
         <div id="admin-tab-sched" style="display:none;">
           <div id="admin-sched-content"><div class="loading-spinner" style="margin:20px auto;"></div></div>
         </div>
@@ -4507,6 +4601,7 @@ async function renderAdminPanel() {
   const tabRank = document.getElementById('admin-tab-btn-rank');
   const tabTn = document.getElementById('admin-tab-btn-tn');
   const tabSched = document.getElementById('admin-tab-btn-sched');
+  const tabMtbogd = document.getElementById('admin-tab-btn-mtbogd');
   const sectionUsers = document.getElementById('admin-tab-users');
   const sectionCircles = document.getElementById('admin-tab-circles');
   const sectionNoCircle = document.getElementById('admin-tab-nocircle');
@@ -4517,8 +4612,9 @@ async function renderAdminPanel() {
   const sectionRank = document.getElementById('admin-tab-rank');
   const sectionTn = document.getElementById('admin-tab-tn');
   const sectionSched = document.getElementById('admin-tab-sched');
-  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched];
-  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched];
+  const sectionMtbogd = document.getElementById('admin-tab-mtbogd');
+  const allTabs = [tabUsers, tabCircles, tabNoCircle, tabLookup, tabMenu, tabNews, tabStats, tabRank, tabTn, tabSched, tabMtbogd];
+  const allSections = [sectionUsers, sectionCircles, sectionNoCircle, sectionLookup, sectionMenu, sectionNews, sectionStats, sectionRank, sectionTn, sectionSched, sectionMtbogd];
   const switchTab = (activeTab, activeSection) => {
     allTabs.forEach(t => t.className = 'btn btn-outline btn-sm');
     allSections.forEach(s => s.style.display = 'none');
@@ -4552,6 +4648,10 @@ async function renderAdminPanel() {
   tabSched.addEventListener('click', async () => {
     switchTab(tabSched, sectionSched);
     await renderAdminScheduleTab();
+  });
+  tabMtbogd.addEventListener('click', async () => {
+    switchTab(tabMtbogd, sectionMtbogd);
+    await renderAdminMtbogdTab();
   });
 
   // No-circle tab: open edit modal
@@ -5599,11 +5699,17 @@ async function handleBookTeeTime(game) {
       game.bookingCode = confirmed.bookingCode;
       game.bookingId = confirmed.bookingId;
       game.bookingSlotId = btSlot.slotId;
+      game.booking = { status: 'confirmed', source: 'app' };
       await store.saveGame(game);
+      store.appendBookingLog(game.id, logEntry('booked_later', { by: currentUser.id, detail: confirmed.bookingCode || confirmed.bookingId || null })).catch(() => {});
       overlay.remove();
       showToast(t('bookConfirmed') + ' ' + confirmed.bookingCode, 'success');
       renderGameView(game);
     } catch (err) {
+      store.logBookingAttempt(logEntry('book_later_failed', {
+        by: currentUser.id, userId: currentUser.id, gameId: game.id, date: game.date,
+        slotId: btSlot?.slotId ?? null, step: 'book_later', error: String(err?.message || err), httpStatus: err?.status ?? null
+      })).catch(() => {});
       errEl.innerHTML = `<p style="color:var(--danger-color);margin-top:8px;font-size:0.85rem;">${t('bookFailed')}: ${err.message}</p>`;
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = t('bookSubmit'); }
     }
@@ -5914,6 +6020,76 @@ async function handleRemovePlayer(game, playerId, onSaved = null) {
   showToast('❌ Removed', 'info');
 }
 
+// ---- MTBogd booking: check and attach (see src/booking-sync.js) ----
+// Both read MTBogd through the existing proxy. Results land on the game's
+// `booking` object and its log; the live listener repaints the page. They are
+// also called from the admin MTBogd tab, so nothing here assumes the game
+// page is on screen.
+async function handleBookingVerify(game) {
+  if (!game?.bookingId) return;
+  const btn = document.getElementById('booking-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = t('bookVerifying'); }
+  const by = currentUser?.id || null;
+  try {
+    const remote = await mtbogd.getBooking(game.bookingId);
+    const { status, issues } = verifyOutcome(game, remote);
+    await store.saveBookingState(game.id, { status, issues, verifiedAt: Date.now(), mtbogd: remoteSummary(remote) });
+    store.appendBookingLog(game.id, logEntry('verified', { by, detail: status, issues: issues.length ? issues.join(',') : null })).catch(() => {});
+    if (status === 'confirmed') showToast('✅ ' + t('bookVerified'), 'success');
+    else showToast('⚠️ ' + t('bookStateMismatch') + ': ' + issues.map(i => t('bookIssue_' + i)).join(', '), 'warning');
+  } catch (err) {
+    if (err?.status === 404) {
+      await store.saveBookingState(game.id, { status: 'mismatch', issues: ['not_found'], verifiedAt: Date.now(), mtbogd: null }).catch(() => {});
+      store.appendBookingLog(game.id, logEntry('verified', { by, detail: 'not_found' })).catch(() => {});
+      showToast('⚠️ ' + t('bookIssue_not_found'), 'warning');
+    } else {
+      store.appendBookingLog(game.id, logEntry('verify_failed', { by, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
+      showToast('⚠️ ' + t('bookVerifyFailed') + ': ' + (err?.message || ''), 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t('bookVerify'); }
+    // No listener in localStorage mode: repaint only if this game is on screen.
+    if (!store.isUsingFirebase() && location.hash === '#/game/' + game.id) {
+      const fresh = await store.loadGame?.(game.id);
+      if (fresh) renderGameView(fresh);
+    }
+  }
+}
+
+async function handleBookingAttach(game) {
+  if (!game || game.bookingId) return;
+  const code = (prompt(t('bookAttachPrompt')) || '').trim();
+  if (!code) return;
+  const by = currentUser?.id || null;
+  const btn = document.getElementById('booking-attach-btn');
+  if (btn) btn.disabled = true;
+  try {
+    let remote = null;
+    try { remote = await mtbogd.getBooking(code); }
+    catch (err) { if (err?.status !== 404) throw err; }
+    const check = attachable(game, remote);
+    if (!check.ok) {
+      const key = { not_found: 'bookAttachNotFound', no_id: 'bookAttachNotFound', date_differs: 'bookAttachDateMismatch',
+        remote_cancelled: 'bookAttachCancelled', game_deleted: 'bookAttachDeleted' }[check.reason] || 'bookAttachNotFound';
+      showToast('⚠️ ' + t(key), 'warning');
+      return;
+    }
+    await store.attachBooking(game.id, { bookingId: remote.bookingId, bookingCode: remote.bookingCode || null, bookingSlotId: remote.slotId || null });
+    await store.saveBookingState(game.id, { verifiedAt: Date.now(), mtbogd: remoteSummary(remote) });
+    store.appendBookingLog(game.id, logEntry('attached', { by, detail: remote.bookingCode || remote.bookingId })).catch(() => {});
+    showToast('✅ ' + t('bookAttached'), 'success');
+  } catch (err) {
+    store.appendBookingLog(game.id, logEntry('attach_failed', { by, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
+    showToast('⚠️ ' + t('bookVerifyFailed') + ': ' + (err?.message || ''), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (!store.isUsingFirebase() && location.hash === '#/game/' + game.id) {
+      const fresh = await store.loadGame?.(game.id);
+      if (fresh) renderGameView(fresh);
+    }
+  }
+}
+
 // ---- Utilities ----
 async function syncBookingPlayers(game) {
   if (!game.bookingId) return;
@@ -5927,7 +6103,9 @@ async function syncBookingPlayers(game) {
       return { name: displayFullName(u), ...(phone && { phone }) };
     });
     await mtbogd.updateBookingPlayers(game.id, allPlayers);
+    store.appendBookingLog(game.id, logEntry('players_sync_ok', { by: currentUser?.id || null, detail: allPlayers.length })).catch(() => {});
   } catch (err) {
+    store.appendBookingLog(game.id, logEntry('players_sync_failed', { by: currentUser?.id || null, error: String(err?.message || err), httpStatus: err?.status ?? null })).catch(() => {});
     showToast('MTBogd sync амжилтгүй: ' + err.message, 'warning');
   }
 }
@@ -8017,6 +8195,72 @@ function rankingBaselineHTML(current) {
 }
 
 // Admin → Чансаа: current ranking + Excel upload (▲/▼ vs the last real change).
+// ---- Admin → MTBogd: every recent MTBogd-course game against its booking ----
+// Groups by bookingState(); the actions reuse the game page's handlers.
+async function renderAdminMtbogdTab() {
+  const host = document.getElementById('admin-tab-mtbogd');
+  if (!host) return;
+  host.innerHTML = `<div class="loading-spinner" style="margin:20px auto;"></div>`;
+  const [games, attempts] = await Promise.all([
+    store.loadAllGamesAdmin(),
+    store.loadBookingAttempts(50).catch(() => []),
+  ]);
+  const sinceD = new Date(); sinceD.setDate(sinceD.getDate() - 7);
+  const since = sinceD.toISOString().slice(0, 10);
+  const rows = games
+    .filter(g => g && g.location === MTBOGD_CONFIG.locationName && (g.date || '') >= since)
+    .map(g => ({ g, st: bookingState(g) }))
+    .filter(r => r.st !== 'na' && (r.g.status !== 'deleted' || r.st === 'cancel_failed'))
+    .sort((a, b) => `${a.g.date} ${a.g.time || ''}`.localeCompare(`${b.g.date} ${b.g.time || ''}`));
+  const groups = [
+    ['none', t('adminMtbogdGroupNone'), 'var(--amber)'],
+    ['cancel_failed', t('adminMtbogdGroupCancelFailed'), 'var(--danger-color)'],
+    ['cancelled_remote', t('bookStateCancelledRemote'), 'var(--danger-color)'],
+    ['mismatch', t('adminMtbogdGroupMismatch'), 'var(--amber)'],
+    ['unverified', t('adminMtbogdGroupUnverified'), 'var(--text-secondary)'],
+    ['synced', t('adminMtbogdGroupOk'), 'var(--emerald)'],
+  ];
+  const row = ({ g }) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--bg-card-hover);border-radius:6px;font-size:0.85rem;">
+      <span style="min-width:96px;font-family:monospace;">${esc(g.date)} ${esc(g.time || '')}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(g.creatorName || g.createdBy || '')}${g.status === 'deleted' ? ' · <s>deleted</s>' : ''}${g.bookingCode ? ` · <span style="font-family:monospace;">${esc(g.bookingCode)}</span>` : ''}</span>
+      ${g.bookingId ? `<button class="btn btn-sm btn-outline" data-mt-verify="${esc(g.id)}">${t('bookVerify')}</button>` : ''}
+      ${!g.bookingId && g.status !== 'deleted' ? `<button class="btn btn-sm btn-outline" data-mt-attach="${esc(g.id)}">${t('bookAttach')}</button>` : ''}
+      <a class="btn btn-sm btn-outline" href="#/game/${esc(g.id)}">${t('adminMtbogdOpen')}</a>
+    </div>`;
+  host.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <h3 style="margin:0;">MTBogd</h3>
+      <span style="font-size:0.8rem;color:var(--text-secondary);">${rows.length}</span>
+      <button class="btn btn-sm btn-primary" id="mt-check-all" style="margin-left:auto;" ${rows.some(r => r.g.bookingId) ? '' : 'disabled'}>${t('adminMtbogdCheckAll')}</button>
+    </div>
+    ${rows.length === 0 ? `<p style="color:var(--text-secondary);font-size:0.85rem;">${t('adminMtbogdEmpty')}</p>` : ''}
+    ${groups.map(([key, label, color]) => {
+      const list = rows.filter(r => r.st === key);
+      if (!list.length) return '';
+      return `<div style="margin-bottom:14px;"><div style="font-size:0.8rem;font-weight:700;color:${color};margin-bottom:6px;">${esc(label)} · ${list.length}</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">${list.map(row).join('')}</div></div>`;
+    }).join('')}
+    <div style="margin-top:18px;">
+      <div style="font-size:0.8rem;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">${t('adminMtbogdAttempts')} · ${attempts.length}</div>
+      ${attempts.length === 0 ? `<p style="color:var(--text-secondary);font-size:0.8rem;margin:0;">—</p>`
+        : `<div style="display:flex;flex-direction:column;gap:4px;font-size:0.78rem;color:var(--text-secondary);">${attempts.map(a =>
+            `<div>${esc(new Date(a.at || 0).toLocaleString())} · ${esc(a.userId || a.by || '')} · ${esc(a.date || '')} ${esc(a.slotId || '')} · ${esc(a.step || a.event || '')} · ${esc(a.error || '')}${a.httpStatus ? ` (${esc(String(a.httpStatus))})` : ''}</div>`).join('')}</div>`}
+    </div>`;
+  const byId = Object.fromEntries(rows.map(r => [r.g.id, r.g]));
+  host.querySelectorAll('[data-mt-verify]').forEach(b => b.onclick = async () => { await handleBookingVerify(byId[b.dataset.mtVerify]); await renderAdminMtbogdTab(); });
+  host.querySelectorAll('[data-mt-attach]').forEach(b => b.onclick = async () => { await handleBookingAttach(byId[b.dataset.mtAttach]); await renderAdminMtbogdTab(); });
+  document.getElementById('mt-check-all')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    // One at a time with a pause: the proxy is shared with members booking.
+    for (const r of rows.filter(r => r.g.bookingId)) {
+      await handleBookingVerify(r.g);
+      await new Promise(res => setTimeout(res, 250));
+    }
+    await renderAdminMtbogdTab();
+  });
+}
+
 async function renderAdminRankingTab() {
   const el = document.getElementById('admin-rank-content');
   if (!el) return;
