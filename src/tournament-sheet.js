@@ -451,7 +451,7 @@ export function totalThrough(entry, upto) {
 // stored: the cut is re-derived every time, so a player who made it and then
 // withdraws frees their place and the next one is pulled in on the spot —
 // which is exactly the rule the organisers apply by hand.
-export function cutSet(entries, { cutAfterRound, cutSize } = {}) {
+export function cutSet(entries, { cutAfterRound, cutSize, higherWins = false } = {}) {
   const out = new Set();
   const after = Number(cutAfterRound) || 0;
   const size = Number(cutSize) || 0;
@@ -467,7 +467,10 @@ export function cutSet(entries, { cutAfterRound, cutSize } = {}) {
     // marked CUT there — frees their place, so the field below moves up.
     if (noStanding(e?.status)) return;
     const v = totalThrough(e, after);
-    if (v !== null) scored.push({ e, v });
+    // Stableford ranks points, highest first. Negating the key here is all it
+    // takes: the sort below, the edge and the "and ties" test keep reading as
+    // written, and nothing else in the function has to know the direction.
+    if (v !== null) scored.push({ e, v: higherWins ? -v : v });
   });
   if (scored.length <= size) return out;
   scored.sort((a, b) => a.v - b.v);
@@ -478,18 +481,23 @@ export function cutSet(entries, { cutAfterRound, cutSize } = {}) {
   return out;
 }
 
-// Sort by total (lower is better) and label tie-aware positions: T1, T1, 3.
+// Sort by total and label tie-aware positions: T1, T1, 3. Lower wins by
+// default; `higherWins` flips it for a points contest (Stableford) by
+// negating the sort key, which leaves ties, positions and the Infinity
+// "no score" sentinel reading exactly as they do for strokes.
 // Three tiers, in this order: players with a standing, then those who missed
 // the cut — they keep the total they were cut on — then withdrawals and
 // disqualifications, which keep nothing. Anyone without a standing shows their
 // status where a position would be.
-export function rankEntries(entries, { cutAfterRound, cutSize } = {}) {
-  const cut = cutSet(entries, { cutAfterRound, cutSize });
+export function rankEntries(entries, { cutAfterRound, cutSize, higherWins = false } = {}) {
+  const cut = cutSet(entries, { cutAfterRound, cutSize, higherWins });
   const list = (Array.isArray(entries) ? entries : [])
     .map(e => (cut.has(e) ? { ...e, status: 'CUT' } : e));
   const score = (e) => {
     const n = Number(e?.total);
-    return (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) ? Infinity : n;
+    if (e?.total === undefined || e?.total === null || e?.total === '' || isNaN(n)) return Infinity;
+    // Infinity keeps meaning "no score, sorts last" in both directions.
+    return higherWins ? -n : n;
   };
   const out = (e) => (noStanding(e?.status) ? 1 : 0);
   // Among equal totals — above all among the null ones a course without

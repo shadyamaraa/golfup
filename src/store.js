@@ -152,12 +152,13 @@ export async function saveGame(game) {
   if (useFirebase && db) {
     // update(), not set(): a whole-record set would silently overwrite a
     // group member's concurrent score tap (scores/scoreAudit/hcp live under
-    // the same game). Every caller passes the full record, so the named
-    // top-level keys are still replaced wholesale — only the scoring
-    // branches are spared.
+    // the same game, and so do the match play pairing, the hole overrides and
+    // the team ball a scramble or foursome plays). Every caller passes the
+    // full record, so the named top-level keys are still replaced wholesale —
+    // only the scoring branches are spared.
     // bookingLog is append-only (see appendBookingLog); a full-record save
-    // from a stale copy must never overwrite it.
-    const { scores, scoreAudit, hcp, bookingLog, ...rest } = game;
+    // from a stale copy must never overwrite it either.
+    const { scores, scoreAudit, hcp, pairing, holeOverrides, teamScores, bookingLog, ...rest } = game;
     await update(ref(db, 'games/' + game.id), rest);
   } else {
     const games = getLocalGames();
@@ -216,6 +217,87 @@ export async function saveGamePlayerHcp(gameId, playerId, hcp) {
   if (hcp === null || hcp === undefined) delete game.hcp[playerId];
   else game.hcp[playerId] = hcp;
   setLocalGames(games);
+  return game;
+}
+
+// The order a group plays its matches in (see src/game-formats.js): the
+// scorer's ⇄ writes it, null clears it. Path-scoped like a score tap.
+export async function saveGamePairing(gameId, groupIdx, orderIds) {
+  if (useFirebase && db) {
+    const r = ref(db, `games/${gameId}/pairing/${groupIdx}`);
+    if (!orderIds) await remove(r);
+    else await set(r, orderIds);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.pairing = game.pairing || {};
+  if (!orderIds) delete game.pairing[groupIdx];
+  else game.pairing[groupIdx] = orderIds;
+  setLocalGames(games);
+  return game;
+}
+
+// A hand-set match play hole (a conceded hole): the winner's player id or
+// 'h' for halved under the pair's key, null to go back to the derived
+// result. Same discipline as saveGameScoreHole — path-scoped, audited.
+export async function saveGameHoleOverride(gameId, pairKey, hole, value, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/holeOverrides/${pairKey}/${hole}`);
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (value === null || value === undefined || value === '') {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, value);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, kind: 'override', pairKey, hole, value: value || null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.holeOverrides = game.holeOverrides || {};
+  const pair = (game.holeOverrides[pairKey] = game.holeOverrides[pairKey] || {});
+  if (value === null || value === undefined || value === '') delete pair[hole];
+  else pair[hole] = value;
+  if (!Object.keys(pair).length) delete game.holeOverrides[pairKey];
+  setLocalGames(games);
+  return game;
+}
+
+// One tap on a TEAM row: the strokes a scramble or foursome team's single ball
+// took on one hole, or null to clear it. Same discipline as saveGameScoreHole —
+// path-scoped and audited — but keyed by the team rather than a player, because
+// in a one-ball format no player has a card of their own.
+export async function saveGameTeamScoreHole(gameId, teamKey, hole, strokes, by) {
+  if (useFirebase && db) {
+    const holeRef = ref(db, `games/${gameId}/teamScores/${teamKey}/holes/${hole}`);
+    let prev = null;
+    try { prev = (await get(holeRef)).val() ?? null; } catch (_) { }
+    if (strokes === null || strokes === undefined) {
+      await remove(holeRef);
+    } else {
+      await set(holeRef, strokes);
+    }
+    push(ref(db, `games/${gameId}/scoreAudit`), {
+      at: Date.now(), by: by || null, kind: 'team', teamKey, hole, value: strokes ?? null, prev
+    }).catch(console.warn);
+    return null;
+  }
+  const games = getLocalGames();
+  const game = games[gameId];
+  if (!game) return null;
+  game.teamScores = game.teamScores || {};
+  const team = (game.teamScores[teamKey] = game.teamScores[teamKey] || { holes: {} });
+  team.holes = team.holes || {};
+  if (strokes === null || strokes === undefined) delete team.holes[hole];
+  else team.holes[hole] = strokes;
+  setLocalGames(games);
+  // No listener fires in localStorage mode — the caller repaints from this.
   return game;
 }
 
