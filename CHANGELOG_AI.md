@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-04 (Admin tournaments tab folded by state)
+
+The admin's tournament list is now three folds — **Явагдаж байна** (live),
+**Ноорог (удахгүй)** (draft / upcoming), **Өнгөрсөн** (past) — each with its
+count, in that order. Draft reads soonest first, past most recent first. Past
+starts **closed**: it is the long tail nobody scrolls past, and one tap on its
+title opens it. Each fold remembers what the admin did with it, because the tab
+re-renders on every edit, and a fold holding the tournament whose editor is
+open is forced open so the editor cannot vanish under it. Driven in the
+browser: the state survives opening and closing an editor either side of it.
+
 ## 2026-09-04 (Fourball and Foursome tournaments)
 
 The two remaining 2 v 2 types, on the rails the scramble tournament laid: a
