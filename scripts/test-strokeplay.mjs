@@ -645,3 +645,186 @@ test('spPlayerCard carries the Stableford reading of every hole', () => {
   assert.equal(si1.given, 1);
   assert.equal(si1.points, 3);   // net birdie on the hardest hole
 });
+
+// ---- Team events (scramble) ----
+
+const TEAM = await import('../src/strokeplay.js');
+
+// A team event: two teams of two, their four members left in sp.players so
+// they carry the flight pointer the database rules read.
+const TEAM_TN = (extra = {}) => ({
+  format: 'scramble', par: 72, rounds: 1, spTeamSize: 2,
+  sp: {
+    players: {
+      'u1+u2': { kind: 'team', name: 'Бат / Дорж', hcp: 9, members: { u1: true, u2: true }, groups: { 1: 'g1' } },
+      'u3+u4': { kind: 'team', name: 'Сараа / Тулга', hcp: 5, members: { u3: true, u4: true }, groups: { 1: 'g1' } },
+      u1: { name: 'Бат', userId: 'u1', hcp: 8, groups: { 1: 'g1' } },
+      u2: { name: 'Дорж', userId: 'u2', hcp: 12, groups: { 1: 'g1' } },
+      u3: { name: 'Сараа', userId: 'u3', hcp: 4, groups: { 1: 'g1' } },
+      u4: { name: 'Тулга', userId: 'u4', hcp: 6, groups: { 1: 'g1' } }
+    },
+    scores: { 'u1+u2': { 1: fullRound(4) }, 'u3+u4': { 1: fullRound(4) } },
+    groups: { 1: { g1: { number: 1, teeTime: '08:00', players: { 'u1+u2': true, 'u3+u4': true } } } }
+  },
+  ...extra
+});
+
+test('a team event is recognised, and only scramble is one', () => {
+  assert.ok(TEAM.tnIsTeam({ format: 'scramble' }));
+  for (const f of ['stroke', 'match', 'ryder', undefined]) {
+    assert.ok(!TEAM.tnIsTeam({ format: f }), String(f));
+  }
+});
+
+test('team size is the organiser\'s choice, and four is the default', () => {
+  assert.equal(TEAM.tnTeamSize({ spTeamSize: 2 }), 2);
+  assert.equal(TEAM.tnTeamSize({ spTeamSize: '2' }), 2);
+  assert.equal(TEAM.tnTeamSize({ spTeamSize: 4 }), 4);
+  // Anything unset or unrecognised is the club scramble: a flight is a team.
+  assert.equal(TEAM.tnTeamSize({}), 4);
+  assert.equal(TEAM.tnTeamSize({ spTeamSize: 3 }), 4);
+});
+
+test('only two-player teams can meet inside a flight', () => {
+  const t = (extra) => TEAM.tnTeamRank({ format: 'scramble', ...extra });
+  assert.equal(t({ spTeamSize: 2, spTeamRank: 'match' }), 'match');
+  assert.equal(t({ spTeamSize: 2, spTeamRank: 'board' }), 'board');
+  assert.equal(t({ spTeamSize: 2 }), 'board');
+  // Four to a team IS the flight, so there is nobody to play — always a board.
+  assert.equal(t({ spTeamSize: 4, spTeamRank: 'match' }), 'board');
+  // And an individual event is never a team contest at all.
+  assert.equal(TEAM.tnTeamRank({ format: 'stroke', spTeamRank: 'match' }), 'board');
+});
+
+test('a team id is its members sorted, so rebuilding it finds the scores', () => {
+  assert.equal(TEAM.teamKeyOf(['u2', 'u1']), 'u1+u2');
+  assert.equal(TEAM.teamKeyOf(['u1', 'u2']), TEAM.teamKeyOf(['u2', 'u1']));
+  assert.equal(TEAM.teamKeyOf(['u3', 'u1', 'u2', 'u4']), 'u1+u2+u3+u4');
+  assert.equal(TEAM.teamKeyOf([]), '');
+});
+
+test('the board ranks teams, and never their members', () => {
+  const tn = TEAM_TN();
+  const entries = spEntries(tn, 'gross');
+  assert.deepEqual(entries.map(e => e.pid).sort(), ['u1+u2', 'u3+u4']);
+  assert.deepEqual(entries.map(e => e.name).sort(), ['Бат / Дорж', 'Сараа / Тулга']);
+  // Both teams shot 72 on a par 72 — level, and the team handicap is the
+  // organiser's hand-entered number, not anything derived from the members.
+  entries.forEach(e => { assert.equal(e.total, 0); assert.equal(e.gross, 72); });
+  assert.equal(entries.find(e => e.pid === 'u1+u2').hcp, 9);
+  // A team is nobody's card, so it can never match "that's me" or a WHS post.
+  entries.forEach(e => assert.equal(e.userId, null));
+  // Net ranks by the team handicap: 72 − 9 beats 72 − 5 the other way round.
+  const net = spEntries(tn, 'net');
+  assert.equal(net.find(e => e.pid === 'u1+u2').netTotal, 63);
+  assert.equal(net.find(e => e.pid === 'u3+u4').netTotal, 67);
+});
+
+test('an individual event still ranks people, and ignores a stray team', () => {
+  // Switching a scramble back to stroke play must not rank the team entries.
+  const tn = { ...TEAM_TN(), format: 'stroke' };
+  const pids = spEntries(tn, 'gross').map(e => e.pid);
+  assert.ok(pids.includes('u1'), 'the members are back on the board');
+  assert.ok(pids.includes('u1+u2'), 'and the stray team still shows as an entry');
+  // Nothing is lost either way — the scores are the same record.
+  assert.equal(spEntries(tn, 'gross').find(e => e.pid === 'u1+u2').gross, 72);
+});
+
+test('the draw sends teams out in a team event and people in an individual one', () => {
+  const { drawGroups } = TEAM;
+  const teamDraw = drawGroups(TEAM_TN(), { method: 'random', size: 4, rnd: () => 0 });
+  assert.deepEqual(teamDraw.flat().sort(), ['u1+u2', 'u3+u4']);
+  // The same record read as stroke play draws the four people, not the teams.
+  const soloDraw = drawGroups({ ...TEAM_TN(), format: 'stroke' }, { method: 'random', size: 4, rnd: () => 0 });
+  assert.deepEqual(soloDraw.flat().sort(), ['u1', 'u2', 'u3', 'u4']);
+});
+
+test('a team member may enter their team\'s score, on the flight pointer', () => {
+  const { players } = TEAM_TN().sp;
+  const bat = { id: 'u1', role: 'user' };
+  const outsider = { id: 'u9', role: 'user' };
+  // The same rule the database enforces: same flight, same round.
+  assert.ok(canScoreSp(bat, 'u1+u2', players, 1));
+  assert.ok(canScoreSp(bat, 'u3+u4', players, 1), 'and their opponents, as in any flight');
+  assert.ok(!canScoreSp(outsider, 'u1+u2', players, 1));
+  // Without a round there is no flight to share, so only officials pass.
+  assert.ok(!canScoreSp(bat, 'u1+u2', players));
+  assert.ok(canScoreSp({ id: 'x', role: 'marshal' }, 'u1+u2', players));
+});
+
+test('spTeams reads the roster: who is on a team and who is spare', () => {
+  const tn = TEAM_TN();
+  const { teams, free } = TEAM.spTeams(tn);
+  assert.equal(teams.length, 2);
+  assert.deepEqual(teams.map(t => t.pid).sort(), ['u1+u2', 'u3+u4']);
+  assert.deepEqual(teams.find(t => t.pid === 'u1+u2').memberIds.sort(), ['u1', 'u2']);
+  assert.deepEqual(free, [], 'all four are claimed');
+
+  // Add a fifth player nobody has picked yet.
+  tn.sp.players.u5 = { name: 'Ганаа', userId: 'u5' };
+  assert.deepEqual(TEAM.spTeams(tn).free.map(p => p.pid), ['u5']);
+  assert.equal(TEAM.spTeams({}).teams.length, 0);
+});
+
+test('a team ranks and cuts through the existing board, untouched', () => {
+  const tn = TEAM_TN();
+  tn.sp.scores['u1+u2'][1] = { ...fullRound(4), 1: 3 };     // 71 to 72
+  const ranked = rankEntries(spEntries(tn, 'gross'), {});
+  assert.equal(ranked[0].pid, 'u1+u2');
+  assert.equal(ranked[0].posLabel, '1');
+  assert.equal(ranked[1].posLabel, '2');
+
+  // And the cut takes teams out by the same code path — two rounds, the cut
+  // after the first, and it only bites once round two is under way.
+  const two = TEAM_TN({ rounds: 2, cutAfterRound: 1, cutSize: 1 });
+  two.sp.scores['u1+u2'] = { 1: { ...fullRound(4), 1: 3 }, 2: fullRound(4) };
+  two.sp.scores['u3+u4'] = { 1: fullRound(4), 2: fullRound(4) };
+  const cutTeams = cutSet(spEntries(two, 'gross'), { cutAfterRound: 1, cutSize: 1 });
+  assert.equal(cutTeams.size, 1);
+  const cutBoard = rankEntries(spEntries(two, 'gross'), { cutAfterRound: 1, cutSize: 1 });
+  assert.equal(cutBoard.find(e => e.pid === 'u3+u4').status, 'CUT');
+  assert.equal(cutBoard.find(e => e.pid === 'u1+u2').posLabel, '1');
+});
+
+test('a two-team flight reads as a match, off the hand-entered team handicaps', () => {
+  // Sky Resort's card gives the stroke indexes; both teams level par gross.
+  const tn = TEAM_TN({ course: 'sky', spTeamRank: 'match' });
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  // Team hcp 9 against 5: the difference of four lands on SI 1-4 (holes 9,
+  // 12, 2, 15), so team A wins exactly those and halves the rest — 4 & 3.
+  assert.deepEqual(m.allowance, { net: true, base: 5, a: 4, b: 0 });
+  const won = Object.entries(m.holes).filter(([, v]) => v === 'a').map(([h]) => Number(h));
+  assert.deepEqual(won, [2, 9, 12, 15]);
+  assert.equal(m.status, '4 & 3');
+  assert.equal(m.settled.winner, 'a');
+  assert.equal(m.settled.thru, 15);
+});
+
+test('the flight match stops at a hole either team has not finished', () => {
+  const tn = TEAM_TN({ course: 'sky' });
+  tn.sp.players['u1+u2'].hcp = 5;                 // level with u3+u4 → gross reading
+  tn.sp.scores['u1+u2'][1] = { 1: 4, 2: 4, 3: 4 };
+  tn.sp.scores['u3+u4'][1] = { 1: 5, 2: 4 };
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.holes[1], 'a');
+  assert.equal(m.holes[2], 'h');
+  assert.equal(m.holes[3], undefined, 'team B has not finished the third');
+  assert.equal(m.settled.thru, 2);
+  assert.equal(m.status, '1 UP');
+  assert.equal(m.allowance.a + m.allowance.b, 0);
+});
+
+test('a missing team handicap makes the flight match gross, and odd flights are no match', () => {
+  const tn = TEAM_TN({ course: 'sky' });
+  delete tn.sp.players['u3+u4'].hcp;
+  const m = TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4']);
+  assert.equal(m.allowance.net, false);
+  assert.equal(m.allowance.a, 0);
+  // Level par each, no strokes anywhere: halved all the way.
+  assert.equal(m.status, 'HALVED');
+  // One team, three teams, or a person in the list: nothing to draw.
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u3+u4', 'u1']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, ['u1+u2', 'u1']), null);
+  assert.equal(TEAM.spFlightMatch(tn, 1, null), null);
+});

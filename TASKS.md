@@ -20,6 +20,8 @@
       statistics, historical results.
 - [ ] Casual formats phase 3: a cross-group scramble leaderboard — rank every
       team in the game by net total, not only the 2 v 2 inside each group.
+- [ ] Tournament formats: Fourball and Foursome as tournament types, on the
+      same team-entry rails as the scramble tournament.
 
 ## In Progress
 
@@ -35,6 +37,9 @@
 - [x] Fix duplicate notification creation.
 - [x] Filter history by the selected home tab.
 - [x] Upgrade Firebase Functions runtime to Node.js 22.
+- [x] Scramble tournaments — teams as sp.players entries, organiser-typed team
+      HCP, team size 2 or 4, board or flight-match reading. See
+      `docs/tournament-scramble.md`.
 - [x] Casual game formats phase 2: scramble / fourball / foursome — 2 v 2
       inside a tee group, one-ball team scores under `games/{id}/teamScores`,
       no WHS posting for scramble/foursome.

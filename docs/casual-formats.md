@@ -223,6 +223,14 @@ lossless for teams exactly as it is for singles: a team's ball lives under its
 own key and its conceded holes under the contest key, so a split that comes
 back brings both with it.
 
+## Tournaments
+
+A **scramble tournament** is the tournament-side counterpart — teams of two or
+four, one ball, a field-wide leaderboard by team total. It shares this file's
+rulebook block and the same "off the low man" flight match, but stores teams
+as `sp.players` entries rather than under `teamScores`. See
+`docs/tournament-scramble.md`.
+
 ## Phase 3 (not built)
 
 A **cross-group scramble leaderboard** — every team in the game ranked by net

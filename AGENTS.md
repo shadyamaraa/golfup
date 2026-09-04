@@ -141,6 +141,26 @@ Games:
 }
 ```
 
+Tournaments (`tournaments/{id}`, the in-app stroke play node — see
+`docs/tournament-cut.md`, `docs/stableford.md`, `docs/tournament-scramble.md`):
+
+```js
+{
+  format,        // 'stroke' | 'match' | 'ryder' | 'scramble' — tnKind() branches on it
+  spScoring,     // 'strokes' (default when missing) | 'stableford'
+  spTeamSize,    // scramble only: 2 | 4 (4 when missing)
+  spTeamRank,    // scramble only: 'board' (default) | 'match' — two-player teams only
+  sp: {
+    players: {   // pid → { name, userId?, hcp?, status?, groups: { round: gid } }
+                 // a TEAM is a player entry too: { kind: 'team', members: {pid: true}, hcp }
+                 // and its members keep their own entries for the flight pointer
+    },
+    scores,      // pid → round → hole → strokes  (a team's ball lives under its teamKey)
+    groups       // round → gid → { number, teeTime, startHole?, players: {pid: true} }
+  }
+}
+```
+
 Notifications:
 
 ```js
