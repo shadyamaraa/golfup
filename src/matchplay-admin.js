@@ -18,6 +18,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { readImageFile, validImageData } from './media.js';
 import {
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
   lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes
@@ -103,16 +104,13 @@ function withFormat(mp, matches) {
 
 // ---- Rendering ----
 
-// A logo the UI will actually accept later: an image data URI, nothing else.
-const validLogo = (l) =>
-  typeof l === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(l);
 
 function teamBoxHTML(tn, teamId, users) {
   const mp = draftFor(tn).mp;
   const team = mp.teams[teamId];
   const roster = rosterOf(mp, teamId);
   const over = roster.length > ROSTER_SIZE;
-  const logo = validLogo(team.logo) ? team.logo : null;
+  const logo = validImageData(team.logo) ? team.logo : null;
 
   const chip = (p) => `
     <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name || p.id)}
@@ -147,38 +145,10 @@ function teamBoxHTML(tn, teamId, users) {
     </div>`;
 }
 
-// Read a picked image and shrink it to a small square-ish data URI. 96px is
-// plenty for the marks the board draws (8–38px), and at that size a webp
-// data URI is a few KB — small enough to live inside the tournament record,
-// which spares us a whole storage bucket, its rules, and a second fetch.
+// 96px is plenty for the marks the board draws (8–38px). The shrinking and
+// the cap live in media.js, shared with the tournament editor's own pickers.
 const LOGO_PX = 96;
-const LOGO_MAX_CHARS = 80000; // ~60KB decoded — far above any real 96px logo
-
-function readLogoFile(file) {
-  return new Promise((resolve, reject) => {
-    if (!file || !file.type.startsWith('image/')) { reject(new Error('not-image')); return; }
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, LOGO_PX / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      // webp keeps transparency and compresses far better than png; fall
-      // back to png only if the browser cannot encode webp.
-      let out = canvas.toDataURL('image/webp', 0.85);
-      if (!out.startsWith('data:image/webp')) out = canvas.toDataURL('image/png');
-      if (out.length > LOGO_MAX_CHARS) { reject(new Error('too-big')); return; }
-      resolve(out);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad-image')); };
-    img.src = url;
-  });
-}
+const readLogoFile = (file) => readImageFile(file, { px: LOGO_PX });
 
 // ---- Type-to-search picker ----
 // Replaces the <select> pickers: an input that filters candidates as the
