@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] A live game ends only when 🏁 Finish is pressed — the four-hour clock
+      no longer pushes a round still being played into history, and a game
+      nobody finishes drops out a day after its tee time.
 - [x] Rename app from GolfUp to UB Golf.
 - [x] Add player circles and interest circles.
 - [x] Limit game circle choices to the creator's assigned circles.

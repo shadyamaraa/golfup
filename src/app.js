@@ -80,15 +80,31 @@ let pendingAuthRedirect = null;
 
 // Past games stay in History for this many days, then move to Archive.
 const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
-// A game counts as "live" (and stays in the active feed) for this long after its
-// start time, then it moves to past games.
-const LIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
+// A round ends when someone presses 🏁 on the scorer, not when the clock says
+// so. Four hours after the tee time a slow group is often still on the back
+// nine, so the game stays in the active feed until it is actually finished.
+//
+// The clock is only a safety net: a game nobody ever finishes would otherwise
+// sit in the active feed for ever, so it drops out a day after its tee time.
+const ABANDON_AFTER_MS = 24 * 60 * 60 * 1000;
 function gameStartMs(g) {
   return new Date(`${g.date}T${(g.time || '00:00').padStart(5, '0')}`).getTime();
 }
+// Finished = the scorer pressed 🏁 (store.saveGameFinished stamps finishedAt).
+function isGameFinished(g) { return !!g?.finishedAt; }
+// Where a game belongs: History/Archive, or still in the active feed. Finishing
+// moves it at once; otherwise only the abandon net does. A date that will not
+// parse counts as past, the way it always has.
+function isGamePast(g, now = Date.now()) {
+  if (isGameFinished(g)) return true;
+  const ms = gameStartMs(g);
+  if (isNaN(ms)) return true;
+  return now >= ms + ABANDON_AFTER_MS;
+}
+// Being played right now: teed off, not finished, not abandoned.
 function isGameLive(g, now = Date.now()) {
   const ms = gameStartMs(g);
-  return !isNaN(ms) && now >= ms && now < ms + LIVE_WINDOW_MS;
+  return !isNaN(ms) && now >= ms && !isGamePast(g, now);
 }
 
 const main = () => document.getElementById('main-content');
@@ -2173,8 +2189,9 @@ function renderHomeUpcoming(games) {
   const now = Date.now();
   const up = (games || [])
     .filter(g => g.date && g.time && canSeeGameByCommunity(g))
-    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
-    .filter(x => !isNaN(x.ms) && x.ms >= now)
+    .map(g => ({ g, ms: gameStartMs(g) }))
+    // Games still being played belong here too — they leave when they finish.
+    .filter(x => !isNaN(x.ms) && !isGamePast(x.g, now))
     .sort((a, b) => a.ms - b.ms)
     .slice(0, 5)
     .map(x => x.g);
@@ -2564,11 +2581,13 @@ function renderNextGameFeature(games) {
   const now = Date.now();
   const mine = (games || [])
     .filter(g => isMyGame(g) && g.date && g.time)
-    .map(g => ({ g, ms: new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime() }))
-    .filter(x => x.ms >= now)
+    .map(g => ({ g, ms: gameStartMs(g) }))
+    // A round you have teed off in stays the feature card until it is finished.
+    .filter(x => !isNaN(x.ms) && !isGamePast(x.g, now))
     .sort((a, b) => a.ms - b.ms);
   if (mine.length === 0) { host.innerHTML = ''; return; }
   const g = mine[0].g;
+  const live = isGameLive(g, now);
   const groups = ensureGroups(g.groups);
   const totalPlayers = countAllPlayers(g);
   const totalSlots = g.groupSize * groups.length;
@@ -2583,7 +2602,7 @@ function renderNextGameFeature(games) {
   return host.innerHTML = `
     <a href="#/game/${g.id}" class="feature-card" style="display:block; text-decoration:none;">
       <div style="display:flex; align-items:center; justify-content:space-between;">
-        <span class="fc-eyebrow"><span class="fc-dot"></span>${t('nextGame')}</span>
+        <span class="fc-eyebrow"><span class="fc-dot"></span>${live ? t('liveNow') : t('nextGame')}</span>
         <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">${formatDate(g.date)} · ${g.time}</span>
       </div>
       <div class="fc-title">${esc(g.location || '-')}</div>
@@ -2617,9 +2636,9 @@ function renderGamesHome(games) {
 
   allGames.forEach(g => {
     if (!matchesHomeFilter(g)) return;
-    const gDate = new Date(`${g.date}T${g.time.padStart(5, '0')}`).getTime();
-    // Future games AND games still within their 4h live window stay active.
-    if (gDate + LIVE_WINDOW_MS >= now) activeGames.push(g);
+    const gDate = gameStartMs(g);
+    // Future games, and started games nobody has finished yet, stay active.
+    if (!isGamePast(g, now)) activeGames.push(g);
     else if (now - gDate <= ARCHIVE_AFTER_MS) pastGames.push(g);
     else archivedGames.push(g);
   });
@@ -3541,10 +3560,13 @@ function renderGameView(game) {
   const gDate = new Date(gDateStr).getTime();
   const now = new Date().getTime();
 
-  // Moves to history immediately after start time
+  // Teed off: the roster stops being something to plan.
   const isPast = !isNaN(gDate) && gDate < now;
   // Locked for editing 1 hour after start time
   const isReadOnly = !isNaN(gDate) && (gDate + (1 * 60 * 60 * 1000)) < now;
+  // A locked game the group is still playing is not a past game, and the
+  // notice under the header must not call it one.
+  const isLiveNow = isGameLive(game, now);
 
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
@@ -3599,7 +3621,7 @@ function renderGameView(game) {
             ? `<div class="waitlist-banner">⏳ ${waitlistBannerText(wIdx + 1, wIdx)}</div>`
             : '';
         })()}
-        ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t('pastGameNotice')}</p>` : ''}
+        ${isReadOnly ? `<p class="auto-group-hint">ℹ️ ${t(isLiveNow ? 'liveGameNotice' : 'pastGameNotice')}</p>` : ''}
         ${game.description ? `<div class="game-description"><span class="desc-label">${icon('scorecard', { size: 13 })} Тайлбар</span><p class="desc-text">${esc(game.description)}</p></div>` : ''}
         ${isTeamFormat(game) ? `
           <details style="margin-top:10px;">
@@ -4681,7 +4703,7 @@ async function renderAdminPanel() {
       if (!inGame) continue;
       const gMs = new Date(`${g.date}T${(g.time||'00:00').padStart(5,'0')}`).getTime();
       if (g.status === 'deleted') deleted.push({ g, isCreator, gMs });
-      else if (gMs + LIVE_WINDOW_MS < now) past.push({ g, isCreator, gMs });
+      else if (isGamePast(g, now)) past.push({ g, isCreator, gMs });
       else upcoming.push({ g, isCreator, gMs });
     }
     upcoming.sort((a,b) => a.gMs - b.gMs);
