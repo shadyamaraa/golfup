@@ -1,5 +1,37 @@
 # CHANGELOG_AI.md
 
+## 2026-09-04 (A round ends when the group says so)
+
+A game left the active feed four hours after its tee time, whatever the group
+was doing. A slow fourball on the back nine watched its own round turn into
+history while it was still being played, and the 🏁 **Тоглолт дуусгах** button
+on the scorer changed nothing about where the game sat.
+
+Now the button is what ends the round. A game stays in the active feed — and
+keeps its **Live** pill — from its tee time until someone presses 🏁, and it
+moves to Тоглолтын түүх the moment they do, instead of lingering four hours.
+Pressing 🏁 Үргэлжлүүлэх brings it back.
+
+The clock survives only as a safety net: a game nobody ever finishes drops out
+a day after its tee time (`ABANDON_AFTER_MS`), so the feed cannot silt up with
+rounds from June. `isGameFinished` / `isGamePast` sit beside `isGameLive` in
+`app.js` and are the single place that decides, used by the games browser's
+active/history/archive split, the admin panel's per-user game lists, the home
+feature card and the home Удахгүй list.
+
+Two smaller things follow from it. The home feature card no longer disappears
+at tee time — the round being played stays on the home screen with its eyebrow
+reading **Live** instead of Дараагийн тоглолт, which is how a player reaches
+the scorecard mid-round. And the read-only notice on the game page stops
+calling a live round a past game: while the group is playing it reads
+*Тоглолт явагдаж байна (Засах боломжгүй)* (new `liveGameNotice`, mn/en/kr).
+The one-hour roster lock itself is unchanged.
+
+Driven in the browser off localStorage: a game teed five hours ago and never
+finished sits in the active feed with its Live pill; pressing 🏁 moves it to
+history at once and takes the pill and the home card with it; Үргэлжлүүлэх puts
+it back; a finished game and a game 30 hours old both sit in history.
+
 ## 2026-09-04 (Tournament crest, sponsors and удирдамж)
 
 Three things a tournament can now carry of its own, all inside its record.
