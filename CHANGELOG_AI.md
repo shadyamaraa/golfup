@@ -8,9 +8,14 @@ Three things a tournament can now carry of its own, all inside its record.
   face from the moment it exists, and changeable later in the editor. It fills
   the hero's `.tn-crest` beside the name; without one the generic icon stays.
 - **Partner organisations.** Name, logo and an optional website, in order, up
-  to twelve. They render as a strip under the hero — each mark on a white
-  plaque, because most logos are dark-on-transparent and would vanish on the
-  app's navy card. A link opens in a new tab, `rel="noopener"`.
+  to twelve. They render as a section of their own under the hero — headed
+  *Хамтрагч байгууллагууд* in the board's own section type rather than boxed in
+  a card, and **one organisation to a row** so no mark reads as smaller than
+  another. Each sits centred on a white plaque, because most logos are
+  dark-on-transparent and would vanish on the app's navy page. The plaque's
+  height and padding set the ceiling on the mark (104 − 2×16 = 72px), so a
+  square crest fills its row as fully as a wordmark does. A link opens in a new
+  tab, `rel="noopener"`.
 - **The удирдамж.** Free text plus an optional picture of the document. A
   📋 Удирдамж button appears on the tournament page only when there is one, and
   opens a popup that keeps the organiser's own line and paragraph breaks
