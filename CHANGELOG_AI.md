@@ -27,6 +27,15 @@ as a 2 v 2 match settled hole by hole.
 - **The flight scorer** shows one row and one stepper per team with its
   members named underneath, and in a match event a live status line — *2 UP ·
   Thru 9*, the M Cup reading — recomputed as scores land.
+- **The tournament page** ranks the teams on the ordinary board (column head
+  Баг), and in a match event a *Flight matches* card above it settles each
+  two-team flight hole by hole. The team size sits on the facts line under the
+  title and the scramble rulebook in a fold under the board — a stroke-kind
+  tournament has no info tab (the members asked for it to go), so the rows the
+  first cut of this added there were unreachable. Driven end to end in the
+  browser: wizard → team builder → draw → flight scorer → board, with every
+  member stamped with their team's flight pointer, which is what the database
+  rule reads.
 - **WHS**: `finalizeSpRoundIfComplete` gained the format guard the casual scorer
   already had. It was a latent bug — the tournament scorer posted any complete
   18-hole card with no format check, so the first one-ball tournament would

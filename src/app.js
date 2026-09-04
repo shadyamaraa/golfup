@@ -7,7 +7,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
@@ -1657,7 +1657,10 @@ function paintTournamentPage(tn) {
   const roundsFact = !tn.rounds ? ''
     : tnKind(tn) === 'stroke' ? `${tn.rounds * SP_HOLES} ${t('tnHoles').toLowerCase()}`
       : `${tn.rounds} ${t('tnRounds')}`;
-  const facts = [tnDatesText(tn), tnFormatText(tn), roundsFact]
+  const formatFact = tnIsTeam(tn)
+    ? `${tnFormatText(tn)} · ${tnTeamSize(tn)} ${t('tnPlayers')}`
+    : tnFormatText(tn);
+  const facts = [tnDatesText(tn), formatFact, roundsFact]
     .filter(Boolean).join(' · ');
 
   main().innerHTML = `
@@ -1797,6 +1800,43 @@ async function paintTnHistory(tn) {
 
 // Tab body: the leaderboard's stable chrome (search, filters, own position)
 // plus the #tn-list host that renderTnList() fills.
+// A two-player-team scramble the organiser reads as a match: every two-team
+// flight of the round settled hole by hole, in the M Cup's reading — who
+// leads, by how much, or the close-out. It sits above the totals rather than
+// replacing them, because a scramble still has team totals. Flights of one
+// team, and four-player-team events, have nobody to play and draw nothing.
+function tnFlightMatchesHTML(tn, round) {
+  if (tnTeamRank(tn) !== 'match') return '';
+  const nameOf = (pid) => esc(tn.sp?.players?.[pid]?.name || pid);
+  const rows = spGroupList(tn, round).map(g => {
+    const m = spFlightMatch(tn, round, Object.keys(g.players || {}));
+    if (!m || !m.settled.thru) return '';
+    const s = m.settled;
+    const lead = s.leader === 'a' ? nameOf(m.a) : s.leader === 'b' ? nameOf(m.b) : '';
+    const status = s.finished
+      ? (s.winner ? `${lead} ${esc(m.status)}` : t('mpHalved'))
+      : (lead ? `${lead} ${esc(m.status)}` : 'AS');
+    return `
+      <div class="player-row filled" style="gap:8px;">
+        <span class="player-name" style="flex:1;min-width:0;${s.winner === 'a' ? 'font-weight:800;' : ''}">${nameOf(m.a)}</span>
+        <span style="text-align:center;flex:0 0 auto;">
+          <b style="font-size:0.95rem;">${status}</b>
+          <div style="font-size:0.64rem;color:var(--text-secondary);">${s.finished ? t('mpFinal') : `${t('mpThru')} ${s.thru}`}</div>
+        </span>
+        <span class="player-name" style="flex:1;min-width:0;text-align:right;${s.winner === 'b' ? 'font-weight:800;' : ''}">${nameOf(m.b)}</span>
+      </div>`;
+  }).filter(Boolean).join('');
+  if (!rows) return '';
+  return `
+    <div class="surface-card" style="margin-bottom:10px;">
+      <div class="section-head tn-section" style="margin-bottom:4px;">
+        <h2>${t('spFlightMatches')}</h2>
+        <span class="pill-soft" style="font-size:0.7rem;margin-left:auto;">${t('tnRoundShort')}${round}</span>
+      </div>
+      <div class="player-list">${rows}</div>
+    </div>`;
+}
+
 function renderTnBoard() {
   const host = document.getElementById('tn-board');
   const tn = tnPageData;
@@ -1950,6 +1990,7 @@ function renderTnBoard() {
           <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
         </span>
       </div>` : ''}
+    ${tnFlightMatchesHTML(tn, spRound)}
     <div class="section-head tn-section">
       <h2>${t('tnAllPlayers')}</h2>
       ${spPts
@@ -1962,7 +2003,12 @@ function renderTnBoard() {
       <span class="pill-soft" id="tn-count"></span>
     </div>
     <div id="tn-list"></div>
-    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}`;
+    ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}
+    ${tnIsTeam(tn) ? `
+      <details style="margin-top:12px;">
+        <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('mpRulesTitle')}</summary>
+        <div style="font-size:0.84rem;line-height:1.6;">${scrambleRulesHTML()}</div>
+      </details>` : ''}`;
 
   const input = host.querySelector('#tn-q');
   input?.addEventListener('input', () => {

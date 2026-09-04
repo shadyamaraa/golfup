@@ -86,7 +86,10 @@ shots. The guard is `tnIsTeam()` at the top of `finalizeSpRoundIfComplete` in
 4. **Editor → flights** — the draw sends **teams** out: one four-player team a
    flight, or up to two two-player teams. Team names show in the flights, on
    the schedule and on the printed sheet.
-5. Scores go in on the **flight scorecard** (`#/spgroup/…`): one row and one
+5. On the tournament page the board ranks the teams; in a match event a
+   *Flight matches* card above it settles each two-team flight hole by hole,
+   and the rulebook sits in a fold under the board.
+6. Scores go in on the **flight scorecard** (`#/spgroup/…`): one row and one
    stepper per team, its members named underneath; in a match event the
    flight's status line reads *2 UP · Thru 9* the way the M Cup does.
 
@@ -98,7 +101,7 @@ shots. The guard is `tnIsTeam()` at the top of `finalizeSpRoundIfComplete` in
 | `src/strokeplay-admin.js` | the Багууд fold; `saveDraft` writes `kind`/`members` and every member's flight pointer |
 | `src/strokeplay-score.js` | team rows with member lines, the flight match line, the WHS guard |
 | `src/tournament-wizard.js` | the Скрэмбл card and its two settings |
-| `src/app.js` | `tnFormatText`, the info tab's team-size row and rulebook, the admin form's selects, the board's ТEAM column head |
+| `src/app.js` | `tnFormatText`, the team size on the facts line under the title, the board's ТEAM column head, the flight-matches card in a match event, and the rulebook fold under the board — a stroke-kind tournament has no info tab, so that is where a player reads the rules |
 | `src/mcup-rules.js` | `scrambleRulesHTML()` — the Mongolian rulebook block, shared with casual games |
 
 Tests: `npm run test:mp` — the team section of `scripts/test-strokeplay.mjs`.
