@@ -11,7 +11,10 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { ryderRulesHTML, matchRulesHTML, scrambleRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
+
+// The 2 v 2 tournament types, all on the stroke play rails.
+const TEAM_TYPES = ['scramble', 'fourball', 'foursome'];
 import { COURSES, courseByKey } from './strokeplay.js';
 import { courseTees } from './courses.js';
 
@@ -72,12 +75,16 @@ function stepHTML() {
     // between plain match play and the Ryder Cup rules is made informed.
     const rules = draft.format === 'ryder' ? ryderRulesHTML()
       : draft.format === 'match' ? matchRulesHTML()
-        : draft.format === 'scramble' ? scrambleRulesHTML() : '';
+        : draft.format === 'scramble' ? scrambleRulesHTML()
+          : draft.format === 'fourball' ? fourballRulesHTML()
+            : draft.format === 'foursome' ? foursomesRulesHTML() : '';
     return `
       <h4 style="margin:0 0 10px;">${t('wzType')}</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         ${card('stroke', '⛳', t('wzTypeStroke'), t('wzTypeStrokeDesc'))}
         ${card('scramble', '🤝', t('wzTypeScramble'), t('wzTypeScrambleDesc'))}
+        ${card('fourball', '🏌️', t('wzTypeFourball'), t('wzTypeFourballDesc'))}
+        ${card('foursome', '🔁', t('wzTypeFoursome'), t('wzTypeFoursomeDesc'))}
         ${card('match', '🎯', t('wzTypeMatch'), t('wzTypeMatchDesc'))}
         ${card('ryder', '🏆', t('wzTypeRyder'), t('wzTypeRyderDesc'))}
       </div>
@@ -156,14 +163,17 @@ function stepHTML() {
           ['4', t('spTeamSize4')],
           ['2', t('spTeamSize2')]
         ])) : ''}
-        ${draft.format === 'scramble' && draft.spTeamSize === '2' ? field(t('spTeamRank'), select('spTeamRank', [
+        ${(draft.format === 'scramble' && draft.spTeamSize === '2') || draft.format === 'fourball' || draft.format === 'foursome'
+          ? field(t('spTeamRank'), select('spTeamRank', [
           ['board', t('spTeamRankBoard')],
           ['match', t('spTeamRankMatch')]
         ])) : ''}
       </div>
       <p style="margin:8px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spWizardHint')}</p>
-      ${draft.format === 'scramble'
+      ${draft.format === 'scramble' || draft.format === 'foursome'
         ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spTeamScoreHint')}</p>` : ''}
+      ${draft.format === 'fourball'
+        ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spFourballHint')}</p>` : ''}
       ${draft.spScoring === 'stableford'
         ? `<p style="margin:6px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('spStablefordHint')}</p>` : ''}`;
   }
@@ -176,12 +186,12 @@ function stepHTML() {
   return `
     <h4 style="margin:0 0 10px;">${t('wzSummary')}</h4>
     ${line(t('tnFName'), draft.name)}
-    ${line(t('wzType'), { stroke: t('wzTypeStroke'), scramble: t('wzTypeScramble'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
+    ${line(t('wzType'), { stroke: t('wzTypeStroke'), scramble: t('wzTypeScramble'), fourball: t('wzTypeFourball'), foursome: t('wzTypeFoursome'), match: t('wzTypeMatch'), ryder: t('wzTypeRyder') }[draft.format] || '')}
     ${line(t('date'), [draft.startDate, draft.endDate].filter(Boolean).join(' — '))}
     ${line(t('tnFVenue'), [draft.venue, draft.city].filter(Boolean).join(' · '))}
     ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
-      : draft.format === 'stroke' || draft.format === 'scramble'
+      : draft.format === 'stroke' || TEAM_TYPES.includes(draft.format)
         ? line(t('spCourse'), courseByKey(draft.course)?.name || draft.venue || '—')
           + line(t('spTee'), (() => {
             const x = courseTees(draft.course).find(v => v.key === draft.tee);
@@ -197,7 +207,7 @@ function stepHTML() {
 // A step's gate: what must be filled before Үргэлжлүүлэх works.
 function stepValid() {
   if (draft.step === 1) return !!draft.name.trim();
-  if (draft.step === 2) return ['stroke', 'scramble', 'match', 'ryder'].includes(draft.format);
+  if (draft.step === 2) return ['stroke', 'scramble', 'fourball', 'foursome', 'match', 'ryder'].includes(draft.format);
   return true;
 }
 
@@ -238,8 +248,9 @@ async function create(ctx) {
       spScoring: draft.spScoring === 'stableford' ? 'stableford' : 'strokes',
       cutAfterRound: num(draft.cutAfterRound), cutSize: num(draft.cutSize)
     });
-    if (draft.format === 'scramble') {
-      data.spTeamSize = draft.spTeamSize === '2' ? 2 : 4;
+    if (TEAM_TYPES.includes(draft.format)) {
+      // Fourball and foursome are pairs by definition; only a scramble asks.
+      data.spTeamSize = draft.format === 'scramble' && draft.spTeamSize !== '2' ? 4 : 2;
       data.spTeamRank = data.spTeamSize === 2 && draft.spTeamRank === 'match' ? 'match' : 'board';
     }
   }

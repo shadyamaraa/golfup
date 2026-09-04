@@ -23,7 +23,7 @@ import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
-import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML } from './mcup-rules.js';
+import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { icon, paintIcons } from './icons.js';
@@ -1560,9 +1560,17 @@ function tnDatesText(tn) {
 // missing and M Cup tournaments read "ryder".
 function tnFormatText(tn) {
   const key = {
-    stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder', scramble: 'fmtScramble'
+    stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder',
+    scramble: 'fmtScramble', fourball: 'fmtFourball', foursome: 'fmtFoursome'
   }[tn?.format];
   return key ? t(key) : (tn?.format || '');
+}
+
+// A team event's rulebook block — the club's own text for fourball and
+// foursomes, the scramble block written for the casual game.
+function tnTeamRulesHTML(tn) {
+  const block = { scramble: scrambleRulesHTML, fourball: fourballRulesHTML, foursome: foursomesRulesHTML }[tn?.format];
+  return block ? `<div style="font-size:0.84rem;line-height:1.6;">${block()}</div>` : '';
 }
 
 // THRU only means something while a round is running; a finished tournament is
@@ -1729,7 +1737,7 @@ function tnInfoHTML(tn) {
   const kind = tnKind(tn);
   const rules = kind === 'ryder' ? ryderRulesHTML()
     : kind === 'match' ? matchRulesHTML()
-      : tnIsTeam(tn) ? `<div style="font-size:0.84rem;line-height:1.6;">${scrambleRulesHTML()}</div>` : '';
+      : tnTeamRulesHTML(tn);
 
   return `
     <div class="surface-card tn-info">
@@ -2007,7 +2015,7 @@ function renderTnBoard() {
     ${tnIsTeam(tn) ? `
       <details style="margin-top:12px;">
         <summary style="font-size:0.78rem;font-weight:700;cursor:pointer;color:var(--text-secondary);">📖 ${t('mpRulesTitle')}</summary>
-        <div style="font-size:0.84rem;line-height:1.6;">${scrambleRulesHTML()}</div>
+        ${tnTeamRulesHTML(tn)}
       </details>` : ''}`;
 
   const input = host.querySelector('#tn-q');
@@ -8099,12 +8107,15 @@ function tnAdminFormHTML(p, tn = {}) {
         <option value="match"${sel('match', tn.format)}>${t('fmtMatch')}</option>
         <option value="ryder"${sel('ryder', tn.format)}>${t('fmtRyder')}</option>
         <option value="scramble"${sel('scramble', tn.format)}>${t('fmtScramble')}</option>
+        <option value="fourball"${sel('fourball', tn.format)}>${t('fmtFourball')}</option>
+        <option value="foursome"${sel('foursome', tn.format)}>${t('fmtFoursome')}</option>
       </select>
-      ${tnIsTeam(tn) ? `
+      ${tn.format === 'scramble' ? `
         <select id="${p}-team-size" title="${t('spTeamSize')}" style="${TN_INPUT}">
           <option value="4"${sel(4, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize4')}</option>
           <option value="2"${sel(2, tnTeamSize(tn))}>${t('spTeamSize')}: ${t('spTeamSize2')}</option>
-        </select>
+        </select>` : ''}
+      ${tnIsTeam(tn) ? `
         <select id="${p}-team-rank" title="${t('spTeamRank')}" style="${TN_INPUT}">
           <option value="board"${sel('board', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankBoard')}</option>
           <option value="match"${sel('match', tn.spTeamRank || 'board')}>${t('spTeamRank')}: ${t('spTeamRankMatch')}</option>
@@ -8144,10 +8155,12 @@ function tnAdminReadForm(p) {
     // The team selects exist on the form only once the tournament IS a
     // scramble, so a save that switches the type keeps the defaults (4, board)
     // and the next edit offers the choice.
-    ...(val('team-size') ? {
-      spTeamSize: num('team-size') === 2 ? 2 : 4,
-      spTeamRank: num('team-size') === 2 && val('team-rank') === 'match' ? 'match' : 'board'
-    } : {}),
+    // The team selects exist on the form only for a team event — the size
+    // one only for a scramble — so a save that switches the type keeps the
+    // defaults and the next edit offers the choice. tnTeamRank() reads 'match'
+    // only for pairs, so a stale value on a four-player scramble is inert.
+    ...(val('team-size') ? { spTeamSize: num('team-size') === 2 ? 2 : 4 } : {}),
+    ...(val('team-rank') ? { spTeamRank: val('team-rank') === 'match' ? 'match' : 'board' } : {}),
     status: val('status'),
     cutAfterRound: num('cut-after'),
     cutSize: num('cut-size')

@@ -1,9 +1,11 @@
-# Scramble tournaments
+# Team tournaments — scramble, fourball, foursome
 
 How a team event runs on the tournament side, for whoever organises one and
 whoever maintains the code next. The casual-game counterpart is
 `docs/casual-formats.md`; this page is about `tournaments/{id}` with
-`format: 'scramble'`.
+`format: 'scramble' | 'fourball' | 'foursome'`. Scramble is described first
+and in full; fourball and foursome ride the same rails and are described by
+their differences at the end.
 
 ## What it is
 
@@ -33,8 +35,8 @@ are simply left off the board.
 
 | Field | Holds |
 | --- | --- |
-| `format` | `'scramble'` — the fourth tournament type after `stroke`, `match`, `ryder` |
-| `spTeamSize` | `2` \| `4` — missing reads as **4**, the club scramble, because a flight of four already is a team |
+| `format` | `'scramble'` \| `'fourball'` \| `'foursome'` — the team types after `stroke`, `match`, `ryder` |
+| `spTeamSize` | `2` \| `4` — a scramble's choice; missing reads as **4**, the club scramble, because a flight of four already is a team. Fourball and foursome are pairs whatever the field says |
 | `spTeamRank` | `'board'` \| `'match'` — only meaningful with two-player teams, since four IS the flight and has nobody to play |
 | `sp.players[teamKey]` | `{ kind: 'team', name, hcp, members: {pid: true, …}, groups: {round: gid} }` |
 | `sp.players[pid]` | the members, as ordinary player entries — with the same `groups` pointer as their team |
@@ -67,11 +69,12 @@ low man", and the same rule the casual scramble uses.
 
 ## WHS
 
-A scramble tournament **never posts a round**. One ball a team means no player
-has a card of their own, and a "complete" round would be partly somebody else's
-shots. The guard is `tnIsTeam()` at the top of `finalizeSpRoundIfComplete` in
-`src/strokeplay-score.js` — the tournament-side twin of the casual scorer's
-`isOneBallFormat()`.
+A scramble or foursome tournament **never posts a round**. One ball a team
+means no player has a card of their own, and a "complete" round would be partly
+somebody else's shots. The guard is `tnOneBall()` at the top of
+`finalizeSpRoundIfComplete` in `src/strokeplay-score.js` — the tournament-side
+twin of the casual scorer's `isOneBallFormat()`. A **fourball** member's card is
+their own and posts exactly as stroke play does.
 
 ## What the organiser does
 
@@ -97,11 +100,44 @@ shots. The guard is `tnIsTeam()` at the top of `finalizeSpRoundIfComplete` in
 
 | File | Responsibility |
 | --- | --- |
-| `src/strokeplay.js` | `tnIsTeam`, `tnTeamSize`, `tnTeamRank`, `teamKeyOf`, `isTeamEntry`, `teamMemberIds`, `spTeams`, `spFlightMatch`; `spEntries` and `drawGroups` read teams in a team event |
+| `src/strokeplay.js` | `TN_TEAM_FORMATS`, `tnIsTeam`, `tnOneBall`, `tnTeamSize`, `tnTeamRank`, `teamKeyOf`, `isTeamEntry`, `teamMemberIds`, `spTeams`, `spFlightMatch`, `fourballRound`; `spEntries` and `drawGroups` read teams in a team event |
 | `src/strokeplay-admin.js` | the Багууд fold; `saveDraft` writes `kind`/`members` and every member's flight pointer |
 | `src/strokeplay-score.js` | team rows with member lines, the flight match line, the WHS guard |
 | `src/tournament-wizard.js` | the Скрэмбл card and its two settings |
 | `src/app.js` | `tnFormatText`, the team size on the facts line under the title, the board's ТEAM column head, the flight-matches card in a match event, and the rulebook fold under the board — a stroke-kind tournament has no info tab, so that is where a player reads the rules |
 | `src/mcup-rules.js` | `scrambleRulesHTML()` — the Mongolian rulebook block, shared with casual games |
 
-Tests: `npm run test:mp` — the team section of `scripts/test-strokeplay.mjs`.
+Tests: `npm run test:mp` — the team sections of `scripts/test-strokeplay.mjs`.
+
+## Fourball — the derived pair
+
+Fourball is the one team type where **each member plays their own ball on
+their own ordinary card** (`sp.scores[memberPid]`), and the pair's round is
+*derived* rather than stored: `fourballRound()` takes the pair's **best ball on
+every hole** — best gross for the gross reading, best net for net, best points
+for Stableford. It comes back in the shapes `roundGross()` and `roundPoints()`
+return, so `spEntries` only chooses which to rank on.
+
+- **Handicaps are per player**, off the roster's own HCP (WHS-filled or typed),
+  each member receiving their **full** playing handicap by stroke index — the
+  allowance a Stableford tournament gives. A fourball pair has no team
+  handicap; the editor hides that field, and `spEntries` leaves the pair's
+  `hcp` null so nothing is taken off twice.
+- **One ball is enough.** A partner who picked up leaves a blank, which is
+  ordinary fourball; a hole with neither ball in stays open and the pair's
+  *thru* stops there.
+- **The flight scorer** shows the four members' rows (the flight still lists
+  the two *pairs*) with each pair's best ball so far underneath — gross and net
+  — and, in a match event, the status line.
+- **A flight match** takes a side's best net ball with everyone off the
+  **lowest of the four** in the flight, the reading the casual game and the
+  M Cup give a fourball match. The stroke-play board keeps full handicaps.
+- **WHS posts** — every member's card is a real round.
+
+## Foursome — a scramble for pairs
+
+One ball a pair, alternate shot. Mechanically it *is* the scramble tournament
+with `spTeamSize` fixed at 2: the team ball under the team key, the team
+handicap typed by the organiser, board or flight match, no WHS posting. Only
+the rulebook differs — the club's own FOURSOMES block from the M Cup document,
+shown in the wizard and in the fold under the board.

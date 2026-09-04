@@ -146,7 +146,8 @@ Tournaments (`tournaments/{id}`, the in-app stroke play node — see
 
 ```js
 {
-  format,        // 'stroke' | 'match' | 'ryder' | 'scramble' — tnKind() branches on it
+  format,        // 'stroke' | 'match' | 'ryder' | 'scramble' | 'fourball' | 'foursome'
+                 // — tnKind() branches on it; the three team types ride the stroke rails
   spScoring,     // 'strokes' (default when missing) | 'stableford'
   spTeamSize,    // scramble only: 2 | 4 (4 when missing)
   spTeamRank,    // scramble only: 'board' (default) | 'match' — two-player teams only

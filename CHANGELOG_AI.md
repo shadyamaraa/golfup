@@ -1,5 +1,36 @@
 # CHANGELOG_AI.md
 
+## 2026-09-04 (Fourball and Foursome tournaments)
+
+The two remaining 2 v 2 types, on the rails the scramble tournament laid: a
+team is an `sp.players` entry, its members carry the flight pointer, and the
+board, the cut, the draw and the database rules are untouched.
+
+- **Foursome** is a scramble for pairs with the club's FOURSOMES rulebook: one
+  ball under the team key, the team handicap typed by the organiser, board or
+  flight match, no WHS posting. `tnTeamSize` is 2 whatever the size field says.
+- **Fourball** is the different one. Each member plays their own ball on their
+  own ordinary card, and the pair's round is *derived* — `fourballRound()` takes
+  the best ball on every hole: best gross for the gross reading, best net with
+  every member off their **full** playing handicap by stroke index (the
+  allowance a Stableford tournament gives), best points for Stableford. It
+  returns the shapes `roundGross()`/`roundPoints()` return, so `spEntries` only
+  chooses which to rank on. A pair has no team handicap: the editor hides that
+  field and the roster's per-player HCPs do the work. One ball is enough, as in
+  real fourball. The flight scorer shows the four members' rows with each pair's
+  best ball underneath; a flight match settles off the lowest of the four, the
+  casual game's and the M Cup's reading.
+- **WHS**: the guard became `tnOneBall()`. A foursome team ball never posts; a
+  fourball member's complete card posts exactly as stroke play does — both
+  driven in the browser, with the whole fourball organiser flow (wizard → pairs
+  → draw → flight scorer → board) alongside.
+- `tnFormatText`, the wizard's cards and summary, the admin form's selects
+  (team size only for a scramble, the rank select for every team type) and the
+  rulebook fold under the board all learned the two names; the i18n format
+  labels already existed.
+
+Tests: `npm run test:mp` is 215 (was 206).
+
 ## 2026-09-03 (Scramble tournaments — the fourth tournament type)
 
 Teams of two or four play one ball, and the field is ranked by team total on
