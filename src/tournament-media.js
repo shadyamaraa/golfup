@@ -65,31 +65,34 @@ export const tnHasGuide = (tn) => !!tnGuide(tn);
 
 // ---- The tournament page ----
 
-// The partner organisations, as a strip. Each mark sits on a light plaque:
-// most logos are dark-on-transparent, and dropped straight onto the app's navy
-// card half of them would vanish.
+// The partner organisations: a section of its own, headed like the board's
+// own sections rather than boxed in a card, with ONE organisation to a row so
+// every mark gets the full width and none is read as smaller than another.
+//
+// Each mark sits centred on a light plaque: most logos are dark-on-transparent
+// and, dropped straight onto the app's navy page, half of them would vanish.
 export function tnSponsorsHTML(tn) {
   const list = tnSponsors(tn);
   if (!list.length) return '';
   const mark = (s) => {
     const inner = s.logo
-      ? `<img src="${s.logo}" alt="${esc(s.name)}" style="max-width:100%;max-height:38px;object-fit:contain;display:block;" />`
-      : `<span style="font-weight:700;font-size:0.8rem;color:#0C3051;">${esc(s.name)}</span>`;
+      ? `<img src="${s.logo}" alt="${esc(s.name)}" style="max-width:100%;max-height:72px;object-fit:contain;display:block;margin:0 auto;" />`
+      : `<span style="font-weight:700;font-size:1.05rem;color:#0C3051;">${esc(s.name)}</span>`;
+    // The plaque's height and its padding set the ceiling on the mark: a tall
+    // logo is bounded by one, a wide one by the row's width. 104 − 2×16 = 72,
+    // which is the max-height above, so a square mark fills the row as fully
+    // as a wordmark does.
     const plaque = `
       <span title="${esc(s.name)}" style="display:flex;align-items:center;justify-content:center;
-             min-width:84px;height:54px;padding:8px 12px;box-sizing:border-box;
-             background:#fff;border-radius:10px;">${inner}</span>`;
+             width:100%;min-height:104px;padding:16px 20px;box-sizing:border-box;
+             background:#fff;border-radius:12px;">${inner}</span>`;
     return s.link
-      ? `<a href="${esc(s.link)}" target="_blank" rel="noopener">${plaque}</a>`
+      ? `<a href="${esc(s.link)}" target="_blank" rel="noopener" style="display:block;">${plaque}</a>`
       : plaque;
   };
   return `
-    <div class="surface-card" style="margin-bottom:14px;">
-      <div style="font-size:0.62rem;letter-spacing:0.08em;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">
-        ${t('tnSponsors')}
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${list.map(mark).join('')}</div>
-    </div>`;
+    <div class="section-head tn-section"><h2>${t('tnSponsors')}</h2></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">${list.map(mark).join('')}</div>`;
 }
 
 // The удирдамж popup. The text is shown exactly as it was typed —
