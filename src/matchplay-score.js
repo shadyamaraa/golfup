@@ -171,7 +171,7 @@ function pendingHTML(mp, match, user) {
     </div>`;
 }
 
-function screenHTML(tn, match, demo, user, ticker = '') {
+function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
@@ -184,7 +184,7 @@ function screenHTML(tn, match, demo, user, ticker = '') {
   const lead = settled.leader ? sideLabel(mp, match, settled.leader) : '';
 
   return `
-    <div class="detail-container fade-in" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
+    <div class="detail-container${fade ? ' fade-in' : ''}" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
       <a href="#/tournament/${esc(tn.id)}" class="back-link">${t('back')}</a>
       ${ticker}
 
@@ -275,8 +275,14 @@ export async function renderScorerPage(tnId, matchId, ctx) {
 
   let data = tn;
   let denied = false;
+  // The screen as last rendered, ticker excluded. The listener fires on EVERY
+  // change to the tournament — every hole of every other match — and rebuilding
+  // this screen for those re-ran the fade-in animation and replaced the result
+  // buttons mid-tap, which reads as the card jumping while somebody scores.
+  let lastBody = null;
 
   const notFound = (msg, back) => {
+    lastBody = null;
     host.innerHTML = `<div class="detail-container fade-in">
       <a href="${back}" class="back-link">${t('back')}</a>
       <div class="empty-state" style="padding:40px 20px;"><p>${msg}</p></div></div>`;
@@ -299,7 +305,13 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, m, demoMode, ctx.user, ctx.ticker?.(data) || '');
+    const body = screenHTML(data, m, demoMode, ctx.user, '', false);
+    // Nothing this match shows has changed: refresh the leaderboard strip in
+    // place and leave the rest of the DOM alone.
+    if (body === lastBody && ctx.tickerPatch?.(host, data)) return;
+    const first = lastBody === null;
+    lastBody = body;
+    host.innerHTML = screenHTML(data, m, demoMode, ctx.user, ctx.ticker?.(data) || '', first);
     wire();
     // Repainted every time because the screen was just replaced wholesale.
     paintDeviceBanner();

@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] Tournament scoring screens no longer rebuild themselves on every score
+      entered anywhere in the tournament — scorers reported the card jumping
+      and taps being eaten mid-round.
 - [x] A member's own team is marked on team-event leaderboards — the ticker
       badge, the home strip, the board row and the ТАНЫ БАЙР banner — without
       giving a team a userId.
