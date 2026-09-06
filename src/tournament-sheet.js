@@ -9,6 +9,8 @@
 //
 // Nothing here touches the DOM or Firebase; app.js owns both.
 
+import { GENDERS, isGender } from './gender.js';
+
 // ---- URL handling ----
 
 // Pull the file id (and the tab's gid, when the URL carries one) out of any
@@ -537,6 +539,27 @@ export function rankEntries(entries, { cutAfterRound, cutSize, higherWins = fals
 // nothing at all, which is what a browse row shows as "no result yet".
 export function winners(ranked) {
   return (Array.isArray(ranked) ? ranked : []).filter(e => e && e.rank === 1);
+}
+
+// The board — or the boards. A tournament run in divisions ranks each on its
+// own: positions start again at 1 and the cut is taken per division, exactly
+// as when the club ran the two as separate tournaments. Entries say which
+// division they stand in (`division`, put there by spEntries when the
+// tournament has them); a list where none does is one board, `division: null`,
+// ranked precisely as rankEntries alone would rank it — so a legacy sheet
+// snapshot or an undivided tournament reads as it always has. Boards come in
+// the fixed order of GENDERS, a division nobody is in is left out, and an entry
+// without a division in a divided list stands with the men — the reading
+// spEntries gives it — rather than opening a third board.
+export function rankByDivision(entries, opts = {}) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.some(e => isGender(e?.division))) {
+    return [{ division: null, entries: rankEntries(list, opts) }];
+  }
+  const of = (e) => (isGender(e?.division) ? e.division : 'male');
+  return GENDERS
+    .map(d => ({ division: d, entries: rankEntries(list.filter(e => of(e) === d), opts) }))
+    .filter(b => b.entries.length);
 }
 
 export function nameKey(name) {

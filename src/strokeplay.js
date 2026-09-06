@@ -31,6 +31,7 @@ import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
 import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
 import { settleMatch, statusText, HALVED } from './matchplay.js';
+import { GENDERS, isGender } from './gender.js';
 
 export const SP_HOLES = 18;
 
@@ -107,6 +108,53 @@ export const isTeamEntry = (p) => p?.kind === 'team';
 // A team entry's member ids. Stored as a {pid:true} map rather than an array
 // so the database rules can test membership without iterating.
 export const teamMemberIds = (p) => Object.keys(p?.members || {});
+
+// ---- Divisions ----
+// A tournament can split its field into the club's two gender divisions, the
+// way this season's Han Bogd Cup was run as two tournaments — (Men) and
+// (Ladies) — on the same day: same course, same par, each division on its own
+// board with its own positions and its own cut, its own flights in the draw,
+// and the women's division playing its own tee. `spDivisions: 'gender'` on
+// the record turns it on; a record without it is the single board it always
+// was, so no existing tournament changes.
+export const DIVISIONS = GENDERS;   // board order: male, then female
+export const tnHasDivisions = (tn) => tn?.spDivisions === 'gender';
+
+// Which division an sp.players entry stands in, and on whose word:
+//   'set'      — the entry carries one: a person's, copied from their profile
+//                when they were added, or an admin's override on a team;
+//   'derived'  — a team without one takes its members': all women → female,
+//                otherwise male;
+//   'fallback' — nothing to go on, so male. The roster flags these for the
+//                admin; they never open a third board.
+export function entryDivisionInfo(players, pid) {
+  const p = players?.[pid];
+  if (isGender(p?.division)) return { division: p.division, source: 'set' };
+  if (isTeamEntry(p)) return { division: teamDerivedDivision(players, pid), source: 'derived' };
+  return { division: 'male', source: 'fallback' };
+}
+
+// What a team's members say, override or no override — the roster shows it
+// beside an overridden team so the admin can see what "auto" would give back.
+export function teamDerivedDivision(players, pid) {
+  const ids = teamMemberIds(players?.[pid]);
+  const allWomen = ids.length > 0 && ids.every(m => players?.[m]?.division === 'female');
+  return allWomen ? 'female' : 'male';
+}
+export const entryDivision = (players, pid) => entryDivisionInfo(players, pid).division;
+
+// The tee a division plays from: the women's tee where the tournament has one
+// and divisions are on, the tournament's own everywhere else. Rating and slope
+// are what the WHS course handicap and the posted differential read; the key
+// is only the label on the printed card. Both numbers or nothing — a key with
+// no numbers behind it is not a tee — and a women's tee left on a record whose
+// divisions were switched off again is inert.
+export function tnTeeFor(tn, division) {
+  const main = { tee: tn?.tee ?? null, rating: tn?.rating ?? null, slope: tn?.slope ?? null };
+  if (!tnHasDivisions(tn) || division !== 'female') return main;
+  if (!tn?.womenRating || !tn?.womenSlope) return main;
+  return { tee: tn.womenTee ?? null, rating: tn.womenRating, slope: tn.womenSlope };
+}
 
 // Fourball: a team's round, derived from its members' own cards. On every hole
 // the team scores its BEST ball — best gross for the gross reading, best net
@@ -302,6 +350,10 @@ export function spEntries(tn, metric = 'gross') {
 
   const fourball = tn?.format === 'fourball';
 
+  // Entries say which division they stand in only when the tournament has
+  // them: an undivided tournament's entries keep exactly the shape they had.
+  const divided = tnHasDivisions(tn);
+
   return Object.entries(sp.players)
     .filter(([, p]) => p && (!teamOnly || isTeamEntry(p)))
     .map(([pid, p]) => {
@@ -365,6 +417,7 @@ export function spEntries(tn, metric = 'gross') {
       // carries its members by id. Display only — nothing that WRITES may
       // read this, or a team would post to somebody's handicap.
       ...(isTeamEntry(p) ? { memberIds: teamMemberIds(p) } : {}),
+      ...(divided ? { division: entryDivision(sp.players, pid) } : {}),
       name: p.name || pid,
       hcp,
       status: p.status || '',
@@ -446,6 +499,23 @@ export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = M
     return !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
   });
 
+  // A divided field is drawn one division at a time: the women play a
+  // different tee, so a women's pair can never share a flight with a men's
+  // one. Men's flights first, then the women's, numbered on from where the
+  // men's stop — the shape of this season's two-tournament Han Bogd Cup.
+  const parts = tnHasDivisions(tn)
+    ? DIVISIONS.map(d => pids.filter(pid => entryDivision(players, pid) === d)).filter(l => l.length)
+    : [pids];
+  // 'standings' reads the board once, whichever division is being drawn.
+  const higher = tnHigherWins(tn);
+  const totals = method === 'standings'
+    ? new Map(spEntries(tn, higher ? 'stableford' : 'gross').map(e => [e.pid, e.total]))
+    : null;
+  return parts.flatMap(list => drawList(players, list, { method, size, rnd, totals, higher }));
+}
+
+// One field's draw — the whole roster, or one division of it.
+function drawList(players, pids, { method, size, rnd, totals, higher }) {
   if (method === 'hcp') {
     const hcpOf = (pid) => {
       const n = Number(players[pid]?.hcp);
@@ -466,8 +536,6 @@ export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = M
   if (method === 'standings') {
     // Whatever the tournament actually ranks by: a Stableford draw has to
     // read points, or "leaders last" would send the field out backwards.
-    const higher = tnHigherWins(tn);
-    const totals = new Map(spEntries(tn, higher ? 'stableford' : 'gross').map(e => [e.pid, e.total]));
     // Worst first: the leaders land in the LAST group, teeing off last.
     const key = (pid) => {
       const v = totals.get(pid);
@@ -669,9 +737,13 @@ export function spPlayerStats(tn, pid, round = null) {
 
   // The field's scoring average over the same scope — the number that tells
   // a player whether their round was good for the day, not just for them.
+  // In a divided tournament "the field" is the player's own division: the
+  // other one played a different tee and is not the comparison.
   let fieldGross = 0;
   let fieldRounds = 0;
+  const division = tnHasDivisions(tn) ? entryDivision(tn.sp?.players, pid) : null;
   Object.keys(tn?.sp?.players || {}).forEach(other => {
+    if (division !== null && entryDivision(tn.sp.players, other) !== division) return;
     for (let r = 1; r <= roundCount; r++) {
       if (!inScope(r)) continue;
       const holes = tn?.sp?.scores?.[other]?.[r];

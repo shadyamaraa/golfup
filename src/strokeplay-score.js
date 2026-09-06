@@ -9,7 +9,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnOneBall, tnTeamRank,
-  isTeamEntry, teamMemberIds, spFlightMatch, fourballRound
+  isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision
 } from './strokeplay.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
@@ -77,7 +77,11 @@ async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
   // casual scorer guards the same way (isOneBallFormat in game-score.js).
   if (tnOneBall(tn)) return;
   try {
-    if (!tn?.rating || !tn?.slope) return;
+    // The tee this player's division plays: a woman in a divided tournament
+    // posts against the women's rating and slope, whichever board her pair
+    // happens to stand on. Everyone else posts on the tournament's own.
+    const tee = tnTeeFor(tn, entryDivision(tn?.sp?.players, pid));
+    if (!tee.rating || !tee.slope) return;
     const holes = tn.sp?.scores?.[pid]?.[round];
     if (roundGross(holes).holesIn < SP_HOLES) return;
     const userId = tn.sp?.players?.[pid]?.userId
@@ -85,7 +89,7 @@ async function finalizeSpRoundIfComplete(tn, tnId, pid, round) {
     if (!userId) return;
     const u = await store.loadUserById(userId);
     if (!u?.ghinNumber) return;
-    const rec = roundFromTournament({ ...tn, id: tnId }, userId, round, holes);
+    const rec = roundFromTournament({ ...tn, id: tnId, rating: tee.rating, slope: tee.slope }, userId, round, holes);
     if (!rec) return;
     await store.upsertRound(u.ghinNumber, rec);
     const rounds = await store.loadRounds(u.ghinNumber);

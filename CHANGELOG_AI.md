@@ -1,5 +1,60 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (Gender divisions inside one tournament)
+
+The club has been running a women's division as a **separate tournament** —
+this morning's Han Bogd Cup was two records, *(Men)* 59 players and *(Ladies)*
+16, and JCI was the same. A tournament can now carry **Эрэгтэй / Эмэгтэй
+divisions** itself, on the principle those two records already embody: same
+course, same par, each division on its own board, its own flights in the draw,
+and the women's division playing **its own tee** (rating and slope — pars and
+stroke indexes are per course, so a tee is exactly those two numbers).
+
+**The record.** `spDivisions: 'gender'` turns it on — absent means the single
+board it always was, so no existing tournament changes. `womenTee` /
+`womenRating` / `womenSlope` sit beside the main `tee` / `rating` / `slope`;
+nulls mean "same as the main tee". Each `sp.players` entry may carry
+`division`: a person's is copied from their profile when they are added (the
+gender field shipped this afternoon), editable on the roster row; a team's is
+absent by default and **derived** from its members — all women → Эмэгтэй,
+otherwise Эрэгтэй — with the admin's override stored only when they set one,
+so the blank option reads `Авто: Эмэгтэй` and says what it would give back.
+An entry with nothing to go on stands with the men, and the roster flags it.
+
+**The boards.** `rankByDivision` in `tournament-sheet.js` ranks each division
+on its own: positions start again at 1 and **the cut is taken per board, when
+that board's next round starts** — the men can be into round two with their
+cut made while the women are still finishing round one, and a merged cut of
+"the best 30" would have eliminated the women wholesale. The leaderboard gets
+**Бүгд | Эрэгтэй | Эмэгтэй** tabs; Бүгд stacks the two boards under headings,
+each with its own count and cut line. The choice is remembered across a trip
+to a player's card and back. The home strip and the scorer ticker lead each
+board's run with a division tag; the Games-page row names each division's
+winner (`ЯЛАГЧ Эр Б. Ганбат −3 · Эм Х. Хулан +1`); the player card ranks
+within its own division and scopes its field average to it; the printed score
+sheet and the marshal's time table say which division a flight is and print
+the women's tee on a women's flight; the draw never mixes the two.
+
+**WHS posting** reads the division's tee: a woman in a fourball pair posts
+against `goldLadies` even though the pair sits on the men's board.
+
+**The admin form** gains a divisions select and, with it on, the women's tee
+select; both are read by the select's *presence*, so a blank women's tee
+writes its nulls. The three selects that reshape the form — type, divisions,
+course — are re-armed after every rebuild, which fixes a latent bug: the course
+handler used to be lost the moment the type was changed. The roster gets a
+division select on every player and team row, a `↻ Ангилал — профайлаас` bulk
+fill for blanks, and a `⚠ N ангилалгүй` line naming who is unplaced.
+
+**Untouched, by construction.** An undivided tournament renders byte-identical
+DOM on every surface the change passes through (board, strip, ticker, browse
+row, card, sheet, marshal table — captured on `main` and on the branch and
+diffed). Match play is not involved. No rules change: `sp/players/*` has no
+per-field constraint. 14 new tests in `scripts/test-divisions.mjs`.
+
+Also: the admin tournament row counts an M Cup's field from `mp.roster`
+instead of printing `0 тоглогч`.
+
 ## 2026-09-06 (Tournaments on the Games page, and an inline status control)
 
 Two asks, one change.
