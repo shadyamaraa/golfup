@@ -1,5 +1,43 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (Gender on the member profile)
+
+The club needs each member's gender recorded. The profile now carries it, the
+admin's create-user form requires it, and a one-off script fills it in for the
+140 members who registered before the field existed.
+
+**Where it appears.** Two chips on the member's own profile form — the same
+one-of-N row the theme and language settings use — and a select in both admin
+forms, where the create form makes it **required**: a new profile cannot be
+made without it, which is what "from now on" asks for. The value reads back on
+the member's own profile beside the year they joined, and **nowhere else** —
+not on another member's page, not on a board, not on a printed card.
+
+There is no sign-up screen in this app (`renderAuth` is login only; an unknown
+phone is refused), so "required at creation" lives on the admin form. Existing
+members are *not* pushed through the forced profile modal — 140 people would
+meet it on their next login, and the backfill fills them in anyway.
+
+**The backfill** (`scripts/backfill-gender.mjs`, in the shape of
+`import-ghin.mjs`: plain REST, dry run by default, one `PATCH` carrying one
+key). Female by two independent signals — membership of the women's circle, or
+having played a tournament the club named for women — and male otherwise. The
+second signal exists so a woman who never joined the circle is not written down
+as a man; on today's data the two sets happen to coincide, but it costs nothing
+and guards the next intake. A gender that is already set is never overwritten,
+so the script is idempotent and safe to re-run after members correct
+themselves. The rule itself lives in the pure `src/gender.js` and is unit
+tested; the script only gathers the signals.
+
+**A hazard the new field walked into, now closed.** Saving a profile writes the
+*whole* user record from the session copy, so any key the copy did not have was
+erased on save — the scorer's `hcpIndex` has been exposed to this all along,
+and a backfilled `gender` would have been next. The edit page now renders from
+a fresh read of the record, and the save lays the form's fields over that fresh
+record rather than over the cached one. Driven both ways in a browser: with the
+record changed behind the form's back, saving an unrelated field keeps both
+`hcpIndex` and `gender`.
+
 ## 2026-09-06 (The print scope buttons were hiding)
 
 The *Флайт бүхэлдээ / Зөвхөн миний* pair rendered only when the reader had a
