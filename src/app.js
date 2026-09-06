@@ -8,6 +8,7 @@ import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
+import { GENDERS, isGender, genderKey } from './gender.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
@@ -348,6 +349,16 @@ function matchesHomeFilter(game) {
   if (homeFilter === 'joined') return game.createdBy !== currentUser?.id && isPlayerInGame(game, currentUser?.id);
   if (homeFilter === 'following') return !!currentUserFollows[game.createdBy];
   return true;
+}
+
+// The gender control, in the shape bankSelectHTML gives every other pick list:
+// a placeholder first, then the values. Used by both admin forms; the member's
+// own profile uses chips instead, matching the theme and language rows there.
+function genderSelectHTML(id, currentValue, required = false) {
+  const opts = GENDERS.map(g =>
+    `<option value="${g}"${currentValue === g ? ' selected' : ''}>${t(genderKey(g))}</option>`).join('');
+  return `<select id="${id}" class="form-input"${required ? ' required' : ''}>`
+    + `<option value="">${t('selectGender')}</option>${opts}</select>`;
 }
 
 function bankSelectHTML(id, currentValue) {
@@ -4641,6 +4652,7 @@ async function renderAdminPanel() {
               <input type="text" id="new-user-name" placeholder="${t('usernameLabel')}" required minlength="2" style="flex:1; min-width:180px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-firstname" placeholder="${t('firstName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-lastname" placeholder="${t('lastName')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <div style="flex:1; min-width:140px;">${genderSelectHTML('new-user-gender', '', true)}</div>
               <input type="text" id="new-user-ghin" placeholder="${t('ghinNumber')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-memberid" placeholder="${t('ubgolfMemberId')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
@@ -4954,6 +4966,15 @@ async function renderAdminPanel() {
     // keyed by it, so only a clean 7-8 digit number may be stored.
     const ghinNumber = document.getElementById('new-user-ghin').value.replace(/\D/g, '');
     const ubgolfMemberId = document.getElementById('new-user-memberid').value.trim();
+    // Required on a NEW profile — the club wants it recorded from the start.
+    // Existing members were filled in by scripts/backfill-gender.mjs and can
+    // change it themselves on their profile.
+    const gender = document.getElementById('new-user-gender').value;
+    if (!isGender(gender)) {
+      showToast(t('selectGender'), 'error');
+      submitBtn.disabled = false;
+      return;
+    }
     if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) {
       showToast(t('gsGhinInvalid'), 'error');
       submitBtn.disabled = false;
@@ -4970,7 +4991,7 @@ async function renderAdminPanel() {
     await store.adminCreateUser(name, pass, phone, 'user', communities, {
       lastName, firstName,
       fullName: [firstName, lastName].filter(Boolean).join(' '),
-      ghinNumber, ubgolfMemberId,
+      gender, ghinNumber, ubgolfMemberId,
     });
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
@@ -5138,6 +5159,10 @@ function showAdminEditUserModal(user, onSaved) {
         </select>
       </div>
       <div class="input-group" style="margin-top:10px;">
+        <label>${t('gender')}</label>
+        ${genderSelectHTML('ae-gender', user.gender || '')}
+      </div>
+      <div class="input-group" style="margin-top:10px;">
         <label>Статус</label>
         <select id="ae-status" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);">
           <option value="active" ${user.status !== 'hold' ? 'selected' : ''}>Идэвхтэй</option>
@@ -5208,6 +5233,7 @@ function showAdminEditUserModal(user, onSaved) {
     user.phone = document.getElementById('ae-phone').value.trim();
     user.role = document.getElementById('ae-role').value;
     user.status = document.getElementById('ae-status').value;
+    user.gender = document.getElementById('ae-gender').value;
     user.bankName = document.getElementById('ae-bank-name').value.trim();
     user.bankAccount = document.getElementById('ae-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('ae-bank-iban').value.trim();
@@ -6656,6 +6682,14 @@ function profileFormInner(user) {
       </div>
 
       <div class="input-group" style="margin-top: 15px;">
+        <label>${t('gender')}</label>
+        <div class="chip-row" id="profile-gender-chips">
+          ${GENDERS.map(g => `
+            <button type="button" class="seg-chip${user.gender === g ? ' active' : ''}" data-gender="${g}">${t(genderKey(g))}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="input-group" style="margin-top: 15px;">
         <label>${t('communities')}</label>
         <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;color:var(--text-secondary);">
           ${userCommunityIds(user).map(communityLabel).join(', ') || t('noCommunitiesAssigned')}
@@ -6712,6 +6746,15 @@ function profileFormInner(user) {
 // Wire avatar selection + save for a profile form inside `scope` (modal or page).
 function wireProfileForm(scope, user, afterSave) {
   let selectedAvatar = user.avatar || '';
+  // Gender chips, the same one-of-N row the theme and language chips use.
+  let selectedGender = isGender(user.gender) ? user.gender : '';
+  scope.querySelectorAll('#profile-gender-chips .seg-chip').forEach(c => {
+    c.onclick = () => {
+      selectedGender = c.dataset.gender;
+      scope.querySelectorAll('#profile-gender-chips .seg-chip')
+        .forEach(x => x.classList.toggle('active', x === c));
+    };
+  });
   const preview = scope.querySelector('#avatar-preview');
   const refreshPreview = () => { if (preview) preview.innerHTML = avatarInner(selectedAvatar, displayUsername(user).charAt(0).toUpperCase()); };
   scope.querySelectorAll('.avatar-option').forEach(opt => {
@@ -6757,31 +6800,42 @@ function wireProfileForm(scope, user, afterSave) {
     );
     if (duplicateUsername) { showToast('Энэ username ашиглагдаж байна', 'error'); return; }
 
-    user.username = newUsername;
-    user.lastName = newLastName;
-    user.firstName = newFirstName;
-    user.fullName = [newFirstName, newLastName].filter(Boolean).join(' ');
-    user.name = newUsername;
-    user.avatar = selectedAvatar;
-    if (newPass && newPass.length >= 1) user.password = newPass;
-    user.bankName = document.getElementById('profile-bank-name').value.trim();
-    user.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
-    user.bankIban = document.getElementById('profile-bank-iban').value.trim();
-    user.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
+    // Saving writes the WHOLE record, and `user` is the session copy — which
+    // may be older than the record is. The scorer writes hcpIndex behind this
+    // form's back, an admin can edit the same member, and the gender backfill
+    // wrote a key this session never saw. So start from the record as the
+    // database holds it and lay only this form's fields over it; otherwise
+    // saving a profile silently erases whatever the form does not show.
+    let fresh = null;
+    try { fresh = await store.loadUserById(user.id); } catch (_) { }
+    const rec = fresh ? { ...fresh } : { ...user };
+
+    rec.username = newUsername;
+    rec.lastName = newLastName;
+    rec.firstName = newFirstName;
+    rec.fullName = [newFirstName, newLastName].filter(Boolean).join(' ');
+    rec.name = newUsername;
+    rec.avatar = selectedAvatar;
+    rec.gender = selectedGender;
+    if (newPass && newPass.length >= 1) rec.password = newPass;
+    rec.bankName = document.getElementById('profile-bank-name').value.trim();
+    rec.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
+    rec.bankIban = document.getElementById('profile-bank-iban').value.trim();
+    rec.mtbogdCode = document.getElementById('profile-mtbogd-code').value.trim();
     {
       // GHIN numbers are 7-8 digits; rounds/{ghinNumber} is keyed by it, so a
       // malformed value is refused rather than silently stored.
       const ghin = document.getElementById('profile-ghin-number').value.replace(/\D/g, '');
       if (ghin && !/^\d{7,8}$/.test(ghin)) { showToast(t('gsGhinInvalid'), 'error'); return; }
-      user.ghinNumber = ghin;
+      rec.ghinNumber = ghin;
     }
-    user.notifyWeb = document.getElementById('notify-web-toggle').checked;
-    user.notifySms = document.getElementById('notify-sms-toggle').checked;
-    if (user.notifyWeb) initFCM(user);
+    rec.notifyWeb = document.getElementById('notify-web-toggle').checked;
+    rec.notifySms = document.getElementById('notify-sms-toggle').checked;
+    if (rec.notifyWeb) initFCM(rec);
 
-    await store.adminUpdateUser(user);
-    store.saveUser(user);
-    currentUser = user;
+    await store.adminUpdateUser(rec);
+    store.saveUser(rec);
+    currentUser = rec;
     showToast('✅ ' + t('saved'), 'success');
     updateHeader();
     afterSave();
@@ -6790,8 +6844,14 @@ function wireProfileForm(scope, user, afterSave) {
 
 // ---- Profile edit page (#/profile/edit) ----
 async function renderProfileEdit() {
-  const user = currentUser;
-  if (!user) { location.hash = '#/'; return; }
+  if (!currentUser) { location.hash = '#/'; return; }
+  // Render from the record as the database holds it, not from the session
+  // copy. The copy can be older than the record — the scorer writes hcpIndex,
+  // an admin can edit the member, the gender backfill wrote a key this session
+  // never saw — and a form built from a stale copy would show the old value
+  // and then save it back over the new one.
+  let user = currentUser;
+  try { user = (await store.loadUserById(currentUser.id)) || currentUser; } catch (_) { }
   main().innerHTML = `
     <div class="create-container fade-in">
       <a href="#/profile" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>
@@ -6855,8 +6915,16 @@ async function renderProfile() {
   try { games = await store.loadAllGames(); } catch (_) {}
   // The cached WHS index lives on users/{id} (written by the scorer), not in
   // the localStorage session copy — read it fresh.
+  // The cached WHS index and the gender both live on users/{id} — the index
+  // written by the scorer, the gender possibly by the backfill — so neither is
+  // necessarily in the localStorage session copy. One read serves both.
   let hcpIndex = null;
-  try { hcpIndex = (await store.loadUserById(u.id))?.hcpIndex ?? u.hcpIndex ?? null; } catch (_) {}
+  let gender = isGender(u.gender) ? u.gender : '';
+  try {
+    const rec = await store.loadUserById(u.id);
+    hcpIndex = rec?.hcpIndex ?? u.hcpIndex ?? null;
+    if (isGender(rec?.gender)) gender = rec.gender;
+  } catch (_) {}
   const myGames = games.filter(isMyGame);
   const created = games.filter(g => g.createdBy === u.id).length;
   const invited = games.filter(g => Array.isArray(g.invitedIds) && g.invitedIds.includes(u.id)).length;
@@ -6885,7 +6953,7 @@ async function renderProfile() {
           <div class="profile-avatar">${avatarInner(u.avatar, initial)}</div>
           <div class="profile-id">
             <div class="profile-name">${esc(displayFullName(u) || displayUsername(u))}</div>
-            <div class="profile-since">${t('pfSince')} ${year}</div>
+            <div class="profile-since">${t('pfSince')} ${year}${gender ? ` · ${t(genderKey(gender))}` : ''}</div>
           </div>
         </div>
 

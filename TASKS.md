@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] Gender on the member profile — chips on the member's own form, a
+      required select when an admin creates a profile, and a one-off backfill
+      from the women's circle and the club's ladies events.
 - [x] Printable tournament score cards at #/spsheet — one flight in the
       casual game's card layout, own and team first, with a whole-flight or
       only-mine toggle. The grid is shared, so the two cannot drift apart.
