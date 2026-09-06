@@ -196,9 +196,9 @@ export async function renderSpSheetPage(tnId, round, gid, ctx) {
       <div class="sc-no-print" style="margin-bottom:4px;">
         <a href="${ctx.user ? `#/spgroup/${esc(tnId)}/${esc(round)}/${esc(gid)}` : '#/'}" class="back-link" style="margin:0;">← ${t('back')}</a>
         <span style="flex:1;"></span>
-        ${hasMine ? `
-          <button class="btn btn-outline btn-sm" data-spsh-scope="all">${t('spSheetAll')}</button>
-          <button class="btn btn-outline btn-sm" data-spsh-scope="mine">${t('spSheetMine')}</button>` : ''}
+        <button class="btn btn-outline btn-sm" data-spsh-scope="all">${t('spSheetAll')}</button>
+        <button class="btn btn-outline btn-sm" data-spsh-scope="mine"
+          ${hasMine ? '' : `disabled title="${t('spSheetNotYours')}" style="opacity:0.45;cursor:default;"`}>${t('spSheetMine')}</button>
         <button class="btn btn-outline btn-sm" id="spsh-copy-btn">${t('copyLink')}</button>
         <button class="btn btn-primary btn-sm" id="spsh-print-btn">🖨 ${t('scPrint')}</button>
       </div>
@@ -240,10 +240,12 @@ export async function renderSpSheetPage(tnId, round, gid, ctx) {
       el.hidden = which === 'mine' && el.dataset.spshMine !== '1';
     });
     host.querySelectorAll('[data-spsh-scope]').forEach(b => {
-      b.className = `btn btn-${b.dataset.spshScope === which ? 'primary' : 'outline'} btn-sm`;
+      const on = b.dataset.spshScope === which;
+      b.className = `btn btn-${on ? 'primary' : 'outline'} btn-sm`;
+      if (b.disabled) b.style.opacity = '0.45';
     });
   };
   host.querySelectorAll('[data-spsh-scope]').forEach(b =>
-    b.addEventListener('click', () => scope(b.dataset.spshScope)));
-  if (hasMine) scope('all');
+    b.addEventListener('click', () => { if (!b.disabled) scope(b.dataset.spshScope); }));
+  scope('all');
 }

@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (The print scope buttons were hiding)
+
+The *Флайт бүхэлдээ / Зөвхөн миний* pair rendered only when the reader had a
+card in that flight, so the organiser — the person most likely to be standing
+at the printer — saw no control at all, and a player who opened a flight other
+than their own watched it disappear. A control that comes and goes reads as a
+control that is not there.
+
+Both buttons are now always on the page. When the reader has no card in the
+flight, *Зөвхөн миний* is disabled and says why (*Та энэ флайтад тоглоогүй
+байна*, mn/en/kr), which is honest rather than invisible. *Флайт бүхэлдээ*
+starts selected in every case — it used to be left unstyled when the pair was
+hidden, so even the default state was unmarked.
+
+Driven for four readers: a player in the flight (both live), the same player on
+another flight, an organiser who is not playing, and a signed-out visitor — the
+last three see the pair with *Зөвхөн миний* disabled and the whole flight shown.
+
 ## 2026-09-06 (Tournament cards on paper)
 
 The casual game has printed a proper score card since June — one per player in
