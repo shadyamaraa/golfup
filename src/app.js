@@ -69,6 +69,13 @@ let homeFilter = 'all';
 let homeGamesCache = [];
 let historyOpen = false;
 let archiveOpen = false;
+// The Games page browses two things now — casual games and tournaments — and
+// the switch between them, with the tournament side's own two folds, is held
+// here so leaving the page and coming back lands where you left off.
+let gamesBrowseKind = 'games';
+let tnHistoryOpen = false;
+let tnArchiveOpen = false;
+let tnBrowseCache = [];
 let bellSubFor = null;
 // The bell badge's listener outlives routes on purpose, so it needs its own
 // handle: without one a sign-out leaves the previous account's unread count
@@ -914,6 +921,198 @@ function wireGamesBrowser() {
     if (chevron) chevron.textContent = archiveOpen ? '▲' : '▼';
     if (archiveOpen && list && list.innerHTML === '') renderGamesHome(homeGamesCache);
   });
+}
+
+
+// ---- Tournaments browser (the Games page's second half) ----
+// Until now a tournament was only reachable from the home strip — which shows
+// three at most and drops anything an admin hid — or from a link somebody
+// already had. So a finished tournament and its result were, in practice,
+// unfindable. This is the list that fixes that, folded live / past / archive
+// exactly like the games beside it.
+
+// The entries a browse row ranks. Deliberately NOT tnForBoard: that reads the
+// viewer's gross/net toggle, and a browse list must not change because somebody
+// left that on net on another screen. Gross — or Stableford points where the
+// tournament is played that way — is the tournament's own reading.
+function tnBrowseEntries(tn) {
+  return spActive(tn) ? spEntries(tn, spMetricFor(tn, 'gross')) : tn?.entries;
+}
+
+function tnBrowseWinners(tn) {
+  return tsheet.winners(tsheet.rankEntries(tnBrowseEntries(tn), {
+    cutAfterRound: tn?.cutAfterRound,
+    cutSize: tn?.cutSize,
+    higherWins: tnHigherWins(tn),
+  }));
+}
+
+// The one line the whole ask is about: who won, or who is leading while it
+// runs. Three shapes, because three kinds of tournament answer it differently —
+// and a plain 1v1 match play draw answers it not at all, since a bracket of
+// singles has no aggregate result to name.
+function tnBrowseResultHTML(tn, state) {
+  if (state === 'upcoming') return '';
+  const cap = state === 'final' ? t('tnWinner') : t('tnLeading');
+
+  const s = isMatchPlay(tn) ? stripSummary(tn) : null;
+  if (s) {
+    // A bracket of singles has no aggregate result — nobody "wins" a draw —
+    // so it gets no line rather than a made-up one.
+    if (s.singles) return '';
+    // Mirrored the way the home strip writes it: ALTAI 3.5 – 2.5 WELLCOM, the
+    // numbers meeting in the middle. Names ride along with them, so the row
+    // never depends on the team colour alone.
+    const side = (txt, x, win) => `<span class="tn-br-side${win ? ' tn-br-win' : ''}"
+      style="border-bottom:2px solid ${x.color};">${esc(txt)}</span>`;
+    return `
+      <div class="tn-br-result">
+        <span class="tn-cap">${cap}</span>
+        ${side(`${s.a.name} ${s.a.points}`, s.a, s.a.points > s.b.points)}
+        <span class="tn-br-dash">–</span>
+        ${side(`${s.b.points} ${s.b.name}`, s.b, s.b.points > s.a.points)}
+      </div>`;
+  }
+
+  const won = tnBrowseWinners(tn);
+  if (!won.length) return '';
+  const pts = tnScoring(tn) === 'stableford';
+  // A row has space for a name, not for a leaderboard. One winner is named;
+  // two tied are both named, because that is the interesting case and it still
+  // fits; beyond that the count says it better than a truncated list would.
+  const names = won.length <= 2
+    ? won.map(e => `<span class="tn-br-name${tnIsMe(e) ? ' tn-br-me' : ''}">${esc(e.name || '')}</span>`)
+      .join('<span class="tn-br-dash">·</span>')
+    : `<span class="tn-br-name">${won.length} ${t('tnPlayers')} ${t('tnTied')}</span>`;
+  return `
+    <div class="tn-br-result">
+      <span class="tn-cap">${cap}</span>
+      ${names}
+      <span class="tn-sc ${tnScoreClass(won[0].total, pts)}">${tnScoreText(won[0].total, pts)}</span>
+    </div>`;
+}
+
+// A tournament in the game card's vocabulary, so the two lists read as one
+// page rather than two designs.
+function tnBrowseCardsHTML(list) {
+  return list.map(tn => {
+    const state = tnStatus(tn);
+    // A match play tournament keeps its field in mp.roster, not sp.players —
+    // reading only the latter would print "0 тоглогч" under a full M Cup.
+    const count = spActive(tn)
+      ? Object.keys(tn.sp.players || {}).length
+      : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
+    const meta = [tnDatesText(tn), tn.venue].filter(Boolean).join(' · ');
+    return `
+      <a href="#/tournament/${esc(tn.id)}" class="game-card glass-card tn-br-card ${state === 'final' ? 'past-game-card' : ''}">
+        <div class="gc-top">
+          <div class="tile-icon">${icon('leaderboard', { size: 21 })}</div>
+          <div class="gc-headline">
+            <div class="game-location">${esc(tn.name || '—')}</div>
+            ${meta ? `<div class="gc-meta">${icon('time', { size: 13 })}<span>${esc(meta)}</span></div>` : ''}
+          </div>
+          <div class="gc-top-right">
+            ${state === 'live'
+              ? `<span class="game-status status-live"><span class="live-dot"></span>${t('tnLive')}</span>`
+              : `<span class="game-status ${state === 'final' ? 'status-full' : 'status-open'}">${tnStateLabel(tn)}</span>`}
+          </div>
+        </div>
+        ${tnBrowseResultHTML(tn, state)}
+        <div class="gc-foot">
+          <div class="game-players-info">
+            <span>${count} ${t('tnPlayers')}</span>
+          </div>
+          <span class="gc-chev">${icon('next', { size: 18 })}</span>
+        </div>
+      </a>`;
+  }).join('');
+}
+
+// Its own ids and its own fold flags: gamesBrowserHTML is shared with other
+// mount points, so the tournament side copies the markup rather than growing
+// it a second mode.
+function tournamentsBrowserHTML() {
+  return `
+      <div class="section">
+        <div id="tn-active-list" class="games-list">${skeletonCards(2)}</div>
+      </div>
+      <div class="section past-section" style="margin-top: 40px;">
+        <div class="history-toggle-header" id="tn-history-toggle">
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('time', { size: 18 })} ${t('tnHistoryFold')}</h2>
+          <span class="history-chevron" id="tn-history-chevron">${tnHistoryOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="tn-past-list" class="games-list" style="display:${tnHistoryOpen ? 'block' : 'none'};"></div>
+      </div>
+      <div class="section past-section" style="margin-top: 24px;">
+        <div class="history-toggle-header" id="tn-archive-toggle">
+          <h2 class="section-title" style="margin:0; display:flex; align-items:center; gap:8px;">${icon('bookings', { size: 18 })} ${t('tnArchiveFold')}</h2>
+          <span class="history-chevron" id="tn-archive-chevron">${tnArchiveOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="tn-archive-list" class="games-list" style="display:${tnArchiveOpen ? 'block' : 'none'};"></div>
+      </div>`;
+}
+
+// Three buckets off tnStatus, the same reading the admin tab splits on — with
+// history and archive divided by the same seven days the games use, so the two
+// browsers age at one rate. homeHidden is NOT filtered: its whole promise is
+// that the tournament stays reachable away from home, and this list is that.
+function renderTournamentsBrowse(list) {
+  const activeEl = document.getElementById('tn-active-list');
+  if (!activeEl) return;
+  if (list) tnBrowseCache = list;
+  const all = tnBrowseCache;
+
+  const now = Date.now();
+  const endMs = (tn) => tnDayMs(tn.endDate || tn.startDate) || 0;
+  const active = [], past = [], archived = [];
+  all.forEach(tn => {
+    if (tnStatus(tn) !== 'final') active.push(tn);
+    else if (now - endMs(tn) <= ARCHIVE_AFTER_MS) past.push(tn);
+    else archived.push(tn);
+  });
+
+  // Live first, then by start date: what is on the course today outranks what
+  // opens next month.
+  const liveFirst = (a, b) => (tnStatus(a) === 'live' ? 0 : 1) - (tnStatus(b) === 'live' ? 0 : 1)
+    || (tnDayMs(a.startDate) || 0) - (tnDayMs(b.startDate) || 0);
+  active.sort(liveFirst);
+  const newestFirst = (a, b) => endMs(b) - endMs(a);
+  past.sort(newestFirst);
+  archived.sort(newestFirst);
+
+  activeEl.innerHTML = active.length
+    ? tnBrowseCardsHTML(active)
+    : `<div class="empty-state"><p>${icon('leaderboard', { size: 40 })}</p><p>${t('noTournaments')}</p></div>`;
+
+  const fill = (id, rows, open, empty) => {
+    const el = document.getElementById(id);
+    if (!el || !open) return;
+    el.innerHTML = rows.length ? tnBrowseCardsHTML(rows)
+      : `<p style="text-align:center; color:var(--text-muted); font-size:0.9rem;">${t(empty)}</p>`;
+  };
+  fill('tn-past-list', past, tnHistoryOpen, 'noTnHistory');
+  fill('tn-archive-list', archived, tnArchiveOpen, 'noTnArchive');
+}
+
+function wireTournamentsBrowser() {
+  if (store.isUsingFirebase()) {
+    const unsub = store.onTournamentsChanged(renderTournamentsBrowse);
+    if (unsub) activeUnsubs.push(unsub);
+  }
+  const fold = (toggleId, listId, chevId, get, set) => {
+    document.getElementById(toggleId)?.addEventListener('click', () => {
+      set(!get());
+      const list = document.getElementById(listId);
+      const chevron = document.getElementById(chevId);
+      if (list) list.style.display = get() ? 'block' : 'none';
+      if (chevron) chevron.textContent = get() ? '▲' : '▼';
+      if (get() && list && list.innerHTML === '') renderTournamentsBrowse();
+    });
+  };
+  fold('tn-history-toggle', 'tn-past-list', 'tn-history-chevron',
+    () => tnHistoryOpen, (v) => { tnHistoryOpen = v; });
+  fold('tn-archive-toggle', 'tn-archive-list', 'tn-archive-chevron',
+    () => tnArchiveOpen, (v) => { tnArchiveOpen = v; });
 }
 
 // ---- Home View (dashboard: news · next game · stats · upcoming) ----
@@ -2364,17 +2563,49 @@ function renderHomeUpcoming(games) {
   }).join('');
 }
 
-// ---- Games View (#/games) — the full games browser with a title + FAB ----
+// ---- Games View (#/games) — the full browser with a title + FAB ----
+// Two browsers behind one switch: the casual games, and the tournaments. They
+// are separate lists rather than one merged feed because they are read for
+// different reasons — you join a game, you follow a tournament — and because
+// the games browser's six filter tabs mean nothing to a tournament.
 async function renderGames() {
   homeFilter = 'all';
+  const tn = gamesBrowseKind === 'tournaments';
+  const kindTab = (kind, iconName, label) => `
+    <button class="filter-tab ${gamesBrowseKind === kind ? 'active' : ''}" data-kind="${kind}">
+      ${icon(iconName, { size: 15 })} ${label}
+    </button>`;
   main().innerHTML = `
     <div class="home-container fade-in">
-      <div class="page-head" style="align-items:center;">
+      <div class="page-head games-head" style="align-items:center;">
         <h2 class="page-title">${t('gamesTitle')}</h2>
+        <div class="seg-tabs games-kind-tabs" id="games-kind-tabs">
+          ${kindTab('games', 'play', t('browseGames'))}
+          ${kindTab('tournaments', 'leaderboard', t('browseTournaments'))}
+        </div>
         <a href="#/create" class="fab-gold" title="${t('createGame')}">${icon('create', { size: 22 })}</a>
       </div>
-      ${gamesBrowserHTML('all')}
+      ${tn ? tournamentsBrowserHTML() : gamesBrowserHTML('all')}
     </div>`;
+
+  document.querySelectorAll('#games-kind-tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (gamesBrowseKind === btn.dataset.kind) return;
+      gamesBrowseKind = btn.dataset.kind;
+      // The browser being left behind holds a live listener on its node; drop
+      // it the way a route change would rather than stacking a second one.
+      clearActiveListeners();
+      renderGames();
+    });
+  });
+
+  if (tn) {
+    let list = [];
+    try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { }
+    renderTournamentsBrowse(list);
+    wireTournamentsBrowser();
+    return;
+  }
   const games = await store.loadAllGames();
   renderGamesHome(games);
   wireGamesBrowser();
@@ -8768,6 +8999,13 @@ async function renderAdminTournamentsTab() {
           <button class="btn ${tn.homeHidden ? 'btn-outline-danger' : 'btn-outline'} btn-sm tn-adm-vis" data-tn="${esc(tn.id)}" title="${t('tnHomeVisTitle')}">
             ${tn.homeHidden ? '⊘ ' + t('tnHomeHidden') : '◉ ' + t('tnHomeShown')}
           </button>
+          <select class="tn-adm-status" data-tn="${esc(tn.id)}" title="${t('tnStatusSet')}"
+            style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:0.78rem;font-weight:700;padding:5px 8px;">
+            <option value=""${tn.status ? '' : ' selected'}>${t('tnFStatusAuto')}</option>
+            <option value="upcoming"${tn.status === 'upcoming' ? ' selected' : ''}>${t('tnSoon')}</option>
+            <option value="live"${tn.status === 'live' ? ' selected' : ''}>${t('tnLive')}</option>
+            <option value="final"${tn.status === 'final' ? ' selected' : ''}>${t('tnFinal')}</option>
+          </select>
           <button class="btn btn-outline-danger btn-sm tn-adm-del" data-tn="${esc(tn.id)}">${t('delete')}</button>
         </div>
         ${open ? `
@@ -8893,6 +9131,25 @@ async function renderAdminTournamentsTab() {
     if (!tn) return;
     try { await store.updateTournament(tn.id, { homeHidden: !tn.homeHidden }); }
     catch (err) { tnAdminError(err); return; }
+    renderTournamentStrip();
+    await renderAdminTournamentsTab();
+  });
+
+  // Status, straight from the row — the same four values the edit form offers,
+  // without unfolding it. Two things this control must respect: `status` also
+  // carries the soft delete ('deleted', written by deleteTournament and
+  // filtered out by loadTournaments), so the list here can never write or
+  // clear that; and setting a status PINS it — tnStatus prefers a stored value
+  // over the dates for ever after — which is why 'огноогоор' stays in the list
+  // as the way back to the calendar. The derived pill in the row header is
+  // then the only thing showing what the dates actually decided.
+  el.querySelectorAll('.tn-adm-status').forEach(sel => sel.onchange = async () => {
+    const tn = list.find(x => x.id === sel.dataset.tn);
+    if (!tn) return;
+    const v = sel.value;
+    try { await store.updateTournament(tn.id, { status: v }); }
+    catch (err) { tnAdminError(err); return; }
+    showToast('✅ ' + t('saved'), 'success');
     renderTournamentStrip();
     await renderAdminTournamentsTab();
   });

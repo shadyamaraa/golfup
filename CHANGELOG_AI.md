@@ -1,5 +1,46 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (Tournaments on the Games page, and an inline status control)
+
+Two asks, one change.
+
+**Tournaments are browsable.** Until now the only member-facing surfaces were
+the sticky home strip — capped at three rows, and dropping anything an admin
+marked `homeHidden` — and `#/tournament/:id`, which you could only reach with a
+link you already had. A finished tournament and its result were, in practice,
+unreachable. The Games page now carries a **Тоглолт / Тэмцээн** switch beside
+its title, and the tournament side folds live / past / archive exactly like the
+games beside it: active is live and upcoming, history is anything final within
+the same seven days the games use, archive is older. `homeHidden` is *not*
+filtered here — its whole promise is that the tournament stays reachable away
+from home, and this list is that reachability.
+
+`gamesBrowserHTML` was left untouched: it is shared, so the tournament side has
+its own ids and its own two fold flags rather than growing a second mode.
+
+**Each row says who won**, or who is leading while it runs — the part that was
+never computed anywhere before. One name for a clear winner, both names for a
+tie of two, and a count beyond that ("4 тоглогч тэнцсэн"), with the score in
+the board's own vocabulary. An M Cup reads `ALTAI 3.5 – 2.5 WELLCOM`; a plain
+1v1 match play draw shows no line at all, because a bracket of singles has no
+aggregate result to name. The deciding is the pure `winners(entries)` in
+`src/tournament-sheet.js`, unit tested against a clear winner, a tie, a points
+contest, an empty field and a field that is entirely WD/DQ.
+
+One deliberate deviation from the leaderboard: the row builds its entries from
+`spEntries(tn, spMetricFor(tn, 'gross'))` rather than `tnRanked`, which reads
+the viewer's global gross/net toggle. A browse list must not change because
+somebody left that on net on another screen.
+
+**An admin can set a tournament's status from its row** — the same four values
+the edit form offers (огноогоор / Удахгүй / Явагдаж байна / Албан ёсны дүн),
+without unfolding the form, changing a select and pressing Save. A one-key
+`updateTournament`, so nothing a scorer wrote under `sp/` or `mp/` is at risk.
+Two things it respects: `status` also carries the soft delete (`'deleted'`), so
+this control can never write or clear that; and setting a status **pins** it —
+`tnStatus` prefers a stored value over the dates for ever after — which is why
+*огноогоор* stays in the list as the way back to the calendar.
+
 ## 2026-09-06 (Gender on the member profile)
 
 The club needs each member's gender recorded. The profile now carries it, the

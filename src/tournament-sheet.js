@@ -530,6 +530,15 @@ export function rankEntries(entries, { cutAfterRound, cutSize, higherWins = fals
   });
 }
 
+// Who is holding first place. `rankEntries` has already done the deciding —
+// rank 1 is the top, and anyone without a standing (no score yet, WD, DQ, CUT)
+// carries Infinity instead — so this is only the reading of it. A tie returns
+// every player level at the top; a field nobody has posted a score in returns
+// nothing at all, which is what a browse row shows as "no result yet".
+export function winners(ranked) {
+  return (Array.isArray(ranked) ? ranked : []).filter(e => e && e.rank === 1);
+}
+
 export function nameKey(name) {
   const tokens = String(name || '')
     .toLowerCase()

@@ -945,6 +945,40 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   .tn-tick-run + .tn-tick-run { display: none; }
 }
 
+/* ---- Games page: the Тоглолт / Тэмцээн switch beside the title ---- */
+/* Inline with the title where there is room; on a phone it wraps to its own
+   full-width row rather than squeezing the title or clipping the FAB. */
+.games-head { flex-wrap: wrap; row-gap: 12px; }
+.games-kind-tabs { order: 3; flex: 1 1 100%; margin-bottom: 0; }
+@media (min-width: 560px) {
+  .games-kind-tabs { order: 0; flex: 0 1 auto; }
+}
+.games-kind-tabs .filter-tab { flex: 1 0 auto; justify-content: center; }
+
+/* A tournament name is longer than a course name: let it take two lines rather
+   than cutting it off mid-word the way a game card's location can afford to. */
+.tn-br-card .game-location {
+  white-space: normal; overflow: visible; text-overflow: clip;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+/* The one line a browse row exists for: who won, or who is leading. Its own
+   full-width row under the head, so the name and the score stay side by side
+   instead of stacking in the narrow column beside the state pill. */
+.tn-br-result {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px; min-width: 0;
+}
+.tn-br-name {
+  font-size: 0.84rem; font-weight: 800; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 13em;
+}
+.tn-br-me { color: var(--gold-dark); }
+.tn-br-side { font-size: 0.84rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+.tn-br-win { font-weight: 900; }
+.tn-br-dash { font-size: 0.8rem; color: var(--text-muted); }
+
 /* ---- Tournament page ---- */
 .tn-hero { display: flex; align-items: flex-start; gap: 14px; padding: 18px; margin-bottom: 14px; }
 .tn-crest {
