@@ -9,7 +9,7 @@ import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admi
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide
@@ -939,12 +939,13 @@ function tnBrowseEntries(tn) {
   return spActive(tn) ? spEntries(tn, spMetricFor(tn, 'gross')) : tn?.entries;
 }
 
-function tnBrowseWinners(tn) {
-  return tsheet.winners(tsheet.rankEntries(tnBrowseEntries(tn), {
+// One board, or one per division — each with its own winners.
+function tnBrowseBoards(tn) {
+  return tsheet.rankByDivision(tnBrowseEntries(tn), {
     cutAfterRound: tn?.cutAfterRound,
     cutSize: tn?.cutSize,
     higherWins: tnHigherWins(tn),
-  }));
+  });
 }
 
 // The one line the whole ask is about: who won, or who is leading while it
@@ -974,21 +975,26 @@ function tnBrowseResultHTML(tn, state) {
       </div>`;
   }
 
-  const won = tnBrowseWinners(tn);
-  if (!won.length) return '';
+  const segs = tnBrowseBoards(tn)
+    .map(b => ({ division: b.division, won: tsheet.winners(b.entries) }))
+    .filter(x => x.won.length);
+  if (!segs.length) return '';
   const pts = tnScoring(tn) === 'stableford';
   // A row has space for a name, not for a leaderboard. One winner is named;
   // two tied are both named, because that is the interesting case and it still
   // fits; beyond that the count says it better than a truncated list would.
-  const names = won.length <= 2
+  // A divided tournament names each division's, tagged.
+  const names = (won) => won.length <= 2
     ? won.map(e => `<span class="tn-br-name${tnIsMe(e) ? ' tn-br-me' : ''}">${esc(e.name || '')}</span>`)
       .join('<span class="tn-br-dash">·</span>')
     : `<span class="tn-br-name">${won.length} ${t('tnPlayers')} ${t('tnTied')}</span>`;
+  const seg = ({ division, won }) => `
+      ${tnDivisionTagHTML(division)}${names(won)}
+      <span class="tn-sc ${tnScoreClass(won[0].total, pts)}">${tnScoreText(won[0].total, pts)}</span>`;
   return `
     <div class="tn-br-result">
-      <span class="tn-cap">${cap}</span>
-      ${names}
-      <span class="tn-sc ${tnScoreClass(won[0].total, pts)}">${tnScoreText(won[0].total, pts)}</span>
+      <span class="tn-cap">${cap}</span>${segs.map(seg).join(`
+      <span class="tn-br-dash">·</span>`)}
     </div>`;
 }
 
@@ -1411,16 +1417,41 @@ function tnStateLabel(tn) {
 // The leaderboard's ranking lives in tournament-sheet.js: it is pure, so it can
 // be checked against a hand-made result sheet without a browser. Here it only
 // gains the movement arrows, which need the rendered list.
-function tnRanked(tn) {
+// The board — or, in a tournament run in divisions, the boards: one per
+// division, each ranked on its own (tournament-sheet.js decides how), each
+// with its own movement arrows. An undivided tournament is one board with
+// `division: null`, and tnRanked() reads exactly as it always has.
+function tnBoards(tn) {
   // In-app scoring recomputes its entries from tn.sp on every call; a
   // legacy record ranks its stored snapshot.
   const b = tnForBoard(tn);
   const higherWins = tnHigherWins(tn);
-  return tnWithDeltas(tsheet.rankEntries(b?.entries, {
+  return tsheet.rankByDivision(b?.entries, {
     cutAfterRound: b?.cutAfterRound,
     cutSize: b?.cutSize,
     higherWins
-  }), higherWins);
+  }).map(board => ({ division: board.division, ranked: tnWithDeltas(board.entries, higherWins) }));
+}
+
+function tnRanked(tn) {
+  return tnBoards(tn).flatMap(b => b.ranked);
+}
+
+// Which board the leaderboard page shows: both stacked, or one. Module-level
+// like tnSpMetric, and not reset when the page opens — a woman who taps Эм,
+// goes to her card and comes back is still on Эм.
+let tnSpDivision = 'all';
+function tnSpDivisionFor(boards) {
+  return boards.some(b => b.division === tnSpDivision) ? tnSpDivision : 'all';
+}
+
+// A division's name on a heading, and its two-letter tag on a chip.
+function tnDivisionLabel(d) { return d ? t(genderKey(d)) : ''; }
+function tnDivisionShort(d) {
+  return d === 'female' ? t('tnDivShortFemale') : d === 'male' ? t('tnDivShortMale') : '';
+}
+function tnDivisionTagHTML(d) {
+  return d ? `<span class="tn-div-chip">${tnDivisionShort(d)}</span>` : '';
 }
 
 // The round actually being played: the highest one anybody has posted a score
@@ -1670,16 +1701,21 @@ function tnStateHeadHTML(tn, state) {
 function tournamentStripHTML(tn) {
   const state = tnStatus(tn);
   const pts = tnScoring(tn) === 'stableford';
-  const ranked = tnRanked(tn);
+  const boards = tnBoards(tn);
+  const ranked = boards.flatMap(b => b.ranked);
   const playerHTML = (e) => tnPlayerChipHTML(e, pts, state === 'live');
+  const sep = '<span class="tn-sep"></span>';
 
   // A member playing in the tournament cares about their own line first, and
   // it is the one thing scrolling could hide — so it leads, with the leaders
   // right behind it. Members already inside the top are simply highlighted in
-  // place rather than shown twice.
-  const top = ranked.slice(0, TN_STRIP_PLAYERS);
+  // place rather than shown twice. A divided tournament shows each board's
+  // top, each led by its division tag.
+  const tops = boards.map(b => ({ division: b.division, top: b.ranked.slice(0, TN_STRIP_PLAYERS) }));
   const me = ranked.find(tnIsMe);
-  const shown = (me && !top.includes(me)) ? [me, ...top] : top;
+  const meLeads = me && !tops.some(x => x.top.includes(me));
+  const chips = (meLeads ? [playerHTML(me)] : []).concat(tops.map(x =>
+    (x.division ? tnDivisionTagHTML(x.division) + sep : '') + x.top.map(playerHTML).join(sep)));
 
   // A match play tournament's third row is the team score, never a player
   // list: "who is winning" is the whole question the strip has to answer
@@ -1691,7 +1727,7 @@ function tournamentStripHTML(tn) {
   // With scores, the third row is the players; without them (an upcoming
   // tournament, or one nobody has posted to yet) it carries the essentials.
   const body = mpBody || (ranked.length
-    ? `<div class="tn-players">${shown.map(playerHTML).join('<span class="tn-sep"></span>')}</div>`
+    ? `<div class="tn-players">${chips.join(sep)}</div>`
     : `<div class="tn-meta">
          <span class="tn-meta-txt">${esc(tn.venue || '')}${tn.startTime ? ` · ${esc(tn.startTime)}` : ''}</span>
          ${tn.maxPlayers ? `<span class="tn-sep"></span><span class="tn-meta-strong">${(tn.registeredIds || []).length}/${tn.maxPlayers}</span>` : ''}
@@ -1735,7 +1771,12 @@ function tnTickerHTML(tn) {
   // A match play tournament has no leaderboard of players — its team score IS
   // the standing, and it is short enough to sit still rather than scroll.
   const mpSummary = stripSummary(tn);
-  const ranked = mpSummary ? [] : tnRanked(tn).slice(0, TN_TICK_ROWS);
+  // A divided tournament shares the rows between its boards, each board's
+  // run led by its division tag.
+  const boards = mpSummary ? [] : tnBoards(tn);
+  const per = Math.max(1, Math.ceil(TN_TICK_ROWS / Math.max(1, boards.length)));
+  const runsOf = boards.map(b => ({ division: b.division, list: b.ranked.slice(0, per) }));
+  const ranked = runsOf.flatMap(r => r.list);
   if (!mpSummary && !ranked.length) return '';
 
   const head = `
@@ -1752,7 +1793,8 @@ function tnTickerHTML(tn) {
   const sep = '<span class="tn-sep"></span>';
   // Each lap ends with a separator so the seam between the run and its copy
   // reads like every other gap.
-  const run = ranked.map(e => tnPlayerChipHTML(e, pts, state === 'live')).join(sep) + sep;
+  const chip = (e) => tnPlayerChipHTML(e, pts, state === 'live');
+  const run = runsOf.map(r => (r.division ? tnDivisionTagHTML(r.division) + sep : '') + r.list.map(chip).join(sep)).join(sep) + sep;
 
   // The track is the rows repeated, sliding by exactly one repeat per lap, so
   // the copy lands where the original began and the loop has no seam. That
@@ -1763,7 +1805,8 @@ function tnTickerHTML(tn) {
   //
   // The width is estimated, not measured — the markup is built as a string —
   // and the estimate errs low, which errs toward more repeats.
-  const runPx = ranked.reduce((w, e) => w + 132 + String(e.name || '').length * 7.5, 0);
+  const runPx = ranked.reduce((w, e) => w + 132 + String(e.name || '').length * 7.5, 0)
+    + (boards.length > 1 ? boards.length * 60 : 0);
   const copies = Math.min(8, Math.max(2, Math.ceil(TN_TICK_COVER_PX / Math.max(60, runPx))));
   const dur = Math.max(TN_TICK_MIN_SEC, Math.round(ranked.length * TN_TICK_SEC_PER_ROW));
   const phase = -(((Date.now() - TN_TICK_EPOCH) / 1000) % dur).toFixed(2);
@@ -2326,6 +2369,9 @@ function renderTnBoard() {
         const pids = Object.keys(g.players || {});
         const canIn = currentUser && (['admin', 'marshal'].includes(currentUser.role)
           || (myPid && g.players?.[myPid]));
+        // A flight is normally one division — the draw keeps them apart — so
+        // it carries one label; a hand-mixed flight tags each player instead.
+        const divs = tnHasDivisions(tn) ? [...new Set(pids.map(pid => entryDivision(tn.sp.players, pid)))] : [];
         return `
         <div class="surface-card" style="padding:10px 8px;margin-top:6px;">
           <div style="${schedGrid}">
@@ -2334,11 +2380,13 @@ function renderTnBoard() {
             ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? esc(g.startHole) : '–'}</span>` : ''}
             ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">${t('spGroupCard')}</a>` : '<span></span>'}
           </div>
-          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">${divs.length === 1 ? `
+            <div class="tn-div-flight">${tnDivisionLabel(divs[0])}</div>` : ''}
             ${pids.map(pid => {
               const p = tn.sp.players[pid] || {};
               const hcp = Number.isFinite(Number(p.hcp)) ? ` <span style="color:var(--text-muted);font-size:0.72rem;">(${t('spHcp')} ${esc(p.hcp)})</span>` : '';
-              return `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || pid)}${hcp}</div>`;
+              const tag = divs.length > 1 ? ' ' + tnDivisionTagHTML(entryDivision(tn.sp.players, pid)) : '';
+              return `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name || pid)}${hcp}${tag}</div>`;
             }).join('')
               || `<span style="color:var(--text-muted);">—</span>`}
           </div>
@@ -2350,13 +2398,15 @@ function renderTnBoard() {
   // The leaderboard (Тэргүүлэгчид): gross standings, with Net as a toggle
   // on the list's own header when handicaps exist — or Stableford points,
   // which the organiser set on the tournament and which rank the other way up.
-  const ranked = tnRanked(tn);
+  const boards = tnBoards(tn);
+  const ranked = boards.flatMap(b => b.ranked);
   const spPts = tnScoring(tn) === 'stableford';
   if (!ranked.length) {
     host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
     return;
   }
   const me = ranked.find(tnIsMe);
+  const divShown = tnSpDivisionFor(boards);
 
   host.innerHTML = `
     ${ctaHTML}
@@ -2373,14 +2423,20 @@ function renderTnBoard() {
         <span class="tn-me-av">${avatarInner(currentUser?.avatar, tnInitial(me.name))}</span>
         <span class="tn-me-body">
           <span class="tn-me-cap">${t('tnYourPos')}</span>
-          <span class="tn-me-name">${esc(me.posLabel)} · ${esc(me.name || '')}</span>
+          <span class="tn-me-name">${me.division ? tnDivisionTagHTML(me.division) + ' ' : ''}${esc(me.posLabel)} · ${esc(me.name || '')}</span>
         </span>
         <span class="tn-me-score">
           <span class="tn-sc ${tnScoreClass(me.total, spPts)}">${tnScoreText(me.total, spPts)}</span>
           <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
         </span>
       </div>` : ''}
-    ${tnFlightMatchesHTML(tn, spRound)}
+    ${tnFlightMatchesHTML(tn, spRound)}${boards.length > 1 ? `
+    <div class="seg-tabs tn-div-tabs">
+      ${['all', ...boards.map(b => b.division)].map(d => `
+        <button class="seg-tab${divShown === d ? ' active' : ''}" data-tn-div="${d}">
+          ${d === 'all' ? t('tnDivAll') : tnDivisionLabel(d)}
+        </button>`).join('')}
+    </div>` : ''}
     <div class="section-head tn-section">
       <h2>${t('tnAllPlayers')}</h2>
       ${spPts
@@ -2411,6 +2467,13 @@ function renderTnBoard() {
     tnSpMetric = tnSpMetric === 'net' ? 'gross' : 'net';
     renderTnBoard();
   });
+  // The division tabs repaint the list alone, so the search caret survives.
+  host.querySelectorAll('[data-tn-div]').forEach(b => b.onclick = () => {
+    tnSpDivision = b.dataset.tnDiv;
+    host.querySelectorAll('[data-tn-div]').forEach(x => x.classList.toggle('active', x === b));
+    tnPageLimit = TN_PAGE_SIZE;
+    renderTnList();
+  });
   renderTnList();
 }
 
@@ -2420,22 +2483,24 @@ function renderTnList() {
   if (!host || !tn) return;
 
   const pts = tnScoring(tn) === 'stableford';
-  const ranked = tnRanked(tn);
+  // One board, or one per division — the tabs pick which; «Бүгд» stacks them.
+  const boards = tnBoards(tn);
+  const want = tnSpDivisionFor(boards);
   const q = tnPageQuery.trim().toLowerCase();
-  const shown = q
-    ? ranked.filter(e => String(e.name || '').toLowerCase().includes(q))
-    : ranked;
+  const shownBoards = boards
+    .filter(b => want === 'all' || b.division === want)
+    .map(b => ({ ...b, shown: q ? b.ranked.filter(e => String(e.name || '').toLowerCase().includes(q)) : b.ranked }))
+    .filter(b => b.shown.length);
+  const total = shownBoards.reduce((n, b) => n + b.shown.length, 0);
 
   const count = document.getElementById('tn-count');
-  if (count) count.textContent = String(shown.length);
+  if (count) count.textContent = String(total);
 
-  if (!shown.length) {
+  if (!total) {
     host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('tnNoMatch')}</p></div>`;
     return;
   }
 
-  const page = shown.slice(0, tnPageLimit);
-  const rest = shown.length - page.length;
   // Every round that has been played gets its own R1..R4 score, riding on the
   // player's own line. Four chips plus a name do not fit a phone, so past two
   // rounds the chips drop under the name on narrow screens only — tn-lb-r3
@@ -2448,19 +2513,21 @@ function renderTnList() {
   // While the cut is still ahead, mark where it currently falls so the bubble is
   // visible on the day it matters. Once it has been applied the CUT labels at
   // the bottom carry the information instead, and a search would put the line in
-  // a meaningless place, so it is drawn on the full list only.
+  // a meaningless place, so it is drawn on the full list only. Each board has
+  // its own cut, and its own idea of which round it is in — the men can be into
+  // round two with their cut made while the women are still finishing round one.
   const cutSize = Number(tn.cutSize) || 0;
-  const cutPending = cutSize && Number(tn.cutAfterRound) >= activeRound;
-  let bubble = null;
-  if (cutPending && !q) {
-    const inPlay = ranked.filter(e => e.rank !== Infinity);
-    if (inPlay.length > cutSize) {
-      const edge = Number(inPlay[cutSize - 1].total);
-      let last = cutSize - 1;
-      while (last + 1 < inPlay.length && Number(inPlay[last + 1].total) === edge) last++;
-      bubble = inPlay[last];
-    }
-  }
+  const cutBubble = (board) => {
+    const boardRound = tsheet.activeRound(board.ranked, tn?.currentRound);
+    const cutPending = cutSize && Number(tn.cutAfterRound) >= boardRound;
+    if (!cutPending || q) return null;
+    const inPlay = board.ranked.filter(e => e.rank !== Infinity);
+    if (inPlay.length <= cutSize) return null;
+    const edge = Number(inPlay[cutSize - 1].total);
+    let last = cutSize - 1;
+    while (last + 1 < inPlay.length && Number(inPlay[last + 1].total) === edge) last++;
+    return inPlay[last];
+  };
   const cutLineHTML = `
     <div class="tn-cut-line"><span>${t('tnCutLine')} · ${t('tnCutTop')} ${cutSize}</span></div>`;
 
@@ -2512,7 +2579,17 @@ function renderTnList() {
       : `<div class="tn-lb-row${mine ? ' tn-me' : ''}">${inner}</div>`;
   };
 
-  host.innerHTML = `
+  // A board's table. A divided tournament's boards each get a heading; the
+  // single board keeps its old markup to the byte, `tn-more` id included.
+  const tableHTML = (board) => {
+    const page = board.shown.slice(0, tnPageLimit);
+    const rest = board.shown.length - page.length;
+    const bubble = cutBubble(board);
+    return `${board.division !== null ? `
+    <div class="section-head tn-section tn-div-head">
+      <h2>${tnDivisionLabel(board.division)}</h2>
+      <span class="pill-soft">${board.shown.length}</span>
+    </div>` : ''}
     <div class="surface-card tn-lb${lbClass}">
       <div class="tn-lb-head">
         <span class="tn-c-pos">${t('tnPos')}</span>
@@ -2523,13 +2600,16 @@ function renderTnList() {
         ${multi ? '' : `<span class="tn-c-rd"><span class="tn-rd-chip">${t('tnRoundShort')}${activeRound}</span></span>`}
       </div>
       ${page.map(e => rowHTML(e) + (e === bubble ? cutLineHTML : '')).join('')}
-      ${rest > 0 ? `<button class="tn-more" id="tn-more">${t('tnMore')} (${rest})</button>` : ''}
+      ${rest > 0 ? `<button class="tn-more"${boards.length === 1 ? ' id="tn-more"' : ''}>${t('tnMore')} (${rest})</button>` : ''}
     </div>`;
+  };
 
-  document.getElementById('tn-more')?.addEventListener('click', () => {
+  host.innerHTML = shownBoards.map(tableHTML).join('');
+
+  host.querySelectorAll('.tn-more').forEach(btn => btn.addEventListener('click', () => {
     tnPageLimit += TN_PAGE_SIZE;
     renderTnList();
-  });
+  }));
 }
 
 function renderHomeUpcoming(games) {
@@ -8809,6 +8889,15 @@ function tnAdminFormHTML(p, tn = {}) {
           <option value=""${sel('', tn.tee ?? '')}>${t('spTee')}: —</option>
           ${courseTees(tn.course || '').map(x => `<option value="${x.key}"${sel(x.key, tn.tee)}>${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('')}
         </select>
+        <select id="${p}-divisions" title="${t('spDivisions')}" style="${TN_INPUT}">
+          <option value=""${sel('', tn.spDivisions || '')}>${t('spDivisions')}: ${t('spDivisionsNone')}</option>
+          <option value="gender"${sel('gender', tn.spDivisions || '')}>${t('spDivisions')}: ${t('spDivisionsGender')}</option>
+        </select>
+        ${tnHasDivisions(tn) ? `
+        <select id="${p}-women-tee" title="${t('spWomenTee')}" style="${TN_INPUT}">
+          <option value=""${sel('', tn.womenTee ?? '')}>${t('spWomenTee')}: ${t('spWomenTeeSame')}</option>
+          ${courseTees(tn.course || '').map(x => `<option value="${x.key}"${sel(x.key, tn.womenTee)}>${t('spWomenTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('')}
+        </select>` : ''}
         <input id="${p}-par" type="number" min="27" max="90" placeholder="${t('tnFPar')}" value="${tn.par || ''}" style="${TN_INPUT}" />
         <select id="${p}-sp-scoring" title="${t('spScoring')}" style="${TN_INPUT}">
           <option value="strokes"${sel('strokes', tn.spScoring || 'strokes')}>${t('spScoring')}: ${t('spScoringStrokes')}</option>
@@ -8885,6 +8974,17 @@ function tnAdminReadForm(p) {
     // only for pairs, so a stale value on a four-player scramble is inert.
     ...(val('team-size') ? { spTeamSize: num('team-size') === 2 ? 2 : 4 } : {}),
     ...(val('team-rank') ? { spTeamRank: val('team-rank') === 'match' ? 'match' : 'board' } : {}),
+    // Divisions and the women's tee are read by the select's PRESENCE, not
+    // its value: a blank women's tee is a real choice — "same as the main
+    // tee" — and has to write its nulls, where the team selects above may
+    // simply leave the stored value alone.
+    ...(document.getElementById(`${p}-divisions`)
+      ? { spDivisions: val('divisions') === 'gender' ? 'gender' : '' } : {}),
+    ...(document.getElementById(`${p}-women-tee`)
+      ? (() => {
+        const x = courseTees(val('course')).find(v => v.key === val('women-tee'));
+        return { womenTee: x ? x.key : null, womenRating: x?.rating ?? null, womenSlope: x?.slope ?? null };
+      })() : {}),
     status: val('status'),
     cutAfterRound: num('cut-after'),
     cutSize: num('cut-size')
@@ -8975,9 +9075,10 @@ async function renderAdminTournamentsTab() {
   const rowHTML = (tn) => {
     const open = adminOpenTn === tn.id;
     const state = tnStatus(tn);
+    // A match play tournament keeps its field in mp.roster, not sp.players.
     const count = spActive(tn)
       ? Object.keys(tn.sp.players).length
-      : (tn.entries || []).length;
+      : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
     return `
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -9154,32 +9255,18 @@ async function renderAdminTournamentsTab() {
     await renderAdminTournamentsTab();
   });
 
-  // Switching the type in an open editor swaps which fields it shows —
-  // stroke play's PAR/rounds/cut/sheet mean nothing in match play. Values
-  // already typed into the shared fields survive; the format select reads
-  // whatever is on screen when saving.
+  // The open editor's meta form. Three of its selects reshape the form
+  // itself — the type (match play never sees the stroke play questions),
+  // divisions (the women's tee appears only with them) and the course (a tee
+  // belongs to its course) — and armTnAdminForm re-arms all three after every
+  // rebuild, since a rebuild replaces every element on the form.
   if (adminOpenTn) {
     // Remember the meta-form fold across this tab's frequent re-renders.
     document.querySelector('details[data-tn-form]')?.addEventListener('toggle', (e) => {
       tnFormOpen = e.target.open;
     });
-    const fmtSel = document.getElementById(`tn-e-${adminOpenTn}-format`);
-    const wrap = document.getElementById(`tn-e-${adminOpenTn}-formwrap`);
     const tn = list.find(x => x.id === adminOpenTn);
-    if (fmtSel && wrap && tn) {
-      fmtSel.onchange = () => {
-        // Only what is actually on screen overrides the stored record, so
-        // toggling match → stroke brings the stored PAR and rounds back
-        // instead of blanking them.
-        const current = Object.fromEntries(
-          Object.entries(tnAdminReadForm(`tn-e-${tn.id}`))
-            .filter(([, v]) => v !== null && v !== ''));
-        wrap.innerHTML = tnAdminFormHTML(`tn-e-${tn.id}`, { ...tn, ...current });
-        // Re-arm: the select was just replaced with a fresh element.
-        const again = document.getElementById(`tn-e-${tn.id}-format`);
-        if (again) again.onchange = fmtSel.onchange;
-      };
-    }
+    if (tn) armTnAdminForm(tn);
   }
 
   // Device approval card — which phones may write live scores. Renders only
@@ -9209,27 +9296,53 @@ async function renderAdminTournamentsTab() {
       if (spHost) mountSpAdmin(spHost, tn, ctx);
       mountTnMedia(document.getElementById(`tn-media-${tn.id}`), tn, ctx);
     }
-    // Picking a course fills PAR (and blank venue/city) on the spot, and
-    // rebuilds the tee options — a tee belongs to its course.
-    const courseSel = document.getElementById(`tn-e-${adminOpenTn}-course`);
-    if (courseSel) courseSel.onchange = () => {
-      const teeSel = document.getElementById(`tn-e-${adminOpenTn}-tee`);
-      if (teeSel) {
-        teeSel.innerHTML = `<option value="">${t('spTee')}: —</option>`
-          + courseTees(courseSel.value).map(x =>
-            `<option value="${x.key}">${t('spTee')}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('');
-      }
-      const c = courseByKey(courseSel.value);
-      if (!c) return;
-      const set = (id, v, always) => {
-        const inp = document.getElementById(`tn-e-${adminOpenTn}-${id}`);
-        if (inp && (always || !inp.value.trim())) inp.value = v;
-      };
-      set('par', c.par, true);
-      set('venue', c.name, false);
-      set('city', c.city, false);
-    };
   }
+}
+
+// Arm the open editor's meta form: the three selects that reshape it, re-armed
+// after every rebuild because a rebuild replaces every element. (The course
+// handler used to be armed once, outside the rebuild, and was lost the moment
+// the type changed.)
+function armTnAdminForm(tn) {
+  const p = `tn-e-${tn.id}`;
+  const wrap = document.getElementById(`${p}-formwrap`);
+  if (!wrap) return;
+  const el = (id) => document.getElementById(`${p}-${id}`);
+  // Only what is actually on screen overrides the stored record, so toggling
+  // match → stroke brings the stored PAR and rounds back instead of blanking
+  // them. The division fields are the exception: "none" and "same as the
+  // main tee" are choices, and a rebuild has to show the form they produce.
+  const keep = new Set(['spDivisions', 'womenTee', 'womenRating', 'womenSlope']);
+  const rebuild = () => {
+    const current = Object.fromEntries(
+      Object.entries(tnAdminReadForm(p)).filter(([k, v]) => keep.has(k) || (v !== null && v !== '')));
+    wrap.innerHTML = tnAdminFormHTML(p, { ...tn, ...current });
+    arm();
+  };
+  // Picking a course fills PAR (and blank venue/city) on the spot, and
+  // rebuilds both tee lists — a tee belongs to its course.
+  const teeOptions = (label, tees, blank) => `<option value="">${label}: ${blank}</option>`
+    + tees.map(x => `<option value="${x.key}">${label}: ${esc(x.label)} · ${x.rating}/${x.slope}</option>`).join('');
+  const courseChange = () => {
+    const tees = courseTees(el('course').value);
+    if (el('tee')) el('tee').innerHTML = teeOptions(t('spTee'), tees, '—');
+    if (el('women-tee')) el('women-tee').innerHTML = teeOptions(t('spWomenTee'), tees, t('spWomenTeeSame'));
+    const c = courseByKey(el('course').value);
+    if (!c) return;
+    const set = (id, v, always) => {
+      const inp = el(id);
+      if (inp && (always || !inp.value.trim())) inp.value = v;
+    };
+    set('par', c.par, true);
+    set('venue', c.name, false);
+    set('city', c.city, false);
+  };
+  const arm = () => {
+    if (el('format')) el('format').onchange = rebuild;
+    if (el('divisions')) el('divisions').onchange = rebuild;
+    if (el('course')) el('course').onchange = courseChange;
+  };
+  arm();
 }
 
 // Admin → Статистик: per-player game stats + overall app stats.

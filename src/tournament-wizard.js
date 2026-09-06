@@ -32,6 +32,7 @@ const blank = () => ({
   name: '', format: '', logo: null,
   startDate: '', endDate: '', venue: '', city: '',
   course: '', tee: '', rounds: '1', par: '72', spScoring: 'strokes', cutAfterRound: '', cutSize: '',
+  spDivisions: '', womenTee: '',
   spTeamSize: '4', spTeamRank: 'board',
   teamAName: '', teamAShort: '', teamBName: '', teamBShort: ''
 });
@@ -164,6 +165,19 @@ function stepHTML() {
             ...tees.map(x => [x.key, `${x.label} · ${x.rating}/${x.slope}`])
           ])) : '';
         })()}
+        ${field(t('spDivisions'), select('spDivisions', [
+          ['', t('spDivisionsNone')],
+          ['gender', t('spDivisionsGender')]
+        ]))}
+        ${(() => {
+          // The women's division plays its own tee — its own rating and
+          // slope — the way the club already runs its ladies' events.
+          const tees = courseTees(draft.course);
+          return draft.spDivisions === 'gender' && tees.length ? field(t('spWomenTee'), select('womenTee', [
+            ['', t('spWomenTeeSame')],
+            ...tees.map(x => [x.key, `${x.label} · ${x.rating}/${x.slope}`])
+          ])) : '';
+        })()}
         ${field(t('tnFPar'), input('par', 'number'))}
         ${field(t('spScoring'), select('spScoring', [
           ['strokes', t('spScoringStrokes')],
@@ -211,6 +225,13 @@ function stepHTML() {
             const x = courseTees(draft.course).find(v => v.key === draft.tee);
             return x ? `${x.label} · ${x.rating}/${x.slope}` : '';
           })())
+          + (draft.spDivisions === 'gender'
+            ? line(t('spDivisions'), t('spDivisionsGender'))
+              + line(t('spWomenTee'), (() => {
+                const x = courseTees(draft.course).find(v => v.key === draft.womenTee);
+                return x ? `${x.label} · ${x.rating}/${x.slope}` : t('spWomenTeeSame');
+              })())
+            : '')
           + line(t('tnFRounds'), draft.rounds)
           + line(t('tnFPar'), draft.par)
           + (draft.format === 'scramble'
@@ -253,11 +274,18 @@ async function create(ctx) {
     // stroke play pipeline with teams as its entries, plus the two choices
     // that shape those teams.
     const teeInfo = courseTees(draft.course).find(x => x.key === draft.tee) || null;
+    const womenTeeInfo = courseTees(draft.course).find(x => x.key === draft.womenTee) || null;
     Object.assign(data, {
       course: draft.course,
       tee: teeInfo ? draft.tee : null,
       rating: teeInfo?.rating ?? null,
       slope: teeInfo?.slope ?? null,
+      // Gender divisions, and the tee the women's one plays: nulls mean the
+      // main tee, exactly as the edit form stores them.
+      spDivisions: draft.spDivisions === 'gender' ? 'gender' : '',
+      womenTee: womenTeeInfo ? draft.womenTee : null,
+      womenRating: womenTeeInfo?.rating ?? null,
+      womenSlope: womenTeeInfo?.slope ?? null,
       rounds: num(draft.rounds) || 1, currentRound: 1,
       par: num(draft.par) || 72,
       spScoring: draft.spScoring === 'stableford' ? 'stableford' : 'strokes',
@@ -310,6 +338,7 @@ function paint(host, ctx) {
       // cut options, so both repaint; a select loses nothing to that.
       if (sel.dataset.wz === 'course') {
         draft.tee = '';
+        draft.womenTee = '';
         const c = courseByKey(sel.value);
         if (c) {
           draft.par = String(c.par);

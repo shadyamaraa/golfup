@@ -11,7 +11,8 @@ import {
   SP_HOLES, spActive, spEntries, spPlayerGroup, spGroupList, canScoreSp,
   spPlayerCard, spPlayerStats, tnScoring, tnHigherWins, spMetricFor
 } from './strokeplay.js';
-import { rankEntries, activeRound } from './tournament-sheet.js';
+import { rankByDivision, activeRound } from './tournament-sheet.js';
+import { genderKey } from './gender.js';
 import { fmtToPar } from './game-score.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -222,7 +223,7 @@ function headerHTML(tn, tnId, pid, card, entry, round, may, gid) {
             ${esc(card.name)}
           </div>
           <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-top:2px;font-size:0.76rem;color:var(--text-secondary);">
-            ${entry ? `<span>${t('tnPos')} <b style="color:var(--text-primary);">${esc(entry.posLabel)}</b></span>` : ''}
+            ${entry ? `<span>${t('tnPos')} <b style="color:var(--text-primary);">${esc(entry.posLabel)}</b></span>` : ''}${entry?.division ? `<span class="pill-soft" style="font-size:0.66rem;">${t(genderKey(entry.division))}</span>` : ''}
             ${card.hcp !== null ? `<span class="pill-soft" style="font-size:0.66rem;">${t('spHcp')} ${esc(card.hcp)}</span>` : ''}
             <span>${t('tnRoundShort')}${round}
               <b class="${scoreClass(card.total.toPar)}">${scoreText(card.total.toPar)}</b></span>
@@ -296,9 +297,11 @@ export function renderSpPlayerCard(host, tnId, pid, ctx = {}) {
     const scope = stored === 'all' ? null : round;
 
     const card = spPlayerCard(tn, pid, round);
-    const entry = rankEntries(entries, {
+    // The position is the player's on their OWN board: a divided tournament
+    // ranks each division on its own, and so does this.
+    const entry = rankByDivision(entries, {
       cutAfterRound: tn.cutAfterRound, cutSize: tn.cutSize, higherWins: tnHigherWins(tn)
-    }).find(e => e.pid === pid) || null;
+    }).flatMap(b => b.entries).find(e => e.pid === pid) || null;
     const may = canScoreSp(ctx.user, pid, tn.sp.players, round);
     const gid = spPlayerGroup(tn.sp.players, pid, round);
 

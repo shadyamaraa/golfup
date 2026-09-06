@@ -8,8 +8,10 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import {
-  drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams
+  drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams,
+  tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS
 } from './strokeplay.js';
+import { isGender, genderKey } from './gender.js';
 import { courseHandicap } from './handicap.js';
 import { addMinutesHHMM } from './matchplay.js';
 import { nameKey, nameMatches } from './tournament-sheet.js';
@@ -108,18 +110,48 @@ function rowHTML(tn, pid, p) {
       <select data-sp="status" data-pid="${esc(pid)}" style="${INPUT}width:80px;">
         ${['', 'WD', 'DQ'].map(s => `<option value="${s}"${(p.status || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
       </select>
+      ${divisionSelectHTML(tn, 'data-sp', pid, p)}
       ${tnOneBall(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
       <button data-sp="del" data-pid="${esc(pid)}" class="btn btn-outline-danger btn-sm">✕</button>
     </div>`;
+}
+
+// The division control on a roster row, shown only when the tournament has
+// divisions. A person's blank reads as unset and is flagged — the board will
+// stand them with the men until the admin says otherwise. A team's blank is
+// the automatic reading of its members, and the option says which.
+function divisionSelectHTML(tn, attr, pid, p) {
+  if (!tnHasDivisions(tn)) return '';
+  const team = isTeamEntry(p);
+  const set = isGender(p.division);
+  const derived = team ? teamDerivedDivision(draftFor(tn).players, pid) : null;
+  const blank = team
+    ? `${t('spDivisionAuto')}: ${t(genderKey(derived))}`
+    : `— ${t('spDivisions')}`;
+  return `
+      <select ${attr}="division" data-pid="${esc(pid)}" title="${t('spDivisions')}"
+        style="${INPUT}width:${team ? '150px' : '118px'};${!team && !set ? 'border-color:var(--amber);' : ''}">
+        <option value=""${set ? '' : ' selected'}>${esc(blank)}</option>
+        ${DIVISIONS.map(g => `<option value="${g}"${p.division === g ? ' selected' : ''}>${t(genderKey(g))}</option>`).join('')}
+      </select>`;
 }
 
 // A member's WHS playing handicap on this tournament's course and tee — what
 // seeds the roster's HCP field so nobody retypes what the club already knows.
 // null when either side lacks the data (no index, custom course, no tee).
 // A typed value always wins; this only ever fills blanks.
-function whsHcp(u, tn) {
-  const ch = courseHandicap(u?.hcpIndex, tn?.slope, tn?.rating, Number(tn?.par) || null);
+// The tee is the division's: a woman's course handicap comes off the women's
+// rating and slope when the tournament has them.
+function whsHcp(u, tn, division = null) {
+  const tee = tnTeeFor(tn, division);
+  const ch = courseHandicap(u?.hcpIndex, tee.slope, tee.rating, Number(tn?.par) || null);
   return ch === null ? null : Math.max(0, Math.min(54, ch));
+}
+
+// A member's division for this tournament, read off their profile — only
+// when the tournament has divisions, so an undivided roster stores nothing.
+function profileDivision(u, tn) {
+  return tnHasDivisions(tn) && isGender(u?.gender) ? u.gender : null;
 }
 
 function sectionHTML(tn, users) {
@@ -130,13 +162,24 @@ function sectionHTML(tn, users) {
   // An empty roster is the one time the fold opens itself — there is
   // nothing else for the admin to do until players exist.
   const open = playersOpenFor.get(tn.id) ?? !rows.length;
+  // With divisions on, the fold's title counts each, and anyone the roster
+  // cannot place is named — the board would stand them with the men.
+  const divided = tnHasDivisions(tn);
+  const unset = divided ? rows.filter(([, p]) => !isGender(p.division)) : [];
+  const divCounts = divided
+    ? ' · ' + DIVISIONS.map(g => `${rows.filter(([, p]) => p.division === g).length} ${t(genderKey(g))}`).join(' · ')
+    : '';
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
       <details data-sp-players${open ? ' open' : ''}>
-        <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spPlayers')} — ${rows.length}</summary>
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spPlayers')} — ${rows.length}${divCounts}</summary>
         <div style="margin-top:8px;">
           ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
             || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
+          ${unset.length ? `
+          <p style="font-size:0.72rem;color:var(--amber);margin:6px 0 0;">
+            ⚠ ${unset.length} ${t('spDivisionUnset')}: ${esc(unset.map(([, p]) => p.name).join(', '))}
+          </p>` : ''}
           <div style="position:relative;margin-top:8px;">
             <input data-sp="pick" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
               style="${INPUT}width:100%;box-sizing:border-box;" />
@@ -152,6 +195,10 @@ function sectionHTML(tn, users) {
           ${tn.rating && tn.slope ? `
           <button data-sp="hcp-whs" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
             ${t('spHcpFromWhs')}
+          </button>` : ''}
+          ${divided ? `
+          <button data-sp="division-profile" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
+            ${t('spDivisionFromProfile')}
           </button>` : ''}
         </div>
       </details>
@@ -191,6 +238,7 @@ function teamsHTML(tn, d) {
           style="${INPUT}flex:1;min-width:140px;font-weight:700;" />
         ${tn.format === 'fourball' ? '' : `<input data-spt="hcp" data-pid="${esc(tm.pid)}" type="number" step="1" min="0" max="72"
           value="${esc(tm.hcp ?? '')}" placeholder="${t('spTeamHcp')}" title="${t('spTeamHcp')}" style="${INPUT}width:84px;" />`}
+        ${divisionSelectHTML(tn, 'data-spt', tm.pid, tm)}
         ${scored ? `<span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
         ${tn.format === 'fourball' ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(tm.pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
         <button data-spt="disband" data-pid="${esc(tm.pid)}" class="btn btn-outline-danger btn-sm" title="${t('spTeamDisband')}">✕</button>
@@ -352,6 +400,9 @@ async function saveDraft(tn, ctx) {
     if (isTeamEntry(p)) { rec.kind = 'team'; rec.members = p.members || {}; }
     if (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined && !isNaN(Number(p.hcp))) rec.hcp = Number(p.hcp);
     if (p.status) rec.status = p.status;
+    // Written whenever it is valid, divisions on or off, so switching them
+    // off and on again loses nobody's placing.
+    if (isGender(p.division)) rec.division = p.division;
     if (pointers[pid]) rec.groups = pointers[pid];
     patch[`sp/players/${pid}`] = rec;
   });
@@ -400,6 +451,17 @@ function wire(host, tn, ctx) {
     };
   });
 
+  // A person's division: blank clears it (and the row goes amber again).
+  host.querySelectorAll('select[data-sp="division"]').forEach(sel => {
+    sel.onchange = () => {
+      const p = d.players[sel.dataset.pid];
+      if (!p) return;
+      if (isGender(sel.value)) p.division = sel.value; else delete p.division;
+      markDirty();
+      paint(host, tn, ctx);
+    };
+  });
+
   host.querySelectorAll('button[data-sp="del"]').forEach(b => b.onclick = () => {
     const pid = b.dataset.pid;
     const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
@@ -425,8 +487,13 @@ function wire(host, tn, ctx) {
     if (!adds.length) { ctx.showToast(t('spAddAllNone'), 'info'); return; }
     if (!confirm(`${adds.length} ${t('spAddAllConfirm')}`)) return;
     adds.forEach(u => {
-      const hcp = whsHcp(u, tn);
-      d.players[u.id] = { name: store.memberName(u), userId: u.id, ...(hcp !== null ? { hcp } : {}) };
+      const division = profileDivision(u, tn);
+      const hcp = whsHcp(u, tn, division);
+      d.players[u.id] = {
+        name: store.memberName(u), userId: u.id,
+        ...(hcp !== null ? { hcp } : {}),
+        ...(division ? { division } : {})
+      };
     });
     d.dirty = true;
     paint(host, tn, ctx);
@@ -440,10 +507,26 @@ function wire(host, tn, ctx) {
     let filled = 0;
     Object.entries(d.players).forEach(([pid, p]) => {
       if (!p || !p.userId || (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined)) return;
-      const hcp = whsHcp(byId.get(p.userId), tn);
+      const hcp = whsHcp(byId.get(p.userId), tn, entryDivision(d.players, pid));
       if (hcp !== null) { p.hcp = hcp; filled++; }
     });
     if (!filled) { ctx.showToast(t('spHcpWhsNone'), 'info'); return; }
+    d.dirty = true;
+    paint(host, tn, ctx);
+  };
+
+  // Fill the BLANK divisions from members' profiles. A division the admin set
+  // by hand is never overwritten; teams read their members and need nothing.
+  const divBtn = host.querySelector('button[data-sp="division-profile"]');
+  if (divBtn) divBtn.onclick = () => {
+    const byId = new Map((ctx.users || []).map(u => [u.id, u]));
+    let filled = 0;
+    Object.entries(d.players).forEach(([, p]) => {
+      if (!p || isTeamEntry(p) || !p.userId || isGender(p.division)) return;
+      const division = profileDivision(byId.get(p.userId), tn);
+      if (division) { p.division = division; filled++; }
+    });
+    if (!filled) { ctx.showToast(t('spDivisionFromProfileNone'), 'info'); return; }
     d.dirty = true;
     paint(host, tn, ctx);
   };
@@ -487,8 +570,14 @@ function wire(host, tn, ctx) {
       item.onpointerdown = (e) => {
         e.preventDefault();
         const id = item.dataset.spId;
-        const hcp = whsHcp((ctx.users || []).find(u => u?.id === id), tn);
-        d.players[id] = { name: item.dataset.spName, userId: id, ...(hcp !== null ? { hcp } : {}) };
+        const u = (ctx.users || []).find(x => x?.id === id);
+        const division = profileDivision(u, tn);
+        const hcp = whsHcp(u, tn, division);
+        d.players[id] = {
+          name: item.dataset.spName, userId: id,
+          ...(hcp !== null ? { hcp } : {}),
+          ...(division ? { division } : {})
+        };
         d.dirty = true;
         paint(host, tn, ctx);
       };
@@ -560,6 +649,16 @@ function wireTeams(host, tn, ctx, d, markDirty) {
     if (!tm) return;
     tm.hcp = inp.value.trim();
     markDirty();
+  });
+
+  // A team's division: a choice is the admin's override, blank hands it back
+  // to the members (the option text says what that reads as).
+  host.querySelectorAll('select[data-spt="division"]').forEach(sel => sel.onchange = () => {
+    const tm = d.players[sel.dataset.pid];
+    if (!tm) return;
+    if (isGender(sel.value)) tm.division = sel.value; else delete tm.division;
+    markDirty();
+    repaint();
   });
 
   // Disbanding frees the members for another team. A team that has scored

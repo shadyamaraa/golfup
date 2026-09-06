@@ -12,7 +12,8 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { spActive, spGroupList } from './strokeplay.js';
+import { spActive, spGroupList, tnHasDivisions, entryDivision } from './strokeplay.js';
+import { genderKey } from './gender.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
 // ---- Tournament draws: stroke play flights and the M Cup ----
@@ -25,12 +26,18 @@ const MP_FORMAT_LABELS = { FOURSOMES: 'Foursomes', FOURBALL: 'Four-ball', SINGLE
 function strokeScheduleBlocksHTML(tn) {
   const roundCount = Math.max(1, Number(tn?.rounds) || 1);
   const players = tn?.sp?.players || {};
-  const nameOf = (pid) => {
+  const nameOf = (pid, tagged = false) => {
     const p = players[pid] || {};
     const hcp = Number.isFinite(Number(p.hcp))
       ? ` <span style="color:#777;">(${esc(p.hcp)})</span>` : '';
-    return `${esc(p.name || pid)}${hcp}`;
+    const tag = tagged ? ` <span style="color:#777;font-size:0.72rem;">[${esc(t(genderKey(entryDivision(players, pid))))}]</span>` : '';
+    return `${esc(p.name || pid)}${hcp}${tag}`;
   };
+  // A flight is one division — the draw keeps them apart — so its № carries
+  // the division's name; a hand-mixed flight tags each player instead.
+  const divided = tnHasDivisions(tn);
+  const flightDivs = (g) => (divided
+    ? [...new Set(Object.keys(g.players || {}).map(pid => entryDivision(players, pid)))] : []);
   const rounds = [];
   for (let r = 1; r <= roundCount; r++) {
     const groups = spGroupList(tn, r);
@@ -54,14 +61,16 @@ function strokeScheduleBlocksHTML(tn) {
             </tr>
             </thead>
             <tbody>
-            ${groups.map(g => `
+            ${groups.map(g => {
+              const divs = flightDivs(g);
+              return `
             <tr>
-              <td style="font-weight:700;">${esc(g.number ?? '')}</td>
+              <td style="font-weight:700;">${esc(g.number ?? '')}${divs.length === 1 ? `<div style="font-weight:400;font-size:0.66rem;color:#777;">${esc(t(genderKey(divs[0])))}</div>` : ''}</td>
               <td style="font-weight:700;white-space:nowrap;">${esc(g.teeTime || '')}</td>
               ${hasHole ? `<td style="font-weight:700;">${g.startHole ? esc(g.startHole) : ''}</td>` : ''}
-              <td style="text-align:left;padding-left:8px;">${Object.keys(g.players || {}).map(nameOf).join(', ') || '—'}</td>
+              <td style="text-align:left;padding-left:8px;">${Object.keys(g.players || {}).map(pid => nameOf(pid, divs.length > 1)).join(', ') || '—'}</td>
               <td></td>
-            </tr>`).join('')}
+            </tr>`; }).join('')}
             </tbody>
           </table>
         </div>

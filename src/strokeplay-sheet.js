@@ -14,8 +14,10 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import { coursePar, courseTees } from './courses.js';
 import {
-  roundGross, tnPars, tnOneBall, isTeamEntry, teamMemberIds, fourballRound
+  roundGross, tnPars, tnOneBall, isTeamEntry, teamMemberIds, fourballRound,
+  tnHasDivisions, entryDivision, tnTeeFor
 } from './strokeplay.js';
+import { genderKey } from './gender.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 import { scoreCardHTML, legendHTML } from './scorecard-grid.js';
 
@@ -178,17 +180,35 @@ export async function renderSpSheetPage(tnId, round, gid, ctx) {
   setPageTitle(ctx, `${tn.name || ''} R${round} ${t('spGroupCard')} ${g.number ?? ''} — ${t('gsTitle')}`);
   const url = pageUrl(`#/spsheet/${tnId}/${round}/${gid}`);
 
-  const teeLabel = tn.tee
-    ? (courseTees(tn.course || tn.venue).find(x => x.key === tn.tee)?.label || tn.tee) : null;
+  // The tee, rating and slope this flight plays — the division's, in a divided
+  // tournament. A flight is normally one division, so one line; a hand-mixed
+  // flight gets a line per division present, each named.
+  const divs = tnHasDivisions(tn) ? [...new Set(flightPids.map(pid => entryDivision(players, pid)))] : [null];
+  const teeLine = (d) => {
+    const tee = tnTeeFor(tn, d);
+    const label = tee.tee
+      ? (courseTees(tn.course || tn.venue).find(x => x.key === tee.tee)?.label || tee.tee) : null;
+    const parts = [
+      tee.rating ? `${t('gsCourseRating')} ${tee.rating}` : null,
+      tee.slope ? `${t('gsSlope')} ${tee.slope}` : null,
+    ].filter(Boolean);
+    return { name: d ? t(genderKey(d)) : null, label, parts };
+  };
+  const tees = divs.map(teeLine);
+  const teeLabel = tees.length === 1 ? tees[0].label : null;
   const totalPar = Number(tn.par) || coursePar(tn.course || tn.venue);
   const meta = [
     `${t('tnRoundShort')}${round}`,
     g.teeTime ? `${t('scTeeTime')} ${g.teeTime}` : null,
     g.startHole ? `${t('spStartHole')} ${g.startHole}` : null,
-    tn.rating ? `${t('gsCourseRating')} ${tn.rating}` : null,
-    tn.slope ? `${t('gsSlope')} ${tn.slope}` : null,
+    ...(tees.length === 1 ? tees[0].parts : []),
     totalPar ? `${t('gsPar')} ${totalPar}` : null,
   ].filter(Boolean).map(esc).join(' · ');
+  // The division line: which board this flight is on, and — on a mixed
+  // flight — each division's tee spelled out.
+  const divLine = divs[0] === null ? '' : tees.length === 1
+    ? `<div style="font-size:0.78rem;color:#555;margin-top:2px;">${esc(tees[0].name)}</div>`
+    : tees.map(x => `<div style="font-size:0.78rem;color:#555;margin-top:2px;">${esc(x.name)}: ${esc([x.label ? `Tees: ${x.label}` : null, ...x.parts].filter(Boolean).join(' · '))}</div>`).join('');
 
   host.innerHTML = `
     <div class="detail-container fade-in sc-clip">
@@ -209,7 +229,7 @@ export async function renderSpSheetPage(tnId, round, gid, ctx) {
             <div style="font-size:0.78rem;color:#555;margin-top:3px;">${meta}</div>
             <div style="font-size:0.78rem;color:#555;margin-top:2px;">
               ${esc(tn.venue || '')}${teeLabel ? ` · Tees: ${esc(teeLabel)}` : ''}
-            </div>
+            </div>${divLine}
           </div>
           <div style="text-align:center;flex:0 0 auto;">
             <canvas id="spsh-qr" width="120" height="120"></canvas>

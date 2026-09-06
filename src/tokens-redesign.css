@@ -994,6 +994,21 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .tn-search { margin-bottom: 10px; }
 .tn-section { margin: 0 0 10px; }
 
+/* ---- Gender divisions: the board tabs, the stacked headings, the tags ---- */
+.tn-div-tabs { margin: 0 0 10px; }
+.tn-div-head { margin-top: 16px; }
+.tn-div-head h2 { font-size: 0.95rem; }
+.tn-div-chip {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  background: var(--accent-soft); color: var(--gold-dark);
+}
+.tn-div-flight {
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--gold-dark); margin-bottom: 3px;
+}
+
 /* own position — soft-gold, matching the waitlist banner's role */
 .tn-me-banner {
   display: flex; align-items: center; gap: 12px; padding: 12px 14px;
