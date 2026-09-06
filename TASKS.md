@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] A member's own team is marked on team-event leaderboards — the ticker
+      badge, the home strip, the board row and the ТАНЫ БАЙР banner — without
+      giving a team a userId.
 - [x] Leaderboard ticker on the tournament scoring screens — the live board
       flows past above the card, so a player entering a hole sees where the
       tournament stands without leaving it.

@@ -712,8 +712,15 @@ test('the board ranks teams, and never their members', () => {
   // organiser's hand-entered number, not anything derived from the members.
   entries.forEach(e => { assert.equal(e.total, 0); assert.equal(e.gross, 72); });
   assert.equal(entries.find(e => e.pid === 'u1+u2').hcp, 9);
-  // A team is nobody's card, so it can never match "that's me" or a WHS post.
+  // A team is nobody's card, so it carries no userId — that null is what keeps
+  // the home tee card and the WHS post, which both read one, off a team.
   entries.forEach(e => assert.equal(e.userId, null));
+  // The board still has to mark a member's own team, so the members ride along
+  // by id instead. A single player's entry carries no such list.
+  assert.deepEqual(entries.find(e => e.pid === 'u1+u2').memberIds.sort(), ['u1', 'u2']);
+  assert.deepEqual(entries.find(e => e.pid === 'u3+u4').memberIds.sort(), ['u3', 'u4']);
+  // A person's entry carries no such list, in either kind of event.
+  assert.equal(spEntries({ ...tn, format: 'stroke' }).find(e => e.pid === 'u1').memberIds, undefined);
   // Net ranks by the team handicap: 72 − 9 beats 72 − 5 the other way round.
   const net = spEntries(tn, 'net');
   assert.equal(net.find(e => e.pid === 'u1+u2').netTotal, 63);

@@ -1295,6 +1295,10 @@ function tnMyNameKeys() {
 function tnIsMe(entry) {
   if (!currentUser) return false;
   if (entry.userId && entry.userId === currentUser.id) return true;
+  // A team entry has no userId of its own — a team is nobody's card. A member
+  // of it is still "me" for everything that only HIGHLIGHTS a row: watching
+  // your own team go past unmarked is the whole complaint this answers.
+  if (entry.memberIds?.includes(currentUser.id)) return true;
   return tsheet.nameMatches(tsheet.nameKey(entry.name), tnMyNameKeys());
 }
 

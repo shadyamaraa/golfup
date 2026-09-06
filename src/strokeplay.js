@@ -355,9 +355,13 @@ export function spEntries(tn, metric = 'gross') {
 
     return {
       pid,
-      // A team is nobody's card: leaving userId null keeps the "that's me"
-      // banner, the home tee card and the WHS posting from ever matching it.
+      // A team is nobody's card: leaving userId null keeps the home tee card
+      // and the WHS posting, which both read a userId, from ever matching it.
       userId: isTeamEntry(p) ? null : (p.userId || (pid.startsWith('p_') ? null : pid)),
+      // The board still has to show a member which line is theirs, so a team
+      // carries its members by id. Display only — nothing that WRITES may
+      // read this, or a team would post to somebody's handicap.
+      ...(isTeamEntry(p) ? { memberIds: teamMemberIds(p) } : {}),
       name: p.name || pid,
       hcp,
       status: p.status || '',
