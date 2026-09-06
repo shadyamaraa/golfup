@@ -888,6 +888,62 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .tn-sc-over  { color: var(--text-primary); }
 .tn-sc-none  { color: var(--text-muted); }
 
+/* ============================================================
+   Leaderboard ticker — the live board flowing past on a scorer
+   screen, so a player entering a hole sees where the tournament
+   stands without leaving the card. Rows reuse the home strip's
+   .tn-p marks, so both places read identically.
+   ============================================================ */
+.tn-tick { padding: 11px 0 12px; margin-bottom: 12px; overflow: hidden; }
+.tn-tick-head {
+  display: flex; align-items: center; gap: 8px; padding: 0 14px 10px;
+}
+.tn-tick-name {
+  margin-left: auto; min-width: 0; font-size: 0.72rem; font-weight: 700;
+  color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tn-tick-still { padding: 0 14px; }
+/* The team score sits still rather than scrolling — it is two numbers, not a
+   field. It wraps instead, so the session line is never chopped off the edge. */
+.tn-tick-still .tn-meta { margin-top: 0; flex-wrap: wrap; row-gap: 7px; }
+
+/* The window clips; the track is twice the content and slides exactly half
+   its width, at which point the copy sits where the original began — so the
+   loop has no seam and no jump. */
+/* Soft edges, so rows arrive and leave rather than being chopped off. */
+.tn-tick-win {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+}
+.tn-tick-track {
+  display: flex; width: max-content;
+  animation-name: tn-tick-run; animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.tn-tick-run {
+  display: flex; align-items: center; gap: 14px; padding-left: 14px;
+}
+@keyframes tn-tick-run {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+/* Hold it still to read a row: a finger down, or a pointer over it. The
+   pointer rule is gated on a real hover device — on a phone :hover latches
+   after a tap and would leave the ticker frozen for good. */
+.tn-tick:active .tn-tick-track { animation-play-state: paused; }
+@media (hover: hover) {
+  .tn-tick:hover .tn-tick-track { animation-play-state: paused; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-tick-track { animation: none; }
+  .tn-tick-win { overflow-x: auto; scrollbar-width: none; }
+  .tn-tick-win::-webkit-scrollbar { display: none; }
+  .tn-tick-run + .tn-tick-run { display: none; }
+}
+
 /* ---- Tournament page ---- */
 .tn-hero { display: flex; align-items: flex-start; gap: 14px; padding: 18px; margin-bottom: 14px; }
 .tn-crest {

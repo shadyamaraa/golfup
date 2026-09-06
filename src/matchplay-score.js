@@ -171,7 +171,7 @@ function pendingHTML(mp, match, user) {
     </div>`;
 }
 
-function screenHTML(tn, match, demo, user) {
+function screenHTML(tn, match, demo, user, ticker = '') {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
   const settled = settleMatch(match.holes, total);
@@ -186,6 +186,7 @@ function screenHTML(tn, match, demo, user) {
   return `
     <div class="detail-container fade-in" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
       <a href="#/tournament/${esc(tn.id)}" class="back-link">${t('back')}</a>
+      ${ticker}
 
       <div style="margin-top:8px;">
         <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:700;">
@@ -298,7 +299,7 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       return;
     }
     denied = false;
-    host.innerHTML = screenHTML(data, m, demoMode, ctx.user);
+    host.innerHTML = screenHTML(data, m, demoMode, ctx.user, ctx.ticker?.(data) || '');
     wire();
     // Repainted every time because the screen was just replaced wholesale.
     paintDeviceBanner();

@@ -1,5 +1,43 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (The leaderboard, flowing, on the scorer)
+
+A player standing on the tee with the card open had no way to see where the
+tournament stood. The board is one screen away, but leaving the card mid-round
+to look and coming back is exactly what nobody does.
+
+So the board comes to them. Above the card on every tournament scoring screen
+there is now a ticker carrying the same rows the home strip carries — position,
+avatar, name, total, thru — running past on their own. The signed-in player's
+own row keeps its **ТА** badge and gold highlight as it goes by, and a finger
+held on the strip stops it long enough to read a row.
+
+- **Stroke play** (`#/spgroup`, `#/spscore`): the ranked field, up to
+  twenty-four rows, flowing. A team event shows its teams, the same as its
+  board does.
+- **M Cup** (`#/score`): a match play tournament has no leaderboard of players
+  — its team score IS the standing, so that block sits still and wraps rather
+  than scrolling two numbers past.
+
+Three details worth naming. The scorers repaint on every remote score, which
+would have restarted the run from the left edge each time; the animation is
+phased off one fixed instant with a negative delay, so a repaint is invisible.
+The track carries the rows twice and slides exactly half its width, which is
+what makes the loop seamless. And the pause-on-pointer rule is gated behind
+`@media (hover: hover)` — on a phone `:hover` latches after a tap and would
+have left the ticker frozen for good.
+
+`tnPlayerChipHTML`, `tnTeamScoreRowHTML` and `tnStateHeadHTML` were lifted out
+of the home strip so both places render byte-identical markup, and the strip
+itself is unchanged. The scorer modules take the builder through their ctx
+(`ticker`), which is what keeps `app.js` the only place that knows how a
+leaderboard row looks.
+
+Driven in a browser, phone-sized and touch: the track measurably moves, holds
+its phase across a full repaint and across a score tap, keeps running after a
+tap, pauses under a held finger, and stands still with all rows readable under
+`prefers-reduced-motion`.
+
 ## 2026-09-04 (A round ends when the group says so)
 
 A game left the active feed four hours after its tee time, whatever the group
