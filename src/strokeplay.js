@@ -147,6 +147,9 @@ export function fourballRound(tn, team, round) {
     if (bp === null) pointsKnown = false; else pts += bp;
   }
   return {
+    // The best ball hole by hole, which is what a printed card has to show —
+    // the three tallies below are sums of exactly these strokes.
+    holes: gross,
     grossRound: roundGross(gross, pars),
     netRound: { gross: netSum, holesIn, toPar: parKnown && holesIn ? netSum - parIn : null },
     pointsRound: { points: pts, holesIn, parsKnown: pointsKnown }

@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] Printable tournament score cards at #/spsheet — one flight in the
+      casual game's card layout, own and team first, with a whole-flight or
+      only-mine toggle. The grid is shared, so the two cannot drift apart.
 - [x] Tournament scoring screens no longer rebuild themselves on every score
       entered anywhere in the tournament — scorers reported the card jumping
       and taps being eaten mid-round.

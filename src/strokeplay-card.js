@@ -237,10 +237,11 @@ function headerHTML(tn, tnId, pid, card, entry, round, may, gid) {
         </div>
       </div>
       ${flight ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.76rem;color:var(--text-secondary);">${esc(flight)}</div>` : ''}
-      ${may ? `
+      ${(may || gid) ? `
         <div style="display:flex;gap:8px;margin-top:10px;">
-          <a href="#/spscore/${esc(tnId)}/${esc(pid)}" class="btn btn-primary btn-sm" style="flex:1;text-align:center;">${t('mpEnterScore')}</a>
-          ${gid ? `<a href="#/spgroup/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">${t('spGroupCard')}</a>` : ''}
+          ${may ? `<a href="#/spscore/${esc(tnId)}/${esc(pid)}" class="btn btn-primary btn-sm" style="flex:1;text-align:center;">${t('mpEnterScore')}</a>` : ''}
+          ${may && gid ? `<a href="#/spgroup/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">${t('spGroupCard')}</a>` : ''}
+          ${gid ? `<a href="#/spsheet/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;gap:5px;">🖨 ${t('scPrint')}</a>` : ''}
         </div>` : ''}
       ${roundCount > 1 ? `
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">

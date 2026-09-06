@@ -14,6 +14,7 @@ import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide
 } from './tournament-media.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
+import { renderSpSheetPage } from './strokeplay-sheet.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import {
@@ -423,7 +424,8 @@ export async function router() {
     // Guests landing on home get the sign-in card with the tournament strip
     // above it, so a live M Cup is one tap away.
     const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
-      || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/');
+      || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/')
+      || hash.startsWith('#/spsheet/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -467,6 +469,14 @@ export async function router() {
         ticker: tnTickerHTML, tickerPatch: tnTickerPatch, backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
+    }
+    else if (hash.startsWith('#/spsheet/')) {
+      // The printable card for one flight — guest-reachable, so the QR on the
+      // paper opens it for anyone.
+      const [shTn, shRound, shGid] = hash.split('#/spsheet/')[1].split('/');
+      await renderSpSheetPage(shTn, Number(shRound) || 1, shGid, {
+        main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
+      });
     }
     else if (hash.startsWith('#/spcard/')) {
       // A player's card, read only — opened by tapping their leaderboard row.
