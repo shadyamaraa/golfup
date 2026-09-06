@@ -26,6 +26,9 @@
 
 ## Done
 
+- [x] Leaderboard ticker on the tournament scoring screens — the live board
+      flows past above the card, so a player entering a hole sees where the
+      tournament stands without leaving it.
 - [x] A live game ends only when 🏁 Finish is pressed — the four-hour clock
       no longer pushes a round still being played into history, and a game
       nobody finishes drops out a day after its tee time.

@@ -177,6 +177,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
         <h2 class="detail-title" style="margin:8px 0 10px;">${t('spCardOf')}</h2>
+        ${ctx.ticker?.(tn) || ''}
         ${cardHTML(tn, pid, round, editable)}
       </div>`;
 
@@ -420,6 +421,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       <div class="detail-container fade-in">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
         <h2 class="detail-title" style="margin:8px 0 10px;">${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
+        ${ctx.ticker?.(tn) || ''}
         <div class="surface-card" style="padding:14px;">
           <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
             <b>R${esc(round)}</b>

@@ -443,6 +443,7 @@ export async function router() {
       await renderScorerPage(tnId, matchId, {
         main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn),
+        ticker: tnTickerHTML,
         // The sample M Cup can be scored on preview builds: taps stay local,
         // nothing is written, and the demo resets on reload.
         demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
@@ -454,7 +455,7 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpScorer(main(), tnId, pid, {
         user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
-        backHash: `#/tournament/${tnId}`
+        ticker: tnTickerHTML, backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
     }
@@ -463,7 +464,7 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
         user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
-        backHash: `#/tournament/${tnId}`
+        ticker: tnTickerHTML, backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
     }
@@ -1393,17 +1394,12 @@ async function renderTournamentStrip(list) {
   updateTournamentStripVisibility(location.hash || '#/');
 }
 
-function tournamentStripHTML(tn) {
-  const state = tnStatus(tn);
-  const pts = tnScoring(tn) === 'stableford';
-  const ranked = tnRanked(tn);
-  const badge = state === 'upcoming'
-    ? tnShortDate(tn.startDate)
-    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
-
-  const playerHTML = (e) => {
-    const mine = tnIsMe(e);
-    return `
+// One line of a leaderboard: position, avatar, name, score, and how far
+// through the round they are. The home strip and the scorer's ticker render
+// the identical row, so a player reads the same thing in both places.
+function tnPlayerChipHTML(e, pts, live) {
+  const mine = tnIsMe(e);
+  return `
     <span class="tn-p${mine ? ' tn-p-me' : ''}">
       ${mine ? `<span class="tn-you">${t('tnYou')}</span>` : ''}
       <span class="tn-pos">${esc(e.posLabel)}</span>
@@ -1411,9 +1407,47 @@ function tournamentStripHTML(tn) {
       <span class="tn-pname">${esc(e.name || '')}</span>
       <span class="tn-cap">${pts ? t('spPoints') : t('tnTotal')}</span>
       <span class="tn-sc ${tnScoreClass(e.total, pts)}">${tnScoreText(e.total, pts)}</span>
-      ${state === 'live' ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
+      ${live ? `<span class="tn-cap">${t('tnThru')}</span><span class="tn-thru">${esc(e.thru || '–')}</span>` : ''}
     </span>`;
-  };
+}
+
+// A match play tournament's own answer to "who is winning": the team score,
+// never a player list (spec §22/§28). Team names ride along with the numbers,
+// so it never depends on colour alone (§23).
+function tnTeamScoreRowHTML(s) {
+  return `
+    <div class="tn-meta">
+      ${s.singles ? `
+        <span class="tn-meta-strong">${t('fmtMatch')}</span>` : `
+        <span class="tn-meta-strong" style="border-bottom:2px solid ${s.a.color};">
+          ${esc(s.a.name)} ${esc(String(s.a.points))}
+        </span>
+        <span class="tn-sep"></span>
+        <span class="tn-meta-strong" style="border-bottom:2px solid ${s.b.color};">
+          ${esc(String(s.b.points))} ${esc(s.b.name)}
+        </span>`}
+      ${s.liveCount ? `<span class="tn-sep"></span><span class="tn-meta-txt">${s.liveCount} ${t('mpLive')}</span>` : ''}
+      ${s.session ? `<span class="tn-sep"></span><span class="tn-meta-txt">${esc(s.session)}</span>` : ''}
+    </div>`;
+}
+
+// The round chip, the pulsing dot and the state word — the same three marks
+// the home strip leads with.
+function tnStateHeadHTML(tn, state) {
+  const badge = state === 'upcoming'
+    ? tnShortDate(tn.startDate)
+    : `${t('tnRoundShort')}${tnActiveRound(tn)}`;
+  return `
+    ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
+    ${state === 'live' ? '<span class="tn-dot"></span>' : ''}
+    <span class="tn-state tn-state-${state}">${tnStateLabel(tn)}</span>`;
+}
+
+function tournamentStripHTML(tn) {
+  const state = tnStatus(tn);
+  const pts = tnScoring(tn) === 'stableford';
+  const ranked = tnRanked(tn);
+  const playerHTML = (e) => tnPlayerChipHTML(e, pts, state === 'live');
 
   // A member playing in the tournament cares about their own line first, and
   // it is the one thing scrolling could hide — so it leads, with the leaders
@@ -1428,20 +1462,7 @@ function tournamentStripHTML(tn) {
   // (spec §22/§28). Team names ride along with the numbers, so the strip
   // never depends on colour alone (§23).
   const mpSummary = stripSummary(tn);
-  const mpBody = mpSummary ? `
-    <div class="tn-meta">
-      ${mpSummary.singles ? `
-        <span class="tn-meta-strong">${t('fmtMatch')}</span>` : `
-        <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.a.color};">
-          ${esc(mpSummary.a.name)} ${esc(String(mpSummary.a.points))}
-        </span>
-        <span class="tn-sep"></span>
-        <span class="tn-meta-strong" style="border-bottom:2px solid ${mpSummary.b.color};">
-          ${esc(String(mpSummary.b.points))} ${esc(mpSummary.b.name)}
-        </span>`}
-      ${mpSummary.liveCount ? `<span class="tn-sep"></span><span class="tn-meta-txt">${mpSummary.liveCount} ${t('mpLive')}</span>` : ''}
-      ${mpSummary.session ? `<span class="tn-sep"></span><span class="tn-meta-txt">${esc(mpSummary.session)}</span>` : ''}
-    </div>` : '';
+  const mpBody = mpSummary ? tnTeamScoreRowHTML(mpSummary) : '';
 
   // With scores, the third row is the players; without them (an upcoming
   // tournament, or one nobody has posted to yet) it carries the essentials.
@@ -1454,11 +1475,7 @@ function tournamentStripHTML(tn) {
 
   return `
     <a class="tn-strip-inner" href="#/tournament/${esc(tn.id)}">
-      <div class="tn-head">
-        ${badge ? `<span class="tn-round">${esc(badge)}</span>` : ''}
-        ${state === 'live' ? '<span class="tn-dot"></span>' : ''}
-        <span class="tn-state tn-state-${state}">${tnStateLabel(tn)}</span>
-      </div>
+      <div class="tn-head">${tnStateHeadHTML(tn, state)}</div>
       <div class="tn-name-row">
         <span class="tn-name">${esc(tn.name || '')}</span>
         ${icon('next', { size: 15, stroke: 2.4 })}
@@ -1466,6 +1483,63 @@ function tournamentStripHTML(tn) {
       ${body}
       <span class="tn-fade"></span>
     </a>`;
+}
+
+// ---- Leaderboard ticker — the board, flowing, on the scorer screens ----
+// A player standing on the tee with the card open wants to know where the
+// tournament stands, and should not have to leave the card to find out. So
+// the same rows the home strip carries run past on their own here.
+//
+// Rows are capped: past two dozen nobody reads them go by, and the lap would
+// take minutes to come round again.
+const TN_TICK_ROWS = 24;
+const TN_TICK_SEC_PER_ROW = 3.4;
+const TN_TICK_MIN_SEC = 16;
+// The scorers repaint on every remote score, which would restart the run from
+// the left edge each time. Phasing the animation off one fixed instant — a
+// negative delay — makes a repaint invisible: the row that was mid-screen
+// stays mid-screen.
+const TN_TICK_EPOCH = Date.now();
+
+function tnTickerHTML(tn) {
+  if (!tn) return '';
+  const state = tnStatus(tn);
+  const pts = tnScoring(tn) === 'stableford';
+  // A match play tournament has no leaderboard of players — its team score IS
+  // the standing, and it is short enough to sit still rather than scroll.
+  const mpSummary = stripSummary(tn);
+  const ranked = mpSummary ? [] : tnRanked(tn).slice(0, TN_TICK_ROWS);
+  if (!mpSummary && !ranked.length) return '';
+
+  const head = `
+    <div class="tn-tick-head">
+      ${tnStateHeadHTML(tn, state)}
+      <span class="tn-tick-name">${esc(tn.name || '')}</span>
+    </div>`;
+
+  if (mpSummary) {
+    return `<div class="tn-tick surface-card">${head}
+      <div class="tn-tick-still">${tnTeamScoreRowHTML(mpSummary)}</div></div>`;
+  }
+
+  const sep = '<span class="tn-sep"></span>';
+  // Each lap ends with a separator so the seam between the run and its copy
+  // reads like every other gap.
+  const run = ranked.map(e => tnPlayerChipHTML(e, pts, state === 'live')).join(sep) + sep;
+  const dur = Math.max(TN_TICK_MIN_SEC, Math.round(ranked.length * TN_TICK_SEC_PER_ROW));
+  const phase = -(((Date.now() - TN_TICK_EPOCH) / 1000) % dur).toFixed(2);
+  // The copy is what makes the loop seamless: the track slides exactly half
+  // its width, by which point the copy sits where the original started.
+  return `
+    <div class="tn-tick surface-card">
+      ${head}
+      <div class="tn-tick-win">
+        <div class="tn-tick-track" style="animation-duration:${dur}s;animation-delay:${phase}s;">
+          <span class="tn-tick-run">${run}</span>
+          <span class="tn-tick-run" aria-hidden="true">${run}</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).
