@@ -887,6 +887,9 @@ test('fourball: the team scores its best ball on every hole, off full handicaps 
   assert.deepEqual(r.netRound, { gross: 8, holesIn: 2, toPar: 0 });     // (5 − 1) + 4
   // Par 4 with a stroke is a net par, two points; a plain par is two points.
   assert.deepEqual(r.pointsRound, { points: 4, holesIn: 2, parsKnown: true });
+  // The printed card needs the ball itself, hole by hole — the same strokes
+  // the tallies above are the sum of, and nothing for a hole neither played.
+  assert.deepEqual(r.holes, { 9: 5, 10: 4 });
 });
 
 test('fourball: one ball is enough, and a hole with neither ball stays open', () => {
@@ -895,6 +898,8 @@ test('fourball: one ball is enough, and a hole with neither ball stays open', ()
   const r = TEAM.fourballRound(tn, tn.sp.players['u1+u2'], 1);
   assert.equal(r.grossRound.holesIn, 2);
   assert.equal(r.grossRound.gross, 10);
+  // One partner's ball on each hole, and hole 3 absent rather than zero.
+  assert.deepEqual(r.holes, { 1: 6, 2: 4 });
   // Nothing on hole 3 from either partner: the round is thru 2, not 3.
   const e = spEntries(tn, 'gross').find(x => x.pid === 'u1+u2');
   assert.equal(e.thru, '2');

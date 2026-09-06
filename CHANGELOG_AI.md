@@ -1,5 +1,44 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (Tournament cards on paper)
+
+The casual game has printed a proper score card since June — one per player in
+the club's Best Approach layout, `Hole / Score / Par / HCP` across
+`1..9 | F | 10..18 | B | TOT`, eagle gold, birdie red, par white, bogey blue,
+worse black. A tournament printed nothing. Now it prints the same card.
+
+**`#/spsheet/:tnId/:round/:gid`** — one flight, from the 🖨 button on the flight
+scorer and on a player's card. The reader's own card leads, their team's is
+next, and a *Флайт бүхэлдээ / Зөвхөн миний* toggle decides which of them go to
+the printer. Hiding is `el.hidden` rather than a print rule, so the page prints
+exactly what is on screen and nobody discovers at the printer that they asked
+for one card and got four.
+
+Which cards a format produces follows the scorer's own rule: stroke and
+Stableford print one per player; a scramble or foursome prints one per **team**,
+because no member has strokes of their own; a fourball prints the members' cards
+and the pair's derived best ball. A pair's cards stay together on the sheet — a
+marker reads a flight pair by pair.
+
+Each card carries HCP and Net, a marker and player signature line, and the sheet
+ends with the colour legend and the QR that opens the same page. The route is
+guest-reachable, like the casual card and the start list, so scanning the paper
+works without an account.
+
+The grid itself moved to **`src/scorecard-grid.js`**, imported by both pages, so
+"the same format" is enforced rather than promised. It needed no rewriting: it
+already took the hole map and the heading as arguments, and the only thing it
+reads off the record is the course — and `resolveCourse` accepts a tournament's
+course key as readily as a game's location name, so a three-field stand-in is
+enough. `fourballRound` now also returns the best ball hole by hole, which is
+what a printed card has to show; the tallies it already returned are the sums of
+exactly those strokes.
+
+Proved by capturing the casual card page's DOM before the extraction and again
+after: byte-identical. Then driven for a stroke flight, a scramble flight, a
+fourball flight, the toggle, an A4 print, both entry points, and a signed-out
+visitor.
+
 ## 2026-09-06 (The scorer screens stop redrawing themselves)
 
 Scorers reported the card jumping while they entered scores, and it looked

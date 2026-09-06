@@ -456,7 +456,10 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     host.innerHTML = `
       <div class="detail-container${first ? ' fade-in' : ''}">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
-        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
+        <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;">
+          <h2 class="detail-title" style="margin:0;flex:1;min-width:0;">${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
+          <a href="#/spsheet/${esc(tnId)}/${esc(round)}/${esc(gid)}" class="btn btn-outline btn-sm" style="gap:5px;flex:0 0 auto;">🖨 ${t('scPrint')}</a>
+        </div>
         ${ctx.ticker?.(tn) || ''}
         <div class="surface-card" style="padding:14px;">
           <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
