@@ -9,7 +9,7 @@ import {
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
   tnScoring, tnHigherWins, spMetricFor
 } from '../src/strokeplay.js';
-import { rankEntries, cutSet } from '../src/tournament-sheet.js';
+import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
 import { roundFromTournament, courseHandicap } from '../src/handicap.js';
 
@@ -983,4 +983,50 @@ test('a foursome is a scramble with a different rulebook: one ball under the tea
   assert.equal(TEAM.tnTeamSize(tn), 2);
   // And the flight match settles off the hand-entered team handicaps.
   assert.equal(TEAM.spFlightMatch({ ...tn, spTeamRank: 'match' }, 1, ['u1+u2', 'u3+u4']).status, '4 & 3');
+});
+
+// ---- winners(): who the browse list names, from an already-ranked board ----
+
+test('a clear leader is the only winner', () => {
+  const ranked = rankEntries([
+    { name: 'Бат', total: -4, thru: 18 },
+    { name: 'Дорж', total: -1, thru: 18 },
+    { name: 'Сараа', total: 3, thru: 18 },
+  ]);
+  assert.deepEqual(winners(ranked).map(e => e.name), ['Бат']);
+  assert.equal(winners(ranked)[0].posLabel, '1');
+});
+
+test('a tie at the top names everybody level there, and nobody below', () => {
+  const ranked = rankEntries([
+    { name: 'Бат', total: -2, thru: 18 },
+    { name: 'Дорж', total: -2, thru: 18 },
+    { name: 'Сараа', total: 0, thru: 18 },
+  ]);
+  assert.deepEqual(winners(ranked).map(e => e.name).sort(), ['Бат', 'Дорж']);
+  assert.ok(winners(ranked).every(e => e.posLabel === 'T1'));
+});
+
+test('a points contest is read the same way — the ranking already flipped it', () => {
+  const ranked = rankEntries([
+    { name: 'Бат', total: 31, thru: 18 },
+    { name: 'Дорж', total: 38, thru: 18 },
+  ], { higherWins: true });
+  assert.deepEqual(winners(ranked).map(e => e.name), ['Дорж']);
+});
+
+test('a field nobody has posted a score in has no winner', () => {
+  assert.deepEqual(winners(rankEntries([{ name: 'Бат' }, { name: 'Дорж' }])), []);
+  assert.deepEqual(winners([]), []);
+  assert.deepEqual(winners(null), []);
+  assert.deepEqual(winners(undefined), []);
+});
+
+test('a field that is entirely WD/DQ has no winner either', () => {
+  const ranked = rankEntries([
+    { name: 'Бат', total: 71, thru: 'WD', status: 'WD' },
+    { name: 'Дорж', total: 74, thru: 'DQ', status: 'DQ' },
+  ]);
+  assert.equal(ranked.every(e => e.rank === Infinity), true);
+  assert.deepEqual(winners(ranked), []);
 });
