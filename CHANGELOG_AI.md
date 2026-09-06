@@ -1,5 +1,32 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (Your own team, marked)
+
+The ticker that shipped this morning marks your own row with a **ТА** badge and
+a gold name — in a single player tournament. In a team event it marked nothing,
+so a scramble player watched their own team go past looking like everyone
+else's.
+
+The cause was deliberate and had to stay: a team entry carries no `userId`,
+because that null is what keeps the home tee card and the WHS posting — both of
+which read a userId — from ever mistaking a team for a person. Restoring it
+would have put somebody's handicap at risk.
+
+So the members ride along instead. `spEntries` now puts a `memberIds` list on a
+team entry, and `tnIsMe` counts you as belonging to a row when you are one of
+them. That is display only, and it corrects four places at once: the ticker's
+badge, the home strip (your team's line leads the row), the board's highlighted
+row with its Та tag, and the board's ТАНЫ БАЙР banner, which now reads your
+team's position and name.
+
+Verified in a browser on the scramble: the ticker marks your team and not the
+other; the board banner reads `2 · Маргад / Энхжин`; exactly one row is marked
+on each board, team or individual; the home strip marks the person in the
+stroke event and the team in the scramble. The two things the null protects
+were re-checked — the home tee card still finds the flight through the member,
+and completing a one-ball team's eighteenth hole still posts nothing to
+`golfup_rounds`.
+
 ## 2026-09-06 (The leaderboard, flowing, on the scorer)
 
 A player standing on the tee with the card open had no way to see where the
