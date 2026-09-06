@@ -925,9 +925,10 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .tn-tick-run {
   display: flex; align-items: center; gap: 14px; padding-left: 14px;
 }
+/* One repeat per lap: --tn-shift is 100% / (number of repeats). */
 @keyframes tn-tick-run {
   from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
+  to   { transform: translateX(var(--tn-shift, -50%)); }
 }
 /* Hold it still to read a row: a finger down, or a pointer over it. The
    pointer rule is gated on a real hover device — on a phone :hover latches

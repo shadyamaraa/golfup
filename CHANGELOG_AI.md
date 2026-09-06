@@ -1,5 +1,52 @@
 # CHANGELOG_AI.md
 
+## 2026-09-06 (The scorer screens stop redrawing themselves)
+
+Scorers reported the card jumping while they entered scores, and it looked
+unprofessional. It was.
+
+All three tournament scoring screens subscribe to the WHOLE tournament record,
+so the listener fires on every hole of every flight — a dozen groups scoring at
+once is a event every few seconds. Each of those rebuilt the entire screen with
+`host.innerHTML`, and the container carries `fade-in`, which is
+`opacity 0 → 1` plus `translateY(16px) → 0`. So a marker on the ninth tee
+watched their card slide up and fade **every time anybody anywhere in the
+tournament wrote a number**, and the stepper buttons were destroyed and rebuilt
+underneath the finger that was tapping them.
+
+The casual game scorer solved this in June with `paintedKey` and
+`updateInPlace`, and the comment there says exactly why. The tournament scorers
+never got it.
+
+- **The flight card** (`#/spgroup`) now keeps a structure key — the hole on
+  screen, who is in the flight, their names and handicaps, and who may score
+  them. While it holds, a paint patches the rows through the `updateRow` that
+  score taps already use, and never touches the buttons. A score from another
+  flight now changes nothing but the ticker.
+- **The single card** (`#/spscore`) and **the M Cup match card** (`#/score`)
+  compare what they are about to render with what is on screen and skip
+  identical repaints.
+- **The fade belongs to arriving on a screen**, not to every repaint. All three
+  now animate once, on the first paint of a mount.
+- **The leaderboard ticker is refreshed in place** (`tnTickerPatch`), rows
+  swapped inside the track that is already running, so it stays live without
+  forcing a rebuild and without snapping back to the left edge.
+
+The ticker also gained a fix of its own: the track is the rows repeated, and it
+slides by exactly one repeat per lap, which only looks seamless while the track
+is wider than its window. A two-team scramble's rows were not, so the loop
+could visibly snap back. The rows are now repeated as many times as it takes
+(two normally, up to eight for a one-line board), with the slide distance set
+per track.
+
+Measured in a browser at phone size, with a stand-in listener firing every
+1.2 s: five scores from other flights produce **zero** fade-ins, leave the
+stepper buttons and the ticker track untouched, and a tap after all of them
+still lands. A flight-mate's score updates the number in place, also without a
+rebuild. A real structural change — stepping to the next hole — still rebuilds,
+and no longer fades. On the M Cup card three result taps moved the match from
+2 UP to 3 UP and back with zero fade-ins.
+
 ## 2026-09-06 (Your own team, marked)
 
 The ticker that shipped this morning marks your own row with a **ТА** badge and

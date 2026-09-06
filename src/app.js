@@ -443,7 +443,7 @@ export async function router() {
       await renderScorerPage(tnId, matchId, {
         main, user: currentUser, showToast, alive: viewAlive(),
         onUnsub: (fn) => activeUnsubs.push(fn),
-        ticker: tnTickerHTML,
+        ticker: tnTickerHTML, tickerPatch: tnTickerPatch,
         // The sample M Cup can be scored on preview builds: taps stay local,
         // nothing is written, and the demo resets on reload.
         demo: tnId === MP_DEMO_ID && tnDemoAllowed() ? MP_DEMO : undefined
@@ -455,7 +455,7 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpScorer(main(), tnId, pid, {
         user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
-        ticker: tnTickerHTML, backHash: `#/tournament/${tnId}`
+        ticker: tnTickerHTML, tickerPatch: tnTickerPatch, backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
     }
@@ -464,7 +464,7 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpGroupScorer(main(), tnId, Number(round) || 1, gid, {
         user: currentUser, showToast, tn: tnOnce, alive: viewAlive(),
-        ticker: tnTickerHTML, backHash: `#/tournament/${tnId}`
+        ticker: tnTickerHTML, tickerPatch: tnTickerPatch, backHash: `#/tournament/${tnId}`
       });
       activeUnsubs.push(off);
     }
@@ -1499,6 +1499,9 @@ function tournamentStripHTML(tn) {
 const TN_TICK_ROWS = 24;
 const TN_TICK_SEC_PER_ROW = 3.4;
 const TN_TICK_MIN_SEC = 16;
+// Repeats of the rows must add up to at least this much, so the track is always
+// wider than the widest window the card is rendered in.
+const TN_TICK_COVER_PX = 760;
 // The scorers repaint on every remote score, which would restart the run from
 // the left edge each time. Phasing the animation off one fixed instant — a
 // negative delay — makes a repaint invisible: the row that was mid-screen
@@ -1530,20 +1533,68 @@ function tnTickerHTML(tn) {
   // Each lap ends with a separator so the seam between the run and its copy
   // reads like every other gap.
   const run = ranked.map(e => tnPlayerChipHTML(e, pts, state === 'live')).join(sep) + sep;
+
+  // The track is the rows repeated, sliding by exactly one repeat per lap, so
+  // the copy lands where the original began and the loop has no seam. That
+  // only holds while the TRACK is wider than its window: a two-team scramble
+  // whose rows are narrower would run out of content and snap back in view.
+  // Two repeats cover any window this app renders in once the rows are wide
+  // enough; below that the rows are repeated as many times as it takes.
+  //
+  // The width is estimated, not measured — the markup is built as a string —
+  // and the estimate errs low, which errs toward more repeats.
+  const runPx = ranked.reduce((w, e) => w + 132 + String(e.name || '').length * 7.5, 0);
+  const copies = Math.min(8, Math.max(2, Math.ceil(TN_TICK_COVER_PX / Math.max(60, runPx))));
   const dur = Math.max(TN_TICK_MIN_SEC, Math.round(ranked.length * TN_TICK_SEC_PER_ROW));
   const phase = -(((Date.now() - TN_TICK_EPOCH) / 1000) % dur).toFixed(2);
-  // The copy is what makes the loop seamless: the track slides exactly half
-  // its width, by which point the copy sits where the original started.
+  const runs = Array.from({ length: copies },
+    (_, i) => `<span class="tn-tick-run"${i ? ' aria-hidden="true"' : ''}>${run}</span>`).join('');
   return `
     <div class="tn-tick surface-card">
       ${head}
       <div class="tn-tick-win">
-        <div class="tn-tick-track" style="animation-duration:${dur}s;animation-delay:${phase}s;">
-          <span class="tn-tick-run">${run}</span>
-          <span class="tn-tick-run" aria-hidden="true">${run}</span>
+        <div class="tn-tick-track" style="animation-duration:${dur}s;animation-delay:${phase}s;--tn-shift:-${(100 / copies).toFixed(4)}%;">
+          ${runs}
         </div>
       </div>
     </div>`;
+}
+
+// Refresh a mounted ticker WITHOUT replacing it. The scorer screens repaint as
+// little as possible — rebuilding the DOM under a marker's finger eats the tap
+// they were making — so the rows are swapped inside the track that is already
+// on screen, which also leaves the marquee running instead of snapping back to
+// the left edge.
+//
+// Returns true when the ticker on screen is now correct, false when only a
+// full repaint can fix it (there is one to show and none is mounted).
+function tnTickerPatch(host, tn) {
+  const live = host?.querySelector('.tn-tick');
+  const next = tnTickerHTML(tn);
+  if (!live) return !next;
+  if (!next) { live.remove(); return true; }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = next;
+  const swap = (sel) => {
+    const a = live.querySelector(sel);
+    const b = tmp.querySelector(sel);
+    if (a && b && a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML;
+  };
+  swap('.tn-tick-head');
+  swap('.tn-tick-still');
+  // A track that was animating must keep its element, so only the rows inside
+  // it are rewritten; both copies carry the same rows.
+  const nextRun = tmp.querySelector('.tn-tick-run');
+  const runs = live.querySelectorAll('.tn-tick-run');
+  if (nextRun && runs.length) {
+    // The field grew or shrank enough to change how many repeats the track
+    // needs: that is a different track, not different contents.
+    if (runs.length !== tmp.querySelectorAll('.tn-tick-run').length) return false;
+    if (runs[0].innerHTML !== nextRun.innerHTML) {
+      runs.forEach(r => { r.innerHTML = nextRun.innerHTML; });
+    }
+  }
+  return true;
 }
 
 // 3 stat tiles from real data (games joined/created, following, followers).

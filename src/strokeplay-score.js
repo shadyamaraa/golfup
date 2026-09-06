@@ -153,6 +153,11 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
   if (!host) return () => { };
   const key = `${tnId}/${pid}`;
   let tnLive = null;
+  // The card as it was last rendered, ticker excluded. The listener fires on
+  // EVERY change to the tournament — every hole of every other flight — and
+  // rebuilding this screen for those re-ran the fade-in animation, which reads
+  // as the page jumping while somebody is entering their score.
+  let lastBody = null;
 
   const paint = () => {
     // Hole writes are awaited, so a member who scores and immediately leaves
@@ -160,6 +165,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     if (ctx.alive?.() === false) return;
     const tn = tnLive;
     if (!tn?.sp?.players?.[pid]) {
+      lastBody = null;
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoPlayers')}</p></div>`;
       return;
     }
@@ -173,12 +179,22 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     // Flight-mates may edit each other's cards for the round they share.
     const editable = canScoreSp(ctx.user, pid, tn.sp.players, round);
 
-    host.innerHTML = `
-      <div class="detail-container fade-in">
+    const head = `
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
-        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spCardOf')}</h2>
+        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spCardOf')}</h2>`;
+    const card = cardHTML(tn, pid, round, editable);
+    // Nothing this card shows has changed: refresh the leaderboard strip in
+    // place and leave the rest of the DOM — and the caret — alone.
+    if (head + card === lastBody && ctx.tickerPatch?.(host, tn)) return;
+    // The fade belongs to arriving on the screen, not to every repaint.
+    const first = lastBody === null;
+    lastBody = head + card;
+
+    host.innerHTML = `
+      <div class="detail-container${first ? ' fade-in' : ''}">
+        ${head}
         ${ctx.ticker?.(tn) || ''}
-        ${cardHTML(tn, pid, round, editable)}
+        ${card}
       </div>`;
 
     host.querySelectorAll('button[data-sps-round]').forEach(b => b.onclick = () => {
@@ -254,6 +270,13 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
   viewHole.delete(key);
   let tnLive = null;
   let saving = false;
+  // What the DOM on screen was built for, and how to refresh it without
+  // rebuilding. The listener fires on EVERY change to the tournament — every
+  // hole of all twelve flights — and a full repaint for each of those re-ran
+  // the fade-in animation and replaced the stepper buttons mid-tap. While the
+  // structure holds, a paint patches the rows that changed instead.
+  let paintedKey = null;
+  let inPlace = null;
 
   // The first hole any of the flight still has empty — scanning from the
   // flight's STARTING hole (a shotgun group at hole 12 plays 12..18 then
@@ -277,6 +300,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     const tn = tnLive;
     const g = tn?.sp?.groups?.[round]?.[gid];
     if (!g) {
+      paintedKey = null;
+      inPlace = null;
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoGroups')}</p></div>`;
       return;
     }
@@ -299,6 +324,15 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
 
     // A pinned hole (any score tap or nav) wins; otherwise follow the round.
     const hole = viewHole.get(key) || followHole(tn, g, pids);
+
+    // Everything a rebuild is needed for: the hole on screen, who is in the
+    // flight, what they are called, what they play off, and who may score
+    // them. A score landing anywhere else in the tournament changes none of
+    // it, so those paints go through inPlace() and never touch the buttons.
+    const structKey = [round, hole, fourball ? 'fb' : '-', tnTeamRank(tn) || '-',
+      pids.map(p => `${p}~${players[p]?.name || ''}~${players[p]?.hcp ?? ''}`
+        + (canScoreSp(ctx.user, p, players, round) ? '+' : '-')).join(',')].join('|');
+    if (paintedKey === structKey && inPlace && inPlace()) return;
 
     // The running tally beside each name: to-par when the course's per-hole
     // pars are known (what a marker actually wants to see mid-round), the
@@ -417,8 +451,10 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         </div>`;
     };
 
+    // The fade belongs to arriving on the screen, not to every repaint.
+    const first = paintedKey === null;
     host.innerHTML = `
-      <div class="detail-container fade-in">
+      <div class="detail-container${first ? ' fade-in' : ''}">
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
         <h2 class="detail-title" style="margin:8px 0 10px;">${t('spGroupCard')} ${esc(g.number ?? '')}</h2>
         ${ctx.ticker?.(tn) || ''}
@@ -525,6 +561,17 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
       }
     });
+
+    // The screen is now built for this structure. Later paints that match it
+    // re-read tnLive through updateRow, so the numbers stay live while the
+    // buttons — and whatever tap is in flight on one — survive untouched.
+    paintedKey = structKey;
+    inPlace = () => {
+      // A ticker that has to appear, vanish or change shape needs the rebuild.
+      if (ctx.tickerPatch && !ctx.tickerPatch(host, tnLive)) return false;
+      pids.forEach(updateRow);
+      return true;
+    };
   };
 
   // The router hands down `alive`; a repaint after this screen was torn down
