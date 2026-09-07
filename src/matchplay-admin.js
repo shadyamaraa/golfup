@@ -21,7 +21,7 @@ import { t } from './i18n.js';
 import { readImageFile, validImageData } from './media.js';
 import {
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
-  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes
+  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes, mpScoredRemovals
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -422,6 +422,21 @@ async function saveDraft(tn, ctx) {
   // Only what this editor actually deleted — never merely what the draft
   // does not hold.
   draft.removed.forEach(id => { patch[`mp/matches/${id}`] = null; });
+
+  // A match IS its scores, so deleting one deletes its holes — and the ✕
+  // button confirmed that off the snapshot this editor opened with. Holes
+  // entered since would go unmentioned, so the deletions are checked again
+  // against a fresh read and the admin is told the real count. Offline, or
+  // with the record gone, the stale copy is the best there is.
+  if (draft.removed.size) {
+    let fresh = null;
+    try { fresh = await store.loadTournament(tn.id); } catch (_) { }
+    const scored = mpScoredRemovals((fresh || tn).mp, draft.removed);
+    if (scored.length) {
+      const lines = scored.map(x => `• ${x.label} — ${x.holes} ${t('tnHoles').toLowerCase()}`).join('\n');
+      if (!confirm(`${t('mpDelMatchScoredFresh')}\n${lines}\n\n${t('confirmRemove')}`)) return;
+    }
+  }
 
   await store.updateTournament(tn.id, patch);
   drafts.delete(tn.id);

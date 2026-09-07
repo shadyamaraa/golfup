@@ -767,6 +767,17 @@ export async function loadTournaments() {
   return Object.values(snap.val()).filter(tn => tn && tn.id && tn.status !== 'deleted');
 }
 
+// The admin tab's read: the same list WITH the soft-deleted records, so a
+// tournament deleted by mistake can be found and brought back. Nothing a
+// member sees reads this — the strip, the page and the Games list keep
+// loadTournaments and never show a deleted one.
+export async function loadTournamentsAdmin() {
+  if (!useFirebase || !db) return [];
+  const snap = await get(ref(db, 'tournaments'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()).filter(tn => tn && tn.id);
+}
+
 export async function loadTournament(id) {
   if (!useFirebase || !db) return null;
   const snap = await get(ref(db, 'tournaments/' + id));
@@ -775,9 +786,15 @@ export async function loadTournament(id) {
   return tn.status === 'deleted' ? null : tn;
 }
 
+// Create-only. This is a whole-record set(): over an existing tournament it
+// would erase every hole a scorer has written under sp/ and mp/ since the
+// caller's copy was read. Its one caller is the create wizard, which passes
+// no id; every edit goes through updateTournament, which writes only the
+// keys it is given.
 export async function saveTournament(tn) {
   if (!useFirebase || !db) return;
-  if (!tn.id) tn.id = 'tn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  if (tn.id) throw new Error('saveTournament() is create-only — use updateTournament(id, patch)');
+  tn.id = 'tn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   await set(ref(db, 'tournaments/' + tn.id), { ...tn, updatedAt: Date.now() });
   return tn.id;
 }
@@ -785,6 +802,16 @@ export async function saveTournament(tn) {
 export async function deleteTournament(id) {
   if (!useFirebase || !db) return;
   await update(ref(db, 'tournaments/' + id), { status: 'deleted', deletedAt: Date.now() });
+}
+
+// The soft delete undone. The status goes back to null — read off the dates
+// — rather than to a literal: a stored status pins the state against the
+// calendar, and whatever was pinned before the delete is not known here. The
+// admin row's status select re-pins it if that is wanted. Scores, roster,
+// draw and media were never touched by the delete, so nothing else to do.
+export async function restoreTournament(id) {
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'tournaments/' + id), { status: null, deletedAt: null });
 }
 
 export function onTournamentsChanged(callback) {

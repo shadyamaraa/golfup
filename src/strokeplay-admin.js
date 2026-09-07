@@ -9,7 +9,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams,
-  tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS
+  tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS, spScoredRemovals
 } from './strokeplay.js';
 import { isGender, genderKey } from './gender.js';
 import { courseHandicap } from './handicap.js';
@@ -371,8 +371,10 @@ function groupsHTML(tn, d) {
 
 // ---- Saving ----
 
-async function saveDraft(tn, ctx) {
-  const d = draftFor(tn);
+// The multi-path patch a draft saves as. Pure — it reads only the draft — so
+// what a save writes, and what it never writes, can be checked without a
+// browser (scripts/test-backup.mjs).
+export function spDraftPatch(d) {
   const patch = {};
 
   // The group pointer on each player is derived from the draw itself, so the
@@ -406,11 +408,34 @@ async function saveDraft(tn, ctx) {
     if (pointers[pid]) rec.groups = pointers[pid];
     patch[`sp/players/${pid}`] = rec;
   });
-  d.removed.forEach(pid => {
-    patch[`sp/players/${pid}`] = null;
-    patch[`sp/scores/${pid}`] = null;
-  });
-  await store.updateTournament(tn.id, patch);
+  // A removal — a player taken off, a team disbanded — takes the entry off the
+  // roster and out of the draw, and that is all. Its score node stays where it
+  // is: nothing reads sp/scores except by a pid that is on the roster or in a
+  // flight, so an orphaned card is invisible everywhere, and a member re-added
+  // later (their pid is their userId) finds it waiting. Deleting it here was
+  // the one live way to lose a round.
+  d.removed.forEach(pid => { patch[`sp/players/${pid}`] = null; });
+  return patch;
+}
+
+async function saveDraft(tn, ctx) {
+  const d = draftFor(tn);
+  // The ✕ buttons confirm off the snapshot this editor opened with. On a
+  // tournament day the editor can sit open for hours, and a card filled in
+  // the meantime would pass that confirm unseen — so the removals are checked
+  // again here, against a fresh read, and the admin is told the real count
+  // before anything is written. Offline, or with the record gone, the stale
+  // copy is the best there is.
+  if (d.removed.size) {
+    let fresh = null;
+    try { fresh = await store.loadTournament(tn.id); } catch (_) { }
+    const scored = spScoredRemovals(fresh || tn, d.removed);
+    if (scored.length) {
+      const lines = scored.map(x => `• ${x.name} — ${x.holes} ${t('tnHoles').toLowerCase()}`).join('\n');
+      if (!confirm(`${t('spRemoveScoredFresh')}\n${lines}\n\n${t('confirmRemove')}`)) return;
+    }
+  }
+  await store.updateTournament(tn.id, spDraftPatch(d));
   drafts.delete(tn.id);
   ctx.showToast('✅ ' + t('mpSaved'), 'success');
   await ctx.rerender();

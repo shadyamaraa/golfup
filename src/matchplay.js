@@ -433,6 +433,26 @@ export function canResolveHoleChange(user, match, hole) {
 // list of singles matches, no teams); everything else is stroke play. Records
 // written before 'ryder' existed carry format 'match' WITH teams/sessions, so
 // shape breaks the tie for them.
+// What deleting these matches would take with them: a match IS its scores
+// (its holes live on it), so the count is the holes on each. The editor
+// asks this of a fresh read at save time — see spScoredRemovals for why.
+// `ids` may be a Set or an array.
+export function mpScoredRemovals(mp, ids) {
+  const matches = mp?.matches || {};
+  const roster = mp?.roster || {};
+  const names = (pids) => (pids || []).map(pid => roster[pid]?.name || pid).join(' / ');
+  return [...(ids || [])].map(id => {
+    const m = matches[id];
+    const holes = Object.values(m?.holes || {}).filter(v => v !== null && v !== undefined && v !== '').length;
+    return {
+      id,
+      number: m?.number ?? null,
+      label: `${m?.number != null ? `#${m.number} ` : ''}${names(m?.players?.a)} – ${names(m?.players?.b)}`.trim(),
+      holes
+    };
+  }).filter(x => x.holes > 0);
+}
+
 export function tnKind(tn) {
   if (!tn) return 'stroke';
   if (tn.format === 'ryder') return 'ryder';

@@ -1,5 +1,47 @@
 # CHANGELOG_AI.md
 
+## 2026-09-07 (Tournament backup, layer A: stop the loss, bring back the deleted)
+
+The first of the backup layers, shipped on its own because it turns the most
+likely way to lose a round from "recoverable" into "impossible". Realtime
+Database backups are daily with no point-in-time recovery, so a card wiped at
+11:00 is not in yesterday's copy — protection has to live in the app.
+
+**Removing a player never deletes their card.** The roster save used to write
+`sp/scores/{pid} = null` beside `sp/players/{pid} = null` — one line, and a
+disbanded team went the same way. Now a removal takes the entry off the roster
+and out of every draw, and that is all: the score node stays where it is,
+invisible, because nothing reads `sp/scores` except by a pid on the roster or
+in a flight. A member re-added later (their pid is their userId) finds the card
+waiting. The patch builder is now the exported, pure `spDraftPatch`, so what a
+save writes — and never writes — is unit-tested.
+
+**The destructive confirms read live data.** The ✕ buttons confirmed off the
+snapshot the editor opened with, and on a tournament day an editor can sit open
+for hours. Both `saveDraft`s now re-read the record immediately before writing
+and re-check the removals against the fresh copy — one confirm naming who and
+how many holes (`spScoredRemovals` / `mpScoredRemovals`, pure and tested);
+cancel aborts the save with the draft still dirty. Match play is different by
+design — a match *is* its holes — so deleting one keeps deleting them, and this
+honest confirm is what protects it.
+
+**`saveTournament` is create-only.** A bare whole-record `set()` whose one
+caller, the wizard, passes no id; an id now throws. The loaded gun beside a
+guarded `saveGame` is unloaded.
+
+**A deleted tournament can come back.** The soft delete already kept the data;
+`loadTournaments` merely hid it with nowhere to go. The admin tab now reads
+`loadTournamentsAdmin` and shows a fourth fold, *Устсан* — a reduced row with
+the deletion date and one `↩ Сэргээх` button — while every member surface keeps
+the filtering loaders. `restoreTournament` clears `status` to null rather than
+to a literal: a stored status pins the state against the calendar, and whatever
+was pinned before the delete is not known, so the tournament reads off its
+dates again and the row's status select re-pins it if wanted. The fold is
+bucketed before `tnStatus` is asked, which knows nothing of `'deleted'`.
+
+No rules change (top-level fields were already admin-device only), nothing a
+member sees, no new dependencies. Five new tests in `scripts/test-backup.mjs`.
+
 ## 2026-09-06 (Gender divisions inside one tournament)
 
 The club has been running a women's division as a **separate tournament** —
