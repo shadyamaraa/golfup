@@ -1166,6 +1166,60 @@ a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
   box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3.2px var(--text-primary);
 }
 
+/* ---- The flight's card under the group scorer (PGA Tour style) ----
+   Two swipeable nine-hole pages, HOLE / PAR rows, one row per competitor, the
+   card page's ring/box notation on every cell, the hole being scored picked
+   out as a column. The header row is the scorer's hole navigation. */
+.spg { margin-top: 14px; }
+.spg-pages {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.spg-pages::-webkit-scrollbar { display: none; }
+.spg-page { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; }
+.spg-grid {
+  display: grid;
+  grid-template-columns: minmax(54px, 1.3fr) repeat(9, minmax(0, 1fr)) 34px;
+  gap: 2px 1px; align-items: center;
+}
+.spg-grid-tot { grid-template-columns: minmax(54px, 1.3fr) repeat(9, minmax(0, 1fr)) 30px 40px; }
+.spg-lbl {
+  font-size: 0.5rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.spg-h {
+  text-align: center; font-size: 0.62rem; font-weight: 800; color: var(--text-muted);
+  border: none; background: transparent; border-radius: 6px; padding: 5px 0;
+  cursor: pointer; font-family: var(--font); line-height: 1.1;
+}
+.spg-h.spg-full { background: var(--gold); color: #0C3051; }
+.spg-h.spg-cur { box-shadow: inset 0 0 0 2px var(--text-primary); color: var(--text-primary); }
+.spg-p { text-align: center; font-size: 0.64rem; font-weight: 600; color: var(--text-secondary); border-radius: 4px; }
+.spg-s { display: flex; align-items: center; justify-content: center; height: 26px; border-radius: 4px; }
+.spg-seg { border-left: 1px solid var(--border-card); background: var(--bg-card-hover); border-radius: 0; }
+.spg-cur { background: var(--accent-soft); }
+/* The card's double rings space their outer ring with the card background;
+   on the highlighted column that spacer has to match the column. */
+.spg-cur .spc-n.is-eagle { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 3.2px var(--red); }
+.spg-cur .spc-n.is-double { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 3.2px var(--text-primary); }
+.spg-name {
+  display: block; font-size: 0.72rem; font-weight: 700; color: var(--text-primary);
+  text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 3px;
+}
+.spg-name.spg-pair { color: var(--text-secondary); font-weight: 600; font-style: italic; }
+.spg-tot { flex-direction: column; gap: 1px; line-height: 1; }
+.spg-tot b { font-size: 0.8rem; }
+.spg-tot small { font-size: 0.56rem; font-weight: 700; }
+.spg-pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 8px; }
+.spg-pager button {
+  width: 40px; height: 30px; border-radius: 8px; cursor: pointer; font-family: var(--font);
+  border: 1px solid var(--border-color); background: transparent; color: var(--text-primary); font-size: 1rem;
+}
+.spg-pager button:disabled { opacity: 0.3; cursor: default; }
+.spg-dots { display: flex; gap: 6px; }
+.spg-dots i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--border-color); }
+.spg-dots i.on { background: var(--text-primary); }
+
 .spc-sum { display: flex; gap: 8px; margin-top: 12px; }
 .spc-sum-cell {
   flex: 1; text-align: center; padding: 8px 4px;

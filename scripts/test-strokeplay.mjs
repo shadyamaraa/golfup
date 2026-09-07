@@ -1030,3 +1030,74 @@ test('a field that is entirely WD/DQ has no winner either', () => {
   assert.equal(ranked.every(e => e.rank === Infinity), true);
   assert.deepEqual(winners(ranked), []);
 });
+
+// ---- The flight's card: spFlightGrid / spFollowHole ----
+
+test('a stroke flight is one row per player, in flight order, with the card’s classes and segments', () => {
+  const r1 = fullRound(4); r1[1] = 3; r1[4] = 2; r1[13] = 6;
+  const tn = SKY({ u2: { name: 'Дорж', groups: { 1: 'g1' } }, u1: { name: 'Бат', groups: { 1: 'g1' } } },
+    { u1: { 1: r1 }, u2: { 1: fullRound(5) } },
+    { sp: { players: {}, scores: {}, groups: { 1: { g1: { number: 1, teeTime: '08:00', players: { u1: true, u2: true } } } } } });
+  // SKY() spreads `extra` after sp, so put the players/scores back.
+  tn.sp.players = { u2: { name: 'Дорж', groups: { 1: 'g1' } }, u1: { name: 'Бат', groups: { 1: 'g1' } } };
+  tn.sp.scores = { u1: { 1: r1 }, u2: { 1: fullRound(5) } };
+  const grid = TEAM.spFlightGrid(tn, 1, 'g1');
+  assert.deepEqual(grid.rows.map(r => [r.pid, r.kind, r.link]), [['u1', 'player', true], ['u2', 'player', true]]);
+  assert.equal(grid.rows[0].holes[0].cls, 'eagle');
+  assert.equal(grid.rows[0].holes[3].cls, 'birdie');
+  assert.equal(grid.rows[0].holes[12].cls, 'double');
+  assert.equal(grid.rows[1].holes[0].cls, 'par');       // 5 on the par 5
+  assert.deepEqual([grid.rows[0].front.gross, grid.rows[0].back.gross, grid.rows[0].total.gross], [33, 38, 71]);
+  assert.equal(grid.rows[0].thru, 'F');
+  assert.ok(grid.hasPars);
+  assert.ok(grid.complete);
+  assert.ok(grid.full.every(Boolean));
+  assert.equal(TEAM.spFlightGrid(tn, 1, 'nope'), null);
+});
+
+test('a scramble flight shows its teams only; a fourball shows the members and the pair’s best ball', () => {
+  const sc = TEAM_TN();
+  const scGrid = TEAM.spFlightGrid(sc, 1, 'g1');
+  assert.deepEqual(scGrid.rows.map(r => [r.pid, r.kind]), [['u1+u2', 'team'], ['u3+u4', 'team']]);
+  assert.equal(scGrid.rows[0].total.gross, 72);
+
+  const fb = FB_TN();
+  fb.sp.scores = { u1: { 1: { 1: 5, 2: 4 } }, u2: { 1: { 1: 4, 2: 5, 3: 3 } }, u3: { 1: { 1: 6 } }, u4: { 1: { 1: 5 } } };
+  const grid = TEAM.spFlightGrid(fb, 1, 'g1');
+  assert.deepEqual(grid.rows.map(r => [r.pid, r.kind, r.link]), [
+    ['u1', 'player', true], ['u2', 'player', true], ['u1+u2', 'pair', false],
+    ['u3', 'player', true], ['u4', 'player', true], ['u3+u4', 'pair', false],
+  ]);
+  const pair = grid.rows[2];
+  // Best ball: 4 on the first (Дорж), 4 on the second (Бат), 3 on the third (Дорж alone).
+  assert.deepEqual(pair.holes.slice(0, 3).map(h => h.strokes), [4, 4, 3]);
+  assert.deepEqual(pair.holes.slice(0, 3).map(h => h.cls), ['birdie', 'par', 'birdie']);
+  assert.equal(pair.holes[3].strokes, null);
+  assert.equal(pair.front.gross, 11);
+  assert.equal(pair.thru, '3');
+  // The pair's points are the better of the two members' on each hole.
+  assert.equal(pair.holes[0].points, Math.max(grid.rows[0].holes[0].points, grid.rows[1].holes[0].points));
+  // "Full" reads off the members' own cards, never the derived pair.
+  assert.deepEqual(grid.full.slice(0, 3), [true, false, false]);
+  assert.equal(grid.complete, false);
+});
+
+test('the flight follows its round from its starting hole', () => {
+  const tn = FB_TN();
+  tn.sp.groups[1].g1.startHole = 15;
+  const g = tn.sp.groups[1].g1;
+  const pids = ['u1', 'u2', 'u3', 'u4'];
+  assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 15, 'nothing in yet: the first hole off the shotgun');
+  pids.forEach(pid => { tn.sp.scores[pid] = { 1: { 15: 4, 16: 4, 17: 3, 18: 5 } }; });
+  assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 1, 'through 18 the flight wraps to the first');
+  assert.equal(TEAM.spFlightGrid(tn, 1, 'g1').hole, 1);
+  delete tn.sp.scores.u3[1][17];
+  assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 17, 'one card short on 17 holds the flight there');
+  pids.forEach(pid => { tn.sp.scores[pid] = { 1: fullRound(4) }; });
+  assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 14, 'all in: the hole before the start');
+  assert.ok(TEAM.spFlightGrid(tn, 1, 'g1').complete);
+  // No start hole means the first tee.
+  delete g.startHole;
+  tn.sp.scores.u1[1] = {};
+  assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 1);
+});
