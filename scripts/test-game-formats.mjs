@@ -664,3 +664,64 @@ test('gameHasAnyScore sees a team ball as well as a player card', () => {
   assert.equal(gameHasAnyScore(withScores(G(), { p1: {} })), false);
   assert.equal(gameHasAnyScore(null), false);
 });
+
+// ---- The group's card: gameGroupGrid ----
+import { gameGroupGrid } from '../src/game-formats.js';
+
+test('gameGroupGrid: one row per player in group order, classified against the card hole’s par', () => {
+  const r = same(18, 4); r[1] = 3; r[4] = 2; r[13] = 6;             // Sky: 1 is a par 5, 4 a par 3, 13 a par 3
+  const game = withScores(G(), { p1: r, p2: same(18, 5), p3: same(9, 4) });
+  const grid = gameGroupGrid(game, 0, FOUR);
+  assert.equal(grid.holeCount, 18);
+  assert.ok(grid.hasPars);
+  assert.deepEqual(grid.rows.map(x => [x.pid, x.kind]), [['p1', 'player'], ['p2', 'player'], ['p3', 'player'], ['p4', 'player']]);
+  assert.deepEqual([grid.rows[0].holes[0].cls, grid.rows[0].holes[3].cls, grid.rows[0].holes[12].cls], ['eagle', 'birdie', 'double']);
+  assert.equal(grid.rows[1].holes[0].cls, 'par');
+  assert.deepEqual([grid.rows[0].front.gross, grid.rows[0].back.gross, grid.rows[0].total.gross], [33, 38, 71]);
+  assert.equal(grid.rows[0].thru, 'F');
+  assert.equal(grid.rows[2].thru, '9');
+  assert.equal(grid.rows[3].thru, '');
+  // Nobody has a full hole in common past the front nine of p3, and p4 has nothing — hole 1 is open.
+  assert.equal(grid.hole, 1);
+  assert.equal(grid.complete, false);
+  assert.ok(grid.full.every(f => f === false));
+});
+
+test('gameGroupGrid: a scramble shows its teams then the unpaired; the group follows its round', () => {
+  const game = withTeamScores(G({ format: 'scramble' }), { [pairKey('p1', 'p2')]: same(18, 4), [pairKey('p3', 'p4')]: same(2, 4) });
+  const grid = gameGroupGrid(game, 0, FOUR);
+  assert.deepEqual(grid.rows.map(x => [x.pid, x.kind, x.name]), [
+    [pairKey('p1', 'p2'), 'team', 'Бат + Дорж'], [pairKey('p3', 'p4'), 'team', 'Сараа + Тулга']]);
+  assert.deepEqual(grid.full.slice(0, 3), [true, true, false]);
+  assert.equal(grid.hole, 3);
+  // Five players: two teams and one without.
+  const five = gameGroupGrid(game, 0, [...FOUR, P('p5', 'Оюун')]);
+  assert.deepEqual(five.rows.map(x => x.kind), ['team', 'team', 'player']);
+  // All in → the last hole; nobody → the first.
+  const done = gameGroupGrid(withTeamScores(game, { [pairKey('p1', 'p2')]: same(18, 4), [pairKey('p3', 'p4')]: same(18, 5) }), 0, FOUR);
+  assert.equal(done.hole, 18);
+  assert.ok(done.complete);
+  assert.equal(gameGroupGrid(G(), 0, []).hole, 1);
+});
+
+test('gameGroupGrid: a nine-hole game is one page, and a back nine reads the course’s back pars', () => {
+  const back = gameGroupGrid(withScores(G({ holes: 'back9' }), { p1: same(9, 4) }), 0, [P1]);
+  assert.equal(back.holeCount, 9);
+  // Card hole 3 of a back-nine game is course hole 12 — a par 5 at Sky.
+  assert.equal(back.pars[3], 5);
+  assert.equal(back.rows[0].holes[2].cls, 'birdie');
+  assert.equal(back.rows[0].front.gross, 36);
+  assert.equal(back.rows[0].back.holesIn, 0);
+  assert.equal(back.rows[0].total.gross, 36);
+  assert.equal(back.rows[0].thru, 'F');
+  assert.ok(back.complete);
+  const front = gameGroupGrid(G({ holes: 'front9' }), 0, [P1]);
+  assert.equal(front.holeCount, 9);
+  assert.equal(front.pars[1], 5);
+  // A location with no card: strokes kept, nothing classified.
+  const bare = gameGroupGrid(withScores(G({ location: 'Nowhere' }), { p1: same(18, 4) }), 0, [P1]);
+  assert.equal(bare.hasPars, false);
+  assert.equal(bare.pars, null);
+  assert.ok(bare.rows[0].holes.every(h => h.cls === null && h.strokes === 4));
+  assert.equal(bare.rows[0].total.toPar, null);
+});

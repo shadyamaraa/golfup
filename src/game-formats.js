@@ -53,6 +53,7 @@ import { settleMatch, statusText, HALVED } from './matchplay.js';
 import { strokesReceived, gameHoleCount } from './handicap.js';
 import { holePar, holeSI } from './courses.js';
 import { holePoints, strokesOverHoles } from './stableford.js';
+import { holeDiffClass, spSegment } from './strokeplay.js';
 
 export const FORMATS = [
   'stroke', 'match', 'skins', 'stableford', 'scramble', 'fourball', 'foursome'
@@ -509,4 +510,58 @@ export function stablefordResult(game, players, hcps) {
     net: list.some(p => Number.isFinite(Number(hcps?.[p.id]))),
     parsKnown
   };
+}
+
+// ---- The group's card — the casual scorer's grid ----
+// The same shape spFlightGrid gives the tournament scorer, so the one grid in
+// flight-grid.js draws both: one row per player — or, in a one-ball format,
+// one per team then any player without one — with every card hole classified
+// against its par, the nines and the total summed over the holes entered, the
+// hole the group is on (the first one somebody has not entered; the last hole
+// once all are in) and whether the round is done. Holes are CARD indexes:
+// a back-nine game's card reads 1..9 while it plays 10..18, and holePar()
+// already makes that translation. `players` are the group's entries, with
+// the names the caller wants shown.
+export function gameGroupGrid(game, groupIdx, players) {
+  const holeCount = gameHoleCount(game);
+  const pars = {};
+  let hasPars = true;
+  for (let n = 1; n <= holeCount; n++) {
+    const p = holePar(game, n);
+    if (p) pars[n] = p; else hasPars = false;
+  }
+  const parMap = hasPars ? pars : null;
+  const seg = (holes, from, to) => (to < from
+    ? { gross: 0, holesIn: 0, toPar: null, par: null }
+    : spSegment(holes || {}, parMap, from, to));
+  const rowFor = (pid, name, kind, holesMap) => {
+    const holes = Array.from({ length: holeCount }, (_, i) => {
+      const hole = i + 1;
+      const par = parMap?.[hole] ?? null;
+      const raw = Number(holesMap?.[hole]);
+      const strokes = Number.isFinite(raw) && raw > 0 ? raw : null;
+      return { hole, par, strokes, cls: holeDiffClass(strokes, par), points: null };
+    });
+    const total = seg(holesMap, 1, holeCount);
+    return {
+      pid, name, kind, link: false, holes,
+      front: seg(holesMap, 1, Math.min(9, holeCount)),
+      back: seg(holesMap, 10, holeCount),
+      total,
+      thru: total.holesIn >= holeCount ? 'F' : total.holesIn ? String(total.holesIn) : ''
+    };
+  };
+  const list = players || [];
+  const rows = [];
+  if (!isOneBallFormat(game)) {
+    list.forEach(p => rows.push(rowFor(p.id, p.name, 'player', game?.scores?.[p.id]?.holes)));
+  } else {
+    const { teams, unpaired } = groupTeams(game, groupIdx, list);
+    teams.forEach(tm => rows.push(rowFor(tm.id, tm.players.map(p => p.name).join(' + '), 'team', game?.teamScores?.[tm.id]?.holes)));
+    unpaired.forEach(p => rows.push(rowFor(p.id, p.name, 'player', game?.scores?.[p.id]?.holes)));
+  }
+  const full = Array.from({ length: holeCount }, (_, i) => rows.length > 0 && rows.every(r => r.holes[i].strokes !== null));
+  let hole = rows.length ? holeCount : 1;
+  for (let n = 1; n <= holeCount && rows.length; n++) { if (!full[n - 1]) { hole = n; break; } }
+  return { holeCount, pars: parMap, hasPars, rows, hole, complete: rows.length > 0 && full.every(Boolean), full };
 }

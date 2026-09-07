@@ -763,7 +763,7 @@ export function spFlightGrid(tn, round, gid) {
   // The rows with a card of their own are the ones a hole is "in" for.
   const scoring = rows.filter(r => r.kind !== 'pair').map(r => r.pid);
   return {
-    pars, hasPars: !!pars, rows,
+    holeCount: SP_HOLES, pars, hasPars: !!pars, rows,
     hole: spFollowHole(tn, g, scoring, round),
     complete: scoring.length > 0 && rows.filter(r => r.kind !== 'pair').every(r => r.total.holesIn >= SP_HOLES),
     // Per hole, whether every card in the flight has it — the header's gold.

@@ -15,6 +15,7 @@ import {
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
+import { gridHTML, patchGrid, wirePager, pageOfHole } from './flight-grid.js';
 
 // Which hole each open group card is PINNED to, per tournament+group — set
 // by a score tap or manual navigation; while unset the card follows the
@@ -381,88 +382,32 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         </div>`;
     };
 
-    // The flight's card, the way a tour app lays a group out: HOLE and PAR
-    // rows, one row per competitor (or team, or fourball member plus the
-    // pair's best ball), nine holes a page with OUT on the front and IN + TOT
-    // on the back, birdies ringed and bogeys boxed in the card page's own
-    // notation, the hole being scored picked out as a column. Its header row
-    // IS the old hole strip — same taps, same gold once the whole flight has
-    // the hole in, same ring on the hole on screen — so nothing a marker's
-    // thumb knows has moved. Every cell carries a hook so a score landing
-    // anywhere in the flight is patched in, never rebuilt.
+    // The flight's card, the way a tour app lays a group out — the shared
+    // grid in flight-grid.js, fed this flight's model. Its header row IS the
+    // old hole strip: same taps to jump the scorer, same gold once the whole
+    // flight has the hole in, same ring on the hole on screen. The TOT cell
+    // reads Stableford points where the tournament is played that way.
     const pts = tnScoring(tn) === 'stableford';
-    const cellInner = (h) => (h.strokes !== null
-      ? `<i class="spc-n${h.cls ? ` is-${h.cls}` : ''}">${h.strokes}</i>` : '');
-    const segInner = (seg) => (seg.holesIn ? `<i class="spc-n">${seg.gross}</i>` : '');
-    const totInner = (r) => {
-      if (!r.total.holesIn) return '';
-      const sub = pts
-        ? `${r.holes.reduce((n, h) => n + (h.points ?? 0), 0)} ${t('spPoints')}`
-        : (r.total.toPar === null ? '' : fmtToPar(r.total.toPar));
-      const cls = pts ? '' : (r.total.toPar < 0 ? 'tn-sc-under' : r.total.toPar > 0 ? 'tn-sc-over' : 'tn-sc-even');
-      return `<b>${r.total.gross}</b>${sub ? `<small class="${cls}">${sub}</small>` : ''}`;
-    };
-    const gridPageHTML = (grid, from, to, segKey, segLabel, last) => {
-      const nos = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      const cur = (n) => (n === hole ? ' spg-cur' : '');
-      const nameCell = (r) => (r.link
-        ? `<a class="spg-name" href="#/spcard/${esc(tnId)}/${esc(r.pid)}" title="${esc(r.name)}">${esc(r.name)}</a>`
-        : `<span class="spg-name spg-pair" title="${esc(r.name)}">${esc(r.name)}</span>`);
-      return `
-        <div class="spg-page">
-          <div class="spg-grid${last ? ' spg-grid-tot' : ''}">
-            <span class="spg-lbl">${t('spHoleRow')}</span>
-            ${nos.map(n => `<button data-spgs-goto="${n}" class="spg-h${cur(n)}${grid.full[n - 1] ? ' spg-full' : ''}">${n}</button>`).join('')}
-            <span class="spg-h spg-seg">${segLabel}</span>
-            ${last ? `<span class="spg-h spg-seg">${t('tnTotal')}</span>` : ''}
-            ${grid.hasPars ? `
-            <span class="spg-lbl">${t('gsPar')}</span>
-            ${nos.map(n => `<span class="spg-p${cur(n)}">${grid.pars[n] ?? ''}</span>`).join('')}
-            <span class="spg-p spg-seg">${grid.rows[0]?.[segKey].par ?? ''}</span>
-            ${last ? `<span class="spg-p spg-seg">${grid.rows[0]?.total.par ?? ''}</span>` : ''}` : ''}
-            ${grid.rows.map(r => `
-            ${nameCell(r)}
-            ${nos.map(n => `<span class="spg-s${cur(n)}" data-spg-cell="${esc(r.pid)}:${n}">${cellInner(r.holes[n - 1])}</span>`).join('')}
-            <span class="spg-s spg-seg" data-spg-seg="${esc(r.pid)}:${segKey}">${segInner(r[segKey])}</span>
-            ${last ? `<span class="spg-s spg-seg spg-tot" data-spg-seg="${esc(r.pid)}:total">${totInner(r)}</span>` : ''}`).join('')}
-          </div>
-        </div>`;
-    };
-    const gridHTML = () => {
-      const grid = spFlightGrid(tn, round, gid);
-      if (!grid || !grid.rows.length) return '';
-      return `
-      <div class="spg" data-spg>
-        <div class="spg-pages" data-spg-pages>
-          ${gridPageHTML(grid, 1, 9, 'front', t('spOut'), false)}
-          ${gridPageHTML(grid, 10, SP_HOLES, 'back', t('spIn'), true)}
-        </div>
-        <div class="spg-pager">
-          <button data-spg-page="-1" aria-label="${t('spOut')}">‹</button>
-          <span class="spg-dots"><i data-spg-dot="0"></i><i data-spg-dot="1"></i></span>
-          <button data-spg-page="1" aria-label="${t('spIn')}">›</button>
-        </div>
-      </div>`;
-    };
-    // Re-read the flight and touch only the cells that changed: a score
-    // landing anywhere in the flight lands in its cell without a rebuild.
-    const patchGrid = () => {
+    const gridOpts = (h) => ({
+      hole: h,
+      labels: { hole: t('spHoleRow'), par: t('gsPar'), out: t('spOut'), in: t('spIn'), tot: t('tnTotal') },
+      headerAttrs: (n) => `data-spgs-goto="${n}"`,
+      linkOf: (r) => (r.link ? `#/spcard/${esc(tnId)}/${esc(r.pid)}` : null),
+      totInner: (r) => {
+        if (!r.total.holesIn) return '';
+        const sub = pts
+          ? `${r.holes.reduce((n, x) => n + (x.points ?? 0), 0)} ${t('spPoints')}`
+          : (r.total.toPar === null ? '' : fmtToPar(r.total.toPar));
+        const cls = pts ? '' : (r.total.toPar < 0 ? 'tn-sc-under' : r.total.toPar > 0 ? 'tn-sc-over' : 'tn-sc-even');
+        return `<b>${r.total.gross}</b>${sub ? `<small class="${cls}">${sub}</small>` : ''}`;
+      }
+    });
+    // Re-read the flight and touch only what changed — plus the two pills
+    // the header carries.
+    const patchTnGrid = () => {
       const grid = spFlightGrid(tnLive, round, gid);
       if (!grid) return;
-      const set = (sel, html) => {
-        const el = host.querySelector(sel);
-        if (el && el.innerHTML !== html) el.innerHTML = html;
-      };
-      grid.rows.forEach(r => {
-        const pid = CSS.escape(r.pid);
-        r.holes.forEach(h => set(`[data-spg-cell="${pid}:${h.hole}"]`, cellInner(h)));
-        set(`[data-spg-seg="${pid}:front"]`, segInner(r.front));
-        set(`[data-spg-seg="${pid}:back"]`, segInner(r.back));
-        set(`[data-spg-seg="${pid}:total"]`, totInner(r));
-      });
-      host.querySelectorAll('button[data-spgs-goto]').forEach(b => {
-        b.classList.toggle('spg-full', !!grid.full[Number(b.dataset.spgsGoto) - 1]);
-      });
+      patchGrid(host, grid, gridOpts(hole));
       const done = host.querySelector('[data-spg-done]');
       if (done) done.hidden = !grid.complete;
       const clock = host.querySelector('[data-spg-clock]');
@@ -558,7 +503,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
           ${pids.map(row).join('')}
           ${teamLinesHTML(tn)}
           ${matchLineHTML(tn)}
-          ${gridHTML()}
+          ${gridHTML(gridNow, gridOpts(hole))}
           ${anyEditable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
         </div>
       </div>`;
@@ -572,27 +517,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       paint();
     });
 
-    // The two nine-hole pages: opened on the page of the hole being scored,
-    // swiped or stepped between, the dots following the scroll.
-    const pages = host.querySelector('[data-spg-pages]');
-    if (pages) {
-      const dots = host.querySelectorAll('[data-spg-dot]');
-      const pageOf = () => (pages.clientWidth ? Math.round(pages.scrollLeft / pages.clientWidth) : 0);
-      const showDots = () => {
-        const on = pageOf();
-        dots.forEach(d => d.classList.toggle('on', Number(d.dataset.spgDot) === on));
-        host.querySelectorAll('button[data-spg-page]').forEach(b => {
-          b.disabled = on + Number(b.dataset.spgPage) < 0 || on + Number(b.dataset.spgPage) > 1;
-        });
-      };
-      pages.scrollLeft = (hole > 9 ? 1 : 0) * pages.clientWidth;
-      showDots();
-      pages.addEventListener('scroll', showDots, { passive: true });
-      host.querySelectorAll('button[data-spg-page]').forEach(b => b.onclick = () => {
-        const next = Math.min(1, Math.max(0, pageOf() + Number(b.dataset.spgPage)));
-        pages.scrollTo({ left: next * pages.clientWidth, behavior: 'smooth' });
-      });
-    }
+    wirePager(host, pageOfHole(hole));
 
     // One tap = one write, updated in place so rapid taps never fight a
     // repaint. The tap also pins the hole: the last player's seeded score
@@ -654,7 +579,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         // The write is awaited, so this may resume on another screen. Skip the
         // DOM touch-up then — but still post the round: a round completed on
         // this very tap must reach the member's handicap either way.
-        if (ctx.alive?.() !== false) { updateRow(pid); patchGrid(); }
+        if (ctx.alive?.() !== false) { updateRow(pid); patchTnGrid(); }
         if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
       }
     });
@@ -667,7 +592,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       // A ticker that has to appear, vanish or change shape needs the rebuild.
       if (ctx.tickerPatch && !ctx.tickerPatch(host, tnLive)) return false;
       pids.forEach(updateRow);
-      patchGrid();
+      patchTnGrid();
       return true;
     };
   };

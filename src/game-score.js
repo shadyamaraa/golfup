@@ -16,13 +16,14 @@
 import * as store from './store.js';
 import { t, getLang } from './i18n.js';
 import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './handicap.js';
-import { holePar, holeSI } from './courses.js';
+import { holePar, holeSI, physicalHole } from './courses.js';
+import { gridHTML, patchGrid, wirePager, pageOfHole } from './flight-grid.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import {
   gameFormat, FORMAT_LABEL_KEY, isTeamFormat, isOneBallFormat,
   groupOrder, groupPairs, groupMatches, nextPairing, pairingOptions, allowanceTotal,
   groupTeams, teamContests, groupTeamMatches, teamStrokesOf, teamBallLine, teamHcp,
-  skinsResult, stablefordResult
+  skinsResult, stablefordResult, gameGroupGrid
 } from './game-formats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -381,32 +382,28 @@ function scoreRowsHTML(game, groupIdx, players, hole, user, usersById) {
       canScoreGamePlayer(user, game, p.id), usersById?.[p.id])).join('');
 }
 
-// A compact strip of every hole: the number and how many of the group have it
-// entered. Tapping a hole jumps to it — that is the correction affordance.
-function stripHTML(game, players, hole, groupIdx = 0) {
-  const holeCount = gameHoleCount(game);
-  const units = scoreUnits(game, groupIdx, players);
-  const cells = [];
-  for (let n = 1; n <= holeCount; n++) {
-    const entered = units.filter(u => u.has(n)).length;
-    const full = holeComplete(units, n);
-    const on = n === hole;
-    // Gold bg + navy ink for a completed hole — the app's on-gold convention
-    // (.filter-tab.active), legible in both themes; #fff would wash out on
-    // the cream light theme. The cell's big figure is the hole's PAR (the
-    // group reads the next tee off the strip); completion already shows as
-    // the gold fill. Courses without a card fall back to the entered count.
-    cells.push(`
-      <button data-gs="goto" data-hole="${n}"
-        style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
-               border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
-               background:${full ? 'var(--gold)' : 'transparent'};
-               color:${full ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
-        <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${holePar(game, n) ?? (entered || '·')}
-      </button>`);
+// The group's card, the way a tour app lays a group out — the shared grid in
+// flight-grid.js fed this group's model (gameGroupGrid). Its header row is the
+// old hole strip: tapping a hole still jumps to it (the correction
+// affordance), gold still means the whole group has the hole in, and the hole
+// on screen is picked out as a column. A back-nine game's header reads the
+// course holes it is playing while the cells stay on the card's own index.
+const gridOpts = (game, hole) => ({
+  hole,
+  labels: { hole: t('spHoleRow'), par: t('gsPar'), out: t('spOut'), in: t('spIn'), tot: t('tnTotal') },
+  headerAttrs: (n) => `data-gs="goto" data-hole="${n}"`,
+  holeLabel: (n) => physicalHole(game, n),
+  linkOf: () => null,
+  totInner: (r) => {
+    if (!r.total.holesIn) return '';
+    const tp = r.total.toPar;
+    const cls = tp === null ? '' : tp < 0 ? 'tn-sc-under' : tp > 0 ? 'tn-sc-over' : 'tn-sc-even';
+    return `<b>${r.total.gross}</b>${tp === null ? '' : `<small class="${cls}">${fmtToPar(tp)}</small>`}`;
   }
-  return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">${cells.join('')}</div>`;
-}
+});
+const groupGrid = (game, groupIdx, players, usersById) =>
+  gameGroupGrid(game, groupIdx, players.map(p => ({ ...p, name: shortName(p, usersById?.[p.id]) })));
+
 
 // May this member finish/reopen the round? Same circle as the scoring-mode
 // toggle: the game's creator and officials.
@@ -828,7 +825,7 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
 
       ${reportHTML(game, players, usersById, groupIdx)}
 
-      ${stripHTML(game, players, hole, groupIdx)}
+      ${gridHTML(groupGrid(game, groupIdx, players, usersById), gridOpts(game, hole))}
       ${canFinishGame(user, game) ? `
         <button data-gs="finish" class="btn ${game.finishedAt ? 'btn-outline' : 'btn-primary'} btn-sm"
           style="width:100%;margin-top:14px;gap:6px;">🏁 ${game.finishedAt ? t('gsResume') : t('gsFinish')}</button>` : ''}
@@ -996,17 +993,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     // wholesale and re-wired below rather than patched.
     const panel = host.querySelector('#gs-format');
     if (panel) panel.outerHTML = formatPanelHTML(data, groupIdx, players, ctx.user, usersById);
-    const units = scoreUnits(data, groupIdx, players);
-    for (let n = 1; n <= holeCount; n++) {
-      const cell = host.querySelector(`button[data-gs="goto"][data-hole="${n}"]`);
-      if (!cell) continue;
-      const entered = units.filter(u => u.has(n)).length;
-      const full = holeComplete(units, n);
-      cell.style.border = n === hole ? '2px solid var(--text-primary)' : '1px solid var(--border-color)';
-      cell.style.background = full ? 'var(--gold)' : 'transparent';
-      cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
-      cell.innerHTML = `<div style="font-size:0.58rem;opacity:0.75;">${n}</div>${holePar(data, n) ?? (entered || '·')}`;
-    }
+    // The grid: the cells that changed, the header's gold, and the column —
+    // a hole change lands here rather than in a rebuild on this screen.
+    patchGrid(host, groupGrid(data, groupIdx, players, usersById), gridOpts(data, hole));
     // onclick assignment is idempotent, so re-wiring the whole screen only
     // gives the freshly inserted panel and report their handlers.
     wire();
@@ -1039,6 +1028,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
     host.innerHTML = screenHTML(data, groupIdx, ctx.user, paintedKey === null, usersById);
     paintedKey = key;
     wire();
+    wirePager(host, pageOfHole(Math.min(viewHole ?? followHole(data, players, groupIdx), gameHoleCount(data))));
   };
 
   // One tap: write the hole, let the listener paint the result. `saving` only
