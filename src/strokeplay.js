@@ -558,6 +558,25 @@ function drawList(players, pids, { method, size, rnd, totals, higher }) {
 // the same group that round (the flight's marker practice — and what the
 // database rules enforce via the player's group pointer), and the club's
 // officials. `round` is optional: without it only self and officials pass.
+// ---- What a removal would take off the board ----
+// The admin's last check before a save that removes players (or disbands
+// teams): which of them have holes on the record, and how many, over every
+// round. Pure, and read off whatever record it is handed — the editor hands
+// it a FRESH read taken at save time rather than the snapshot it opened with,
+// so the answer is honest however long the editor sat open. `pids` may be a
+// Set or an array.
+export function spScoredRemovals(tn, pids) {
+  const scores = tn?.sp?.scores || {};
+  const players = tn?.sp?.players || {};
+  return [...(pids || [])].map(pid => {
+    let holes = 0;
+    Object.values(scores[pid] || {}).forEach(round => {
+      holes += Object.values(round || {}).filter(v => Number.isFinite(Number(v)) && Number(v) > 0).length;
+    });
+    return { pid, name: players[pid]?.name || pid, holes };
+  }).filter(x => x.holes > 0);
+}
+
 export function canScoreSp(user, pid, players, round) {
   if (!user || !pid) return false;
   if (user.role === 'admin' || user.role === 'marshal') return true;

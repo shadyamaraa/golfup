@@ -8849,7 +8849,7 @@ let adminOpenTn = null;
 // The admin list is folded by state — live, draft (upcoming), past — and each
 // fold remembers whether the admin opened it, because the tab re-renders on
 // every edit. Past starts closed: it is the long tail nobody scrolls past.
-const adminTnSectionOpen = { live: true, upcoming: true, final: false };
+const adminTnSectionOpen = { live: true, upcoming: true, final: false, deleted: false };
 // The editor's meta-fields fold: collapsed by default so opening a
 // tournament lands on its players/lineup, not the name-and-dates form.
 let tnFormOpen = false;
@@ -9060,7 +9060,9 @@ async function renderAdminTournamentsTab() {
   el.innerHTML = '<div class="loading-spinner" style="margin:20px auto;"></div>';
   let list = [];
   let loadErr = null;
-  try { list = await store.loadTournaments(); } catch (err) { loadErr = err; }
+  // The admin read keeps the soft-deleted records: they get their own fold
+  // below, with the one button that brings a tournament back.
+  try { list = await store.loadTournamentsAdmin(); } catch (err) { loadErr = err; }
   list.sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
 
   // Reads are denied the same way writes are when the rule was never deployed,
@@ -9079,6 +9081,23 @@ async function renderAdminTournamentsTab() {
     const count = spActive(tn)
       ? Object.keys(tn.sp.players).length
       : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
+    const meta = esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '));
+    // A deleted tournament is a reduced row: what it was, when it went, and
+    // the one way back. No editor — even if adminOpenTn still points at it.
+    if (tn.status === 'deleted') {
+      const when = tn.deletedAt ? new Date(tn.deletedAt).toLocaleDateString() : '';
+      return `
+      <div style="background:var(--bg-card-hover);border:1px dashed var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <b style="flex:1;min-width:150px;color:var(--text-secondary);">${esc(tn.name || '—')}</b>
+          <span class="pill-soft" style="background:rgba(215,38,61,0.12);color:var(--danger-color);">${t('tnAdmDeleted')}${when ? ` · ${esc(when)}` : ''}</span>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">${meta}</div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm tn-adm-restore" data-tn="${esc(tn.id)}">${t('tnRestore')}</button>
+        </div>
+      </div>`;
+    }
     return `
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -9089,7 +9108,7 @@ async function renderAdminTournamentsTab() {
           <span class="pill-soft">${tnStateLabel(tn)}</span>
         </div>
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">
-          ${esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '))}
+          ${meta}
         </div>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
           <button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-sm tn-adm-toggle" data-tn="${esc(tn.id)}" style="gap:5px;">
@@ -9126,11 +9145,17 @@ async function renderAdminTournamentsTab() {
       </div>`;
   };
 
-  // Three folds by state. Upcoming reads soonest first, past most recent
-  // first; live is whatever is on today. A fold holding the tournament whose
-  // editor is open is forced open, or the editor would vanish under it.
-  const byState = { live: [], upcoming: [], final: [] };
-  list.forEach(tn => (byState[tnStatus(tn)] || byState.upcoming).push(tn));
+  // Four folds by state. Upcoming reads soonest first, past most recent
+  // first; live is whatever is on today; deleted last, most recent delete
+  // first. A fold holding the tournament whose editor is open is forced open,
+  // or the editor would vanish under it. The delete is tested before tnStatus
+  // is asked: tnStatus knows nothing of 'deleted' and would file the record
+  // under whatever its dates say.
+  const byState = { live: [], upcoming: [], final: [], deleted: [] };
+  list.forEach(tn => (tn.status === 'deleted'
+    ? byState.deleted
+    : byState[tnStatus(tn)] || byState.upcoming).push(tn));
+  byState.deleted.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
   byState.upcoming.sort((a, b) => String(a.startDate || '').localeCompare(String(b.startDate || '')));
   const sectionHTML = (key, label) => {
     const rows = byState[key];
@@ -9148,7 +9173,8 @@ async function renderAdminTournamentsTab() {
   };
   const sectionsHTML = sectionHTML('live', t('tnAdmLive'))
     + sectionHTML('upcoming', t('tnAdmDraft'))
-    + sectionHTML('final', t('tnAdmPast'));
+    + sectionHTML('final', t('tnAdmPast'))
+    + sectionHTML('deleted', t('tnAdmDeleted'));
 
   el.innerHTML = `
     ${errBanner}
@@ -9224,6 +9250,20 @@ async function renderAdminTournamentsTab() {
     if (!tn || !confirm(`${tn.name} — ${t('delete')}?`)) return;
     try { await store.deleteTournament(tn.id); }
     catch (err) { tnAdminError(err); return; }
+    // A deleted row renders no editor, so the open one must not chase it.
+    if (adminOpenTn === tn.id) { discardMpDraft(tn.id); discardSpDraft(tn.id); discardTnMediaDraft(tn.id); adminOpenTn = null; }
+    renderTournamentStrip();
+    await renderAdminTournamentsTab();
+  });
+  // The soft delete undone: a one-key-pair update, so everything the delete
+  // never touched — scores, roster, draw, media — is simply visible again.
+  el.querySelectorAll('.tn-adm-restore').forEach(b => b.onclick = async () => {
+    const tn = list.find(x => x.id === b.dataset.tn);
+    if (!tn) return;
+    try { await store.restoreTournament(tn.id); }
+    catch (err) { tnAdminError(err); return; }
+    showToast('✅ ' + t('tnRestored'), 'success');
+    renderTournamentStrip();
     await renderAdminTournamentsTab();
   });
   // Home-strip visibility toggle — path-scoped so open scorecards are safe.
