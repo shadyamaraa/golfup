@@ -691,6 +691,87 @@ export function spPlayerCard(tn, pid, round) {
   };
 }
 
+// ---- The flight's card — the group scorer's grid ----
+// Which hole a flight is on: the first hole any of its rows still has empty,
+// scanning from the flight's STARTING hole (a shotgun group off 12 plays
+// 12..18 then 1..11) and wrapping the course. The group scorer follows this
+// while nobody has pinned a hole, so the screen keeps up with the round on
+// its own; a flight with every hole in lands on the hole before its start.
+export function spFollowHole(tn, g, pids, round) {
+  const start = Number(g?.startHole) >= 1 && Number(g?.startHole) <= SP_HOLES
+    ? Number(g.startHole) : 1;
+  let hole = ((start + SP_HOLES - 2) % SP_HOLES) + 1;
+  for (let k = 0; k < SP_HOLES; k++) {
+    const h = ((start - 1 + k) % SP_HOLES) + 1;
+    if ((pids || []).some(pid => !tn?.sp?.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
+  }
+  return hole;
+}
+
+/**
+ * One flight's card, the way a tour app lays a group out: one row per
+ * competitor with all eighteen holes classified (spPlayerCard's shape), the
+ * OUT / IN / TOT segments, the hole the flight is on and whether it is done.
+ * The rows follow the format the same way the printed sheet does — a player
+ * per row; a scramble or foursome shows its TEAMS (the ball is theirs); a
+ * fourball shows each member and then the pair's best ball as a derived
+ * `pair` row that has no card of its own. Null for a flight that is not there.
+ */
+export function spFlightGrid(tn, round, gid) {
+  const g = tn?.sp?.groups?.[round]?.[gid];
+  const players = tn?.sp?.players || {};
+  if (!g) return null;
+  const pars = tnPars(tn);
+  const flightPids = Object.keys(g.players || {})
+    .filter(pid => players[pid])
+    .sort((a, b) => String(players[a].name || '').localeCompare(String(players[b].name || '')));
+  const fourball = tn?.format === 'fourball';
+
+  const rowOf = (pid, kind) => {
+    const card = spPlayerCard(tn, pid, round);
+    return card && { pid, name: card.name, kind, link: true,
+      holes: card.holes, front: card.front, back: card.back, total: card.total, thru: card.thru };
+  };
+  // The pair's best ball, hole by hole, read the same way a card is: a class
+  // per hole, the segments summed over exactly those strokes, and the best
+  // points either member made on the hole.
+  const pairRow = (pid, memberRows) => {
+    const fr = fourballRound(tn, players[pid], round);
+    const holes = Array.from({ length: SP_HOLES }, (_, i) => {
+      const hole = i + 1;
+      const par = Number(pars?.[hole]) || null;
+      const strokes = fr.holes[hole] ?? null;
+      const pts = memberRows.map(r => r.holes[i].points).filter(v => v !== null && v !== undefined);
+      return { hole, par, strokes, cls: holeDiffClass(strokes, par), points: pts.length ? Math.max(...pts) : null };
+    });
+    const total = spSegment(fr.holes, pars, 1, SP_HOLES);
+    return { pid, name: players[pid]?.name || pid, kind: 'pair', link: false, holes,
+      front: spSegment(fr.holes, pars, 1, 9), back: spSegment(fr.holes, pars, 10, SP_HOLES), total,
+      thru: total.holesIn >= SP_HOLES ? 'F' : total.holesIn ? String(total.holesIn) : '' };
+  };
+
+  const rows = [];
+  for (const pid of flightPids) {
+    if (!isTeamEntry(players[pid])) { const r = rowOf(pid, 'player'); if (r) rows.push(r); continue; }
+    if (fourball) {
+      const members = teamMemberIds(players[pid]).filter(m => players[m]).map(m => rowOf(m, 'player')).filter(Boolean);
+      rows.push(...members, pairRow(pid, members));
+    } else {
+      const r = rowOf(pid, 'team'); if (r) rows.push(r);
+    }
+  }
+  // The rows with a card of their own are the ones a hole is "in" for.
+  const scoring = rows.filter(r => r.kind !== 'pair').map(r => r.pid);
+  return {
+    holeCount: SP_HOLES, pars, hasPars: !!pars, rows,
+    hole: spFollowHole(tn, g, scoring, round),
+    complete: scoring.length > 0 && rows.filter(r => r.kind !== 'pair').every(r => r.total.holesIn >= SP_HOLES),
+    // Per hole, whether every card in the flight has it — the header's gold.
+    full: Array.from({ length: SP_HOLES }, (_, i) =>
+      scoring.length > 0 && scoring.every(pid => tn?.sp?.scores?.[pid]?.[round]?.[i + 1]))
+  };
+}
+
 /**
  * A player's numbers for one round (`round` a number) or the whole
  * tournament (`round` null). Everything that needs per-hole pars — the

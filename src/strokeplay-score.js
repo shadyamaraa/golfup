@@ -9,11 +9,13 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import {
   SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnOneBall, tnTeamRank,
-  isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision
+  isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision,
+  spFlightGrid, spFollowHole
 } from './strokeplay.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
+import { gridHTML, patchGrid, wirePager, pageOfHole } from './flight-grid.js';
 
 // Which hole each open group card is PINNED to, per tournament+group — set
 // by a score tap or manual navigation; while unset the card follows the
@@ -282,20 +284,10 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
   let paintedKey = null;
   let inPlace = null;
 
-  // The first hole any of the flight still has empty — scanning from the
-  // flight's STARTING hole (a shotgun group at hole 12 plays 12..18 then
-  // 1..11), wrapping the course. Recomputed on every paint while nobody has
-  // pinned a hole, so the screen follows the round on its own.
-  const followHole = (tn, g, pids) => {
-    const start = Number(g.startHole) >= 1 && Number(g.startHole) <= SP_HOLES
-      ? Number(g.startHole) : 1;
-    let hole = ((start + SP_HOLES - 2) % SP_HOLES) + 1; // the hole before start
-    for (let k = 0; k < SP_HOLES; k++) {
-      const h = ((start - 1 + k) % SP_HOLES) + 1;
-      if (pids.some(pid => !tn.sp.scores?.[pid]?.[round]?.[h])) { hole = h; break; }
-    }
-    return hole;
-  };
+  // The first hole any of the flight still has empty, scanning from the
+  // flight's starting hole (spFollowHole). Recomputed on every paint while
+  // nobody has pinned a hole, so the screen follows the round on its own.
+  const followHole = (tn, g, pids) => spFollowHole(tn, g, pids, round);
 
   const paint = () => {
     // Step taps await their write, so a member who scores and immediately
@@ -390,26 +382,52 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         </div>`;
     };
 
-    // 18 holes at a glance: the big figure is the hole's par (entered count
-    // without a course card), gold fill once the whole flight is in, a 2px
-    // ring on the hole being viewed. Tapping jumps (and pins).
-    const stripHTML = () => `
-      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:14px;">
-        ${Array.from({ length: SP_HOLES }, (_, i) => {
-          const n = i + 1;
-          const entered = pids.filter(pid => tn.sp.scores?.[pid]?.[round]?.[n]).length;
-          const full = pids.length > 0 && entered >= pids.length;
-          const on = n === hole;
-          return `
-          <button data-spgs-goto="${n}"
-            style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
-                   border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
-                   background:${full ? 'var(--gold)' : 'transparent'};
-                   color:${full ? '#0C3051' : 'var(--text-secondary)'};font-size:0.7rem;font-weight:700;">
-            <div style="font-size:0.58rem;opacity:0.75;">${n}</div>${pars?.[n] ?? (entered || '·')}
-          </button>`;
-        }).join('')}
-      </div>`;
+    // The flight's card, the way a tour app lays a group out — the shared
+    // grid in flight-grid.js, fed this flight's model. Its header row IS the
+    // old hole strip: same taps to jump the scorer, same gold once the whole
+    // flight has the hole in, same ring on the hole on screen. The TOT cell
+    // reads Stableford points where the tournament is played that way.
+    const pts = tnScoring(tn) === 'stableford';
+    const gridOpts = (h) => ({
+      hole: h,
+      labels: { hole: t('spHoleRow'), par: t('gsPar'), out: t('spOut'), in: t('spIn'), tot: t('tnTotal') },
+      headerAttrs: (n) => `data-spgs-goto="${n}"`,
+      linkOf: (r) => (r.link ? `#/spcard/${esc(tnId)}/${esc(r.pid)}` : null),
+      totInner: (r) => {
+        if (!r.total.holesIn) return '';
+        const sub = pts
+          ? `${r.holes.reduce((n, x) => n + (x.points ?? 0), 0)} ${t('spPoints')}`
+          : (r.total.toPar === null ? '' : fmtToPar(r.total.toPar));
+        const cls = pts ? '' : (r.total.toPar < 0 ? 'tn-sc-under' : r.total.toPar > 0 ? 'tn-sc-over' : 'tn-sc-even');
+        return `<b>${r.total.gross}</b>${sub ? `<small class="${cls}">${sub}</small>` : ''}`;
+      }
+    });
+    // Re-read the flight and touch only what changed — plus the two pills
+    // the header carries.
+    const patchTnGrid = () => {
+      const grid = spFlightGrid(tnLive, round, gid);
+      if (!grid) return;
+      patchGrid(host, grid, gridOpts(hole));
+      const done = host.querySelector('[data-spg-done]');
+      if (done) done.hidden = !grid.complete;
+      const clock = host.querySelector('[data-spg-clock]');
+      if (clock) { const e = elapsedText(); clock.hidden = !e; clock.textContent = e ? `⏱ ${e}` : ''; }
+    };
+    // Time since the flight teed off — the pace-of-play glance a tour card
+    // carries. The tee-off instant is the tournament's start date, one day
+    // per round, plus the flight's tee time; shown only while that lands
+    // within the last eight hours, so a round on some other day shows nothing
+    // rather than a nonsense figure.
+    const elapsedText = () => {
+      if (!tn.startDate || !g.teeTime) return '';
+      const ms = new Date(`${tn.startDate}T${g.teeTime}`).getTime() + (Number(round) - 1) * 86400000;
+      const d = Date.now() - ms;
+      if (!(d > 0 && d < 8 * 3600000)) return '';
+      const h = Math.floor(d / 3600000);
+      const m = Math.floor((d % 3600000) / 60000);
+      return `${h}:${String(m).padStart(2, '0')}`;
+    };
+    const gridNow = spFlightGrid(tn, round, gid);
 
     // A fourball's teams under their members' rows: each pair's best ball so
     // far, gross and net, the number a marker actually wants to see.
@@ -470,6 +488,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <b>R${esc(round)}</b>
             ${g.teeTime ? `<span class="pill-soft" style="font-size:0.7rem;">${t('mpTee')} ${esc(g.teeTime)}</span>` : ''}
             ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
+            <span class="pill-soft" data-spg-clock style="font-size:0.7rem;"${elapsedText() ? '' : ' hidden'}>${elapsedText() ? `⏱ ${elapsedText()}` : ''}</span>
+            <span class="pill-soft" data-spg-done style="font-size:0.7rem;background:var(--gold);color:#0C3051;"${gridNow?.complete ? '' : ' hidden'}>${t('spRoundComplete')}</span>
             <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
@@ -483,7 +503,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
           ${pids.map(row).join('')}
           ${teamLinesHTML(tn)}
           ${matchLineHTML(tn)}
-          ${stripHTML()}
+          ${gridHTML(gridNow, gridOpts(hole))}
           ${anyEditable ? '' : `<p style="font-size:0.76rem;color:var(--amber);margin:10px 0 0;">${t('spReadOnly')}</p>`}
         </div>
       </div>`;
@@ -496,6 +516,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       viewHole.set(key, Number(b.dataset.spgsGoto));
       paint();
     });
+
+    wirePager(host, pageOfHole(hole));
 
     // One tap = one write, updated in place so rapid taps never fight a
     // repaint. The tap also pins the hole: the last player's seeded score
@@ -519,13 +541,6 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       };
       setStep('minus', strokes === null);
       setStep('plus', strokes !== null && strokes >= MAX_GS_STROKES);
-      const cell = host.querySelector(`button[data-spgs-goto="${hole}"]`);
-      if (cell) {
-        const entered = pids.filter(p => tnLive.sp.scores?.[p]?.[round]?.[hole]).length;
-        const full = pids.length > 0 && entered >= pids.length;
-        cell.style.background = full ? 'var(--gold)' : 'transparent';
-        cell.style.color = full ? '#0C3051' : 'var(--text-secondary)';
-      }
       const ml = host.querySelector('[data-spgs-match]');
       if (ml) ml.outerHTML = matchLineHTML(tnLive);
       const tl = host.querySelector('[data-spgs-teams]');
@@ -564,7 +579,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         // The write is awaited, so this may resume on another screen. Skip the
         // DOM touch-up then — but still post the round: a round completed on
         // this very tap must reach the member's handicap either way.
-        if (ctx.alive?.() !== false) updateRow(pid);
+        if (ctx.alive?.() !== false) { updateRow(pid); patchTnGrid(); }
         if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
       }
     });
@@ -577,6 +592,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       // A ticker that has to appear, vanish or change shape needs the rebuild.
       if (ctx.tickerPatch && !ctx.tickerPatch(host, tnLive)) return false;
       pids.forEach(updateRow);
+      patchTnGrid();
       return true;
     };
   };

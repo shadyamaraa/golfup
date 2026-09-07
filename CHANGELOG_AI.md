@@ -1,5 +1,50 @@
 # CHANGELOG_AI.md
 
+## 2026-09-07 (A PGA Tour-style group scorecard under both scorers)
+
+The flight scorer and the casual game scorer both gain the group card the way
+a tour app lays a group out: HOLE and PAR rows, one row per competitor, nine
+holes a page with OUT on the front and IN + TOT on the back (one page with TOT
+for a nine-hole game), birdies ringed, eagles double-ringed, bogeys boxed and
+doubles double-boxed in the card page's own `.spc-n.is-*` notation, the hole
+being scored picked out as a column, a ‹ · · › pager and a swipe between the
+pages, and — on the tournament side — a *Тойрог дууссан* pill once every card
+is in and the time since the flight teed off while it is within the day.
+
+**Its header row is the old hole strip.** Same taps to jump the scorer, same
+gold once the whole group has the hole in, same ring on the hole on screen —
+so nothing a marker's thumb knows has moved; the strip just grew the rows
+under it. Every cell carries a hook and a score landing anywhere in the group
+is patched in place, never rebuilt, under the repaint discipline both scorers
+already keep. The casual scorer patches a hole change too, so the highlighted
+column and the page follow the hole without touching the steppers.
+
+**One grid, two callers.** The markup, the patcher and the pager live in
+`src/flight-grid.js`, which takes a grid MODEL and never a record — exactly
+the way `scorecard-grid.js` serves the two printed cards — so the two screens
+cannot drift apart. Everything that differs comes in through options: the
+header buttons' attributes (each scorer has its own jump contract), the hole
+label (a back-nine casual game numbers its card 1..9 while playing 10..18),
+the name link (a tournament row opens the player's card; a casual game has no
+such page), and the TOT cell's sub-line (Stableford points where a tournament
+is played that way). No i18n inside it, so it is tested under node.
+
+**The models are pure and tested.** `spFlightGrid(tn, round, gid)` in
+`strokeplay.js` — a player per row, a scramble's teams, a fourball's members
+plus the pair's best ball as a derived row — with `spFollowHole` moved beside
+it so the scorer and the model agree on which hole a shotgun flight is on.
+`gameGroupGrid(game, groupIdx, players)` in `game-formats.js` — players, or
+teams then the unpaired in a one-ball format — on card-hole indexes with
+`holePar` doing the back-nine translation. A casual fourball shows its members
+only; the pair's reading stays in the format panel, as before.
+
+Verified in the browser at phone width on both sides: rows and notation, the
+segments, a shotgun flight opening on the back nine with the right column,
+header taps jumping the scorer, the pager and a swipe, scramble pairs, fourball
+members with the best-ball row, a back-nine game reading 10..18 on one page
+with no pager, and a score landing in its cell with the stepper's DOM node
+untouched. 15 new tests.
+
 ## 2026-09-07 (Tournament backup, layer A: stop the loss, bring back the deleted)
 
 The first of the backup layers, shipped on its own because it turns the most
