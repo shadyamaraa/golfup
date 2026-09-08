@@ -25,6 +25,7 @@ import {
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { renderTnResultsPage, shareTnResults, sharePlayerResult } from './tournament-results-page.js';
+import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -4270,6 +4271,15 @@ function renderGameView(game) {
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
+  // The result board's own share: the picture, the story, the text — once
+  // anyone has scored. The Viber button above stays the invitation.
+  document.querySelectorAll('[data-game-share]').forEach(b => b.onclick = () => shareGame(game, {
+    showToast,
+    users: allUsersMap,
+    state: game.finishedAt ? 'final' : (isLiveNow || !isReadOnly ? 'live' : 'final'),
+    url: `${window.location.origin}${window.location.pathname}#/scorecard/${game.id}`,
+    dateText: formatDate(game.date)
+  }));
   document.getElementById('copy-link-btn')?.addEventListener('click', () => copyGameLink(game));
   document.getElementById('add-player-btn')?.addEventListener('click', () => handleAddPlayer(game));
   document.getElementById('invite-btn')?.addEventListener('click', () => handleInvite(game));
@@ -4416,7 +4426,7 @@ function gameMatchBoardHTML(game) {
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t(team ? 'gsTeams' : 'gsMatches')}${game.finishedAt ? ' 🏁' : ''}</h3>
-        <span class="group-count">${t(FORMAT_LABEL_KEY[gameFormat(game)])}</span>
+        <span style="display:flex;align-items:center;gap:8px;"><button type="button" class="tn-me-share sm" data-game-share aria-label="${t('tnShare')}" title="${t('tnShare')}">${icon('share', { size: 12 })}</button><span class="group-count">${t(FORMAT_LABEL_KEY[gameFormat(game)])}</span></span>
       </div>
       <div class="player-list">${blocks}</div>
     </div>`;
@@ -4448,7 +4458,7 @@ function gameSkinsBoardHTML(game) {
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
-        <span class="group-count">${t('fmtSkins')}</span>
+        <span style="display:flex;align-items:center;gap:8px;"><button type="button" class="tn-me-share sm" data-game-share aria-label="${t('tnShare')}" title="${t('tnShare')}">${icon('share', { size: 12 })}</button><span class="group-count">${t('fmtSkins')}</span></span>
       </div>
       <div class="player-list">${blocks}</div>
     </div>`;
@@ -4495,7 +4505,7 @@ function gameStablefordBoardHTML(game) {
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
-        <span class="group-count">${t('fmtStableford')}</span>
+        <span style="display:flex;align-items:center;gap:8px;"><button type="button" class="tn-me-share sm" data-game-share aria-label="${t('tnShare')}" title="${t('tnShare')}">${icon('share', { size: 12 })}</button><span class="group-count">${t('fmtStableford')}</span></span>
       </div>
       <div class="player-list">${blocks}</div>
     </div>`;
@@ -4566,9 +4576,9 @@ function gameScoreboardHTML(game) {
     <div class="group-card glass-card">
       <div class="group-header">
         <h3 class="group-title" style="display:flex;align-items:center;gap:6px;">${icon('scorecard', { size: 16 })} ${t('gsLeaderboard')}${game.finishedAt ? ' 🏁' : ''}</h3>
-        ${canToggleMode
+        <span style="display:flex;align-items:center;gap:8px;"><button type="button" class="tn-me-share sm" data-game-share aria-label="${t('tnShare')}" title="${t('tnShare')}">${icon('share', { size: 12 })}</button>${canToggleMode
           ? `<button id="score-mode-toggle" class="group-count" style="cursor:pointer;border:1px solid var(--border-color);background:transparent;font-family:var(--font);">${modeLabel} ⇄</button>`
-          : comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}
+          : comp ? `<span class="group-count">${t('gsModeComp')}</span>` : byNet ? `<span class="group-count">${t('gsNet')}</span>` : ''}</span>
       </div>
       ${winnersHTML}
       <div class="player-list">
