@@ -7,6 +7,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { sharePlayerResult } from './tournament-results-page.js';
 import {
   SP_HOLES, spActive, spEntries, spPlayerGroup, spGroupList, canScoreSp,
   spPlayerCard, spPlayerStats, tnScoring, tnHigherWins, spMetricFor
@@ -238,12 +239,12 @@ function headerHTML(tn, tnId, pid, card, entry, round, may, gid) {
         </div>
       </div>
       ${flight ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.76rem;color:var(--text-secondary);">${esc(flight)}</div>` : ''}
-      ${(may || gid) ? `
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          ${may ? `<a href="#/spscore/${esc(tnId)}/${esc(pid)}" class="btn btn-primary btn-sm" style="flex:1;text-align:center;">${t('mpEnterScore')}</a>` : ''}
-          ${may && gid ? `<a href="#/spgroup/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">${t('spGroupCard')}</a>` : ''}
-          ${gid ? `<a href="#/spsheet/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;gap:5px;">🖨 ${t('scPrint')}</a>` : ''}
-        </div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        ${may ? `<a href="#/spscore/${esc(tnId)}/${esc(pid)}" class="btn btn-primary btn-sm" style="flex:1;text-align:center;">${t('mpEnterScore')}</a>` : ''}
+        ${may && gid ? `<a href="#/spgroup/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">${t('spGroupCard')}</a>` : ''}
+        ${gid ? `<a href="#/spsheet/${esc(tnId)}/${round}/${esc(gid)}" class="btn btn-outline btn-sm" style="flex:1;text-align:center;gap:5px;">🖨 ${t('scPrint')}</a>` : ''}
+        <button type="button" data-spc-share class="btn ${may ? 'btn-outline' : 'btn-primary'} btn-sm" style="flex:1;gap:5px;">📤 ${t('shMyResult')}</button>
+      </div>
       ${roundCount > 1 ? `
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
           ${Array.from({ length: roundCount }, (_, i) => `
@@ -329,6 +330,9 @@ export function renderSpPlayerCard(host, tnId, pid, ctx = {}) {
         </div>
       </div>`;
 
+    // The player's own card as a picture — «Миний үр дүн».
+    host.querySelector('[data-spc-share]')?.addEventListener('click', () =>
+      sharePlayerResult(tn, pid, { showToast: ctx.showToast, stateOf: ctx.stateOf }, { avatar: ctx.avatar || null }));
     host.querySelectorAll('button[data-spc-round]').forEach(b => b.onclick = () => {
       viewRound.set(key, Number(b.dataset.spcRound));
       paint();

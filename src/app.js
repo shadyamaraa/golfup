@@ -24,7 +24,7 @@ import {
 } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
-import { renderTnResultsPage, shareTnResults } from './tournament-results-page.js';
+import { renderTnResultsPage, shareTnResults, sharePlayerResult } from './tournament-results-page.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -503,7 +503,8 @@ export async function router() {
       const tnOnce = store.isUsingFirebase() ? null : await store.loadTournament(tnId);
       const off = renderSpPlayerCard(main(), tnId, pid, {
         user: currentUser, tn: tnOnce, metric: tnSpMetric, alive: viewAlive(),
-        backHash: `#/tournament/${tnId}`
+        backHash: `#/tournament/${tnId}`, showToast, stateOf: tnStatus,
+        avatar: currentUser?.id === pid ? myAvatarImage() : null
       });
       activeUnsubs.push(off);
     }
@@ -1033,6 +1034,15 @@ function wireTnShare(host, tn) {
   host.querySelectorAll('[data-tn-share]').forEach(b => {
     b.onclick = () => shareTnResults(tn, { showToast, stateOf: tnStatus });
   });
+  // The member's own line on the board: their own card, with their picture.
+  host.querySelectorAll('[data-tn-me-share]').forEach(b => {
+    b.onclick = () => sharePlayerResult(tn, b.dataset.tnMeShare, { showToast, stateOf: tnStatus }, { avatar: myAvatarImage() });
+  });
+}
+
+// The signed-in member's picture, when it is a picture rather than an emoji.
+function myAvatarImage() {
+  return isImageAvatar(currentUser?.avatar) ? currentUser.avatar : null;
 }
 
 function tnBrowseCardsHTML(list) {
@@ -2467,6 +2477,7 @@ function renderTnBoard() {
           <span class="tn-sc ${tnScoreClass(me.total, spPts)}">${tnScoreText(me.total, spPts)}</span>
           <span class="tn-me-thru">${t('tnThru')} ${esc(tnThruText(tn, me))}</span>
         </span>
+        ${me.pid ? `<button type="button" class="tn-me-share" data-tn-me-share="${esc(me.pid)}" aria-label="${t('shMyResult')}">${icon('share', { size: 15 })}</button>` : ''}
       </div>` : ''}
     ${tnFlightMatchesHTML(tn, spRound)}${boards.length > 1 ? `
     <div class="seg-tabs tn-div-tabs">

@@ -11,6 +11,8 @@
 //
 //   tournaments/{id}
 //     logo:     data URI — the crest, 192px longest side
+//     cover:    data URI — the share cards' background photo, 960px, jpeg
+//     hashtag:  text — the hashtag line every shared card and caption carries
 //     sponsors: [ { name, logo, link } ] — partner organisations, in order
 //     guide:    { text, image } — the удирдамж; either half may be empty
 //
@@ -32,12 +34,22 @@ const CREST_PX = 192;
 const SPONSOR_PX = 240;
 const GUIDE_PX = 1000;
 const GUIDE_MAX_CHARS = 260000;   // ~190KB decoded
+// The cover sits behind the share cards at 1080px, so a 960px jpeg is the
+// smallest that still reads as a photo there; it is the one picture members
+// never see on the page itself, so it gets no more budget than the guide.
+const COVER_PX = 960;
+const COVER_MAX_CHARS = 240000;
 
 export const MAX_SPONSORS = 12;
 
 // ---- Reading ----
 
 export const tnLogo = (tn) => (validImageData(tn?.logo) ? tn.logo : null);
+
+// The share cards' background photo and the hashtag line they carry; both
+// optional, both organiser-set on the media fold.
+export const tnCover = (tn) => (validImageData(tn?.cover) ? tn.cover : null);
+export const tnHashtag = (tn) => String(tn?.hashtag || '').trim();
 
 // RTDB hands an array back as an array while its keys stay 0..n-1, and as an
 // object once anything is removed by hand — accept both.
@@ -132,6 +144,8 @@ function draftFor(tn) {
     const g = tn.guide || {};
     d = {
       logo: tnLogo(tn),
+      cover: tnCover(tn),
+      hashtag: tnHashtag(tn),
       sponsors: tnSponsors(tn).map(s => ({ ...s, link: s.link || '' })),
       guide: { text: String(g.text || ''), image: validImageData(g.image) ? g.image : null },
       dirty: false
@@ -190,6 +204,18 @@ function sectionHTML(tn) {
           ${pickerRowHTML('logo', d.logo, { height: 40 })}
 
           <div style="margin-top:14px;">
+            <span style="${LABEL}">${t('tnCover')}</span>
+            ${pickerRowHTML('cover', d.cover, { height: 46 })}
+            <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">${t('tnCoverHint')}</div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <span style="${LABEL}">${t('tnHashtag')}</span>
+            <input data-tnm="hashtag" value="${esc(d.hashtag)}" placeholder="${t('tnHashtagHint')}"
+              style="${INPUT}width:100%;box-sizing:border-box;" />
+          </div>
+
+          <div style="margin-top:14px;">
             <span style="${LABEL}">${t('tnSponsors')} — ${d.sponsors.length}/${MAX_SPONSORS}</span>
             ${d.sponsors.map(sponsorRow).join('')}
             <button data-tnm="sp-add" class="btn btn-outline btn-sm"
@@ -217,6 +243,7 @@ function sectionHTML(tn) {
 // jpeg; the two logos are webp, which keeps their transparency.
 const READ_OPTS = {
   logo: { px: CREST_PX },
+  cover: { px: COVER_PX, mime: 'image/jpeg', quality: 0.72, maxChars: COVER_MAX_CHARS },
   sponsor: { px: SPONSOR_PX },
   guide: { px: GUIDE_PX, mime: 'image/jpeg', quality: 0.8, maxChars: GUIDE_MAX_CHARS }
 };
@@ -233,12 +260,14 @@ export function mountTnMedia(host, tn, ctx = {}) {
   const markDirty = () => { d.dirty = true; };
   const setImage = (kind, idx, value) => {
     if (kind === 'logo') d.logo = value;
+    else if (kind === 'cover') d.cover = value;
     else if (kind === 'guide') d.guide.image = value;
     else if (d.sponsors[idx]) d.sponsors[idx].logo = value;
   };
 
   host.querySelectorAll('input[data-tnm]').forEach(inp => {
     inp.oninput = () => {
+      if (inp.dataset.tnm === 'hashtag') { d.hashtag = inp.value; markDirty(); return; }
       const s = d.sponsors[Number(inp.dataset.tnmIdx)];
       if (!s) return;
       if (inp.dataset.tnm === 'sp-name') s.name = inp.value;
@@ -278,6 +307,8 @@ export function mountTnMedia(host, tn, ctx = {}) {
         // than leaving the old one behind under a falsy value.
         await store.updateTournament(tn.id, {
           logo: d.logo || null,
+          cover: d.cover || null,
+          hashtag: d.hashtag.trim() || null,
           sponsors: sponsors.length ? sponsors : null,
           guide: text || d.guide.image ? { text, ...(d.guide.image ? { image: d.guide.image } : {}) } : null
         });

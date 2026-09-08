@@ -19,10 +19,11 @@ import { t } from './i18n.js';
 import * as store from './store.js';
 import { icon } from './icons.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
-import { tnResultModel, resultScoreText, resultPointsText, resultUnder } from './tournament-results.js';
-import { tnLogo, tnSponsors } from './tournament-media.js';
+import { tnResultModel, playerShareModel, carouselPlan, resultScoreText, resultPointsText, resultUnder } from './tournament-results.js';
+import { tnLogo, tnSponsors, tnCover, tnHashtag } from './tournament-media.js';
 import { genderKey } from './gender.js';
-import { buildResultsImage } from './results-image.js';
+import { buildShareImage, buildCarousel } from './results-image.js';
+import { openShareSheet } from './share-sheet.js';
 
 const FORMAT_KEY = {
   stroke: 'fmtStroke', match: 'fmtMatch', ryder: 'fmtRyder',
@@ -292,86 +293,133 @@ const STYLE = `<style>
   .tnr-team-pts { font-size: 2.2rem; font-weight: 800; line-height: 1.1; color: #111; }
   .tnr-sponsors { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
   .tnr-sponsors img { height: 34px; max-width: 110px; object-fit: contain; }
-  .tnr-preview { margin-top: 10px; }
-  .tnr-preview img { width: 100%; max-width: 360px; border-radius: 10px; border: 1px solid var(--border-card); display: block; margin-bottom: 8px; }
   @media (max-width: 480px) { .tnr-qrbox canvas { width: 88px; height: 88px; } .tnr-qrbox .sc-url { max-width: 96px !important; } }
-  @media print { .tnr-preview { display: none !important; } }
 </style>`;
 
-// A card built on another screen (the tournament page's share button on a
-// desktop) is shown here after the navigation, so the preview has a page.
-let pendingPreview = null;
+// ---- Sharing ----
+//
+// Every card is drawn on the phone that shares it, at the moment the sheet
+// opens — nothing is rendered ahead of time or stored. The sheet shows the
+// picture, the format and option chips, and a caption; the phone's share
+// sheet does the rest (Facebook, Instagram, Messenger, Viber), or a download
+// where there is no share sheet.
 
-function showPreview(host, dataUrl, fileName, url, ctx) {
-  const box = host.querySelector('#tnr-preview');
-  if (!box) return;
-  box.innerHTML = `
-    <img src="${dataUrl}" alt="" />
-    <div class="sc-no-print">
-      <a class="btn btn-primary btn-sm" download="${esc(fileName)}" href="${dataUrl}">⬇ ${t('tnDownload')}</a>
-      <button class="btn btn-outline btn-sm" id="tnr-preview-copy">${t('copyLink')}</button>
-      <button class="btn btn-outline btn-sm" id="tnr-preview-close">✕</button>
-    </div>`;
-  box.hidden = false;
-  box.querySelector('#tnr-preview-copy')?.addEventListener('click', () => copyUrl(url, ctx.showToast, t('copied')));
-  box.querySelector('#tnr-preview-close')?.addEventListener('click', () => { box.hidden = true; box.innerHTML = ''; });
-  box.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+const BADGE_KEY = { champion: 'shBadgeChampion', lowRound: 'shBadgeLowRound', madeCut: 'shBadgeCut', eagle: 'shBadgeEagle' };
+
+// Every word on a card, translated here so the renderer stays i18n-free.
+function imageLabels(model) {
+  return {
+    results: `${t('tnResults')} · ${t('tnFinal')}`,
+    after: model?.kind === 'stroke' ? t('tnResultsAfter').replace('{n}', model.round) : `${t('tnResults')} · ${t('tnLive')}`,
+    champion: t('tnChampion'), leading: t('tnLeading'), tied: t('tnTied'), winner: t('tnWinner'),
+    strokes: t('tnStrokes').toLowerCase(), points: t('spPoints'), players: t('tnPlayers'), thru: t('tnThru'),
+    pos: t('tnPos'), total: t('tnTotal'), team: t('tnTeam'), field: t('shField'), beatShort: t('shBeatShort'),
+    byHole: t('shByHole'), bestRound: t('tnLowRound'), liveBoard: t('tnFullResults'),
+    day: t('mpDay'), matches: t('tnResultsMatches'), scan: t('scScanHint'),
+    statsTitle: t('tnStatsTitle'), lowRound: t('tnLowRound'), fieldAvg: t('tnFieldAvg'), finished: t('tnFinished'),
+    rounds: t('tnRounds'), sponsors: t('tnSponsors'),
+    division: divisionText,
+    badge: (k) => t(BADGE_KEY[k] || k),
+    beat: (n) => t('shBeat').replace('{n}', n)
+  };
 }
 
-const fileNameFor = (tn) =>
-  `${String(tn?.name || 'results').replace(/[\\/:*?"<>|]+/g, '').trim().replace(/\s+/g, '-')}-${t('tnResults')}.png`;
+// The organiser's hashtag line, or one made from the name: #UBGolf #MCup2026.
+function hashtagOf(tn) {
+  const own = tnHashtag(tn);
+  if (own) return own;
+  const slug = String(tn?.name || '').replace(/[^\p{L}\p{N}]+/gu, '');
+  return `#UBGolf${slug ? ` #${slug}` : ''}`;
+}
+
+// The background chips exist only when the tournament has a cover photo.
+function sheetOptions(tn) {
+  return tnCover(tn)
+    ? { background: { value: 'cover', values: [{ key: 'cover', label: t('shBgCover') }, { key: 'navy', label: t('shBgNavy') }] } }
+    : {};
+}
+
+function renderOpts(tn, url, model, extra = {}) {
+  return {
+    url,
+    subtitle: subtitleText(tn),
+    labels: imageLabels(model),
+    cover: tnCover(tn),
+    hashtag: hashtagOf(tn),
+    sponsors: tnSponsors(tn).map(s => ({ name: s.name, logo: s.logo })),
+    teamLogos: model?.kind === 'ryder' ? { a: model.teams.a.logo, b: model.teams.b.logo } : null,
+    ...extra
+  };
+}
+
+const fileSlug = (s) => String(s || 'ubgolf').replace(/[\\/:*?"<>|#]+/g, '').trim().replace(/\s+/g, '-');
 
 /**
- * Share the result card. ctx: { showToast, stateOf(tn) → state }; opts.host
- * is the results page's own container when the call comes from its button,
- * so a desktop's preview lands on the page that is already open.
+ * The tournament's cards — poster, story, carousel. ctx: { showToast,
+ * stateOf(tn) → state }.
  */
-export async function shareTnResults(tn, ctx = {}, opts = {}) {
+export function shareTnResults(tn, ctx = {}, opts = {}) {
   if (!tn?.id) return;
   const state = opts.state || (ctx.stateOf ? ctx.stateOf(tn) : 'final');
   const model = tnResultModel(tn, { state });
   const url = pageUrl(`#/tnresult/${tn.id}`);
-  ctx.showToast?.(t('tnShareBuilding'), 'info');
-  let img;
-  try {
-    img = await buildResultsImage(tn, model, {
-      url,
-      subtitle: subtitleText(tn),
-      labels: {
-        results: `${t('tnResults')} · ${t('tnFinal')}`,
-        after: model.kind === 'stroke' ? t('tnResultsAfter').replace('{n}', model.round) : `${t('tnResults')} · ${t('tnLive')}`,
-        champion: t('tnChampion'), leading: t('tnLeading'), tied: t('tnTied'),
-        strokes: t('tnStrokes').toLowerCase(), points: t('spPoints'), winner: t('tnWinner'),
-        day: t('mpDay'), matches: t('tnResultsMatches'), scan: t('scScanHint'),
-        division: divisionText
-      }
-    });
-  } catch (err) {
-    console.warn('[results] image failed', err);
-    ctx.showToast?.(t('tnShareFail'), 'error');
-    return;
-  }
-  const fileName = fileNameFor(tn);
   const title = `${tn.name || ''} — ${t('tnResults')}`;
-  let file = null;
-  try { file = new File([img.blob], fileName, { type: 'image/png' }); } catch (_) { file = null; }
-  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title, text: `${title}\n${url}` });
-      return;
-    } catch (err) {
-      // The person closed the sheet: nothing to do. Anything else falls
-      // through to the preview, which always works.
-      if (err?.name === 'AbortError') return;
+  const lead = model.kind === 'stroke'
+    ? model.boards.filter(b => b.leaders.length)
+      .map(b => `${b.division ? `${divisionText(b.division)}: ` : ''}${b.leaders.map(e => e.name).join(', ')} ${resultScoreText(b.leaders[0].total, model.points)}`)
+      .join(' · ')
+    : model.kind === 'ryder'
+      ? `${model.teams.a.short} ${resultPointsText(model.teams.a.points)} – ${resultPointsText(model.teams.b.points)} ${model.teams.b.short}`
+      : '';
+  const caption = [title, lead ? `${model.state === 'final' ? t('tnChampion') : t('tnLeading')}: ${lead}` : '', hashtagOf(tn), url]
+    .filter(Boolean).join('\n');
+  const hasSponsors = tnSponsors(tn).length > 0;
+  openShareSheet({
+    title,
+    kinds: [{ key: 'feed', label: t('shFeed') }, { key: 'story', label: t('shStory') }, { key: 'carousel', label: t('shCarousel') }],
+    options: sheetOptions(tn),
+    caption,
+    fileBase: `${fileSlug(tn.name)}-${fileSlug(t('tnResults'))}`,
+    showToast: ctx.showToast,
+    build: async (kind, o) => {
+      const ro = renderOpts(tn, url, model, { background: o.background });
+      if (kind === 'carousel') return buildCarousel(tn, model, carouselPlan(model, { sponsors: hasSponsors }), ro);
+      return [await buildShareImage(kind, tn, model, ro)];
     }
-  }
-  if (opts.host?.querySelector('#tnr-preview')) {
-    showPreview(opts.host, img.dataUrl, fileName, url, ctx);
-  } else {
-    pendingPreview = { tnId: tn.id, dataUrl: img.dataUrl, fileName };
-    location.hash = `#/tnresult/${tn.id}`;
-  }
-  ctx.showToast?.(t('tnShareReady'), 'success');
+  });
+}
+
+/**
+ * One player's own card — «Миний үр дүн». Anyone may share any card: the
+ * data is the public board's. opts.avatar: the member's picture, when the
+ * caller knows it is theirs.
+ */
+export function sharePlayerResult(tn, pid, ctx = {}, opts = {}) {
+  if (!tn?.id || !pid) return;
+  const state = opts.state || (ctx.stateOf ? ctx.stateOf(tn) : 'final');
+  const me = playerShareModel(tn, pid, { state });
+  if (!me) { ctx.showToast?.(t('tnShareFail'), 'error'); return; }
+  const model = tnResultModel(tn, { state });
+  const url = pageUrl(me.kind === 'stroke' ? `#/spcard/${tn.id}/${pid}` : `#/tournament/${tn.id}`);
+  const title = `${me.name} — ${tn.name || ''}`;
+  const line = me.kind === 'stroke'
+    ? `${t('tnPos')} ${me.posLabel} · ${resultScoreText(me.total, me.points)}${me.gross !== null && me.gross !== undefined ? ` (${me.gross})` : ''}`
+    : `${resultPointsText(me.record.points)} ${t('spPoints')}`;
+  const caption = [title, line, hashtagOf(tn), url].filter(Boolean).join('\n');
+  const options = {
+    ...sheetOptions(tn),
+    ...(me.kind === 'stroke' ? { hideStrokes: { value: false, label: t('shHideStrokes') } } : {})
+  };
+  openShareSheet({
+    title: t('shMyResult'),
+    kinds: [{ key: 'personal', label: t('shFeed') }, { key: 'personalStory', label: t('shStory') }],
+    options,
+    caption,
+    fileBase: `${fileSlug(me.name)}-${fileSlug(tn.name)}`,
+    showToast: ctx.showToast,
+    build: async (kind, o) => [await buildShareImage(kind, tn, me,
+      renderOpts(tn, url, model, { background: o.background, hideStrokes: o.hideStrokes, avatar: opts.avatar || null }))]
+  });
 }
 
 /**
@@ -404,7 +452,6 @@ export async function renderTnResultsPage(tnId, ctx) {
         <button class="btn btn-outline btn-sm" id="tnr-print-btn">🖨 ${t('scPrint')}</button>
         <button class="btn btn-primary btn-sm" id="tnr-share-btn" style="gap:6px;">${icon('share', { size: 14 })} ${t('tnShare')}</button>
       </div>
-      <div id="tnr-preview" class="tnr-preview" hidden></div>
       <div class="sc-sheet">
         <div class="tnr-head">
           ${logo ? `<img class="tnr-crest" src="${logo}" alt="" />` : ''}
@@ -427,11 +474,6 @@ export async function renderTnResultsPage(tnId, ctx) {
 
   host.querySelector('#tnr-print-btn')?.addEventListener('click', () => window.print());
   host.querySelector('#tnr-copy-btn')?.addEventListener('click', () => copyUrl(url, ctx.showToast, t('copied')));
-  host.querySelector('#tnr-share-btn')?.addEventListener('click', () => shareTnResults(tn, ctx, { state, host }));
+  host.querySelector('#tnr-share-btn')?.addEventListener('click', () => shareTnResults(tn, ctx, { state }));
   mountQr('tnr-qr', url);
-
-  if (pendingPreview && pendingPreview.tnId === tnId) {
-    showPreview(host, pendingPreview.dataUrl, pendingPreview.fileName, url, ctx);
-  }
-  pendingPreview = null;
 }
