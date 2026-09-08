@@ -11,6 +11,7 @@
 // the team it belongs to (spec §23).
 
 import { t } from './i18n.js';
+import { icon } from './icons.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
@@ -128,6 +129,20 @@ export function isPlayerInMatch(userId, match, roster) {
 
 // What the leading side is called on a status line: the team's short name in
 // a team tournament, the player(s) themselves in plain match play.
+// The roster entry that IS the viewer — the pid a modern roster keys by the
+// member's userId, or the older entry that carries it. Null for a spectator.
+export function viewerPid(mp, viewer) {
+  const id = viewer?.id;
+  if (!id || !mp?.roster) return null;
+  if (mp.roster[id]) return id;
+  return Object.keys(mp.roster).find(pid => mp.roster[pid]?.userId === id) || null;
+}
+
+// A small share button beside a player's line: their own «Миний үр дүн» card,
+// drawn by app.js through ctx.sharePlayer. Public data, so anyone may.
+const shareBtn = (pid, small) =>
+  `<button type="button" class="tn-me-share${small ? ' sm' : ''}" data-mpv-share="${esc(pid)}" aria-label="${t('shMyResult')}">${icon('share', { size: small ? 12 : 15 })}</button>`;
+
 function sideLabel(mp, match, k, singles) {
   if (!singles) return teamShort(mp, k);
   return playerNames(mp, match, k) || (k === 'a' ? 'A' : 'B');
@@ -259,22 +274,24 @@ function detailHTML(mp, match, singles, tnId, viewer) {
 function standingsHTML(mp) {
   const stats = playerStats(mp);
   const rows = Object.entries(stats)
-    .map(([pid, s]) => ({ name: mp.roster?.[pid]?.name || pid, ...s }))
+    .map(([pid, s]) => ({ pid, name: mp.roster?.[pid]?.name || pid, ...s }))
     .sort((x, y) => y.points - x.points || y.w - x.w || x.name.localeCompare(y.name));
   if (!rows.length) return '';
   return `
     <div class="surface-card" style="padding:14px;margin-top:12px;">
       <div style="font-size:0.8rem;font-weight:800;">${t('mpStandings')}</div>
-      <div style="display:grid;grid-template-columns:1fr repeat(2,44px) 44px;gap:2px 6px;margin-top:8px;font-size:0.8rem;">
+      <div style="display:grid;grid-template-columns:1fr repeat(2,44px) 44px 26px;gap:2px 6px;margin-top:8px;font-size:0.8rem;align-items:center;">
         <span></span>
         <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">P</span>
         <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">W-L-H</span>
         <span style="text-align:right;color:var(--text-muted);font-size:0.66rem;font-weight:700;">Pts</span>
+        <span></span>
         ${rows.map(r => `
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</span>
           <span style="text-align:center;color:var(--text-secondary);">${r.played}</span>
           <span style="text-align:center;color:var(--text-secondary);">${r.w}-${r.l}-${r.h}</span>
-          <span style="text-align:right;font-weight:700;">${pts(r.points)}</span>`).join('')}
+          <span style="text-align:right;font-weight:700;">${pts(r.points)}</span>
+          ${shareBtn(r.pid, true)}`).join('')}
       </div>
     </div>`;
 }
@@ -319,7 +336,7 @@ function statsHTML(mp) {
   const teamTable = (k) => {
     const rows = Object.entries(stats)
       .filter(([pid]) => mp.roster?.[pid]?.teamId === k)
-      .map(([pid, s]) => ({ name: mp.roster?.[pid]?.name || pid, ...s }))
+      .map(([pid, s]) => ({ pid, name: mp.roster?.[pid]?.name || pid, ...s }))
       .sort((x, y) => y.points - x.points || y.w - x.w || x.name.localeCompare(y.name));
     if (!rows.length) return '';
     return `
@@ -328,7 +345,7 @@ function statsHTML(mp) {
           ${teamMark(mp, k, 8)}
           <b style="font-size:0.78rem;">${esc(teamShort(mp, k))}</b>
         </div>
-        <div style="display:grid;grid-template-columns:1fr repeat(3,34px) 44px;gap:2px 6px;margin-top:6px;font-size:0.78rem;">
+        <div style="display:grid;grid-template-columns:1fr repeat(3,34px) 44px;gap:2px 6px;margin-top:6px;font-size:0.78rem;align-items:center;">
           <span></span>
           <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">P</span>
           <span style="text-align:center;color:var(--text-muted);font-size:0.66rem;font-weight:700;">W-L-H</span>
@@ -338,7 +355,7 @@ function statsHTML(mp) {
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</span>
             <span style="text-align:center;color:var(--text-secondary);">${r.played}</span>
             <span style="text-align:center;color:var(--text-secondary);">${r.w}-${r.l}-${r.h}</span>
-            <span></span>
+            ${shareBtn(r.pid, true)}
             <span style="text-align:right;font-weight:700;">${pts(r.points)}</span>`).join('')}
         </div>
       </div>`;
@@ -437,6 +454,32 @@ function groupsHTML(mp, tnId, viewer, singles) {
  *   refreshModal(render) — re-renders an open detail from fresh data
  * }
  */
+// ---- The viewer's own line (the stroke board's «Таны байр», for a cup) ----
+
+// A fielded member sees their record above the matches — team, played,
+// W-L-H, points — with the share button that opens their own card. Not
+// wired to a match: the cards below carry the enter-score shortcut.
+function meBannerHTML(mp, pid, singles) {
+  const r = mp.roster?.[pid];
+  if (!r) return '';
+  const s = playerStats(mp)[pid] || { played: 0, w: 0, l: 0, h: 0, points: 0 };
+  const initial = String(r.name || '?').trim().charAt(0).toUpperCase();
+  const color = !singles && r.teamId ? teamColor(mp, r.teamId) : '';
+  return `
+    <div class="tn-me-banner mpv-me">
+      <span class="tn-me-av"${color ? ` style="background:${esc(color)};"` : ''}>${esc(initial)}</span>
+      <span class="tn-me-body">
+        <span class="tn-me-cap">${t('mpYourRecord')}</span>
+        <span class="tn-me-name">${!singles && r.teamId ? `${esc(teamShort(mp, r.teamId))} · ` : ''}${esc(r.name || pid)}</span>
+      </span>
+      <span class="tn-me-score">
+        <span class="tn-sc">${pts(s.points)}</span>
+        <span class="tn-me-thru">${s.played} · ${s.w}-${s.l}-${s.h}</span>
+      </span>
+      ${shareBtn(pid, false)}
+    </div>`;
+}
+
 export function renderMatchCenter(host, tn, ctx = {}) {
   if (!host) return;
   const mp = tn?.mp;
@@ -461,12 +504,17 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   // render tests drive this with a bare {innerHTML} host.)
   const statsOpen = host.querySelector?.('details[data-mpv-stats]')?.open;
 
+  const mePid = viewerPid(mp, viewer);
+  const me = mePid ? meBannerHTML(mp, mePid, singles) : '';
+
   host.innerHTML = singles
     ? `
+      ${me}
       ${standingsHTML(mp)}
       ${groupsHTML(mp, tn?.id, viewer, true)}`
     : `
       ${scoreboardHTML(mp)}
+      ${me}
       ${groupsHTML(mp, tn?.id, viewer, false)}
       ${summaryHTML(mp)}
       ${statsHTML(mp)}`;
@@ -485,6 +533,8 @@ export function renderMatchCenter(host, tn, ctx = {}) {
       match.id
     );
   });
+
+  host.querySelectorAll('[data-mpv-share]').forEach(b => b.onclick = () => ctx.sharePlayer?.(b.dataset.mpvShare));
 
   // This runs on every repaint, so a detail left open follows the match.
   ctx.refreshModal?.((id) => {

@@ -317,7 +317,7 @@ function imageLabels(model) {
     byHole: t('shByHole'), bestRound: t('tnLowRound'), liveBoard: t('tnFullResults'),
     day: t('mpDay'), matches: t('tnResultsMatches'), scan: t('scScanHint'),
     statsTitle: t('tnStatsTitle'), lowRound: t('tnLowRound'), fieldAvg: t('tnFieldAvg'), finished: t('tnFinished'),
-    rounds: t('tnRounds'), sponsors: t('tnSponsors'),
+    rounds: t('tnRounds'), sponsors: t('tnSponsors'), live: t('tnLive'),
     division: divisionText,
     badge: (k) => t(BADGE_KEY[k] || k),
     beat: (n) => t('shBeat').replace('{n}', n)
@@ -404,7 +404,7 @@ export function sharePlayerResult(tn, pid, ctx = {}, opts = {}) {
   const title = `${me.name} — ${tn.name || ''}`;
   const line = me.kind === 'stroke'
     ? `${t('tnPos')} ${me.posLabel} · ${resultScoreText(me.total, me.points)}${me.gross !== null && me.gross !== undefined ? ` (${me.gross})` : ''}`
-    : `${resultPointsText(me.record.points)} ${t('spPoints')}`;
+    : [me.team?.short || '', `${resultPointsText(me.record.points)} ${t('spPoints')}`, `${me.record.w}-${me.record.l}-${me.record.h}`].filter(Boolean).join(' · ');
   const caption = [title, line, hashtagOf(tn), url].filter(Boolean).join('\n');
   const options = {
     ...sheetOptions(tn),

@@ -352,6 +352,30 @@ function ryderPlayerShare(tn, model, pid) {
   if (!r) return null;
   const rec = playerStats(mp)[pid] || { played: 0, w: 0, l: 0, h: 0, points: 0 };
   const team = model.teams[r.teamId] || null;
+  const other = r.teamId === 'a' ? 'b' : 'a';
+  const nameOf = (id) => mp.roster?.[id]?.name || '';
+  // The matches this player was fielded in, in session order: who they
+  // played with and against, and how it went — 'w' | 'l' | 'h' once decided,
+  // null while it runs (the result line then reads the lead).
+  const matches = [];
+  model.sessions.forEach(s => s.matches.forEach(row => {
+    const m = mp.matches?.[row.id];
+    if (!m || !(m.players?.[r.teamId] || []).includes(pid)) return;
+    const mine = row.winner === r.teamId;
+    matches.push({
+      id: row.id,
+      number: row.number,
+      day: s.day,
+      format: s.format,
+      partners: (m.players[r.teamId] || []).filter(id => id !== pid).map(nameOf).filter(Boolean),
+      opponents: (m.players[other] || []).map(nameOf).filter(Boolean),
+      state: row.state,
+      result: row.result,
+      thru: row.thru,
+      outcome: row.state !== 'COMPLETED' ? null : row.winner === null ? 'h' : mine ? 'w' : 'l',
+      leading: row.state === 'COMPLETED' ? null : row.leader === null ? null : row.leader === r.teamId
+    });
+  }));
   return {
     kind: 'ryder',
     state: model.state,
@@ -362,6 +386,7 @@ function ryderPlayerShare(tn, model, pid) {
     teams: model.teams,
     winner: model.winner,
     complete: model.complete,
+    matches,
     badges: model.complete && model.winner && model.winner === r.teamId ? ['champion'] : []
   };
 }
