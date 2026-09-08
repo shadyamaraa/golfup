@@ -1315,3 +1315,5 @@ a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
   border: 1px solid var(--gold); background: var(--bg-card); color: var(--gold-dark);
   display: flex; align-items: center; justify-content: center; padding: 0;
 }
+.tn-me-share.sm { width: 26px; height: 26px; justify-self: center; }
+.mpv-me { margin-top: 12px; margin-bottom: 0; }

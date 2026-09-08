@@ -621,8 +621,7 @@ function drawPersonal(ctx, W, H, tn, me, A, L, o, story) {
   } else if (me.kind === 'ryder') {
     tiles.push([L.points, pointsText(me.record.points), { gold: true }]);
     tiles.push(['W · L · H', `${me.record.w} · ${me.record.l} · ${me.record.h}`]);
-    tiles.push([me.teams.a.short, pointsText(me.teams.a.points)]);
-    tiles.push([me.teams.b.short, pointsText(me.teams.b.points)]);
+    tiles.push([`${me.teams.a.short} – ${me.teams.b.short}`, `${pointsText(me.teams.a.points)} – ${pointsText(me.teams.b.points)}`]);
   } else {
     tiles.push([L.points, pointsText(me.record.points), { gold: true }]);
     tiles.push(['W · L · H', `${me.record.w} · ${me.record.l} · ${me.record.h}`]);
@@ -640,6 +639,7 @@ function drawPersonal(ctx, W, H, tn, me, A, L, o, story) {
 
   // The latest round hole by hole.
   const footerY = story ? H - SAFE - 170 : H - PAD - 150;
+  if (me.kind === 'ryder' && me.matches?.length) y = matchRows(ctx, W, me, L, y, footerY - 40);
   const round = me.kind === 'stroke' ? me.rounds.at(-1) : null;
   if (round && round.holes.some(h => h.strokes !== null) && y + 40 + 2 * 96 < footerY - 40) {
     text(ctx, `R${round.round} · ${L.byHole}`.toUpperCase(), PAD, y, { size: 22, weight: 800, color: GOLD_L });
@@ -656,6 +656,32 @@ function drawPersonal(ctx, W, H, tn, me, A, L, o, story) {
     ? `${L.bestRound}: R${me.best.round} ${scoreText(me.best.toPar)}${me.beatPct !== null && me.beatPct > 0 ? ` · ${L.beat(me.beatPct)}` : ''}`
     : (me.kind === 'ryder' && me.badges.includes('champion') ? `🏆 ${L.winner}: ${me.team?.name || ''}` : '');
   footer(ctx, A, W, footerY, { url: o.url, note, hashtag: o.hashtag });
+}
+
+// A cup player's own matches, one row each: the session, who with, who
+// against, and the result — gold when it went their way. Stops before `maxY`.
+function matchRows(ctx, W, me, L, y, maxY) {
+  const rowH = 104;
+  if (y + 40 + rowH > maxY) return y;
+  text(ctx, String(L.matches || '').toUpperCase(), PAD, y, { size: 22, weight: 800, color: GOLD_L });
+  y += 40;
+  const leftW = W - PAD * 2 - 260;
+  me.matches.forEach((m, j) => {
+    if (y + rowH > maxY) return;
+    if (j % 2 === 0) { ctx.fillStyle = cream(0.05); rrect(ctx, PAD - 12, y, W - PAD * 2 + 24, rowH - 8, 10); ctx.fill(); }
+    const cap = [m.day !== null && m.day !== undefined ? `${L.day} ${m.day}` : '', m.format, m.number !== null && m.number !== undefined ? `№${m.number}` : ''].filter(Boolean).join(' · ');
+    text(ctx, cap.toUpperCase(), PAD + 4, y + 10, { size: 19, weight: 800, color: cream(0.55), max: leftW });
+    text(ctx, `vs ${m.opponents.join(' / ')}`, PAD + 4, y + 36, { size: 27, weight: 700, max: leftW });
+    if (m.partners.length) text(ctx, `+ ${m.partners.join(' / ')}`, PAD + 4, y + 70, { size: 21, weight: 600, color: cream(0.7), max: leftW });
+    const won = m.outcome === 'w' || m.leading === true;
+    const lost = m.outcome === 'l' || m.leading === false;
+    const big = m.outcome ? m.result : (m.state === 'UPCOMING' ? '–' : m.result || 'AS');
+    text(ctx, big, W - PAD - 4, y + 18, { size: 36, weight: 800, align: 'right', color: won ? GOLD_L : lost ? cream(0.6) : CREAM, max: 250 });
+    const tag = m.outcome ? m.outcome.toUpperCase() : (m.state === 'UPCOMING' ? '' : `${L.live || 'LIVE'}${m.thru ? ` · ${L.thru} ${m.thru}` : ''}`);
+    if (tag) text(ctx, tag.toUpperCase(), W - PAD - 4, y + 66, { size: 19, weight: 800, align: 'right', color: won ? GOLD_L : cream(0.6), max: 250 });
+    y += rowH;
+  });
+  return y + 12;
 }
 
 const initialsOf = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
@@ -738,7 +764,7 @@ const defaults = (labels) => ({
   division: () => '', badge: (k) => k, beat: (n) => `${n}%`, players: '', tied: '', strokes: '', points: '', thru: '',
   pos: '', total: '', field: '', beatShort: '', team: '', byHole: '', bestRound: '', liveBoard: '', matches: '', day: '',
   statsTitle: '', lowRound: '', fieldAvg: '', finished: '', rounds: '', sponsors: '', scan: '', results: '', after: '',
-  champion: '', leading: '', winner: '', ...labels
+  champion: '', leading: '', winner: '', live: '', ...labels
 });
 
 /**

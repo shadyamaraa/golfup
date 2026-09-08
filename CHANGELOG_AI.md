@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-09-08 (M Cup: a player's own card from the match center)
+
+The share kit's «Миний үр дүн» card reaches the M Cup. A fielded member
+opening the match center sees their own line above the matches — team,
+played, W-L-H, points, in the shape of the stroke board's «Таны байр» banner
+— with the share button that opens the personal sheet (feed + story, cover
+or navy). The player statistics table and plain match play's standings carry
+a small share button on every scored player's row, so anyone can share
+anyone's card, as the stroke play card page already allows. The viewer is
+found on the roster by the pid a modern roster keys by their userId, or by
+the older entry that carries it (`viewerPid`, tested). The card itself grew
+up for the cup: under the points, W-L-H and the team score it lists the
+player's own matches — session, format, partner, opponents, the result in
+gold when it went their way, the lead and the hole while one still runs
+(`playerShareModel` carries `matches`, tested). The caption reads
+`ALTAI · 1 оноо · 1-0-0`.
+
 ## 2026-09-08 (The share kit: posters, stories, every player's own card)
 
 Sharing a tournament result grows from one picture into a kit, and every

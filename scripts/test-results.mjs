@@ -358,6 +358,14 @@ test('player card: an M Cup player carries their team and record', () => {
   assert.equal(me.team.short, 'ALTAI');
   assert.deepEqual(me.record, { played: 2, w: 1, l: 0, h: 1, points: 1.5 });
   assert.deepEqual(me.badges, []);                 // not complete yet
+  // Their own matches in session order: who with, who against, how it went.
+  assert.deepEqual(me.matches.map(m => [m.id, m.day, m.format, m.partners, m.opponents, m.result, m.outcome]), [
+    ['m1', 1, 'FOURSOMES', ['Дорж'], ['Сүхээ', 'Наран'], '10 & 8', 'w'],
+    ['m2', 2, 'SINGLES', [], ['Сүхээ'], 'HALVED', 'h']
+  ]);
+  // A running match has no outcome yet, only who leads (here: not us).
+  const p2 = playerShareModel(CUP(), 'p2', { state: 'live' });
+  assert.deepEqual(p2.matches.map(m => [m.id, m.outcome, m.leading, m.thru, m.result]), [['m1', 'w', null, 10, '10 & 8'], ['m3', null, false, 3, '1 UP']]);
   assert.equal(playerShareModel(CUP(), 'nobody'), null);
 });
 

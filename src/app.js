@@ -2333,7 +2333,12 @@ function renderTnBoard() {
       // admin/marshal — gets the "enter score" shortcut on the card and in
       // the detail; the full user carries the role that decides it.
       user: currentUser || null,
-      userId: currentUser?.id || null
+      userId: currentUser?.id || null,
+      // The banner's and the stats rows' share buttons: the player's own
+      // card, with their picture only when it is their own.
+      sharePlayer: (pid) => sharePlayerResult(tn, pid, { showToast, stateOf: tnStatus }, {
+        avatar: pid === currentUser?.id || tn.mp?.roster?.[pid]?.userId === currentUser?.id ? myAvatarImage() : null
+      })
     });
     // Below the board: the notification toggle (members only — a push needs
     // an account to land on) and past match play tournaments.

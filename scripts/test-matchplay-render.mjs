@@ -13,7 +13,7 @@ globalThis.localStorage = {
   setItem(k, v) { this._v[k] = String(v); }
 };
 
-const { renderMatchCenter } = await import('../src/matchplay-view.js');
+const { renderMatchCenter, viewerPid } = await import('../src/matchplay-view.js');
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -134,6 +134,39 @@ test('an upcoming card shows its tee time instead of THRU', () => {
   const host = hostStub();
   renderMatchCenter(host, TN);
   assert.match(host.innerHTML, /Tee time 13:10/);
+});
+
+test('a fielded member gets their record banner with a share button', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN, { userId: 'p1' });
+  assert.match(host.innerHTML, /tn-me-banner/);
+  assert.match(host.innerHTML, /Your record/);
+  assert.match(host.innerHTML, /ALTAI · Margad Jambaldorj/);
+  // m1 won 3 & 2, m3 still live: one played, one won, one point.
+  assert.match(host.innerHTML, /1 · 1-0-0/);
+  assert.match(host.innerHTML, /data-mpv-share="p1"/);
+});
+
+test('an older roster that carries the userId in the record is matched too', () => {
+  const tn = { ...TN, mp: { ...TN.mp, roster: { ...TN.mp.roster, p3: { ...TN.mp.roster.p3, userId: 'u42' } } } };
+  assert.equal(viewerPid(tn.mp, { id: 'u42' }), 'p3');
+  assert.equal(viewerPid(TN.mp, { id: 'p2' }), 'p2');
+  assert.equal(viewerPid(TN.mp, { id: 'nobody' }), null);
+  assert.equal(viewerPid(TN.mp, null), null);
+  const host = hostStub();
+  renderMatchCenter(host, tn, { user: { id: 'u42' } });
+  // Halved over 18: one played, one halved, half a point.
+  assert.match(host.innerHTML, /1 · 0-0-1/);
+  assert.match(host.innerHTML, />0\.5<\/span>/);
+});
+
+test('a spectator gets no banner, but every scored player can be shared from the stats', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN);
+  assert.doesNotMatch(host.innerHTML, /tn-me-banner/);
+  // m1 (p1, p2, q1, q2) and m2 (p3, q3) are complete; m3 and m4 are not.
+  const shared = [...host.innerHTML.matchAll(/data-mpv-share="(\w+)"/g)].map(m => m[1]).sort();
+  assert.deepEqual(shared, ['p1', 'p2', 'p3', 'q1', 'q2', 'q3']);
 });
 
 test('LIVE comes before FINAL, which comes before UPCOMING', () => {
