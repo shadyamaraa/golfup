@@ -4487,15 +4487,20 @@ function gameScoreboardHTML(game) {
       </div>`;
   }
 
+  // One cell per figure. The row is a grid (.gb-row) so every cell keeps its
+  // column from row to row, and thru rides on the sub-line under the name
+  // beside the handicap: five cells and a name never fit a phone, four do.
   const figuresHTML = (r) => comp ? `
-              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
-              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netF)};">${r.netF !== null ? `F${fmtToPar(r.netF)}` : ''}</span>
-              <span style="width:48px;text-align:right;font-size:0.8rem;font-weight:800;color:${netColor(r.netB)};">${r.netB !== null ? `B${fmtToPar(r.netB)}` : ''}</span>
-              <b style="width:44px;text-align:right;font-size:1.05rem;color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.total}</b>` : `
-              <span style="width:56px;text-align:right;font-size:0.72rem;color:var(--text-secondary);">${r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F'}</span>
-              <span style="width:68px;text-align:right;font-size:0.8rem;color:var(--text-secondary);">${r.net !== null ? `${t('gsNet')} <b style="color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
-              <b style="width:38px;text-align:right;font-size:1.05rem;">${r.total}</b>
-              <span style="width:38px;text-align:right;font-size:0.8rem;font-weight:800;color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>`;
+            <span class="gb-c gb-seg" style="color:${netColor(r.netF)};">${r.netF !== null ? `F${fmtToPar(r.netF)}` : ''}</span>
+            <span class="gb-c gb-seg" style="color:${netColor(r.netB)};">${r.netB !== null ? `B${fmtToPar(r.netB)}` : ''}</span>
+            <b class="gb-c gb-tot" style="color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.total}</b>` : `
+            <span class="gb-c gb-net">${r.net !== null ? `${t('gsNet')} <b style="color:${netColor(r.netToPar)};">${r.netToPar !== null ? fmtToPar(r.netToPar) : r.net}</b>` : ''}</span>
+            <b class="gb-c gb-tot">${r.total}</b>
+            <span class="gb-c gb-seg" style="color:${r.toPar !== null && r.toPar < 0 ? 'var(--red)' : r.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'};">${r.toPar !== null ? fmtToPar(r.toPar) : ''}</span>`;
+  const subHTML = (r) => [
+    typeof r.hcp === 'number' ? `HCP ${r.hcp}` : '',
+    r.thru < holeCount ? `${t('mpThru')} ${r.thru}` : 'F',
+  ].filter(Boolean).join(' · ');
 
   // The game's creator (or an official) can flip the scoring mode mid-round —
   // groups often decide on the course that today is a competition.
@@ -4513,13 +4518,12 @@ function gameScoreboardHTML(game) {
       ${winnersHTML}
       <div class="player-list">
         ${rows.map((r, i) => `
-          <div class="player-row filled">
-            <span class="player-order">${i + 1}</span>
-            <span class="player-name">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}
-              ${typeof r.hcp === 'number' ? `<span style="font-size:0.66rem;font-weight:700;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px;">HCP ${r.hcp}</span>` : ''}
-            </span>
-            <div style="margin-left:auto;display:flex;align-items:baseline;font-variant-numeric:tabular-nums;">${figuresHTML(r)}
-            </div>
+          <div class="player-row filled gb-row ${comp ? 'gb-comp' : 'gb-normal'}">
+            <span class="gb-pos">${i + 1}</span>
+            <span class="gb-name">
+              <span class="gb-n">${esc(displayUsername(allUsersMap[r.p.id] || r.p))}</span>
+              <span class="gb-sub">${subHTML(r)}</span>
+            </span>${figuresHTML(r)}
           </div>`).join('')}
       </div>
     </div>`;
