@@ -342,7 +342,8 @@ function championBlock(ctx, W, model, L, y, { big = true, story = false } = {}) 
   const colW = (W - PAD * 2 - (cols - 1) * gap) / cols;
   const nameSize = cols === 1 ? (story ? 60 : big ? 52 : 44) : (story ? 44 : 40);
   const scoreSize = cols === 1 ? (story ? 108 : big ? 92 : 76) : (story ? 76 : 66);
-  const h = 40 + nameSize + 16 + scoreSize + 28 + (model.team ? 34 : 0);
+  const segs = (model.segments || []).filter(s => s.leaders?.length);
+  const h = 40 + nameSize + 16 + scoreSize + 28 + (model.team || segs.length ? 34 : 0);
   boards.slice(0, 2).forEach((b, i) => {
     const x = PAD + i * (colW + gap);
     panel(ctx, x, y, colW, h, { gold: model.state === 'final' });
@@ -363,9 +364,45 @@ function championBlock(ctx, W, model, L, y, { big = true, story = false } = {}) 
     text(ctx, subParts.join(' · '), x + 24 + sw + 18, yy + scoreSize - 34, { size: 24, weight: 600, color: cream(0.72), max: colW - 48 - sw - 18 });
     if (model.team && lead.memberIds?.length && lead.members) {
       text(ctx, lead.members.join(' · '), x + 24, yy + scoreSize + 6, { size: 24, weight: 600, color: cream(0.75), max: colW - 48 });
+    } else if (segs.length) {
+      // A casual competition: the nines are contests of their own.
+      text(ctx, segs.map(s => `${s.label}: ${s.leaders.join(', ')} ${scoreText(s.score)}`).join('   ·   '), x + 24, yy + scoreSize + 6, { size: 24, weight: 700, color: cream(0.8), max: colW - 48 });
     }
   });
   return y + h;
+}
+
+// A casual game's matches — match play or 2 v 2 — one row each: the two
+// sides, the result between them (gold once decided), the state beneath.
+function matchList(ctx, W, model, L, y, maxY, story) {
+  const rowH = story ? 118 : 104;
+  const sideW = (W - PAD * 2 - 280) / 2;
+  const ns = story ? 30 : 28;
+  let yy = y;
+  model.groups.forEach(g => {
+    if (g.label !== null && g.label !== undefined) {
+      if (yy + 40 > maxY) return;
+      text(ctx, String(L.division(g.label)).toUpperCase(), PAD, yy, { size: 22, weight: 800, color: GOLD_L });
+      yy += 40;
+    }
+    g.matches.forEach((m, j) => {
+      if (yy + rowH > maxY) return;
+      if (j % 2 === 0) { ctx.fillStyle = cream(0.05); rrect(ctx, PAD - 12, yy, W - PAD * 2 + 24, rowH - 8, 10); ctx.fill(); }
+      const aUp = m.winner === 'a' || (!m.finished && m.leader === 'a');
+      const bUp = m.winner === 'b' || (!m.finished && m.leader === 'b');
+      text(ctx, m.a, PAD + 4, yy + 16, { size: ns, weight: aUp ? 900 : 700, color: aUp ? GOLD_L : CREAM, max: sideW });
+      text(ctx, m.b, W - PAD - 4, yy + 16, { size: ns, weight: bUp ? 900 : 700, align: 'right', color: bUp ? GOLD_L : CREAM, max: sideW });
+      const ball = (l) => (l ? `${l.total}${l.toPar !== null && l.toPar !== undefined ? ` (${scoreText(l.toPar)})` : ''}` : '');
+      if (m.lines?.a) text(ctx, ball(m.lines.a), PAD + 4, yy + 56, { size: 20, weight: 600, color: cream(0.6), max: sideW });
+      if (m.lines?.b) text(ctx, ball(m.lines.b), W - PAD - 4, yy + 56, { size: 20, weight: 600, align: 'right', color: cream(0.6), max: sideW });
+      text(ctx, m.halved ? (L.tied || 'AS') : (m.result || 'AS'), W / 2, yy + 12, { size: 34, weight: 800, align: 'center', color: m.finished ? GOLD_L : CREAM, max: 260 });
+      const sub = m.finished ? (L.finished || '') : `${L.live || ''}${m.thru ? ` · ${L.thru} ${m.thru}` : ''}`;
+      if (sub) text(ctx, sub.toUpperCase(), W / 2, yy + 58, { size: 18, weight: 800, align: 'center', color: cream(0.55), max: 260 });
+      yy += rowH;
+    });
+    yy += 12;
+  });
+  return yy;
 }
 
 // Standings rows: one column of `rows`, or two columns by division.
@@ -485,9 +522,12 @@ function drawFeed(ctx, W, H, tn, model, A, L, o) {
       y += 224;
     }
     standingsRows(ctx, W, model.top, L, y, listEnd);
+  } else if (model.kind === 'matches') {
+    matchList(ctx, W, model, L, y, listEnd, false);
   } else {
     y = championBlock(ctx, W, model, L, y) + 26;
-    boardList(ctx, W, model, L, y, listEnd, { rows: 10 });
+    const end = boardList(ctx, W, model, L, y, listEnd, { rows: 10 });
+    if (model.note && end + 40 < listEnd) text(ctx, model.note, PAD, end + 8, { size: 22, weight: 600, color: cream(0.6), max: W - PAD * 2 });
   }
   if (hasSp) sponsorStrip(ctx, A, W, footerY - 84, L);
   rule(ctx, footerY - 26, W);
@@ -507,9 +547,12 @@ function drawStory(ctx, W, H, tn, model, A, L, o) {
     sessionRows(ctx, W, model, L, y + 28, footerY - 30);
   } else if (model.kind === 'singles') {
     standingsRows(ctx, W, model.top.slice(0, 6), L, y, footerY - 30);
+  } else if (model.kind === 'matches') {
+    matchList(ctx, W, model, L, y, footerY - 30, true);
   } else {
     y = championBlock(ctx, W, model, L, y, { big: true, story: true }) + 34;
-    boardList(ctx, W, model, L, y, footerY - 30, { rows: 6, highlightWinner: false, rowH: 74, nameSize: 36 });
+    const end = boardList(ctx, W, model, L, y, footerY - 30, { rows: 6, highlightWinner: false, rowH: 74, nameSize: 36 });
+    if (model.note && end + 40 < footerY - 30) text(ctx, model.note, PAD, end + 10, { size: 22, weight: 600, color: cream(0.6), max: W - PAD * 2 });
   }
   rule(ctx, footerY - 26, W);
   footer(ctx, A, W, footerY, { url: o.url, note: L.liveBoard, hashtag: o.hashtag });
@@ -764,7 +807,7 @@ const defaults = (labels) => ({
   division: () => '', badge: (k) => k, beat: (n) => `${n}%`, players: '', tied: '', strokes: '', points: '', thru: '',
   pos: '', total: '', field: '', beatShort: '', team: '', byHole: '', bestRound: '', liveBoard: '', matches: '', day: '',
   statsTitle: '', lowRound: '', fieldAvg: '', finished: '', rounds: '', sponsors: '', scan: '', results: '', after: '',
-  champion: '', leading: '', winner: '', live: '', ...labels
+  champion: '', leading: '', winner: '', live: '', finished: '', ...labels
 });
 
 /**

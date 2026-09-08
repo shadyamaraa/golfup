@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-09-08 (Casual games: the result shared from the board)
+
+The share kit reaches the casual game. Every result board on the game page
+— the stroke play table, the match and 2 v 2 cards, the skins and Stableford
+tables — carries a share button in its header once anyone has scored; the
+«Viber-ээр хуваалцах» button above stays what it was, the invitation that
+gets people to join. The board's sheet offers the poster (4:5), the story
+(9:16) and the result as **text** for the chat: positions, scores, handicaps,
+thru, the matches with the winner marked, the skins carry — with Viber's own
+forward, the phone's share sheet or the clipboard as the way out. The
+picture is the tournament card fed from the game: winner panel (with the
+competition's F9 · B9 leaders on their own line), the ranked rows, or the
+matches side by side with the result between them, the lead and the hole
+while one still runs; the QR opens the printable scorecard, which anyone can
+read. `gameResultModel` (`src/game-share.js`) is pure and tested across the
+formats — net-to-par ranking with ties, the competition nines, Stableford
+points across groups, skins per group with the carry, match play with a
+halved and a live match, a scramble's two-name sides with the ball.
+
 ## 2026-09-08 (M Cup: a player's own card from the match center)
 
 The share kit's «Миний үр дүн» card reaches the M Cup. A fielded member
