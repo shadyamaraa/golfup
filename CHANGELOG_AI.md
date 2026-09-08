@@ -1,5 +1,45 @@
 # CHANGELOG_AI.md
 
+## 2026-09-08 (Tournament results: the sheet, the print, the share)
+
+A tournament now has a results page — `#/tnresult/:id` — that reads the way
+a tour's does: the champion (or the leader while play is on, headed *R2-ийн
+дараах байдал*), the full table with positions and ties, R1..Rn, the total
+to par and the strokes (net beside them where handicaps exist), the cut line
+with the missed-cut rows below it, withdrawals last; then the field's numbers
+— low round per round with everyone level on it, the scoring average, the
+eagles and birdies where the course's pars are known, how many finished — and
+the tournament's sponsors. A divided tournament gets one champion and one
+table per division; a team event lists the teams with their members; an M Cup
+shows the two teams' points face to face with the winner marked, then every
+session's matches with their results; a draw of singles shows the standings.
+It is public like the board, prints on A4 through the shared print module
+with the QR link the flight cards carry, and names the PDF after the event.
+
+**Share is an image.** A 1080×1350 card — the club's logo, the crest, the
+name and dates, the champion(s) with score and strokes, the top ten (two
+columns by division), and a QR that opens the full sheet — is drawn on a
+canvas in the app (`src/results-image.js`) and handed to the phone's share
+sheet, which is where Facebook, Messenger, Instagram and Viber live. A bare
+link would only show the site's generic preview, since hash routes carry no
+Open Graph, so the picture is the post and the link rides in the text and
+the QR. Where there is no share sheet (a desktop) the card is shown with a
+download button. The share button sits on the results page and on a result
+card at the top of the tournament page's board (and under the M Cup's match
+center), which names the winner or the leader the way the Games browse row
+does.
+
+**One model for all three.** `src/tournament-results.js` is pure: it reads
+the leaderboard's own ranking (`rankByDivision`), the entries
+(`spEntries`, gross — the tournament's own reading), and the match points
+(`teamTotals`, `sessionTotals`, `playerStats`), and hands back boards with
+leaders, in-play, cut, retired and idle rows, the statistics, or the teams
+and sessions. The page, the print and the image all read it, so they cannot
+disagree with each other or with the board. Tested under node
+(`scripts/test-results.mjs`, 14 cases: positions and ties, the cut, WD, live
+vs final, divisions, Stableford, a team event, the M Cup's points, sessions
+and stray matches, a tie, singles standings, the readings).
+
 ## 2026-09-08 (The game page's result board no longer breaks on a phone)
 
 The *Онооны нэгтгэл* card on a casual game's page laid each row out as a flex

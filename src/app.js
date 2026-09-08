@@ -24,6 +24,7 @@ import {
 } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
+import { renderTnResultsPage, shareTnResults } from './tournament-results-page.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
@@ -443,7 +444,7 @@ export async function router() {
     // above it, so a live M Cup is one tap away.
     const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
       || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/')
-      || hash.startsWith('#/spsheet/');
+      || hash.startsWith('#/spsheet/') || hash.startsWith('#/tnresult/');
     if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
       renderAuth();
       return;
@@ -519,6 +520,15 @@ export async function router() {
     else if (hash.startsWith('#/tnschedule/')) await renderTnSchedulePage(hash.split('#/tnschedule/')[1], {
       main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn)
     });
+    else if (hash.startsWith('#/tnresult/')) {
+      // The results sheet — public like the board, so the link on a shared
+      // card opens for anyone. The state is the page's reading, not the
+      // sheet's, so both agree.
+      const rsId = hash.split('#/tnresult/')[1].split('/')[0];
+      await renderTnResultsPage(rsId, {
+        main, user: currentUser, showToast, onUnsub: (fn) => activeUnsubs.push(fn), stateOf: tnStatus
+      });
+    }
     else if (hash.startsWith('#/edit/')) await renderEditGame(hash.split('#/edit/')[1]);
     else if (hash.startsWith('#/game/')) await renderGameDetail(hash.split('#/game/')[1]);
     else if (hash.startsWith('#/join/')) await renderJoinGame(hash.split('#/join/')[1]);
@@ -1000,6 +1010,31 @@ function tnBrowseResultHTML(tn, state) {
 
 // A tournament in the game card's vocabulary, so the two lists read as one
 // page rather than two designs.
+// The result card on the tournament page: the browse row's own result line
+// (who won, or who leads) over two buttons — the results sheet, and the share
+// that builds the picture right here. Shown once there is a result to name,
+// or once the tournament is final; a live singles draw has neither.
+function tnResultsCardHTML(tn) {
+  const state = tnStatus(tn);
+  if (state === 'upcoming') return '';
+  const line = tnBrowseResultHTML(tn, state);
+  if (!line && state !== 'final') return '';
+  return `
+    <div class="tn-res-card">
+      ${line || `<div class="tn-br-result"><span class="tn-cap">${t('tnFinal')}</span></div>`}
+      <div class="tn-res-actions">
+        <a class="btn btn-outline btn-sm" href="#/tnresult/${esc(tn.id)}">${icon('scorecard', { size: 14 })} ${t('tnResults')}</a>
+        <button class="btn btn-primary btn-sm" data-tn-share>${icon('share', { size: 14 })} ${t('tnShare')}</button>
+      </div>
+    </div>`;
+}
+
+function wireTnShare(host, tn) {
+  host.querySelectorAll('[data-tn-share]').forEach(b => {
+    b.onclick = () => shareTnResults(tn, { showToast, stateOf: tnStatus });
+  });
+}
+
 function tnBrowseCardsHTML(list) {
   return list.map(tn => {
     const state = tnStatus(tn);
@@ -2293,6 +2328,7 @@ function renderTnBoard() {
     // Below the board: the notification toggle (members only — a push needs
     // an account to land on) and past match play tournaments.
     host.insertAdjacentHTML('beforeend', `
+      ${tnResultsCardHTML(tn)}
       ${currentUser && store.isUsingFirebase() && tn.id !== MP_DEMO_ID
         ? `<button id="tn-sub-btn" class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;"></button>` : ''}
       <button id="tn-rules-link" class="btn btn-outline btn-sm" style="width:100%;margin-top:8px;">📖 ${t('mpRulesTitle')}</button>
@@ -2305,6 +2341,7 @@ function renderTnBoard() {
       renderTnBoard();
     };
     wireTnSubscribe(tn);
+    wireTnShare(host, tn);
     paintTnHistory(tn);
     return;
   }
@@ -2410,6 +2447,7 @@ function renderTnBoard() {
 
   host.innerHTML = `
     ${ctaHTML}
+    ${tnResultsCardHTML(tn)}
     ${spPts && !tnPars(tn) ? `
       <div style="background:rgba(221,137,16,0.10);border:1px solid var(--amber);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:0.78rem;">
         ${t('spNoParsStableford')}
@@ -2456,6 +2494,7 @@ function renderTnBoard() {
         ${tnTeamRulesHTML(tn)}
       </details>` : ''}`;
 
+  wireTnShare(host, tn);
   const input = host.querySelector('#tn-q');
   input?.addEventListener('input', () => {
     tnPageQuery = input.value;

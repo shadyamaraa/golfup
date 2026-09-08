@@ -1047,6 +1047,15 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .tn-me-score .tn-sc { font-size: 1rem; }
 .tn-me-thru { font-size: 0.68rem; font-weight: 700; color: var(--text-secondary); }
 
+/* the result card: who won (or leads) over the two ways out — the sheet, the share */
+.tn-res-card {
+  padding: 12px 14px; border-radius: 16px; margin-bottom: 12px;
+  background: var(--bg-card); border: 1px solid var(--border-card); box-shadow: var(--shadow-card);
+}
+.tn-res-card .tn-br-result { margin-top: 0; }
+.tn-res-actions { display: flex; gap: 8px; margin-top: 10px; }
+.tn-res-actions .btn { flex: 1; justify-content: center; gap: 6px; text-decoration: none; }
+
 /* leaderboard table */
 .tn-lb { overflow: hidden; }
 .tn-lb-head, .tn-lb-row {
