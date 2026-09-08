@@ -1,5 +1,46 @@
 # CHANGELOG_AI.md
 
+## 2026-09-08 (The share kit: posters, stories, every player's own card)
+
+Sharing a tournament result grows from one picture into a kit, and every
+picture is drawn on the phone that shares it, at the moment the sheet opens
+— nothing rendered ahead of time, nothing stored. The Хуваалцах button (on
+the results page and on the tournament page's result card) opens a sheet
+with a live preview and three formats: the **poster** (feed 4:5, redesigned
+— the tournament's cover photo behind a navy veil when it has one, the
+champion on a gold panel, the winner's row highlighted, the sponsors' logos
+along the bottom, the QR to the live board), the **story** (9:16, laid out
+inside Instagram's safe zones, headed *Аварга* when final and *R2-ийн дараах
+байдал* while play is on), and the **carousel** (the poster, then the board
+ten rows a page per division, the statistics, the sponsors — shared as one
+set of images, which Instagram takes as a carousel and Facebook as an album).
+A caption is prefilled — name, result line, hashtag, link — and the sheet
+hands the files to the phone's share sheet, where Facebook, Instagram,
+Messenger and Viber live; where there is none (a desktop) it offers the
+download.
+
+**«Миний үр дүн».** Every player can share their own card: from the
+«Таны байр» banner on the board and from the player card page. Position,
+division and field size, to-par and strokes, "талбайн 92%-иас дээр", each
+round, birdies and eagles, the latest round hole by hole in the card's own
+ring-and-box notation, the badges the model awards — Аварга, Шилдэг тойрог,
+Cut давлаа, Eagle — and their picture when the card is their own. A
+*Цохилт нуух* chip drops the stroke counts for those who would rather not.
+An M Cup player's card carries their team, their W-L-H and points.
+
+**Organiser side.** The media fold gains a *Cover зураг* (960px jpeg) and a
+*Hashtag* line; both optional, both used only by the cards. Without a
+hashtag the cards carry `#UBGolf #<Name>`.
+
+**Model first.** `playerShareModel` (percentile, rounds with holes, badges)
+and `carouselPlan` (which pages a field yields) are pure and tested in
+`scripts/test-results.mjs`; `src/results-image.js` only draws what they say,
+and `src/share-sheet.js` only shows a picture and hands it over. The link
+preview for a pasted URL (a Cloud Function and a hosting rewrite) is a
+separate change and is not in this one.
+
+Also in this change: the feature inventory and roadmap PDF under `docs/`.
+
 ## 2026-09-08 (Tournament results: the sheet, the print, the share)
 
 A tournament now has a results page — `#/tnresult/:id` — that reads the way

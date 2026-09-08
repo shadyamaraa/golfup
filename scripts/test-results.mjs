@@ -284,3 +284,107 @@ test('readings: to-par text, points text, the under-par flag', () => {
   assert.equal(resultUnder(-1, true), false);
   assert.equal(RESULT_TOP, 10);
 });
+
+// ---- The player's own card, and the carousel's pages ----
+
+const { playerShareModel, carouselPlan, CAROUSEL_ROWS } = await import('../src/tournament-results.js');
+
+test('player card: position, percentile, rounds with holes, birdies, the badges', () => {
+  const tn = FIELD({ cutAfterRound: 1, cutSize: 3 });
+  const me = playerShareModel(tn, 'u2', { state: 'final' });
+  assert.equal(me.kind, 'stroke');
+  assert.equal(me.name, 'Болд');
+  assert.equal(me.posLabel, '1');
+  assert.equal(me.rank, 1);
+  assert.equal(me.fieldSize, 5);
+  // Cut after R1 top 3 and ties: Болд, Ганбат, Сараа stand; Дорж is cut.
+  assert.equal(me.inPlay, 3);
+  assert.equal(me.beatPct, 100);
+  assert.equal(me.total, -1);
+  assert.equal(me.gross, 143);
+  assert.equal(me.hcp, 8);
+  assert.equal(me.rounds.length, 2);
+  assert.deepEqual(me.rounds.map(r => [r.round, r.gross, r.toPar, r.complete]), [[1, 71, -1, true], [2, 72, 0, true]]);
+  assert.equal(me.rounds[0].holes.length, 18);
+  assert.deepEqual(me.rounds[0].holes[0], { hole: 1, par: 5, strokes: 3, cls: 'eagle' });
+  assert.equal(me.eagles, 1);
+  assert.ok(me.birdies > 0);
+  assert.deepEqual([me.best.round, me.best.gross, me.best.toPar], [1, 71, -1]);
+  assert.deepEqual(me.badges, ['champion', 'lowRound', 'madeCut', 'eagle']);
+  assert.equal(me.hasPars, true);
+});
+
+test('player card: a mid-field player, live, has no champion badge and a real percentile', () => {
+  const tn = FIELD();
+  const me = playerShareModel(tn, 'u3', { state: 'live' });
+  // Болд 1, Ганбат T2, Сараа T2, Дорж 4 → Сараа is ahead of Дорж only: 1 of 3 others.
+  assert.equal(me.posLabel, 'T2');
+  assert.equal(me.beatPct, 33);
+  assert.deepEqual(me.badges, ['lowRound']);     // level on R2's low round
+  assert.equal(me.state, 'live');
+  const last = playerShareModel(tn, 'u4');
+  assert.equal(last.beatPct, 0);
+  const wd = playerShareModel(tn, 'u5');
+  assert.equal(wd.posLabel, 'WD');
+  assert.equal(wd.beatPct, null);
+  assert.equal(wd.rounds.length, 1);
+  assert.equal(wd.rounds[0].complete, false);
+});
+
+test('player card: unknown pid → null; a team entry carries its members', () => {
+  assert.equal(playerShareModel(FIELD(), 'nobody'), null);
+  const tn = {
+    id: 't', name: 'Han Bogd Cup', format: 'scramble', spTeamSize: 2, course: 'sky', par: 72, rounds: 1,
+    sp: {
+      players: {
+        u1: { name: 'A' }, u2: { name: 'B' }, u3: { name: 'C' }, u4: { name: 'D' },
+        'u1+u2': { kind: 'team', name: 'A / B', members: { u1: true, u2: true } },
+        'u3+u4': { kind: 'team', name: 'C / D', members: { u3: true, u4: true } }
+      },
+      scores: { 'u1+u2': { 1: full(4) }, 'u3+u4': { 1: { ...full(4), 2: 3 } } }
+    }
+  };
+  const me = playerShareModel(tn, 'u1+u2');
+  assert.equal(me.team, true);
+  assert.deepEqual(me.members, ['A', 'B']);
+  assert.equal(me.posLabel, '2');
+  assert.equal(me.rounds[0].gross, 72);
+});
+
+test('player card: an M Cup player carries their team and record', () => {
+  const me = playerShareModel(CUP(), 'p1', { state: 'live' });
+  assert.equal(me.kind, 'ryder');
+  assert.equal(me.name, 'Бат');
+  assert.equal(me.team.short, 'ALTAI');
+  assert.deepEqual(me.record, { played: 2, w: 1, l: 0, h: 1, points: 1.5 });
+  assert.deepEqual(me.badges, []);                 // not complete yet
+  assert.equal(playerShareModel(CUP(), 'nobody'), null);
+});
+
+test('carousel: champion, the board in tens per division, stats, sponsors', () => {
+  const big = FIELD();
+  for (let i = 6; i <= 60; i++) {
+    big.sp.players[`x${i}`] = { name: `P${i}`, hcp: 10 };
+    big.sp.scores[`x${i}`] = { 1: full(4), 2: full(4) };
+  }
+  const m = tnResultModel(big);
+  assert.equal(m.boards[0].inPlay.length, 59);      // 4 + 55, the WD aside
+  const pages = carouselPlan(m, { sponsors: true });
+  assert.equal(CAROUSEL_ROWS, 10);
+  assert.equal(pages[0].type, 'champion');
+  const boards = pages.filter(p => p.type === 'board');
+  assert.equal(boards.length, 6);
+  assert.deepEqual([boards[0].from, boards[0].to, boards[5].from, boards[5].to], [1, 10, 51, 59]);
+  assert.equal(pages.at(-2).type, 'stats');
+  assert.equal(pages.at(-1).type, 'sponsors');
+  assert.equal(pages.length, 9);
+  // Two boards page separately; no scores → the champion page alone.
+  const div = FIELD({ spDivisions: 'gender' });
+  div.sp.players.u3.division = 'female';
+  const dp = carouselPlan(tnResultModel(div));
+  assert.deepEqual(dp.filter(p => p.type === 'board').map(p => p.division), ['male', 'female']);
+  const idle = FIELD(); idle.sp.scores = {};
+  assert.deepEqual(carouselPlan(tnResultModel(idle)), [{ type: 'champion' }]);
+  // An M Cup pages by session.
+  assert.deepEqual(carouselPlan(tnResultModel(CUP())).map(p => p.type), ['champion', 'session', 'session']);
+});

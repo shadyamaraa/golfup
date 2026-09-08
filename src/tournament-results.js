@@ -254,6 +254,145 @@ function singlesModel(tn, state) {
   };
 }
 
+// ---- One player's own card ----
+
+// What a player shares about themselves: where they finished among the
+// board they stand on, what they shot, and what stood out. Drawn on their
+// own phone from the same model as the results sheet, so the card can never
+// disagree with the board. Null for a pid the tournament does not know.
+export function playerShareModel(tn, pid, { state = 'final' } = {}) {
+  const model = tnResultModel(tn, { state });
+  if (model.kind === 'ryder') return ryderPlayerShare(tn, model, pid);
+  if (model.kind === 'singles') {
+    const row = model.standings.find(r => r.pid === pid);
+    if (!row) return null;
+    return {
+      kind: 'singles', state, pid, name: row.name, posLabel: row.posLabel, rank: row.rank,
+      fieldSize: model.standings.length, record: { played: row.played, w: row.w, l: row.l, h: row.h, points: row.points },
+      badges: state === 'final' && row.rank === 1 ? ['champion'] : []
+    };
+  }
+
+  const board = model.boards.find(b => b.entries.some(e => e.pid === pid));
+  if (!board) return null;
+  const me = board.entries.find(e => e.pid === pid);
+  const inPlay = board.inPlay;
+  // "Ahead of N% of the field": the share of the players still standing who
+  // finished below this one. Alone on the board there is nobody to be ahead of.
+  const below = inPlay.filter(e => e.rank > me.rank).length;
+  const beatPct = me.rank !== Infinity && inPlay.length > 1
+    ? Math.round((below / (inPlay.length - 1)) * 100)
+    : null;
+
+  const hasPars = !!tnPars(tn);
+  const rounds = [];
+  let birdies = 0;
+  let eagles = 0;
+  let best = null;
+  for (let r = 1; r <= model.rounds; r++) {
+    const card = spPlayerCard(tn, pid, r);
+    if (!card || !card.total.holesIn) continue;
+    rounds.push({
+      round: r,
+      toPar: me.rounds?.[r - 1] ?? null,
+      gross: card.total.gross,
+      holesIn: card.total.holesIn,
+      complete: card.total.holesIn >= SP_HOLES,
+      holes: card.holes.map(h => ({ hole: h.hole, par: h.par, strokes: h.strokes, cls: h.cls }))
+    });
+    card.holes.forEach(h => {
+      if (h.cls === 'birdie') birdies += 1;
+      else if (h.cls === 'eagle') eagles += 1;
+    });
+    if (card.total.holesIn >= SP_HOLES && (!best || card.total.gross < best.gross)) {
+      best = { round: r, gross: card.total.gross, toPar: card.total.toPar !== null ? card.total.toPar : card.total.gross - model.par };
+    }
+  }
+
+  const badges = [];
+  if (state === 'final' && me.rank === 1) badges.push('champion');
+  if (model.stats?.rounds.some(rr => rr.low.some(x => x.pid === pid))) badges.push('lowRound');
+  if (board.cut.length && me.rank !== Infinity) badges.push('madeCut');
+  if (hasPars && eagles > 0) badges.push('eagle');
+
+  return {
+    kind: 'stroke',
+    state,
+    pid,
+    name: me.name,
+    division: board.division,
+    posLabel: me.posLabel,
+    rank: me.rank,
+    fieldSize: board.entries.length,
+    inPlay: inPlay.length,
+    beatPct,
+    total: me.total,
+    gross: me.gross,
+    netTotal: me.netTotal,
+    hcp: me.hcp,
+    thru: me.thru,
+    status: me.status || '',
+    points: model.points,
+    team: model.team,
+    members: (me.memberIds || []).map(id => tn?.sp?.players?.[id]?.name || '').filter(Boolean),
+    rounds,
+    hasPars,
+    birdies: hasPars ? birdies : null,
+    eagles: hasPars ? eagles : null,
+    best,
+    badges,
+    round: model.round,
+    roundCount: model.rounds
+  };
+}
+
+function ryderPlayerShare(tn, model, pid) {
+  const mp = tn?.mp || {};
+  const r = mp.roster?.[pid];
+  if (!r) return null;
+  const rec = playerStats(mp)[pid] || { played: 0, w: 0, l: 0, h: 0, points: 0 };
+  const team = model.teams[r.teamId] || null;
+  return {
+    kind: 'ryder',
+    state: model.state,
+    pid,
+    name: r.name || pid,
+    team,
+    record: rec,
+    teams: model.teams,
+    winner: model.winner,
+    complete: model.complete,
+    badges: model.complete && model.winner && model.winner === r.teamId ? ['champion'] : []
+  };
+}
+
+// ---- The pages of a carousel ----
+
+// A tournament's result as a set of pictures: the champion first, then the
+// board ten rows a page (per division), the statistics, and the sponsors
+// when the caller has some. Pure so the page count is tested, not guessed.
+export const CAROUSEL_ROWS = 10;
+
+export function carouselPlan(model, { sponsors = false } = {}) {
+  const pages = [{ type: 'champion' }];
+  if (model.kind === 'stroke') {
+    model.boards.forEach(b => {
+      for (let i = 0; i < b.inPlay.length; i += CAROUSEL_ROWS) {
+        pages.push({ type: 'board', division: b.division, from: i + 1, to: Math.min(i + CAROUSEL_ROWS, b.inPlay.length) });
+      }
+    });
+    if (model.stats) pages.push({ type: 'stats' });
+  } else if (model.kind === 'ryder') {
+    model.sessions.filter(s => s.matches.length).forEach(s => pages.push({ type: 'session', id: s.id }));
+  } else if (model.kind === 'singles') {
+    for (let i = 0; i < model.standings.length; i += CAROUSEL_ROWS) {
+      pages.push({ type: 'standings', from: i + 1, to: Math.min(i + CAROUSEL_ROWS, model.standings.length) });
+    }
+  }
+  if (sponsors) pages.push({ type: 'sponsors' });
+  return pages;
+}
+
 // ---- Readings shared by every surface ----
 
 // A to-par total as golfers write it; a points total as a plain number.
