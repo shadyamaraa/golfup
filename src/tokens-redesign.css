@@ -184,6 +184,22 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 .player-row { background: var(--bg-card-hover); }
 .player-row.filled { background: var(--bg-card-hover); }
 .player-row.filled:hover { background: var(--bg-card-hover); filter: brightness(0.98); }
+/* The game page's result board: a grid so the figure cells keep their column
+   in every row and the name truncates instead of wrapping — a phone's row is
+   ~280px, and a flex line of fixed-width figures left the name 40px. */
+.player-row.gb-row {
+  display: grid; align-items: center; gap: 6px;
+  grid-template-columns: 22px minmax(0, 1fr) 44px 44px 48px;
+}
+.player-row.gb-normal { grid-template-columns: 22px minmax(0, 1fr) 60px 36px 38px; }
+.gb-pos { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); }
+.gb-name { min-width: 0; display: flex; flex-direction: column; }
+.gb-n { font-size: 0.95rem; font-weight: 500; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gb-sub { font-size: 0.68rem; font-weight: 700; line-height: 1.3; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; }
+.gb-c { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gb-seg { font-size: 0.8rem; font-weight: 800; }
+.gb-net { font-size: 0.8rem; color: var(--text-secondary); }
+.gb-tot { font-size: 1.05rem; font-weight: 800; }
 .bank-info-row { background: var(--bg-card-hover); border: 1px solid var(--border-card); }
 .skeleton-line {
   background: linear-gradient(90deg, var(--bg-card-hover) 25%, var(--border-card) 37%, var(--bg-card-hover) 63%);

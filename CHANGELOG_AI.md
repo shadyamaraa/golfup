@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-09-08 (The game page's result board no longer breaks on a phone)
+
+The *Онооны нэгтгэл* card on a casual game's page laid each row out as a flex
+line: position, name with the HCP pill, then four fixed-width figure cells —
+thru, F, B and the total in Competition mode, thru, net, gross and ± in
+Normal — 196–200px of them. A phone's row has about 280px inside its padding,
+so the name was left 40–70px: it wrapped at every space, the HCP pill broke
+over two lines, an unbreakable name pushed the figures to a different x in
+every row, and a total could land outside the card.
+
+The row is now the same shape as the tournament leaderboard's: a CSS grid
+(`.gb-row` in `tokens-redesign.css`) whose figure columns are fixed so they
+line up from row to row, a `minmax(0, 1fr)` name that truncates with an
+ellipsis rather than wrapping, and the handicap and thru on a small sub-line
+under the name — `HCP 14 · F`, `HCP 5 · Thru 12`. Moving thru off the figure
+line is what makes the width: four cells and a name fit a 390px phone with
+100px for the name, five never did. The figures themselves, their colours, the
+🏆 line, the mode toggle and the sort are unchanged; the skins, Stableford and
+match boards keep their own rows.
+
 ## 2026-09-07 (A PGA Tour-style group scorecard under both scorers)
 
 The flight scorer and the casual game scorer both gain the group card the way
