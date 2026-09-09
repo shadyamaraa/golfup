@@ -102,6 +102,18 @@ function holesBlockHTML(courses, { full = false } = {}) {
     <div class="hole-legend">${t('pubHoleLegend')}</div>`;
 }
 
+/**
+ * The «Eagle · Birdie» section — head with the year and the view-all, then
+ * the block — for any home. Empty string when nothing was recorded and
+ * `hideEmpty` is set (the member's home has no room for a placeholder).
+ */
+export function holesSectionHTML(list, { stateOf, year, href = '#/stats', hideEmpty = false } = {}) {
+  const y = year || defaultSeasonYear(list);
+  const courses = holeStats(list, { year: y, stateOf });
+  if (hideEmpty && !courses.some(c => c.eagles || c.birdies)) return '';
+  return `${sectionHead(`${t('pubHoles')} · ${y}`, href)}${holesBlockHTML(courses)}`;
+}
+
 // ---- The champions wall ----
 
 /** Rows of championsWall(), one tournament each. Shared by the landing and the statistics page. */
@@ -210,10 +222,7 @@ function paintTournamentSections(list, ctx) {
   // The season tiles and the partner logos are the statistics page's and
   // the tournament pages' — the owner keeps the home shorter; the eagles
   // and birdies, and where they fell, stay.
-  const year = defaultSeasonYear(list);
-  set('pub-holes', `
-    ${sectionHead(`${t('pubHoles')} · ${year}`, '#/stats')}
-    ${holesBlockHTML(holeStats(list, { year, stateOf }))}`);
+  set('pub-holes', holesSectionHTML(list, { stateOf }));
   set('pub-champions', `
     ${sectionHead(t('pubChampions'), '#/stats', 'star')}
     ${championsRowsHTML(championsWall(list, { stateOf }).slice(0, 5), { datesText: ctx.datesText })}`);

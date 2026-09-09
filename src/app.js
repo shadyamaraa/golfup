@@ -25,7 +25,7 @@ import {
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { renderTnResultsPage, shareTnResults, sharePlayerResult } from './tournament-results-page.js';
-import { renderPublicHome, renderClubStatsPage } from './public-home.js';
+import { renderPublicHome, renderClubStatsPage, holesSectionHTML } from './public-home.js';
 import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
@@ -1218,6 +1218,7 @@ async function renderHome() {
         <a href="#/games" class="view-all">${t('viewAllShort')}</a>
       </div>
       <div id="home-upcoming" class="games-list"></div>
+      <div id="home-holes"></div>
       <div id="home-ranking"></div>
     </div>`;
 
@@ -1239,6 +1240,7 @@ async function renderHome() {
   renderNextGameFeature(games);
   renderHomeStats(games);
   renderHomeUpcoming(games);
+  renderHomeHoles();
   renderHomeRanking();
 
   if (store.isUsingFirebase()) {
@@ -1978,6 +1980,20 @@ function rankingRowHTML(e) {
       ${pts ? `<span class="rk-pts">${esc(pts)}</span>` : ''}
       ${rankingDeltaHTML(e)}
     </div>`;
+}
+
+// The season's eagles and birdies and where they fell — the visitor home's
+// block, above the ranking on the member's home too. Reads the tournament
+// list the boot strip already loaded; nothing to show hides the section.
+async function renderHomeHoles() {
+  const host = document.getElementById('home-holes');
+  if (!host) return;
+  let list = tnListCache;
+  if (!Array.isArray(list)) {
+    try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { list = []; }
+  }
+  const html = holesSectionHTML(list, { stateOf: tnStatus, hideEmpty: true });
+  host.innerHTML = html ? `<div class="home-holes">${html}</div>` : '';
 }
 
 async function renderHomeRanking() {
