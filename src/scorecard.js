@@ -28,6 +28,10 @@ import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './
 // card (see src/scorecard-grid.js).
 import { segSum, scoreCardHTML, legendHTML } from './scorecard-grid.js';
 
+// The name on a card: the member's nickname, else their first name, else
+// the name the game stored when they joined.
+const cardName = (p, u) => u?.username || u?.firstName || p?.name || '?';
+
 function segGross(game, playerId, from, to) {
   return segSum(game?.scores?.[playerId]?.holes, from, to);
 }
@@ -36,7 +40,7 @@ function playerCardHTML(game, p, userRec) {
   const hcp = gamePlayingHcp(game, p.id, userRec);
   const line = gameScoreLine(game, p.id, hcp);
   return scoreCardHTML(game, {
-    title: userRec?.username || p.name || '?',
+    title: cardName(p, userRec),
     sub: typeof hcp === 'number'
       ? `<span style="font-size:0.7rem;color:#666;">HCP ${hcp}${line.net !== null ? ` · Net ${line.net}` : ''}</span>` : '',
     holes: game?.scores?.[p.id]?.holes || {},
@@ -50,7 +54,7 @@ function teamCardHTML(game, team, usersById, hcps) {
   const avg = teamHcp(hcps, team);
   const line = teamBallLine(game, team.id);
   return scoreCardHTML(game, {
-    title: team.players.map(p => usersById[p.id]?.username || p.name || '?').join(' + '),
+    title: team.players.map(p => cardName(p, usersById[p.id])).join(' + '),
     sub: avg === null ? '' : `<span style="font-size:0.7rem;color:#666;">HCP ${avg}</span>`,
     holes: game?.teamScores?.[team.id]?.holes || {},
     line
@@ -101,8 +105,8 @@ function matchReportHTML(game, usersById) {
   const holeCount = gameHoleCount(game);
   const team = isTeamFormat(game);
   const name = (side) => side?.players
-    ? side.players.map(p => esc(usersById[p.id]?.username || p.name || '?')).join(' + ')
-    : esc(usersById[side?.id]?.username || side?.name || '?');
+    ? side.players.map(p => esc(cardName(p, usersById[p.id]))).join(' + ')
+    : esc(cardName(side, usersById[side?.id]));
   const groups = groupsOf(game);
   const tables = groups.map((players, gi) => {
     const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
@@ -154,7 +158,7 @@ function matchReportHTML(game, usersById) {
 
 // Skins: each group's standings and the holes each player took.
 function skinsReportHTML(game, usersById) {
-  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const name = (p) => esc(cardName(p, usersById[p.id]));
   const groups = groupsOf(game);
   return groups.map((players, gi) => {
     const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
@@ -190,7 +194,7 @@ function skinsReportHTML(game, usersById) {
 // beside them so the card can be checked against the paper one.
 function stablefordReportHTML(game, usersById) {
   const holeCount = gameHoleCount(game);
-  const name = (p) => esc(usersById[p.id]?.username || p.name || '?');
+  const name = (p) => esc(cardName(p, usersById[p.id]));
   const groups = groupsOf(game);
   return groups.map((players, gi) => {
     const hcps = Object.fromEntries(players.map(p => [p.id, gamePlayingHcp(game, p.id, usersById[p.id])]));
@@ -258,7 +262,7 @@ function reportsHTML(game, players, usersById) {
     const len = to - from + 1;
     const u = usersById[p.id];
     return {
-      name: u?.username || p.name || '?', gross, thru, len, hcp: hcpPart,
+      name: cardName(p, u), gross, thru, len, hcp: hcpPart,
       net: thru === len && typeof hcpPart === 'number' ? gross - hcpPart : null,
     };
   };

@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Casual scorecard: nickname, else first name)
+
+The printable scorecard of a casual game (`#/scorecard/:id`) names each
+player by their nickname and, when they have none, by their first name —
+the stored join-time name only as the last resort. One `cardName` rule in
+`src/scorecard.js` serves the player cards, the team cards, the match
+lines, the skins and Stableford tables and the contest tables.
+
 ## 2026-09-09 (Members' home: the eagles and birdies, above the ranking)
 
 The «Eagle · Birdie» block the visitor sees — the season's totals, the
