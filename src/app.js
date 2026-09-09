@@ -25,6 +25,7 @@ import {
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
 import { renderTnResultsPage, shareTnResults, sharePlayerResult } from './tournament-results-page.js';
+import { renderPublicHome, renderClubStatsPage } from './public-home.js';
 import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
@@ -438,20 +439,32 @@ export async function router() {
     }
     clearActiveListeners();
 
-    // A tournament board is a public scoreboard (spec §1: a viewer opens UB
-    // Golf and just sees it), so it renders without an account. Everything
-    // else — games, orders, the scorer screen — still requires signing in.
-    // Guests landing on home get the sign-in card with the tournament strip
-    // above it, so a live M Cup is one tap away.
-    const guestOk = hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
+    // What a visitor sees without an account: the public home, the
+    // tournaments and their boards, results sheets, scorecards, start
+    // lists, the ranking, the statistics, and the sign-in page itself.
+    // Everything else — games, orders, the scorer screens — sends them to
+    // sign in, and remembers where they were so sign-in brings them back.
+    const guestOk = hash === '#/' || hash === '#/home' || hash === '#/login'
+      || hash === '#/tournaments' || hash === '#/ranking' || hash === '#/stats'
+      || hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
       || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/')
-      || hash.startsWith('#/spsheet/') || hash.startsWith('#/tnresult/');
-    if (!currentUser && !guestOk && !hash.startsWith('#/join/') && hash !== '#/kitchen' && hash !== '#/styleguide') {
-      renderAuth();
-      return;
+      || hash.startsWith('#/spsheet/') || hash.startsWith('#/tnresult/')
+      || hash.startsWith('#/join/') || hash === '#/kitchen' || hash === '#/styleguide';
+    if (!currentUser) {
+      if (hash !== '#/login') pendingAuthRedirect = hash;
+      if (!guestOk) { location.hash = '#/login'; return; }
     }
 
-    if (hash === '#/' || hash === '#/home') await renderHome();
+    if (hash === '#/login') {
+      if (currentUser) { location.hash = '#/'; return; }
+      renderAuth();
+    }
+    else if (hash === '#/' || hash === '#/home') {
+      if (currentUser) await renderHome();
+      else await renderPublicHome(publicCtx());
+    }
+    else if (hash === '#/tournaments') await renderTournamentsPage();
+    else if (hash === '#/stats') await renderClubStatsPage(publicCtx());
     else if (hash === '#/profile') await renderProfile();
     else if (hash === '#/profile/edit') await renderProfileEdit();
     else if (hash === '#/games') await renderGames();
@@ -577,23 +590,37 @@ function updateHeader() {
     userInfo.classList.add('hidden');
     if (adminLink) adminLink.classList.add('hidden');
   }
-  // Guests on a public page (a tournament board, a scorecard or a start
-  // list opened from a QR) get a way into the app; on the auth screen
-  // itself the button would only point at the page they are already on.
+  // A visitor gets a way in from every public page; on the sign-in page
+  // itself the button would only point at where they already are.
   const guestLogin = document.getElementById('guest-login');
   if (guestLogin) {
     guestLogin.textContent = t('guestLogin');
     const h = location.hash || '#/';
-    guestLogin.classList.toggle('hidden',
-      !!currentUser || !(h.startsWith('#/tournament/') || h.startsWith('#/scorecard/')
-        || h.startsWith('#/tnschedule/') || h.startsWith('#/spcard/')));
+    guestLogin.classList.toggle('hidden', !!currentUser || isKiosk || h === '#/login' || h === '#/kitchen');
   }
 }
 
 function updateBottomNav(hash) {
+  // The visitor's nav — Нүүр · Тэмцээн · Ранк · Нэвтрэх — is its own
+  // element, so the member's stays exactly as it is.
+  const guest = document.getElementById('guest-nav');
+  if (guest) {
+    const gHide = isKiosk || !!currentUser || hash === '#/kitchen';
+    guest.classList.toggle('hidden', gHide);
+    if (!gHide) {
+      const gl = { 'bng-home': 'navHome', 'bng-tn': 'navTournaments', 'bng-rank': 'navRanking', 'bng-login': 'guestLogin' };
+      Object.entries(gl).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t(key); });
+      const gActive = (hash === '#/' || hash === '#/home' || hash === '#/stats') ? 'home'
+        : (hash === '#/tournaments' || /^#\/(tournament|tnresult|tnschedule|spcard|spsheet)\//.test(hash)) ? 'tn'
+        : hash === '#/ranking' ? 'rank'
+        : hash === '#/login' ? 'login'
+        : '';
+      guest.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === gActive));
+    }
+  }
   const nav = document.getElementById('bottom-nav');
   if (!nav) return;
-  // Hidden in kiosk, on the auth screen, and on the kitchen display.
+  // Hidden in kiosk, for a visitor (who has the nav above), and on the kitchen display.
   const hide = isKiosk || !currentUser || hash === '#/kitchen';
   nav.classList.toggle('hidden', hide);
   if (hide) return;
@@ -836,7 +863,7 @@ function renderAuth() {
       store.ensureDeviceAccess(user);
       initFCM(user);
       showToast(t('welcome') + ' ' + user.name + '!', 'success');
-      location.hash = pendingAuthRedirect || '#/';
+      location.hash = pendingAuthRedirect && pendingAuthRedirect !== '#/login' ? pendingAuthRedirect : '#/';
       pendingAuthRedirect = null;
       router();
       if (needsProfileCompletion(user)) {
@@ -1108,16 +1135,10 @@ function tournamentsBrowserHTML() {
 // history and archive divided by the same seven days the games use, so the two
 // browsers age at one rate. homeHidden is NOT filtered: its whole promise is
 // that the tournament stays reachable away from home, and this list is that.
-function renderTournamentsBrowse(list) {
-  const activeEl = document.getElementById('tn-active-list');
-  if (!activeEl) return;
-  if (list) tnBrowseCache = list;
-  const all = tnBrowseCache;
-
-  const now = Date.now();
+function tnBrowseBuckets(all, now = Date.now()) {
   const endMs = (tn) => tnDayMs(tn.endDate || tn.startDate) || 0;
   const active = [], past = [], archived = [];
-  all.forEach(tn => {
+  (Array.isArray(all) ? all : []).forEach(tn => {
     if (tnStatus(tn) !== 'final') active.push(tn);
     else if (now - endMs(tn) <= ARCHIVE_AFTER_MS) past.push(tn);
     else archived.push(tn);
@@ -1131,6 +1152,14 @@ function renderTournamentsBrowse(list) {
   const newestFirst = (a, b) => endMs(b) - endMs(a);
   past.sort(newestFirst);
   archived.sort(newestFirst);
+  return { active, past, archived };
+}
+
+function renderTournamentsBrowse(list) {
+  const activeEl = document.getElementById('tn-active-list');
+  if (!activeEl) return;
+  if (list) tnBrowseCache = list;
+  const { active, past, archived } = tnBrowseBuckets(tnBrowseCache);
 
   activeEl.innerHTML = active.length
     ? tnBrowseCardsHTML(active)
@@ -1328,7 +1357,7 @@ async function renderGlobalSponsor(data) {
 function updateGlobalSponsorVisibility(hash) {
   const host = document.getElementById('global-sponsor');
   if (!host) return;
-  const hide = isKiosk || !currentUser || hash === '#/kitchen' || host.dataset.has !== '1';
+  const hide = isKiosk || hash === '#/kitchen' || hash === '#/login' || host.dataset.has !== '1';
   host.classList.toggle('hidden', hide);
 }
 
@@ -2735,16 +2764,40 @@ async function renderGames() {
     });
   });
 
-  if (tn) {
-    let list = [];
-    try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { }
-    renderTournamentsBrowse(list);
-    wireTournamentsBrowser();
-    return;
-  }
+  if (tn) { await mountTournamentsBrowser(); return; }
   const games = await store.loadAllGames();
   renderGamesHome(games);
   wireGamesBrowser();
+}
+
+async function mountTournamentsBrowser() {
+  let list = [];
+  try { list = await store.loadTournaments(); tnListCache = list; } catch (_) { }
+  renderTournamentsBrowse(list);
+  wireTournamentsBrowser();
+}
+
+// ---- Tournaments (#/tournaments) — the browser on a page of its own, open to visitors ----
+async function renderTournamentsPage() {
+  main().innerHTML = `
+    <div class="home-container fade-in">
+      <div class="page-head" style="align-items:center;">
+        <h2 class="page-title">${t('browseTournaments')}</h2>
+      </div>
+      ${tournamentsBrowserHTML()}
+    </div>`;
+  await mountTournamentsBrowser();
+}
+
+// What the public pages borrow from here: the app's state reading, the
+// boot-time tournament list, the browse cards and buckets, and the home's
+// own news and ranking renderers.
+function publicCtx() {
+  return {
+    main, showToast, alive: viewAlive(), onUnsub: (fn) => activeUnsubs.push(fn), stateOf: tnStatus,
+    tournaments: () => tnListCache, tnCards: tnBrowseCardsHTML, buckets: tnBrowseBuckets,
+    newsInto: renderHomeNews, rankingInto: renderHomeRanking, datesText: tnDatesText
+  };
 }
 
 // ---- Services hub (#/services) ----
