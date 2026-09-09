@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Link previews: no logo picture, as before)
+
+A game invitation pasted into Viber had started showing a big logo card:
+yesterday's landing change pointed the shell's Open Graph image at
+`UBGolf_main_logo.png`, a leftover of the earlier purple brand. The owner
+wants the invitation as it was — the text and the link, no picture — so
+`og:image` is back on the blank `no-preview.png`; the title and
+description («UB Golf Club», the club line) stay. Messengers cache
+previews per link, so an already-shared link may keep the picture for a
+while; new links come clean.
+
 ## 2026-09-09 (Landing: the season block and the partner logos come off the home; where the eagles and birdies fell)
 
 The visitor's home loses two blocks the owner did not want there: the
