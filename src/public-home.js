@@ -14,7 +14,6 @@ import { t, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import * as store from './store.js';
 import { setPageTitle } from './print-common.js';
-import { tnSponsors, tnSponsorsHTML } from './tournament-media.js';
 import { resultScoreText, resultPointsText } from './tournament-results.js';
 import { genderKey } from './gender.js';
 import { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear } from './club-stats.js';
@@ -169,14 +168,11 @@ function paintTournamentSections(list, ctx) {
   set('pub-results', results.length ? `
     ${sectionHead(t('pubRecentResults'), '#/tournaments', 'scorecard')}
     <div class="games-list">${ctx.tnCards(results)}</div>` : '');
-  set('pub-season', `
-    ${sectionHead(`${t('pubSeasonStats')} · ${defaultSeasonYear(list)}`, '#/stats')}
-    ${seasonTilesHTML(seasonStats(list, { stateOf }))}`);
+  // The season tiles and the partner logos are the statistics page's and
+  // the tournament pages' — the owner keeps the home shorter.
   set('pub-champions', `
     ${sectionHead(t('pubChampions'), '#/stats', 'star')}
     ${championsRowsHTML(championsWall(list, { stateOf }).slice(0, 5), { datesText: ctx.datesText })}`);
-  const sponsored = [...active, ...past, ...archived].find(tn => tnSponsors(tn).length);
-  set('pub-sponsors', sponsored ? `${sectionHead(t('tnSponsors'))}${tnSponsorsHTML(sponsored)}` : '');
 }
 
 /**
@@ -193,12 +189,10 @@ export async function renderPublicHome(ctx = {}) {
       <div id="pub-hero"></div>
       <div id="pub-active"></div>
       <div id="pub-results"></div>
-      <div id="pub-season"></div>
       <div id="pub-champions"></div>
       <div id="home-ranking"></div>
       <div id="pub-casual"></div>
       <div id="home-news" style="margin-top:24px;"></div>
-      <div id="pub-sponsors"></div>
     </div>`;
   const alive = ctx.alive || (() => true);
 

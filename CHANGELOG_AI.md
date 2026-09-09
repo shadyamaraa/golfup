@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Landing: the season block and the partner logos come off the home)
+
+The visitor's home loses two blocks the owner did not want there: the
+«Улирлын тоо баримт» tiles and the tournament partner-logo strip at the
+bottom (which also printed its heading twice). The season numbers stay on
+`#/stats`, where the champions' view-all still leads; the partner logos
+stay on each tournament's own page.
+
 ## 2026-09-09 (ubgolf.club opens to visitors: a public home, tournaments and statistics)
 
 A visitor who opens ubgolf.club no longer meets the sign-in card. The root
