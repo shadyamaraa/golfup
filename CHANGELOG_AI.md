@@ -1,12 +1,19 @@
 # CHANGELOG_AI.md
 
-## 2026-09-09 (Casual scorecard: nickname, else first name)
+## 2026-09-09 (Casual scoring and scorecard: nickname, else first name — and two Margads told apart)
 
-The printable scorecard of a casual game (`#/scorecard/:id`) names each
-player by their nickname and, when they have none, by their first name —
-the stored join-time name only as the last resort. One `cardName` rule in
-`src/scorecard.js` serves the player cards, the team cards, the match
-lines, the skins and Stableford tables and the contest tables.
+The casual scoring screen (`#/gscore`) and the printable scorecard
+(`#/scorecard/:id`) name each player by their nickname and, when they have
+none, by their first name — the stored join-time name only as the last
+resort. On the scoring screen two players in one group who would read the
+same get their last-name initial (Margad Ж. / Margad Б.), and the full
+name when even that matches: two Margads marking each other's ball by
+mistake is what prompted this. `groupNameLabels` in `src/game-score.js` is
+pure and tested; every row, panel, result table and grid on the screen
+reads the same label. `cardName` in `src/scorecard.js` applies the
+nickname rule on paper. So the mark is never cut off, a scoring row's name
+may now wrap to a second line and the HCP chip sits under it instead of
+beside it — a phone showed "Марга…" with the initial gone.
 
 ## 2026-09-09 (Members' home: the eagles and birdies, above the ranking)
 
