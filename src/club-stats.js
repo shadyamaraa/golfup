@@ -9,7 +9,7 @@
 // low round). The casual-game activity carries counts, never a member.
 
 import { tnResultModel } from './tournament-results.js';
-import { spActive, isTeamEntry, teamMemberIds, tnScoring, tnIsTeam } from './strokeplay.js';
+import { spActive, isTeamEntry, teamMemberIds, tnScoring, tnIsTeam, tnPars, spPlayerCard, courseByKey, SP_HOLES } from './strokeplay.js';
 import { nameKey } from './tournament-sheet.js';
 import { tnKind } from './matchplay.js';
 import { tnLogo } from './tournament-media.js';
@@ -180,6 +180,51 @@ export function championsWall(tns, { now = Date.now(), stateOf } = {}) {
     }
   });
   return rows.sort((x, y) => endMs(y) - endMs(x) || String(y.id).localeCompare(String(x.id)));
+}
+
+/**
+ * Where the eagles and birdies fell: per course played this season, every
+ * hole with its par and how many eagles and birdies the field made there,
+ * over every card with a hole on it. Courses with the most cards first;
+ * `best` is the hole with the most birdies (the lowest number on a tie).
+ * Only tournaments scored in-app on a course whose pars are known count.
+ */
+export function holeStats(tns, { year, now = Date.now(), stateOf } = {}) {
+  const all = liveList(tns);
+  const y = year || defaultSeasonYear(all, now);
+  const byCourse = new Map();
+  all.forEach(tn => {
+    if (tnYear(tn) !== y || tnKind(tn) !== 'stroke' || !spActive(tn)) return;
+    const pars = tnPars(tn);
+    if (!pars) return;
+    const rec = courseByKey(tn.course || tn.venue);
+    const key = String(rec?.key || rec?.id || tn.course || tn.venue || '?');
+    if (!byCourse.has(key)) {
+      byCourse.set(key, {
+        course: key, name: rec?.name || tn.venue || tn.course || key, cards: 0, eagles: 0, birdies: 0,
+        holes: Array.from({ length: SP_HOLES }, (_, i) => ({ hole: i + 1, par: Number(pars[i + 1]) || null, eagles: 0, birdies: 0 }))
+      });
+    }
+    const c = byCourse.get(key);
+    const rounds = Math.max(1, Number(tn.rounds) || 1);
+    Object.keys(tn.sp.players || {}).forEach(pid => {
+      for (let r = 1; r <= rounds; r++) {
+        const card = spPlayerCard(tn, pid, r);
+        if (!card || !card.total.holesIn) continue;
+        c.cards += 1;
+        card.holes.forEach(h => {
+          if (h.cls === 'eagle') { c.holes[h.hole - 1].eagles += 1; c.eagles += 1; }
+          else if (h.cls === 'birdie') { c.holes[h.hole - 1].birdies += 1; c.birdies += 1; }
+        });
+      }
+    });
+  });
+  return [...byCourse.values()]
+    .sort((a, b) => b.cards - a.cards || a.name.localeCompare(b.name))
+    .map(c => {
+      const best = c.holes.reduce((m, h) => (h.birdies + h.eagles > (m ? m.birdies + m.eagles : 0) ? h : m), null);
+      return { ...c, best: best && best.birdies + best.eagles > 0 ? best : null };
+    });
 }
 
 const arr = (v) => (!v ? [] : Array.isArray(v) ? v : Object.values(v));
