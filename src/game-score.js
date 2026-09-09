@@ -234,10 +234,46 @@ function hcpChipLabel(game, pid, userRec) {
   return `HCP ${hcp}`;
 }
 
-// First name only — the row also carries the running score, HCP chip, and
-// stepper, so the full "Овог Нэр" doesn't fit on a phone.
+// The name on a scoring row: the member's nickname, else their first name,
+// else the name the game stored — the row also carries the running score,
+// the HCP chip and the stepper, so a full "Овог Нэр" would not fit.
+const baseName = (p, u) => u?.username || u?.firstName || p?.name || '?';
+
+// Two players in one group who would read the same — two Margads — each
+// get their last-name initial (Margad Ж. / Margad Б.), and the full stored
+// name when even that matches. Anyone marking the other's ball by mistake
+// is exactly what the scoring screen has to prevent. Pure; tested.
+export function groupNameLabels(players, usersById) {
+  const list = (players || []).filter(p => p && p.id);
+  const base = new Map(list.map(p => [p.id, baseName(p, usersById?.[p.id])]));
+  const dup = (m) => { const c = {}; m.forEach(v => { c[v] = (c[v] || 0) + 1; }); return c; };
+  const c1 = dup(base);
+  const out = new Map();
+  list.forEach(p => {
+    const b = base.get(p.id);
+    if (c1[b] < 2) { out.set(p.id, b); return; }
+    const u = usersById?.[p.id];
+    const last = String(u?.lastName || '').trim()
+      || String(u?.fullName || p.name || '').trim().split(/\s+/).find(w => w && w.toLowerCase() !== b.toLowerCase()) || '';
+    out.set(p.id, last ? `${b} ${last.charAt(0).toUpperCase()}.` : b);
+  });
+  const c2 = dup(out);
+  list.forEach(p => {
+    const v = out.get(p.id);
+    if (c2[v] > 1) {
+      const u = usersById?.[p.id];
+      const full = String(u?.fullName || [u?.lastName, u?.firstName].filter(Boolean).join(' ') || p.name || '').trim();
+      if (full && full !== v) out.set(p.id, full);
+    }
+  });
+  return out;
+}
+
+// The labels of the group on screen; set by the scorer before each paint so
+// every row, panel and grid reads the same disambiguated name.
+let groupLabels = new Map();
 function shortName(p, userRec) {
-  return userRec?.firstName || p.name || '?';
+  return groupLabels.get(p?.id) || baseName(p, userRec);
 }
 
 // A match side's name: a player's first name, or a team's two partners joined.
@@ -292,12 +328,14 @@ function playerRowHTML(game, p, hole, editable, userRec) {
     <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(shortName(p, userRec))}</span>
+          <span style="font-weight:700;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.15;">${esc(shortName(p, userRec))}</span>
           <b data-gs-run="${esc(p.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
-          ${hcpChip}
         </div>
-        <div data-gs-tot="${esc(p.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
-          ${totalsLineText(game, p.id, hcp)}
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;">
+          ${hcpChip}
+          <div data-gs-tot="${esc(p.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
+            ${totalsLineText(game, p.id, hcp)}
+          </div>
         </div>
       </div>
       ${editable ? stepBtn('minus', '−', strokes === null) : ''}
@@ -1010,6 +1048,7 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       return;
     }
     const players = groupsOf(data)[groupIdx] || [];
+    groupLabels = groupNameLabels(players, usersById);
     // The screen is for entering scores: a viewer who may not mark anyone in
     // this group reads the game page's summary instead.
     if (!players.some(p => canScoreGamePlayer(ctx.user, data, p.id))) {
