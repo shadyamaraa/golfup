@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Landing: the season block and the partner logos come off the home; where the eagles and birdies fell)
+
+The visitor's home loses two blocks the owner did not want there: the
+«Улирлын тоо баримт» tiles and the tournament partner-logo strip at the
+bottom (which also printed its heading twice). The season numbers stay on
+`#/stats`, where the champions' view-all still leads; the partner logos
+stay on each tournament's own page.
+
+What stays, and grows, is the eagles and birdies: an «Eagle · Birdie»
+block on the home and on `#/stats` with the season's totals, the best hole,
+and — new — where they fell: per course played, the eighteen holes with
+their par and how many birdies (and eagles, as an E badge) the field made
+on each, the cells warmer the more a hole gave. The home shows the course
+with the most cards; the statistics page shows every course for the chosen
+year. `holeStats` in `src/club-stats.js` is pure and tested (from
+`spPlayerCard`'s hole classes over every card with a hole on it).
+
 ## 2026-09-09 (ubgolf.club opens to visitors: a public home, tournaments and statistics)
 
 A visitor who opens ubgolf.club no longer meets the sign-in card. The root

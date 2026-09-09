@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem(k) { delete this._v[k]; }
 };
 
-const { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear, tnYear, tnState } =
+const { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear, tnYear, tnState, holeStats } =
   await import('../src/club-stats.js');
 const { SP_HOLES } = await import('../src/strokeplay.js');
 
@@ -175,6 +175,27 @@ test('champions: a live tournament is not a champion yet, and the app\'s own sta
   const live = FIELD({ id: 'live', startDate: '2026-09-09', endDate: '2026-09-10' });
   assert.equal(championsWall([live], { now: NOW }).length, 0);
   assert.equal(championsWall([live], { now: NOW, stateOf: () => 'final' }).length, 1);
+});
+
+test('holes: where the eagles and birdies fell, per course and hole', () => {
+  // Sky's par-5s are 1, 5, 12 and 18: a card of 4s birdies all four; Болд's 3
+  // on the 1st in R1 is the one eagle. Дорж's 5s and the WD's nine 5s make none.
+  const [sky, ...rest] = holeStats([FIELD()], { now: NOW });
+  assert.equal(rest.length, 0);
+  assert.equal(sky.course, 'sky');
+  assert.match(sky.name, /Sky/);
+  assert.equal(sky.cards, 9);                 // 4 × 2 rounds + the WD's partial R1
+  assert.deepEqual([sky.eagles, sky.birdies], [1, 23]);
+  const h = (n) => sky.holes[n - 1];
+  assert.deepEqual([h(1).par, h(1).eagles, h(1).birdies], [5, 1, 5]);
+  assert.deepEqual([h(5).eagles, h(5).birdies, h(12).birdies, h(18).birdies], [0, 6, 6, 6]);
+  assert.deepEqual([h(2).eagles, h(2).birdies], [0, 0]);
+  assert.equal(sky.best.hole, 1);            // 1 + 5 = 6 on the 1st, level with 5/12/18 — the lowest number wins
+  // The season set: both 2026 copies of the field land on the same course; next
+  // year's, the legacy snapshot, the deleted and the unscored one add nothing.
+  const [s] = holeStats(SET(), { now: NOW });
+  assert.deepEqual([s.eagles, s.birdies, s.cards], [2, 46, 18]);
+  assert.equal(holeStats(SET(), { year: 2025, now: NOW }).length, 0);
 });
 
 const P = (id) => ({ id, name: id });

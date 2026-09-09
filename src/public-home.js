@@ -14,10 +14,9 @@ import { t, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import * as store from './store.js';
 import { setPageTitle } from './print-common.js';
-import { tnSponsors, tnSponsorsHTML } from './tournament-media.js';
 import { resultScoreText, resultPointsText } from './tournament-results.js';
 import { genderKey } from './gender.js';
-import { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear } from './club-stats.js';
+import { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear, holeStats } from './club-stats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -62,6 +61,45 @@ function seasonTilesHTML(s, { full = false } = {}) {
     ? `<a class="pub-line" href="#/tnresult/${esc(s.lowRound.tnId)}">${icon('scorecard', { size: 14 })} ${t('tnLowRound')}: ${esc(s.lowRound.name)} — ${s.lowRound.gross} (${resultScoreText(s.lowRound.toPar)}) · R${s.lowRound.round} · ${esc(s.lowRound.tnName)}</a>`
     : '';
   return `<div class="stat-grid">${tiles.join('')}</div>${formats}${low}`;
+}
+
+// ---- Where the eagles and birdies fell ----
+
+function holeGridHTML(c) {
+  const max = Math.max(1, ...c.holes.map(h => h.birdies + h.eagles));
+  return `
+    <div class="hole-grid">${c.holes.map(h => {
+      const n = h.birdies + h.eagles;
+      const heat = n ? (0.12 + 0.55 * (n / max)).toFixed(2) : 0;
+      return `
+      <span class="hg-cell${n ? ' has' : ''}" style="${n ? `background:rgba(221,137,16,${heat});` : ''}">
+        <span class="hg-h">${h.hole}${h.par ? `<i>·${h.par}</i>` : ''}</span>
+        <span class="hg-b">${h.birdies || '–'}</span>
+        ${h.eagles ? `<span class="hg-e">E${h.eagles > 1 ? `×${h.eagles}` : ''}</span>` : ''}
+      </span>`;
+    }).join('')}
+    </div>`;
+}
+
+function holesBlockHTML(courses, { full = false } = {}) {
+  if (!courses.length || !courses.some(c => c.eagles || c.birdies)) return `<p class="pub-empty">${t('pubHoleNone')}</p>`;
+  const eagles = courses.reduce((n, c) => n + c.eagles, 0);
+  const birdies = courses.reduce((n, c) => n + c.birdies, 0);
+  const shown = full ? courses : courses.slice(0, 1);
+  const top = courses.flatMap(c => c.best ? [{ ...c.best, course: c.name }] : []).sort((a, b) => (b.birdies + b.eagles) - (a.birdies + a.eagles))[0];
+  return `
+    <div class="stat-row">
+      ${tile('Eagle', eagles, { navy: true })}
+      ${tile('Birdie', birdies, { navy: true })}
+      ${top ? tile(t('statBestHole'), `${top.hole}`, { sub: `${esc(top.course)} · ${top.birdies}${top.eagles ? ` + E${top.eagles}` : ''}` }) : ''}
+    </div>
+    ${shown.map(c => `
+    <div class="hole-course">
+      <span class="hole-course-name">${esc(c.name)}</span>
+      <span class="hole-course-sub">${c.cards} ${t('statCards').toLowerCase()} · E ${c.eagles} · B ${c.birdies}</span>
+    </div>
+    ${holeGridHTML(c)}`).join('')}
+    <div class="hole-legend">${t('pubHoleLegend')}</div>`;
 }
 
 // ---- The champions wall ----
@@ -169,14 +207,16 @@ function paintTournamentSections(list, ctx) {
   set('pub-results', results.length ? `
     ${sectionHead(t('pubRecentResults'), '#/tournaments', 'scorecard')}
     <div class="games-list">${ctx.tnCards(results)}</div>` : '');
-  set('pub-season', `
-    ${sectionHead(`${t('pubSeasonStats')} · ${defaultSeasonYear(list)}`, '#/stats')}
-    ${seasonTilesHTML(seasonStats(list, { stateOf }))}`);
+  // The season tiles and the partner logos are the statistics page's and
+  // the tournament pages' — the owner keeps the home shorter; the eagles
+  // and birdies, and where they fell, stay.
+  const year = defaultSeasonYear(list);
+  set('pub-holes', `
+    ${sectionHead(`${t('pubHoles')} · ${year}`, '#/stats')}
+    ${holesBlockHTML(holeStats(list, { year, stateOf }))}`);
   set('pub-champions', `
     ${sectionHead(t('pubChampions'), '#/stats', 'star')}
     ${championsRowsHTML(championsWall(list, { stateOf }).slice(0, 5), { datesText: ctx.datesText })}`);
-  const sponsored = [...active, ...past, ...archived].find(tn => tnSponsors(tn).length);
-  set('pub-sponsors', sponsored ? `${sectionHead(t('tnSponsors'))}${tnSponsorsHTML(sponsored)}` : '');
 }
 
 /**
@@ -193,12 +233,11 @@ export async function renderPublicHome(ctx = {}) {
       <div id="pub-hero"></div>
       <div id="pub-active"></div>
       <div id="pub-results"></div>
-      <div id="pub-season"></div>
+      <div id="pub-holes"></div>
       <div id="pub-champions"></div>
       <div id="home-ranking"></div>
       <div id="pub-casual"></div>
       <div id="home-news" style="margin-top:24px;"></div>
-      <div id="pub-sponsors"></div>
     </div>`;
   const alive = ctx.alive || (() => true);
 
@@ -251,6 +290,7 @@ export async function renderClubStatsPage(ctx = {}) {
       <div class="page-head" style="margin-top:12px;"><h2 class="page-title">${t('tnStatsTitle')}</h2></div>
       ${years.length > 1 ? `<div class="seg-tabs pub-years">${years.map(y => `<button type="button" class="seg-tab${y === year ? ' active' : ''}" data-year="${y}">${y}</button>`).join('')}</div>` : ''}
       <div id="pub-season"></div>
+      <div id="pub-holes"></div>
       ${sectionHead(t('pubChampions'), null, 'star')}
       <div id="pub-wall">${wallByYearHTML(wall, { datesText: ctx.datesText })}</div>
       ${sectionHead(t('pubCasual'), null, 'play')}
@@ -264,6 +304,8 @@ export async function renderClubStatsPage(ctx = {}) {
   const paintSeason = () => {
     const host = document.getElementById('pub-season');
     if (host) host.innerHTML = `${sectionHead(`${t('pubSeasonStats')} · ${year}`)}${seasonTilesHTML(seasonStats(list, { year, stateOf }), { full: true })}`;
+    const holes = document.getElementById('pub-holes');
+    if (holes) holes.innerHTML = `${sectionHead(`${t('pubHoles')} · ${year}`)}${holesBlockHTML(holeStats(list, { year, stateOf }), { full: true })}`;
   };
   paintSeason();
   main.querySelectorAll('[data-year]').forEach(b => b.onclick = () => {
