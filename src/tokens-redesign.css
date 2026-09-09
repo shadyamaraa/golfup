@@ -1386,3 +1386,61 @@ a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
 .hg-cell:not(.has) .hg-b { color: var(--text-muted); font-weight: 600; }
 .hg-e { font-size: 0.6rem; font-weight: 800; color: var(--gold-dark); background: var(--bg-card); border-radius: 999px; padding: 0 5px; }
 .hole-legend { font-size: 0.7rem; color: var(--text-muted); margin-top: 8px; }
+
+/* ==========================================================================
+   Experiment — the light theme's navy surfaces in champagne/sand (#F1E7D5).
+   One scoped block: the feature cards (hero, news, next game, services),
+   the navy stat tiles, the icon tiles, the profile banner and the sign-in
+   splash turn sand with navy ink and gold-dark accents. Small navy marks —
+   avatars, the round chip, toasts, the FAB — stay navy as ink. The dark
+   theme is untouched. Delete this block to return to navy.
+   ========================================================================== */
+:root { --sand: #F1E7D5; --sand-light: #F6EEDF; --sand-deep: #E9DCC4; --sand-line: #DFCFB1; }
+html:not([data-theme="dark"]) .feature-card {
+  background: linear-gradient(150deg, var(--sand-light), var(--sand));
+  color: var(--text-primary); border: 1px solid var(--sand-line);
+  box-shadow: 0 12px 30px rgba(12,48,81,0.10);
+}
+html:not([data-theme="dark"]) .feature-card::after {
+  border-color: rgba(221,137,16,0.30);
+  box-shadow: 0 0 0 22px rgba(221,137,16,0.08), 0 0 0 46px rgba(221,137,16,0.05);
+}
+html:not([data-theme="dark"]) .feature-card .fc-eyebrow { color: var(--gold-dark); }
+html:not([data-theme="dark"]) .feature-card .fc-title { color: var(--text-primary); }
+html:not([data-theme="dark"]) .feature-card .fc-sub { color: var(--text-secondary); }
+html:not([data-theme="dark"]) .feature-card .fc-chip { background: rgba(12,48,81,0.07); color: var(--text-primary); }
+html:not([data-theme="dark"]) .feature-card .fc-av { border-color: var(--sand); }
+html:not([data-theme="dark"]) .feature-card .fc-av-more { background: rgba(12,48,81,0.10); color: var(--text-primary); }
+html:not([data-theme="dark"]) .news-card:not(.has-img) .news-title { color: var(--text-primary); }
+html:not([data-theme="dark"]) .pub-hero .btn-outline { border-color: var(--gold-dark); color: var(--gold-dark); }
+html:not([data-theme="dark"]) .pub-hero .pub-hero-logo { content: url('/logo-v-navy.svg'); }
+html:not([data-theme="dark"]) .stat-tile.navy {
+  background: linear-gradient(150deg, var(--sand-light), var(--sand));
+  border-color: var(--sand-line); color: var(--text-primary);
+}
+html:not([data-theme="dark"]) .stat-tile.navy .st-label { color: var(--gold-dark); }
+html:not([data-theme="dark"]) .stat-tile.navy .st-value { color: var(--text-primary); }
+html:not([data-theme="dark"]) .stat-tile.navy .st-sub,
+html:not([data-theme="dark"]) .stat-tile.navy .st-small { color: var(--text-secondary); }
+html:not([data-theme="dark"]) .tile-icon,
+html:not([data-theme="dark"]) .notif-icon,
+html:not([data-theme="dark"]) .tn-crest {
+  background: var(--sand); color: var(--gold-dark); border: 1px solid var(--sand-line);
+}
+html:not([data-theme="dark"]) .profile-banner {
+  background: linear-gradient(150deg, var(--sand-light), var(--sand));
+  border-bottom: 1px solid var(--sand-line);
+}
+html:not([data-theme="dark"]) .profile-banner::after { border-color: rgba(221,137,16,0.30); box-shadow: 0 0 0 26px rgba(221,137,16,0.07); }
+html:not([data-theme="dark"]) .pb-btn { background: rgba(12,48,81,0.08); color: var(--text-primary); }
+html:not([data-theme="dark"]) .pb-btn:hover { background: rgba(12,48,81,0.14); }
+html:not([data-theme="dark"]) .auth-container {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(221,137,16,0.18), transparent 45%),
+    linear-gradient(168deg, var(--sand-light) 0%, var(--sand) 52%, var(--sand-deep) 100%);
+}
+html:not([data-theme="dark"]) .auth-card { box-shadow: 0 30px 70px rgba(12,48,81,0.18); }
+html:not([data-theme="dark"]) .golf-ball {
+  background: radial-gradient(circle at 35% 35%, rgba(12,48,81,0.08), rgba(12,48,81,0.02));
+  border-color: rgba(12,48,81,0.08);
+}
