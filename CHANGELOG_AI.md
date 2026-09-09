@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Light theme: the navy surfaces turn champagne/sand)
+
+On the light theme the big navy surfaces — the feature cards (the visitor
+hero, the news card, the next-game card, the services hero), the navy stat
+tiles, the icon tiles, the profile banner and the sign-in splash — are now
+champagne/sand `#F1E7D5` with navy ink and gold-dark accents; the visitor
+hero shows the navy logo. Small navy marks (avatars, the round chip,
+toasts, the FAB) stay navy as ink, and the dark theme is untouched. One
+scoped block at the end of `src/tokens-redesign.css`; delete it to return
+to navy. Tried on a preview first, chosen by the owner.
+
 ## 2026-09-09 (Link previews: no logo picture, as before)
 
 A game invitation pasted into Viber had started showing a big logo card:
