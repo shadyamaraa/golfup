@@ -3,13 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="UB Golf - гольфчдын тоглолт зохион байгуулах апп" />
-  <meta property="og:title" content="UB Golf V2" />
-  <meta property="og:description" content="Гольфчдын тоглолт зохион байгуулах апп" />
+  <meta name="description" content="UB Golf клуб — тэмцээн, чансаа, үр дүн, мэдээ" />
+  <meta property="og:title" content="UB Golf Club" />
+  <meta property="og:description" content="UB Golf клуб — тэмцээн, чансаа, үр дүн, мэдээ" />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="/no-preview.png" />
+  <meta property="og:url" content="https://ubgolf.club/" />
+  <meta property="og:image" content="https://ubgolf.club/UBGolf_main_logo.png" />
 
-  <title>UB Golf V2</title>
+  <title>UB Golf Club</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://api.open-meteo.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -32,7 +33,7 @@
           <div class="logo-img" role="img" aria-label="UB Golf"></div>
         </a>
         <nav class="header-nav">
-          <a href="#/" id="guest-login" class="btn btn-primary btn-sm hidden" style="text-decoration:none;">Нэвтрэх</a>
+          <a href="#/login" id="guest-login" class="btn btn-primary btn-sm hidden" style="text-decoration:none;">Нэвтрэх</a>
           <div id="user-info" class="user-info hidden" style="display:flex; align-items:center; gap:8px;">
             <a href="#/users" id="users-link" class="btn-icon" title="Хэрэглэгчид" style="text-decoration:none; display:flex; align-items:center;"><span data-icon="members" data-size="18"></span></a>
             <a href="#/admin" id="admin-link" class="btn-icon hidden" title="Admin панель" style="text-decoration:none; display:flex; align-items:center;"><span data-icon="settings" data-size="18"></span></a>
@@ -65,6 +66,14 @@
       <a href="#/create" class="bn-item bn-fab-item" data-route="create"><span class="bn-fab" data-icon="create" data-size="26"></span></a>
       <a href="#/services" class="bn-item" data-route="services"><span class="bn-icon" data-icon="services" data-size="22"></span><span class="bn-label" id="bn-services"></span></a>
       <a href="#/orders" class="bn-item" data-route="orders"><span class="bn-icon" data-icon="bookings" data-size="22"></span><span class="bn-label" id="bn-orders"></span></a>
+    </nav>
+
+    <!-- Visitor navigation (shown when signed out): home · tournaments · ranking · sign in -->
+    <nav id="guest-nav" class="bottom-nav hidden">
+      <a href="#/" class="bn-item" data-route="home"><span class="bn-icon" data-icon="home" data-size="22"></span><span class="bn-label" id="bng-home"></span></a>
+      <a href="#/tournaments" class="bn-item" data-route="tn"><span class="bn-icon" data-icon="leaderboard" data-size="22"></span><span class="bn-label" id="bng-tn"></span></a>
+      <a href="#/ranking" class="bn-item" data-route="rank"><span class="bn-icon" data-icon="star" data-size="22"></span><span class="bn-label" id="bng-rank"></span></a>
+      <a href="#/login" class="bn-item" data-route="login"><span class="bn-icon" data-icon="profile" data-size="22"></span><span class="bn-label" id="bng-login"></span></a>
     </nav>
   </div>
 

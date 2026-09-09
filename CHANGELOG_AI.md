@@ -1,5 +1,34 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (ubgolf.club opens to visitors: a public home, tournaments and statistics)
+
+A visitor who opens ubgolf.club no longer meets the sign-in card. The root
+route is a public home for anyone signed out: the club's hero (with the
+live tournament called out when there is one), the tournaments on and
+coming up with their leaders, the latest results with their winners, the
+season in numbers, the champions wall, the ranking's top ten, how busy the
+club's games are, the news carousel and the sponsors. Sign-in is a header
+button and its own `#/login`; a visitor who taps a members-only link is
+sent there and brought back to that page after signing in. A visitor's
+bottom nav — Нүүр · Тэмцээн · Ранк · Нэвтрэх — is its own element, so the
+member's nav and the member's home are untouched. New public pages:
+`#/tournaments` (the browser on its own), `#/ranking` opened up, and
+`#/stats` — every season by year, the whole champions wall by year, the
+games month by month as bars, a link to the ranking. The global sponsor
+banner now shows to visitors too.
+
+The numbers live in `src/club-stats.js`, pure and tested: `seasonStats`
+(tournaments, distinct players across every roster shape, complete rounds,
+matches, the season's low round, eagles and birdies where pars are known,
+the format mix), `championsWall` (finished tournaments newest first —
+stroke winners per division, a cup's two teams and winner, a draw's
+standings leader) and `casualActivity` (games, this month, players active
+in thirty days, the busiest courses, six months of counts — counts only,
+never a name). The landing (`src/public-home.js`) reuses the browse cards,
+the news carousel and the ranking teaser as they are. `index.html` gains a
+real title, description and Open Graph image; no rules, hosting or
+manifest change, and the public pages never read `users`.
+
 ## 2026-09-08 (Casual games: the result shared from the board)
 
 The share kit reaches the casual game. Every result board on the game page
