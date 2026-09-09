@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Link previews carry the current logo)
+
+A game invitation pasted into Viber showed the old purple UB Golf logo:
+the shell's Open Graph image pointed at `UBGolf_main_logo.png`, a
+leftover from the earlier brand. A proper preview image now ships as
+`public/og-image.png` — 1200×630, the navy field with the cream crest
+wordmark and «Тэмцээн · Чансаа · Үр дүн» — and `index.html` names it with
+its size and type (and the equivalent Twitter card). Messengers cache
+previews per link, so an already-shared link may keep the old picture for
+a while; new links pick up the new one.
+
 ## 2026-09-09 (Landing: the season block and the partner logos come off the home; where the eagles and birdies fell)
 
 The visitor's home loses two blocks the owner did not want there: the
