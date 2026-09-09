@@ -1322,7 +1322,7 @@ a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
 .mpv-me { margin-top: 12px; margin-bottom: 0; }
 
 /* ---- Public landing (#/ for a visitor) and the statistics page (#/stats) ---- */
-.pub-home .section-head, .pub-stats .section-head { margin-top: 24px; }
+.pub-home .section-head, .pub-stats .section-head, .home-holes .section-head { margin-top: 24px; }
 .pub-hero .pub-hero-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
 .pub-hero .pub-hero-logo { width: 56px; height: 56px; flex-shrink: 0; }
 .pub-hero .fc-title { margin: 0 0 4px; }

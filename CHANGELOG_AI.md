@@ -1,5 +1,14 @@
 # CHANGELOG_AI.md
 
+## 2026-09-09 (Members' home: the eagles and birdies, above the ranking)
+
+The «Eagle · Birdie» block the visitor sees — the season's totals, the
+best hole, the eighteen cells of where they fell — now sits on the
+signed-in member's home too, above the ranking. It reads the tournament
+list the boot strip already loaded and hides itself when the season has
+nothing recorded. `holesSectionHTML` in `src/public-home.js` serves both
+homes.
+
 ## 2026-09-09 (Light theme: the navy surfaces turn champagne/sand)
 
 On the light theme the big navy surfaces — the feature cards (the visitor
