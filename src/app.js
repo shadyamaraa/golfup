@@ -2927,8 +2927,14 @@ function renderNotifications(notifs) {
             // M Cup results carry their own text and point at a tournament,
             // not a game — everything below this branch is game-shaped.
             if (n.type === 'mcup') {
+              // A result is read, not accepted or declined: one action —
+              // opening the tournament — and that is what clears the row
+              // (the whole group, so a "+2" goes with it).
+              const open = !!n.tnId;
               return `
-              <div class="notif-item glass-card">
+              <div class="notif-item glass-card${open ? ' notif-open' : ''}"${open
+                ? ` data-tn="${esc(n.tnId)}" data-ids="${n.groupIds.join(',')}" role="button" tabindex="0" style="cursor:pointer;"`
+                : ''}>
                 <div class="notif-content">
                   <span class="notif-icon">${icon('play', { size: 18 })}</span>
                   <div>
@@ -2937,8 +2943,9 @@ function renderNotifications(notifs) {
                   </div>
                 </div>
                 <div class="notif-actions">
-                  ${n.tnId ? `<a href="#/tournament/${esc(n.tnId)}" class="btn btn-primary btn-sm" style="text-decoration:none;">${t('viewDetails')}</a>` : ''}
-                  <button class="btn btn-ghost btn-sm dismiss-notif-btn" data-ids="${n.groupIds.join(',')}">${t('decline')}</button>
+                  ${open
+                    ? `<button class="btn btn-primary btn-sm">${t('viewDetails')}</button>`
+                    : `<button class="btn btn-ghost btn-sm dismiss-notif-btn" data-ids="${n.groupIds.join(',')}">${t('markRead')}</button>`}
                 </div>
               </div>`;
             }
@@ -2994,6 +3001,18 @@ function renderNotifications(notifs) {
   container.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       await Promise.all(btn.dataset.ids.split(',').map(id => store.deleteNotification(currentUser.id, id)));
+    });
+  });
+  // An M Cup row: the card and its button are one action, so one listener
+  // on the card serves both — clear the group, then open the tournament.
+  container.querySelectorAll('.notif-item.notif-open').forEach(card => {
+    const open = async () => {
+      await Promise.all(card.dataset.ids.split(',').map(id => store.deleteNotification(currentUser.id, id)));
+      location.hash = '#/tournament/' + card.dataset.tn;
+    };
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
     });
   });
 }
