@@ -6839,6 +6839,10 @@ function showToast(msg, type = 'info') {
 }
 
 // ---- FCM ----
+// initFCM runs at sign-in and again whenever the profile's notification
+// toggle is saved; the token refresh is idempotent, the foreground listener
+// is not — a second one meant two toasts per push.
+let fcmMessageWired = false;
 async function initFCM(user) {
   if (!store.firebaseApp || !user || user.notifyWeb === false) return;
   try {
@@ -6850,10 +6854,13 @@ async function initFCM(user) {
       store.saveUser(user);
       await store.saveFCMToken(user.id, token);
     }
-    onMessage(messaging, (payload) => {
-      const { title, body } = payload.data || {};
-      showToast(`${title || '⛳'} ${body || ''}`, 'info');
-    });
+    if (!fcmMessageWired) {
+      fcmMessageWired = true;
+      onMessage(messaging, (payload) => {
+        const { title, body } = payload.data || {};
+        showToast(`${title || '⛳'} ${body || ''}`, 'info');
+      });
+    }
   } catch (e) {
     console.warn('FCM init failed:', e);
   }
