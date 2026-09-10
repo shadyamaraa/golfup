@@ -627,6 +627,15 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 /* ---- Home news carousel ---- */
 .news-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin-bottom: 14px; }
 .news-carousel::-webkit-scrollbar { display: none; }
+
+/* Sponsor carousel: the plaques take the card in turn — a scroll-snap track
+   that swipes by hand, slid along by mountSponsorCarousel's timer. */
+.tn-spc-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tn-spc-track::-webkit-scrollbar { display: none; }
+.tn-spc-slide { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; }
+.tn-spc-dots { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+.tn-spc-dot { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 999px; background: var(--border-color); cursor: pointer; transition: width 0.2s, background 0.2s; }
+.tn-spc-dot.active { width: 16px; background: var(--gold); }
 .news-card {
   min-width: 100%; scroll-snap-align: start; min-height: 150px;
   display: flex; flex-direction: column; justify-content: flex-end;

@@ -12,7 +12,7 @@ import { GENDERS, isGender, genderKey } from './gender.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
-  mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide
+  mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide, mountSponsorCarousel
 } from './tournament-media.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpSheetPage } from './strokeplay-sheet.js';
@@ -2036,6 +2036,7 @@ async function renderRankingPage() {
 // ---- Tournament page (#/tournament/:id) ----
 let tnPageData = null;
 let tnPageTab = 'board';
+let stopSponsors = null;   // the sponsor carousel's timer, one per paint
 let tnPageQuery = '';
 let tnPageLimit = TN_PAGE_SIZE;
 
@@ -2107,6 +2108,7 @@ async function renderTournamentPage(id) {
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
   paintTournamentPage(tn);
+  activeUnsubs.push(() => { stopSponsors?.(); stopSponsors = null; });
 
   // Repaint the list alone while a search is in progress, so an incoming score
   // never steals the caret. The tab bar is built by paintTournamentPage, so a
@@ -2288,6 +2290,10 @@ function paintTournamentPage(tn) {
 
   const guideBtn = document.querySelector('[data-tn-guide]');
   if (guideBtn) guideBtn.onclick = () => openTnGuide(tn);
+  // The sponsor carousel slides by itself; the previous paint's timer goes
+  // first, and the route change stops the last one.
+  stopSponsors?.();
+  stopSponsors = mountSponsorCarousel(main());
   document.querySelectorAll('[data-tn-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       tnPageTab = btn.dataset.tnTab;
