@@ -254,6 +254,73 @@ export function cascadeTeeTimes(matches, fromId, stepMin = 10) {
   return changes;
 }
 
+// ---- Schedule ----
+
+// The draw as the members read it: sessions in day/number order, each with
+// its matches by tee time then number — the marshal table's order, shared
+// with the Хуваарь tab so paper and phone can never disagree. Matches with
+// no session come last under a null session; with no sessions at all every
+// match sits in that one block.
+export function mpSchedule(mp) {
+  const sessions = Object.values(mp?.sessions || {}).filter(Boolean)
+    .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0)
+      || (Number(a.number) || 0) - (Number(b.number) || 0));
+  const byTee = (a, b) => String(a.teeTime || '').localeCompare(String(b.teeTime || ''))
+    || (Number(a.number) || 0) - (Number(b.number) || 0);
+  const all = matchList(mp?.matches);
+  const of = (sid) => all.filter(m => (m.sessionId || null) === sid).sort(byTee);
+  const blocks = sessions.map(s => ({ session: s, matches: of(s.id) }));
+  const loose = sessions.length ? of(null) : all.slice().sort(byTee);
+  if (loose.length) blocks.push({ session: null, matches: loose });
+  return blocks;
+}
+
+// A session's calendar date: day 1 is the tournament's start date, day 2
+// the next, and so on. '' when either side is missing.
+export function sessionDate(startDate, day) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(startDate || ''));
+  const d = Number(day);
+  if (!m || !Number.isFinite(d) || d < 1) return '';
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + d - 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+// The roster entry that is this member: modern entries are keyed by the
+// member's userId, older ones carry it in the record.
+export function rosterPid(roster, userId) {
+  if (!userId || !roster) return null;
+  if (roster[userId]) return userId;
+  return Object.keys(roster).find(pid => roster[pid]?.userId === userId) || null;
+}
+
+// The member's next match: the earliest they are fielded in that has not
+// finished — one under way counts, the way a round you have teed off in
+// stays the home card. Carries the session, the calendar date, the tee time
+// (the match's own, else the session's start), which side they are on and
+// a sortable ms (Infinity without a date and time, so dated matches win).
+export function mpNextMatch(mp, userId, { startDate } = {}) {
+  const pid = rosterPid(mp?.roster, userId);
+  if (!pid) return null;
+  const sessions = mp?.sessions || {};
+  const out = [];
+  for (const m of matchList(mp?.matches)) {
+    const side = ['a', 'b'].find(k => (m.players?.[k] || []).includes(pid));
+    if (!side || matchState(m) === 'COMPLETED') continue;
+    const session = (m.sessionId && sessions[m.sessionId]) || null;
+    const date = sessionDate(startDate, session?.day || 1);
+    const time = m.teeTime || session?.startTime || '';
+    const ms = date && time ? new Date(`${date}T${time}`).getTime() : NaN;
+    out.push({ match: m, session, pid, side, date, time, ms: Number.isFinite(ms) ? ms : Infinity });
+  }
+  if (!out.length) return null;
+  out.sort((x, y) => (x.ms - y.ms)
+    || (Number(x.session?.day) || 0) - (Number(y.session?.day) || 0)
+    || (Number(x.session?.number) || 0) - (Number(y.session?.number) || 0)
+    || (Number(x.match.number) || 0) - (Number(y.match.number) || 0));
+  return out[0];
+}
+
 // ---- Validation (spec §26) ----
 
 const rosterTeam = (roster, pid) => roster?.[pid]?.teamId || null;
