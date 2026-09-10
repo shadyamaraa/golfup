@@ -7,7 +7,7 @@ import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
 import { mountTnWizard } from './tournament-wizard.js';
-import { renderScorerPage } from './matchplay-score.js';
+import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
 import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
@@ -30,7 +30,7 @@ import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
-import { tnKind } from './matchplay.js';
+import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -2139,12 +2139,79 @@ function isMatchPlay(tn) {
   return tnKind(tn) !== 'stroke' && !!Object.keys(tn?.mp?.matches || {}).length;
 }
 
+// The M Cup's Хуваарь tab — the draw the marshal table prints, read on a
+// phone: each session with its day, date, format and start, then its
+// matches by tee time with both lineups in team colours. The member's own
+// match is marked, and a match the rules would let the viewer score carries
+// the scorer link, the way a flight carries its scorecard link.
+function mpScheduleTabHTML(tn) {
+  const mp = tn.mp || {};
+  const roster = mp.roster || {};
+  const blocks = mpSchedule(mp).filter(b => b.matches.length);
+  if (!blocks.length) return `<div class="empty-state" style="padding:34px 20px;"><p>${t('mpNoMatches')}</p></div>`;
+  const myPid = rosterPid(roster, currentUser?.id);
+  const short = (k) => mp.teams?.[k]?.short || mp.teams?.[k]?.name || k.toUpperCase();
+  const color = (k) => /^#[0-9a-fA-F]{6}$/.test(mp.teams?.[k]?.color || '') ? mp.teams[k].color : (k === 'a' ? '#1f6f43' : '#b3382c');
+  const names = (m, k) => (m.players?.[k] || []).map(pid => roster[pid]?.name || pid).filter(Boolean).join(' / ') || '—';
+  const stateLabel = (st) => st === 'LIVE' ? t('mpLive') : st === 'SUSPENDED' ? t('mpSuspended') : st === 'COMPLETED' ? t('mpFinal') : '';
+  const grid = 'display:grid;grid-template-columns:26px 54px 1fr;gap:8px;align-items:center;';
+  const side = (m, k) => `
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                <span style="color:${color(k)};font-weight:800;font-size:0.66rem;letter-spacing:0.04em;">${esc(short(k))}</span>
+                ${esc(names(m, k))}
+              </div>`;
+  return `
+    <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 0;">
+      <b style="font-size:0.8rem;">${t('spSchedule')}</b>
+      <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;gap:4px;">🖨 ${t('scPrint')}</a>
+    </div>
+    ${blocks.map(({ session: s, matches }) => {
+      const date = s ? sessionDate(tn.startDate, s.day) : '';
+      const meta = [date ? formatDate(date) : '', s?.startTime || ''].filter(Boolean).join(' · ');
+      return `
+      <div class="surface-card" style="padding:10px 8px;margin-top:8px;">
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:0 2px 6px;">
+          <b style="font-size:0.85rem;">${s ? `${t('mpDay')} ${esc(s.day ?? '')}` : t('mpUngrouped')}</b>
+          ${s?.format ? `<span class="pill-soft" style="font-size:0.66rem;">${esc(s.format)}</span>` : ''}
+          ${meta ? `<span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${esc(meta)}</span>` : ''}
+        </div>
+        <div style="${grid}padding:0 2px 4px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+          <span style="text-align:center;">№</span>
+          <span style="text-align:center;">${t('spTeeTime')}</span>
+          <span></span>
+        </div>
+        ${matches.map(m => {
+          const st = matchState(m);
+          const mine = !!myPid && ['a', 'b'].some(k => (m.players?.[k] || []).includes(myPid));
+          const score = st !== 'COMPLETED' && canScore(currentUser, m, roster);
+          const label = stateLabel(st);
+          return `
+          <div style="${grid}padding:8px 2px;border-top:1px solid var(--border-color);${mine ? 'background:var(--accent-soft);border-radius:8px;' : ''}">
+            <b style="font-size:0.85rem;text-align:center;">${esc(m.number ?? '')}</b>
+            <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(m.teeTime || s?.startTime || '–')}</span>
+            <div style="min-width:0;font-size:0.8rem;line-height:1.5;">
+              ${side(m, 'a')}${side(m, 'b')}
+              ${mine || label || score ? `
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;">
+                ${mine ? `<span class="pill-soft" style="font-size:0.62rem;font-weight:800;">${t('mpMyMatch')}</span>` : ''}
+                ${label ? `<span style="font-size:0.66rem;font-weight:800;color:${st === 'LIVE' ? 'var(--red)' : 'var(--text-secondary)'};">${esc(label)}</span>` : ''}
+                ${score ? `<a href="#/score/${esc(tn.id)}/${esc(m.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.68rem;padding:2px 8px;">${t('mpEnterScore')}</a>` : ''}
+              </div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('')}`;
+}
+
 function tnTabsFor(tn) {
   const tabs = [];
   if (isMatchPlay(tn)) tabs.push('match');
   if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
   if (isMatchPlay(tn)) {
-    // Match play keeps its rulebook tab (the Match Center's 📖 jumps here).
+    // The draw as a tab of its own, as stroke play has it — sessions, tee
+    // times, lineups — then the rulebook tab (the Match Center's 📖 jumps here).
+    tabs.push('schedule');
     tabs.push('info');
   } else if (Object.values(tn?.sp?.groups || {}).some(r => r && Object.keys(r).length)) {
     // Stroke play: the members called the info tab useless — the draw took
@@ -2446,6 +2513,10 @@ function renderTnBoard() {
   // spectator can read the columns without guessing what each pill means;
   // the start-hole column only exists on shotgun draws. The card link shows
   // for the flight's own members and the officials the rules would let in.
+  if (tnPageTab === 'schedule' && isMatchPlay(tn)) {
+    host.innerHTML = mpScheduleTabHTML(tn);
+    return;
+  }
   if (tnPageTab === 'schedule') {
     const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
     const schedHasHole = spGroups.some(g => g.startHole);
@@ -3133,7 +3204,16 @@ async function renderNextTeeFeature() {
 
   const cards = [];
   for (const tn of list || []) {
-    if (!spActive(tn) || tnStatus(tn) === 'final') continue;
+    if (tnStatus(tn) === 'final') continue;
+    // An M Cup: the member's next match, dated by its session's day and
+    // timed by its tee time — the same card, the lineup where the
+    // flight-mates go.
+    if (isMatchPlay(tn)) {
+      const next = mpNextMatch(tn.mp, currentUser.id, { startDate: tn.startDate });
+      if (next) cards.push({ tn, mp: next, ms: next.ms });
+      continue;
+    }
+    if (!spActive(tn)) continue;
     const myPid = Object.keys(tn.sp.players).find(pid =>
       pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id);
     if (!myPid) continue;
@@ -3147,6 +3227,7 @@ async function renderNextTeeFeature() {
   }
   if (!cards.length) { host.innerHTML = ''; return; }
   cards.sort((a, b) => a.ms - b.ms);
+  if (cards[0].mp) { host.innerHTML = mpNextCardHTML(cards[0].tn, cards[0].mp); return; }
   const { tn, round, g, myPid } = cards[0];
   const mates = Object.keys(g.players || {})
     .filter(pid => pid !== myPid)
@@ -3173,6 +3254,38 @@ async function renderNextTeeFeature() {
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:16px;">
         <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.78rem; color:rgba(243,239,228,0.72);">
           ${esc(mates.join(' · '))}
+        </span>
+        <span class="fc-cta" style="flex-shrink:0;">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
+      </div>
+    </a>`;
+}
+
+// The M Cup member's next match as the home tee-time card: date and tee
+// time, match number, format and day as chips, the two lineups underneath.
+function mpNextCardHTML(tn, next) {
+  const roster = tn.mp?.roster || {};
+  const names = (k) => (next.match.players?.[k] || []).map(pid => roster[pid]?.name || pid).filter(Boolean).join(' / ');
+  const other = next.side === 'a' ? 'b' : 'a';
+  const when = [next.date ? formatDate(next.date) : '', next.time].filter(Boolean).join(' · ');
+  return `
+    <a href="#/tournament/${esc(tn.id)}" class="feature-card" style="display:block; text-decoration:none;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <span class="fc-eyebrow"><span class="fc-dot"></span>Tee time</span>
+        <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">${esc(when)}</span>
+      </div>
+      <div class="fc-title">${esc(tn.name || '')}</div>
+      ${tn.venue ? `
+      <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.82rem; color:rgba(243,239,228,0.72);">
+        ${icon('location', { size: 14 })}<span>${esc(tn.venue)}</span>
+      </div>` : ''}
+      <div class="fc-chips">
+        <span class="fc-chip">${t('mpMatchNo')}${esc(next.match.number ?? '')}</span>
+        ${next.session?.format ? `<span class="fc-chip">${esc(next.session.format)}</span>` : ''}
+        ${next.session?.day ? `<span class="fc-chip">${t('mpDay')} ${esc(next.session.day)}</span>` : ''}
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:16px;">
+        <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.78rem; color:rgba(243,239,228,0.72);">
+          ${esc(names(next.side) || '—')} vs ${esc(names(other) || '—')}
         </span>
         <span class="fc-cta" style="flex-shrink:0;">${t('viewDetails')} ${icon('next', { size: 15 })}</span>
       </div>

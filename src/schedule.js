@@ -14,6 +14,7 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import { spActive, spGroupList, tnHasDivisions, entryDivision } from './strokeplay.js';
 import { genderKey } from './gender.js';
+import { mpSchedule, sessionDate } from './matchplay.js';
 import { esc, pageUrl, mountQr, copyUrl, printStyleHTML, setPageTitle } from './print-common.js';
 
 // ---- Tournament draws: stroke play flights and the M Cup ----
@@ -106,22 +107,16 @@ export async function renderTnSchedulePage(tnId, ctx) {
   const lineup = (m, side) => (m.players?.[side] || []).filter(Boolean).map(pid => esc(nameOf(pid))).join(' / ');
   const teamName = (side) => mp.teams?.[side]?.name || side.toUpperCase();
 
-  const sessions = Object.values(mp.sessions || {})
-    .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0) || (Number(a.number) || 0) - (Number(b.number) || 0));
-  const matchesOf = (sid) => Object.values(mp.matches || {})
-    .filter(m => (m.sessionId || null) === sid)
-    .sort((a, b) => String(a.teeTime || '').localeCompare(String(b.teeTime || ''))
-      || (Number(a.number) || 0) - (Number(b.number) || 0));
-  // Matches with no session (or none defined at all) still print, ungrouped.
-  const sessionBlocks = sessions.length
-    ? [...sessions.map(s => ({ session: s, matches: matchesOf(s.id) })),
-       { session: null, matches: matchesOf(null) }]
-    : [{ session: null, matches: Object.values(mp.matches || {}) }];
+  // The draw in the order the Хуваарь tab shows it — one model for both,
+  // so paper and phone can never disagree. Matches with no session (or none
+  // defined at all) still print, ungrouped.
+  const sessionBlocks = mpSchedule(mp);
 
   const sessionHTML = ({ session, matches }) => {
     if (!matches.length) return '';
+    const date = session ? sessionDate(tn.startDate, session.day) : '';
     const head = session
-      ? `Day ${esc(session.day ?? '')} · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${session.startTime ? ` · ${esc(session.startTime)}` : ''}`
+      ? `Day ${esc(session.day ?? '')}${date ? ` (${esc(date)})` : ''} · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${session.startTime ? ` · ${esc(session.startTime)}` : ''}`
       : '';
     return `
       <div style="margin-top:16px;">

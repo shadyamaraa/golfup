@@ -9,7 +9,7 @@ import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
   lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind,
-  addMinutesHHMM, cascadeTeeTimes
+  addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -391,4 +391,86 @@ test('cascadeTeeTimes: no base time, or matches before the edit, change nothing'
   // Editing m2 fills only m3; m1 above it stays untouched.
   assert.deepEqual(cascadeTeeTimes(later, 'm2'), [{ id: 'm3', teeTime: '11:10' }]);
   assert.deepEqual(cascadeTeeTimes(later, 'ghost'), []);
+});
+
+// ---- Schedule ----
+
+const SCHED = {
+  roster: {
+    a1: { teamId: 'a', name: 'Бат' }, a2: { teamId: 'a', name: 'Дорж', userId: 'u_dorj' },
+    b1: { teamId: 'b', name: 'Сараа' }, b2: { teamId: 'b', name: 'Тулга' }
+  },
+  sessions: {
+    s2: { id: 's2', day: 1, number: 2, format: 'FOURBALL', startTime: '13:00' },
+    s1: { id: 's1', day: 1, number: 1, format: 'FOURSOMES', startTime: '08:00' },
+    s3: { id: 's3', day: 2, number: 1, format: 'SINGLES', startTime: '08:00' }
+  },
+  matches: {
+    // m2 tees off before m1 and is already decided (10 up with 8 to play).
+    m2: { id: 'm2', sessionId: 's1', number: 2, teeTime: '08:00', players: { a: ['a1', 'a2'], b: ['b1', 'b2'] }, holes: holes(...Array(10).fill('a')) },
+    m1: { id: 'm1', sessionId: 's1', number: 1, teeTime: '08:10', players: { a: ['a1', 'a2'], b: ['b1', 'b2'] }, holes: holes('a', 'h') },
+    m3: { id: 'm3', sessionId: 's2', number: 1, teeTime: '', players: { a: ['a1'], b: ['b1'] } },
+    m4: { id: 'm4', sessionId: 's3', number: 1, teeTime: '08:00', players: { a: ['a2'], b: ['b2'] } },
+    m5: { id: 'm5', number: 9, teeTime: '', players: { a: ['a1'], b: ['b2'] } }
+  }
+};
+
+test('mpSchedule: sessions by day and number, matches by tee time, loose ones last', () => {
+  const blocks = mpSchedule(SCHED);
+  assert.deepEqual(blocks.map(b => b.session?.id ?? null), ['s1', 's2', 's3', null]);
+  assert.deepEqual(blocks[0].matches.map(m => m.id), ['m2', 'm1']);
+  assert.deepEqual(blocks[1].matches.map(m => m.id), ['m3']);
+  assert.deepEqual(blocks[3].matches.map(m => m.id), ['m5']);
+  // No sessions at all: one block, every match, by tee time then number.
+  const flat = mpSchedule({ matches: SCHED.matches });
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].session, null);
+  assert.deepEqual(flat[0].matches.map(m => m.id), ['m3', 'm5', 'm4', 'm2', 'm1']);
+  assert.deepEqual(mpSchedule({}), []);
+  assert.deepEqual(mpSchedule(null), []);
+});
+
+test('sessionDate: day 1 is the start date, later days count on, bad input is empty', () => {
+  assert.equal(sessionDate('2026-09-12', 1), '2026-09-12');
+  assert.equal(sessionDate('2026-09-12', 2), '2026-09-13');
+  assert.equal(sessionDate('2026-09-30', 2), '2026-10-01');
+  assert.equal(sessionDate('2026-12-31', 3), '2027-01-02');
+  assert.equal(sessionDate('', 1), '');
+  assert.equal(sessionDate('2026-09-12', 0), '');
+  assert.equal(sessionDate('2026-09-12', undefined), '');
+  assert.equal(sessionDate('12.09.2026', 1), '');
+});
+
+test('rosterPid: keyed by userId, or carried in the record', () => {
+  assert.equal(rosterPid(SCHED.roster, 'a1'), 'a1');
+  assert.equal(rosterPid(SCHED.roster, 'u_dorj'), 'a2');
+  assert.equal(rosterPid(SCHED.roster, 'nobody'), null);
+  assert.equal(rosterPid(null, 'a1'), null);
+  assert.equal(rosterPid(SCHED.roster, null), null);
+});
+
+test('mpNextMatch: the earliest unfinished match the member is fielded in', () => {
+  const next = mpNextMatch(SCHED, 'a1', { startDate: '2026-09-12' });
+  // m2 is decided, m1 is under way (counts), m3 and m5 come later or undated.
+  assert.equal(next.match.id, 'm1');
+  assert.equal(next.session.id, 's1');
+  assert.deepEqual([next.date, next.time, next.side, next.pid], ['2026-09-12', '08:10', 'a', 'a1']);
+  assert.equal(next.ms, new Date('2026-09-12T08:10').getTime());
+  // A member on side b, via the userId in their record.
+  const b = mpNextMatch(SCHED, 'u_dorj', { startDate: '2026-09-12' });
+  assert.equal(b.match.id, 'm1');
+  assert.equal(b.side, 'a');
+  // The session's start time stands in for a missing match tee time.
+  const only3 = { ...SCHED, matches: { m3: SCHED.matches.m3 } };
+  assert.deepEqual([mpNextMatch(only3, 'a1', { startDate: '2026-09-12' }).time, mpNextMatch(only3, 'a1', { startDate: '2026-09-12' }).date], ['13:00', '2026-09-12']);
+  // Day 2 lands on the next calendar date.
+  const only4 = { ...SCHED, matches: { m4: SCHED.matches.m4 } };
+  assert.equal(mpNextMatch(only4, 'b2', { startDate: '2026-09-12' }).date, '2026-09-13');
+  // No start date: undated matches fall back to day, session, match order.
+  assert.equal(mpNextMatch(SCHED, 'a2').match.id, 'm1');
+  assert.equal(mpNextMatch(SCHED, 'a2').ms, Infinity);
+  // Not on the roster, or everything decided → nothing.
+  assert.equal(mpNextMatch(SCHED, 'nobody', { startDate: '2026-09-12' }), null);
+  assert.equal(mpNextMatch({ ...SCHED, matches: { m2: SCHED.matches.m2 } }, 'a1', { startDate: '2026-09-12' }), null);
+  assert.equal(mpNextMatch(null, 'a1'), null);
 });

@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-09-10 (M Cup: the schedule, as stroke play and the casual games have it)
+
+A Ryder-style tournament had its draw only on the printable start list
+(`#/tnschedule/:id`), with no way to reach it from its page, and the home
+dashboard's tee-time card knew only stroke-play flights. Now the M Cup
+page carries a «Хуваарь» tab beside the Match Center: each session with
+its day, calendar date, format and start, then its matches by tee time
+with both lineups in team colours, the member's own match marked, and the
+scorer link on the matches the rules would let the viewer score; the tab
+links to the printable start list, whose session headings now carry the
+calendar date too. The home tee-time card shows the member's next M Cup
+match — date, tee time, match number, format, day, the two lineups — and
+picks the earlier of that and any stroke-play flight. One pure model in
+`src/matchplay.js` (`mpSchedule`, `sessionDate`, `rosterPid`,
+`mpNextMatch`, tested) feeds the tab, the print page and the card, so they
+cannot disagree; `viewerPid` in the match center now reads `rosterPid`.
+
 ## 2026-09-10 (Home notifications: an M Cup result clears when it is opened)
 
 An M Cup result in the home notification list stayed there after

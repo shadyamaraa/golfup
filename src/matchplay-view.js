@@ -15,7 +15,7 @@ import { icon } from './icons.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
-  playerStats, pairStats, tournamentComplete, tnKind
+  playerStats, pairStats, tournamentComplete, tnKind, rosterPid
 } from './matchplay.js';
 // The one definition of who may enter a match's scores — the same check the
 // scorer screen enforces, so a button shown here never leads to a dead end.
@@ -132,10 +132,7 @@ export function isPlayerInMatch(userId, match, roster) {
 // The roster entry that IS the viewer — the pid a modern roster keys by the
 // member's userId, or the older entry that carries it. Null for a spectator.
 export function viewerPid(mp, viewer) {
-  const id = viewer?.id;
-  if (!id || !mp?.roster) return null;
-  if (mp.roster[id]) return id;
-  return Object.keys(mp.roster).find(pid => mp.roster[pid]?.userId === id) || null;
+  return rosterPid(mp?.roster, viewer?.id);
 }
 
 // A small share button beside a player's line: their own «Миний үр дүн» card,
