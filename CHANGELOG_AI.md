@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-10 (Home notifications: an M Cup result clears when it is opened)
+
+An M Cup result in the home notification list stayed there after
+«Дэлгэрэнгүй» was tapped — the link only navigated — and it carried a
+«Татгалзах» button that made no sense for a result. The row is now one
+action: tapping the card or its button clears the row (the whole «+N»
+group) and opens the tournament, the way a game row's join button already
+clears itself. Game rows are unchanged. `renderNotifications` in
+`src/app.js`.
+
 ## 2026-09-10 (Casual scoring: the figure beside the name is the net score)
 
 On the casual scoring screen (`#/gscore`) the score beside each name was
