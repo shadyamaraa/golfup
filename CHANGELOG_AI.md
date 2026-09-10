@@ -1,5 +1,19 @@
 # CHANGELOG_AI.md
 
+## 2026-09-10 (Casual scoring: the figure beside the name is the net score)
+
+On the casual scoring screen (`#/gscore`) the score beside each name was
+gross to-par (`Darkhaa +8`); the club reads a round by the net figure —
+strokes minus the pars minus the handicap — so a member with HCP 14 twelve
+holes in at +8 now reads `Нет −6`, which is also the `F−3 · B−3` the totals
+line under it already showed. Without a handicap the figure stays gross,
+without a course card it stays the stroke total, and the small `Нет` cue in
+front marks which reading it is. `runningScore` in `src/game-score.js` is
+now a pure function of the score line, used by the player rows, the
+scramble/foursome team rows and both in-place patches, and tested in
+`scripts/test-game-running.mjs`. The totals line, the HCP chip, the report
+table and the tournament scorer are unchanged.
+
 ## 2026-09-09 (Casual scoring and scorecard: nickname, else first name — and two Margads told apart)
 
 The casual scoring screen (`#/gscore`) and the printable scorecard
