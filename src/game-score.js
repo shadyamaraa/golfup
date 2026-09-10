@@ -292,24 +292,41 @@ function canScoreSide(user, game, side) {
   return list.length > 0 && list.every(p => canScoreGamePlayer(user, game, p.id));
 }
 
-// The score the player is "walking on" right now, shown beside their name:
-// to-par where the course card is known ("+4"/"E"/"−2"), gross otherwise.
-function runningScore(game, pid, hcp) {
-  const line = gameScoreLine(game, pid, hcp);
-  if (!line.thru) return { text: '', color: 'var(--text-secondary)' };
-  if (line.toPar !== null) {
+// The score the player is "walking on" right now, shown beside their name.
+// With a handicap it is the net reading — strokes minus the pars minus the
+// handicap, the figure the club reads a round by (in Competition 9/9 the
+// nines in play, each against its half of the handicap); without one it is
+// gross to-par, and the stroke total where the course card is unknown.
+// Takes a gameScoreLine / teamBallLine and whether a handicap applies. Pure;
+// tested.
+export function runningScore(line, hasHcp) {
+  const muted = 'var(--text-secondary)';
+  if (!line?.thru) return { text: '', label: '', color: muted };
+  const net = !!hasHcp && line.netToPar !== null && line.netToPar !== undefined;
+  const v = net ? line.netToPar : line.toPar;
+  if (v !== null && v !== undefined) {
     return {
-      text: fmtToPar(line.toPar),
-      color: line.toPar < 0 ? 'var(--red)' : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+      text: fmtToPar(v),
+      label: net ? t('gsNet') : '',
+      color: v < 0 ? 'var(--red)' : v === 0 ? muted : 'var(--text-primary)',
     };
   }
-  return { text: String(line.total), color: 'var(--text-primary)' };
+  return { text: String(line.total), label: '', color: 'var(--text-primary)' };
+}
+
+// The figure with its Нет cue in front when the net reading is shown — one
+// markup for the first paint and the in-place patch, so they cannot differ.
+function runningHTML(run) {
+  const cue = run.label
+    ? `<span style="font-size:0.62rem;font-weight:700;color:var(--text-secondary);margin-right:3px;">${esc(run.label)}</span>`
+    : '';
+  return cue + esc(run.text);
 }
 
 function playerRowHTML(game, p, hole, editable, userRec) {
   const strokes = game?.scores?.[p.id]?.holes?.[hole] ?? null;
   const hcp = gamePlayingHcp(game, p.id, userRec);
-  const run = runningScore(game, p.id, hcp);
+  const run = runningScore(gameScoreLine(game, p.id, hcp), typeof hcp === 'number');
   const stepBtn = (kind, label, disabled) => `
     <button data-gs="${kind}" data-pid="${esc(p.id)}" ${disabled ? 'disabled' : ''}
       style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
@@ -329,7 +346,7 @@ function playerRowHTML(game, p, hole, editable, userRec) {
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <span style="font-weight:700;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.15;">${esc(shortName(p, userRec))}</span>
-          <b data-gs-run="${esc(p.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
+          <b data-gs-run="${esc(p.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${runningHTML(run)}</b>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;">
           ${hcpChip}
@@ -358,13 +375,7 @@ function teamRowHTML(game, team, hole, editable, usersById, hcps, diff) {
   const strokes = teamStrokesOf(game, team.id, hole);
   const line = teamBallLine(game, team.id, diff || 0);
   const avg = teamHcp(hcps, team);
-  const run = !line.thru ? { text: '', color: 'var(--text-secondary)' }
-    : line.toPar !== null
-      ? {
-        text: fmtToPar(line.toPar),
-        color: line.toPar < 0 ? 'var(--red)' : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)'
-      }
-      : { text: String(line.total), color: 'var(--text-primary)' };
+  const run = runningScore(line, line.given > 0);
   const stepBtn = (kind, label, disabled) => `
     <button data-gs="${kind}" data-team="${esc(team.id)}" ${disabled ? 'disabled' : ''}
       style="width:52px;height:52px;border-radius:12px;cursor:pointer;font-family:var(--font);
@@ -382,7 +393,7 @@ function teamRowHTML(game, team, hole, editable, usersById, hcps, diff) {
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(sideName(team, usersById))}</span>
-          <b data-gs-trun="${esc(team.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${run.text}</b>
+          <b data-gs-trun="${esc(team.id)}" style="font-size:0.9rem;flex-shrink:0;color:${run.color};">${runningHTML(run)}</b>
           <span data-gs-thcp="${esc(team.id)}" style="font-size:0.66rem;color:var(--text-secondary);flex-shrink:0;">${avg === null ? '' : `HCP ${avg}`}</span>
         </div>
         <div data-gs-ttot="${esc(team.id)}" style="font-size:0.72rem;color:var(--text-secondary);">
@@ -976,8 +987,8 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       if (tot) tot.textContent = totalsLineText(data, p.id, hcp);
       const run = host.querySelector(`[data-gs-run="${p.id}"]`);
       if (run) {
-        const rs = runningScore(data, p.id, hcp);
-        run.textContent = rs.text;
+        const rs = runningScore(gameScoreLine(data, p.id, hcp), typeof hcp === 'number');
+        run.innerHTML = runningHTML(rs);
         run.style.color = rs.color;
       }
       const chip = host.querySelector(`button[data-gs="hcp"][data-pid="${p.id}"]`);
@@ -1007,10 +1018,9 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         if (tot) tot.textContent = teamLineText(line);
         const run = host.querySelector(`[data-gs-trun="${tm.id}"]`);
         if (run) {
-          run.textContent = !line.thru ? ''
-            : line.toPar !== null ? fmtToPar(line.toPar) : String(line.total);
-          run.style.color = line.toPar !== null && line.toPar < 0 ? 'var(--red)'
-            : line.toPar === 0 ? 'var(--text-secondary)' : 'var(--text-primary)';
+          const rs = runningScore(line, line.given > 0);
+          run.innerHTML = runningHTML(rs);
+          run.style.color = rs.color;
         }
         // The team's average moves whenever a partner's handicap is edited from
         // the chips inside this very row, so it is patched like any other total.
