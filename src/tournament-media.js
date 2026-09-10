@@ -27,11 +27,14 @@ import { readImageFile, validImageData, safeLink } from './media.js';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// The crest draws at 62px and a sponsor mark at about 110px wide, so these are
-// already generous on a 3x screen. The guide image is a scanned page a player
-// pinches open, which is why it alone is a jpeg and gets a bigger budget.
+// The crest draws at 62px, so 192 is generous on a 3x screen. A sponsor mark
+// takes the whole card in the carousel — about 320px wide on a phone — so
+// it is stored at 640 with a byte cap, since twelve partners ride on a record
+// every visitor's home strip loads. The guide image is a scanned page a
+// player pinches open, which is why it alone is a jpeg and gets a bigger budget.
 const CREST_PX = 192;
-const SPONSOR_PX = 240;
+const SPONSOR_PX = 640;
+const SPONSOR_MAX_CHARS = 160000;  // ~120KB decoded
 const GUIDE_PX = 1000;
 const GUIDE_MAX_CHARS = 260000;   // ~190KB decoded
 // The cover sits behind the share cards at 1080px, so a 960px jpeg is the
@@ -87,24 +90,79 @@ export function tnSponsorsHTML(tn) {
   const list = tnSponsors(tn);
   if (!list.length) return '';
   const mark = (s) => {
+    // Width first: a wide banner fills the card, a square mark stands 120px
+    // tall (136 − 2×8). A mark stored small keeps its own size, centred —
+    // never upscaled into blur; re-uploading it is what makes it fill.
     const inner = s.logo
-      ? `<img src="${s.logo}" alt="${esc(s.name)}" style="max-width:100%;max-height:72px;object-fit:contain;display:block;margin:0 auto;" />`
+      ? `<img src="${s.logo}" alt="${esc(s.name)}" style="width:auto;max-width:100%;max-height:120px;object-fit:contain;display:block;margin:0 auto;" />`
       : `<span style="font-weight:700;font-size:1.05rem;color:#0C3051;">${esc(s.name)}</span>`;
-    // The plaque's height and its padding set the ceiling on the mark: a tall
-    // logo is bounded by one, a wide one by the row's width. 104 − 2×16 = 72,
-    // which is the max-height above, so a square mark fills the row as fully
-    // as a wordmark does.
     const plaque = `
       <span title="${esc(s.name)}" style="display:flex;align-items:center;justify-content:center;
-             width:100%;min-height:104px;padding:16px 20px;box-sizing:border-box;
+             width:100%;min-height:136px;padding:8px 12px;box-sizing:border-box;
              background:#fff;border-radius:12px;">${inner}</span>`;
     return s.link
       ? `<a href="${esc(s.link)}" target="_blank" rel="noopener" style="display:block;">${plaque}</a>`
       : plaque;
   };
-  return `
-    <div class="section-head tn-section"><h2>${t('tnSponsors')}</h2></div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">${list.map(mark).join('')}</div>`;
+  const head = `<div class="section-head tn-section"><h2>${t('tnSponsors')}</h2></div>`;
+  if (list.length === 1) return `${head}<div style="margin-bottom:16px;">${mark(list[0])}</div>`;
+  // Two or more take the card in turn: a scroll-snap track that swipes by
+  // hand with no script at all, and slides by itself once
+  // mountSponsorCarousel has run on the page.
+  return `${head}
+    <div class="tn-spc" data-tn-spc style="margin-bottom:16px;">
+      <div class="tn-spc-track">${list.map(s => `<div class="tn-spc-slide">${mark(s)}</div>`).join('')}</div>
+      <div class="tn-spc-dots">${list.map((s, i) =>
+        `<button type="button" class="tn-spc-dot${i === 0 ? ' active' : ''}" data-spc-go="${i}" aria-label="${esc(s.name)}"></button>`).join('')}</div>
+    </div>`;
+}
+
+// The carousel's auto-slide. Every `interval` ms the track scrolls to the
+// next plaque and wraps; a finger on the track pauses it and it resumes a
+// few seconds after the finger lifts; a hidden tab pauses it; under
+// prefers-reduced-motion it never runs (the swipe stays). The dots follow
+// the scroll position and tapping one scrolls there. Returns stop(). The
+// slide in view survives a repaint of the page.
+let spcIndex = 0;
+export function mountSponsorCarousel(root, { interval = 3500 } = {}) {
+  const box = root?.querySelector?.('[data-tn-spc]');
+  const track = box?.querySelector('.tn-spc-track');
+  const slides = track ? track.querySelectorAll('.tn-spc-slide').length : 0;
+  if (!track || slides < 2) { spcIndex = 0; return () => {}; }
+  const dots = [...box.querySelectorAll('[data-spc-go]')];
+  const width = () => track.clientWidth || 1;
+  const current = () => Math.max(0, Math.min(slides - 1, Math.round(track.scrollLeft / width())));
+  const paint = () => dots.forEach((d, i) => d.classList.toggle('active', i === current()));
+  const go = (i, smooth = true) =>
+    track.scrollTo({ left: (((i % slides) + slides) % slides) * width(), behavior: smooth ? 'smooth' : 'auto' });
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let timer = null, resume = null, raf = 0;
+  const start = () => {
+    if (still || timer) return;
+    timer = setInterval(() => { if (!document.hidden) go(current() + 1); }, interval);
+  };
+  const pause = () => { clearInterval(timer); timer = null; clearTimeout(resume); };
+  const later = () => { clearTimeout(resume); resume = setTimeout(start, 5000); };
+  if (spcIndex > 0 && spcIndex < slides) go(spcIndex, false);
+  paint();
+  const onScroll = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; spcIndex = current(); paint(); });
+  };
+  track.addEventListener('scroll', onScroll, { passive: true });
+  track.addEventListener('pointerdown', pause, { passive: true });
+  track.addEventListener('touchstart', pause, { passive: true });
+  track.addEventListener('pointerup', later, { passive: true });
+  track.addEventListener('touchend', later, { passive: true });
+  dots.forEach(d => d.addEventListener('click', () => { pause(); go(Number(d.dataset.spcGo)); later(); }));
+  const onVis = () => (document.hidden ? pause() : start());
+  document.addEventListener('visibilitychange', onVis);
+  start();
+  return () => {
+    pause();
+    document.removeEventListener('visibilitychange', onVis);
+    if (raf) cancelAnimationFrame(raf);
+  };
 }
 
 // The удирдамж popup. The text is shown exactly as it was typed —
@@ -244,7 +302,7 @@ function sectionHTML(tn) {
 const READ_OPTS = {
   logo: { px: CREST_PX },
   cover: { px: COVER_PX, mime: 'image/jpeg', quality: 0.72, maxChars: COVER_MAX_CHARS },
-  sponsor: { px: SPONSOR_PX },
+  sponsor: { px: SPONSOR_PX, maxChars: SPONSOR_MAX_CHARS },
   guide: { px: GUIDE_PX, mime: 'image/jpeg', quality: 0.8, maxChars: GUIDE_MAX_CHARS }
 };
 

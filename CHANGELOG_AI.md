@@ -1,5 +1,20 @@
 # CHANGELOG_AI.md
 
+## 2026-09-10 (Tournament sponsors: a carousel that slides by itself)
+
+The tournament page stacked every partner as its own plaque, with the mark
+capped at 72px tall and stored at 240px, so a wide banner sat small in the
+middle of a white card. Two or more partners are now a carousel: one
+plaque at a time, sliding on every 3.5 seconds and wrapping, swipeable by
+hand, with dots that follow; a finger on it pauses the slide, a hidden tab
+pauses it, and it never runs under prefers-reduced-motion. Each mark may
+now fill the card's width (up to 120px tall), and a new upload is stored
+at 640px with a byte cap, so a banner re-uploaded today fills the card; a
+mark stored small keeps its size, never upscaled. `tnSponsorsHTML` and
+`mountSponsorCarousel` in `src/tournament-media.js`; the page mounts it
+per paint and stops it on navigation (`src/app.js`); markup tested in
+`scripts/test-tn-media.mjs`.
+
 ## 2026-09-10 (M Cup: the schedule, as stroke play and the casual games have it)
 
 A Ryder-style tournament had its draw only on the printable start list
