@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-09-10 (Push notifications: one message, one notification)
+
+Every push — M Cup results, a member joining, an invitation — arrived
+twice, on every phone, since pushes first shipped. `sendPushOnNotification`
+sent each message with both a `data` block and a `webpush.notification`
+block; the FCM service worker displays a `notification` block itself and
+then calls `onBackgroundMessage` in `public/firebase-messaging-sw.js`, which
+displayed it again. The two copies also differed: the SDK's opened the
+tournament or game page and carried the long-deleted `/icon.svg`, ours
+opened the home page for an M Cup push.
+
+- `public/firebase-messaging-sw.js`: a message carrying a `notification`
+  block is left to the SDK; a data-only message is shown once with the brand
+  icon and badge, the notification's tag, and the link a tap opens (the
+  display promise is returned so Safari sees the push handled). The tap
+  handler only acts on the worker's own notifications, steering an open
+  window or opening one. Ships with hosting — this alone ends the double.
+- `functions/index.js`: `sendPushOnNotification` sends data-only messages
+  (`title`, `body`, `link`, `gameId`, `tag` = the notification id, `Urgency:
+  high`). **Needs `firebase deploy --only functions:sendPushOnNotification`**;
+  until then the old payload still arrives once, displayed by the SDK.
+- `src/app.js`: `initFCM` wires the foreground `onMessage` toast once —
+  saving the profile's notification toggle used to add a second listener.
+- `scripts/test-messaging-sw.mjs` runs the worker in a vm sandbox.
+
 ## 2026-09-10 (Casual scoring: the figure beside the name is the net score)
 
 On the casual scoring screen (`#/gscore`) the score beside each name was
