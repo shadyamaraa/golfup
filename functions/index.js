@@ -330,6 +330,18 @@ exports.mtbogdWebhook = functions
 
 const APP_URL = 'https://ubgolf.club';
 
+// A data-only web push: the service worker (public/firebase-messaging-sw.js)
+// displays it with the brand icon and opens `link` on tap. A `notification`
+// block would make the FCM SDK display it as well, and every push arrived
+// twice; the tag lets a redelivery replace the same notification instead.
+function pushMessage(token, { title, body, link, gameId = '', tag }) {
+  return {
+    token,
+    data: { title, body, link, gameId, tag: tag || '' },
+    webpush: { headers: { Urgency: 'high' } }
+  };
+}
+
 // Triggered when a new notification is written to /notifications/{userId}/{notifId}
 exports.sendPushOnNotification = functions.database
   .ref('/notifications/{userId}/{notifId}')
@@ -345,24 +357,12 @@ exports.sendPushOnNotification = functions.database
     // M Cup results carry their own ready-made text and link to a
     // tournament rather than a game.
     if (notif.type === 'mcup') {
-      await admin.messaging().send({
-        token: user.fcmToken,
-        data: {
-          title: notif.title || 'M Cup',
-          body: notif.body || '',
-          gameId: ''
-        },
-        webpush: {
-          notification: {
-            title: notif.title || 'M Cup',
-            body: notif.body || '',
-            icon: `${APP_URL}/icon.svg`
-          },
-          fcm_options: {
-            link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : APP_URL
-          }
-        }
-      });
+      await admin.messaging().send(pushMessage(user.fcmToken, {
+        title: notif.title || 'M Cup',
+        body: notif.body || '',
+        link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : APP_URL,
+        tag: notifId
+      }));
       console.log(`FCM mcup push sent to user ${userId} for notif ${notifId}`);
       return null;
     }
@@ -380,24 +380,13 @@ exports.sendPushOnNotification = functions.database
               : `${notif.from} шинэ тоглолт үүсгэлээ!`;
     const body = `${notif.gameDate} ${notif.gameTime} - ${notif.gameLocation}`;
 
-    await admin.messaging().send({
-      token: user.fcmToken,
-      data: {
-        title: `UB Golf: ${line1}`,
-        body,
-        gameId: notif.gameId || ''
-      },
-      webpush: {
-        notification: {
-          title: `UB Golf: ${line1}`,
-          body,
-          icon: `${APP_URL}/icon.svg`
-        },
-        fcm_options: {
-          link: notif.gameId ? `${APP_URL}/#/game/${notif.gameId}` : APP_URL
-        }
-      }
-    });
+    await admin.messaging().send(pushMessage(user.fcmToken, {
+      title: `UB Golf: ${line1}`,
+      body,
+      gameId: notif.gameId || '',
+      link: notif.gameId ? `${APP_URL}/#/game/${notif.gameId}` : APP_URL,
+      tag: notifId
+    }));
 
     console.log(`FCM push sent to user ${userId} for notif ${notifId}`);
     return null;
