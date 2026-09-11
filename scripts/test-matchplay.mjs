@@ -9,7 +9,8 @@ import {
   settleMatch, statusText, matchState, matchPoints,
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
   lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind,
-  addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch
+  addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
+  matchOpensAt, matchLocked
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -428,6 +429,16 @@ test('mpSchedule: sessions by day and number, matches by tee time, loose ones la
   assert.deepEqual(flat[0].matches.map(m => m.id), ['m3', 'm5', 'm4', 'm2', 'm1']);
   assert.deepEqual(mpSchedule({}), []);
   assert.deepEqual(mpSchedule(null), []);
+  // A match with no tee time of its own sorts at its session's start.
+  const mixed = mpSchedule({
+    sessions: { s1: { id: 's1', day: 1, number: 1, startTime: '09:30' } },
+    matches: {
+      x: { id: 'x', sessionId: 's1', number: 1, teeTime: '' },
+      y: { id: 'y', sessionId: 's1', number: 2, teeTime: '09:20' },
+      z: { id: 'z', sessionId: 's1', number: 3, teeTime: '09:40' }
+    }
+  });
+  assert.deepEqual(mixed[0].matches.map(m => m.id), ['y', 'x', 'z']);
 });
 
 test('sessionDate: day 1 is the start date, later days count on, bad input is empty', () => {
@@ -473,4 +484,46 @@ test('mpNextMatch: the earliest unfinished match the member is fielded in', () =
   assert.equal(mpNextMatch(SCHED, 'nobody', { startDate: '2026-09-12' }), null);
   assert.equal(mpNextMatch({ ...SCHED, matches: { m2: SCHED.matches.m2 } }, 'a1', { startDate: '2026-09-12' }), null);
   assert.equal(mpNextMatch(null, 'a1'), null);
+});
+
+// ---- The tee-time gate ----
+
+const GATE = { id: 'tn1', startDate: '2026-09-12', mp: {
+  sessions: {
+    s1: { id: 's1', day: 1, number: 1, format: 'FOURSOMES', startTime: '09:30' },
+    s3: { id: 's3', day: 2, number: 1, format: 'SINGLES', startTime: '8:00' }
+  },
+  matches: {
+    m1: { id: 'm1', sessionId: 's1', number: 1, teeTime: '09:40', players: { a: ['a1'], b: ['b1'] } },
+    m2: { id: 'm2', sessionId: 's1', number: 2, teeTime: '', players: { a: ['a2'], b: ['b2'] } },
+    m4: { id: 'm4', sessionId: 's3', number: 1, teeTime: '8:10', players: { a: ['a1'], b: ['b2'] } },
+    m5: { id: 'm5', number: 9, teeTime: '', players: { a: ['a1'], b: ['b2'] } }
+  }
+} };
+const at = (s) => new Date(s).getTime();
+
+test('matchOpensAt: the match tee time, else the session start, on the session day', () => {
+  assert.deepEqual(matchOpensAt(GATE, GATE.mp.matches.m1), { ms: at('2026-09-12T09:40'), date: '2026-09-12', time: '09:40' });
+  assert.deepEqual(matchOpensAt(GATE, GATE.mp.matches.m2), { ms: at('2026-09-12T09:30'), date: '2026-09-12', time: '09:30' });
+  assert.deepEqual(matchOpensAt(GATE, GATE.mp.matches.m4), { ms: at('2026-09-13T08:10'), date: '2026-09-13', time: '08:10' });
+  // No session and no time, or no start date: nothing to wait for.
+  assert.equal(matchOpensAt(GATE, GATE.mp.matches.m5), null);
+  assert.equal(matchOpensAt({ ...GATE, startDate: '' }, GATE.mp.matches.m1), null);
+  assert.equal(matchOpensAt(null, GATE.mp.matches.m1), null);
+});
+
+test('matchLocked: held before the tee time for players and scorers, never for officials', () => {
+  const player = { id: 'a1' }, scorer = { id: 'sk' }, marshal = { id: 'm', role: 'marshal' }, admin = { id: 'x', role: 'admin' };
+  const before = at('2026-09-12T09:39'), after = at('2026-09-12T09:40');
+  assert.deepEqual(matchLocked(GATE, GATE.mp.matches.m1, player, before), { ms: at('2026-09-12T09:40'), date: '2026-09-12', time: '09:40' });
+  assert.ok(matchLocked(GATE, GATE.mp.matches.m1, scorer, before));
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m1, player, after), null);
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m1, marshal, before), null);
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m1, admin, before), null);
+  // The session start stands in, the next day counts on, an undated draw is open.
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m2, player, at('2026-09-12T09:29')).time, '09:30');
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m4, player, at('2026-09-12T23:00')).date, '2026-09-13');
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m5, player, before), null);
+  assert.equal(matchLocked({ ...GATE, startDate: '' }, GATE.mp.matches.m1, player, before), null);
+  assert.equal(matchLocked(GATE, GATE.mp.matches.m1, null, before)?.time, '09:40');
 });

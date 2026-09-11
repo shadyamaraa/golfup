@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-09-11 (M Cup: scoring opens at the tee time)
+
+Players were entering M Cup scores before their match had teed off. The
+scorer screen now waits until the match's tee time — its own, else its
+session's start, on the session's calendar day — showing when it opens
+and opening itself on the minute; a tap on a screen opened early is
+refused the same way. The match center's and the schedule tab's «Оноо
+оруулах» buttons read «🔒 09:40-д нээгдэнэ» until then. Players and their
+designated scorers wait with the group; an admin or marshal is never held.
+An undated draw, or a match with neither a tee time nor a session start,
+is never locked. `matchOpensAt` / `matchLocked` in `src/matchplay.js`,
+tested. Two small things alongside: a match with no tee time of its own
+reads «–» on the schedule tab (the session's start stays in the heading)
+instead of borrowing the session start, and sorts at that start rather than
+ahead of every timed match; and a new match added to a session
+in the admin editor takes the session's start time when it is the first —
+so a draw runs 09:30, 09:40, 09:50 … with nothing typed by hand.
+
 ## 2026-09-11 (Member home: the three stat tiles are gone)
 
 The «Тоглолт · Дагаж буй · Дагагч» tiles under the home's feature cards

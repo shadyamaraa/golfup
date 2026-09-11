@@ -521,8 +521,9 @@ function handleClick(tn, el, ctx, host) {
       : Object.values(mp.matches).filter(Boolean);
     const nums = pool.map(m => Number(m.number) || 0);
     const id = newId('m');
-    // A new match tees off 10 minutes behind the previous one, once the
-    // draw has a clock to follow.
+    // A new match tees off 10 minutes behind the previous one; the first of
+    // a session starts when the session does — so a draw runs 09:30, 09:40,
+    // 09:50 … with nothing typed by hand.
     const last = pool.length
       ? pool.reduce((a, b) => ((Number(a.number) || 0) >= (Number(b.number) || 0) ? a : b))
       : null;
@@ -530,7 +531,7 @@ function handleClick(tn, el, ctx, host) {
       id,
       ...(sessionId ? { sessionId } : { format: 'SINGLES' }),
       number: (nums.length ? Math.max(...nums) : 0) + 1,
-      teeTime: last?.teeTime ? addMinutesHHMM(last.teeTime, 10) : '',
+      teeTime: last?.teeTime ? addMinutesHHMM(last.teeTime, 10) : (mp.sessions?.[sessionId]?.startTime || ''),
       players: { a: [], b: [] }
     };
   } else if (kind === 'logo-pick') {

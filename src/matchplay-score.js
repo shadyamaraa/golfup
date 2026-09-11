@@ -14,7 +14,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import {
+import { matchLocked,
   settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED,
   holeChangeAction, canResolveHoleChange
 } from './matchplay.js';
@@ -171,6 +171,38 @@ function pendingHTML(mp, match, user) {
     </div>`;
 }
 
+// The scorer screen before the match's tee time: the header as usual, the
+// wait in place of the result buttons.
+function lockedHTML(tn, match, lock) {
+  const mp = tn.mp || {};
+  const session = mp.sessions?.[match.sessionId] || {};
+  const pad = (n) => String(n).padStart(2, '0');
+  const d = new Date();
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const when = lock.date === today ? lock.time : `${lock.date} · ${lock.time}`;
+  return `
+    <div class="detail-container fade-in" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
+      <a href="#/tournament/${esc(tn.id)}" class="back-link">${t('back')}</a>
+      <div style="margin-top:8px;">
+        <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:700;">
+          ${t('mpMatchNo')}${esc(match.number ?? '')} · ${esc(session.format || '')} · ${esc(lock.time)}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+          ${teamMark(mp, 'a')}
+          <b>${esc(playerNames(mp, match, 'a'))}</b>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:3px;">
+          ${teamMark(mp, 'b')}
+          <b>${esc(playerNames(mp, match, 'b'))}</b>
+        </div>
+      </div>
+      <div class="empty-state" style="padding:34px 20px;margin-top:16px;">
+        <p style="font-size:1.5rem;margin:0 0 8px;">🔒</p>
+        <p>${esc(t('mpScoreLocked').replace('{when}', when))}</p>
+      </div>
+    </div>`;
+}
+
 function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
   const mp = tn.mp || {};
   const total = match.totalHoles || DEFAULT_HOLES;
@@ -288,6 +320,16 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       <div class="empty-state" style="padding:40px 20px;"><p>${msg}</p></div></div>`;
   };
 
+  // The screen waits before the match's tee time (matchLocked): a timer
+  // re-opens it on the minute when the wait is short enough to sit through.
+  let unlockTimer = null;
+  const armUnlock = (ms) => {
+    clearTimeout(unlockTimer);
+    const wait = ms - Date.now();
+    if (wait > 0 && wait < 12 * 3600e3) unlockTimer = setTimeout(() => paint(), wait + 500);
+  };
+  ctx.onUnsub?.(() => clearTimeout(unlockTimer));
+
   const paint = () => {
     // Hole writes are awaited, so a member who scores and immediately leaves
     // would otherwise have this repaint land on the page they moved to.
@@ -305,6 +347,15 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       return;
     }
     denied = false;
+    // Before the tee time the players and their scorers wait; officials are
+    // never held. The demo has no calendar to wait for.
+    const lock = demoMode ? null : matchLocked(data, m, ctx.user);
+    if (lock) {
+      lastBody = null;
+      host.innerHTML = lockedHTML(data, m, lock);
+      armUnlock(lock.ms);
+      return;
+    }
     const body = screenHTML(data, m, demoMode, ctx.user, '', false);
     // Nothing this match shows has changed: refresh the leaderboard strip in
     // place and leave the rest of the DOM alone.
@@ -322,6 +373,8 @@ export async function renderScorerPage(tnId, matchId, ctx) {
   // network — the RTDB write resolves locally while offline.
   const write = async (hole, value) => {
     if (saving) return;
+    // A screen opened early and left open: the lock is re-checked at the tap.
+    if (!demoMode && matchLocked(data, data?.mp?.matches?.[matchId], ctx.user)) { paint(); return; }
     // Demo: the tap lands on the local copy only — nothing reaches the
     // database, which is the whole point of trying this on a preview.
     if (demoMode) {
