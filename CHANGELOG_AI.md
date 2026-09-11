@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-09-11 (Match Center: the matches keep to their days)
+
+The Match Center ordered the matches of a state by the clock alone, so day
+2's 09:30 match sat between day 1's 09:30 and 09:40 and the two days'
+draws read as one list. Within a state the sessions now keep their day
+and number, then the clock — timed matches by their tee time, a match
+nobody has timed yet after them by number, on the schedule tab and the
+start list too; and when a list spans more than one session
+each session gets its own line — «Өдөр 1 — FOURSOMES · 09:30» — the way
+the schedule tab and the start list read. `sortMatchesForDisplay` in
+`src/matchplay.js` takes the sessions, tested; `groupsHTML` in
+`src/matchplay-view.js`.
+
 ## 2026-09-11 (M Cup: scoring opens at the tee time)
 
 Players were entering M Cup scores before their match had teed off. The
