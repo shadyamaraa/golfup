@@ -10,13 +10,13 @@
 // tournament cards) are handed in through `ctx` and reused as they are; the
 // numbers come from club-stats.js, which is pure and tested.
 
-import { t, getLang } from './i18n.js';
+import { t } from './i18n.js';
 import { icon } from './icons.js';
 import * as store from './store.js';
 import { setPageTitle } from './print-common.js';
 import { resultScoreText, resultPointsText } from './tournament-results.js';
 import { genderKey } from './gender.js';
-import { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear, holeStats } from './club-stats.js';
+import { seasonStats, championsWall, seasonYears, defaultSeasonYear, holeStats } from './club-stats.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -159,32 +159,6 @@ function wallByYearHTML(rows, ctx) {
     ${championsRowsHTML(rows.filter(r => r.year === y), ctx)}`).join('');
 }
 
-// ---- The casual games ----
-
-function monthLabel(ym) {
-  const m = Number(ym.slice(5, 7));
-  if (getLang() === 'mn') return `${m}-р сар`;
-  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1] || ym;
-}
-
-function casualHTML(a, { bars = false } = {}) {
-  const max = Math.max(1, ...a.byMonth.map(m => m.count));
-  return `
-    <div class="stat-row">
-      ${tile(t('statTotalGames'), a.games)}
-      ${tile(t('statThisMonth'), a.thisMonth)}
-      ${tile(t('statActive30'), a.active30)}
-    </div>
-    ${a.topLocations.length ? `<div class="pub-pills">${a.topLocations.map(l => `<span class="pill-soft">${esc(l.name)} · ${l.count}</span>`).join('')}</div>` : ''}
-    ${bars ? `
-    <div class="pub-bars-cap">${t('statByMonth')}</div>
-    <div class="pub-bars">${a.byMonth.map(m => `
-      <span class="pb-label">${esc(monthLabel(m.ym))}</span>
-      <span class="spc-bar"><span style="width:${Math.round((m.count / max) * 100)}%;background:var(--gold);"></span></span>
-      <span class="pb-n">${m.count}</span>`).join('')}
-    </div>` : ''}`;
-}
-
 // ---- The landing ----
 
 const HERO = (live) => `
@@ -245,7 +219,6 @@ export async function renderPublicHome(ctx = {}) {
       <div id="pub-holes"></div>
       <div id="pub-champions"></div>
       <div id="home-ranking"></div>
-      <div id="pub-casual"></div>
       <div id="home-news" style="margin-top:24px;"></div>
     </div>`;
   const alive = ctx.alive || (() => true);
@@ -264,17 +237,6 @@ export async function renderPublicHome(ctx = {}) {
     if (un) ctx.onUnsub?.(un);
     const unNews = store.onNewsChanged((items) => ctx.newsInto?.(items));
     if (unNews) ctx.onUnsub?.(unNews);
-  }
-
-  // Games last: the one expensive read the landing adds, and the section
-  // simply goes away if it fails.
-  try {
-    const games = await store.loadAllGames();
-    if (!alive()) return;
-    const host = document.getElementById('pub-casual');
-    if (host) host.innerHTML = `${sectionHead(t('pubCasual'), '#/stats', 'play')}${casualHTML(casualActivity(games))}`;
-  } catch (_) {
-    document.getElementById('pub-casual')?.remove();
   }
 }
 
@@ -302,8 +264,6 @@ export async function renderClubStatsPage(ctx = {}) {
       <div id="pub-holes"></div>
       ${sectionHead(t('pubChampions'), null, 'star')}
       <div id="pub-wall">${wallByYearHTML(wall, { datesText: ctx.datesText })}</div>
-      ${sectionHead(t('pubCasual'), null, 'play')}
-      <div id="pub-casual"><div class="loading-spinner" style="margin:16px auto;"></div></div>
       <a class="list-row surface-card" href="#/ranking" style="margin-top:20px;">
         <span class="tile-icon">${icon('leaderboard', { size: 18 })}</span>
         <span class="lr-body"><div class="lr-title">${t('rankingTitle')}</div><div class="lr-sub">${t('viewAllShort')}</div></span>
@@ -322,13 +282,4 @@ export async function renderClubStatsPage(ctx = {}) {
     main.querySelectorAll('[data-year]').forEach(x => x.classList.toggle('active', x === b));
     paintSeason();
   });
-
-  try {
-    const games = await store.loadAllGames();
-    if (!alive()) return;
-    const host = document.getElementById('pub-casual');
-    if (host) host.innerHTML = casualHTML(casualActivity(games), { bars: true });
-  } catch (_) {
-    document.getElementById('pub-casual')?.remove();
-  }
 }
