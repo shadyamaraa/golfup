@@ -1,5 +1,12 @@
 # CHANGELOG_AI.md
 
+## 2026-09-11 (Member home: the three stat tiles are gone)
+
+The «Тоглолт · Дагаж буй · Дагагч» tiles under the home's feature cards
+are removed at the owner's word; the same figures stay on the member's
+profile page, and the members list keeps its header icon. `renderHomeStats`
+in `src/app.js` and its two calls go.
+
 ## 2026-09-11 (Public pages: the «Клубын тоглолт» block is gone)
 
 The casual-game activity block — total games, this month, active players,

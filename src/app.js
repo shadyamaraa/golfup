@@ -1211,7 +1211,6 @@ async function renderHome() {
       <div id="home-news"></div>
       <div id="next-tee-feature"></div>
       <div id="next-game-feature"></div>
-      <div id="home-stats"></div>
       <div id="notifications-section"></div>
       <div class="section-head" style="margin-top:24px;">
         <h2>${t('upcoming')}</h2>
@@ -1238,7 +1237,6 @@ async function renderHome() {
   renderHomeNews();
   renderNextTeeFeature();
   renderNextGameFeature(games);
-  renderHomeStats(games);
   renderHomeUpcoming(games);
   renderHomeHoles();
   renderHomeRanking();
@@ -1247,7 +1245,6 @@ async function renderHome() {
     const unsub = store.onAllGamesChanged((gs) => {
       homeGamesCache = gs;
       renderNextGameFeature(gs);
-      renderHomeStats(gs);
       renderHomeUpcoming(gs);
     });
     if (unsub) activeUnsubs.push(unsub);
@@ -1935,21 +1932,6 @@ function tnTickerPatch(host, tn) {
     }
   }
   return true;
-}
-
-// 3 stat tiles from real data (games joined/created, following, followers).
-function renderHomeStats(games) {
-  const host = document.getElementById('home-stats');
-  if (!host) return;
-  const myCount = (games || []).filter(isMyGame).length;
-  const following = Object.keys(currentUserFollows || {}).length;
-  const followers = currentUserFollowers?.size || 0;
-  host.innerHTML = `
-    <div class="stat-row">
-      <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myCount}</div></div>
-      <div class="stat-tile"><div class="st-label">${t('statFollowing')}</div><div class="st-value">${following}</div></div>
-      <a href="#/users" class="stat-tile" style="text-decoration:none;"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></a>
-    </div>`;
 }
 
 // Upcoming games (nearest first) as surface list rows.
