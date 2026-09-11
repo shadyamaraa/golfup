@@ -1,12 +1,11 @@
 // src/club-stats.js
-// The club's numbers for anyone who opens ubgolf.club: a season in figures,
-// the champions wall, and how busy the casual games are. Pure — no DOM, no
-// Firebase, no i18n — so every figure is checked in scripts/test-club-stats.mjs
-// against hand-made tournaments and games. The public landing and the
-// statistics page only lay these out.
+// The club's numbers for anyone who opens ubgolf.club: a season in figures
+// and the champions wall. Pure — no DOM, no Firebase, no i18n — so every
+// figure is checked in scripts/test-club-stats.mjs against hand-made
+// tournaments. The public landing and the statistics page only lay these out.
 //
 // Names appear only where they are already on a public board (a champion, a
-// low round). The casual-game activity carries counts, never a member.
+// low round).
 
 import { tnResultModel } from './tournament-results.js';
 import { spActive, isTeamEntry, teamMemberIds, tnScoring, tnIsTeam, tnPars, spPlayerCard, courseByKey, SP_HOLES } from './strokeplay.js';
@@ -225,51 +224,4 @@ export function holeStats(tns, { year, now = Date.now(), stateOf } = {}) {
       const best = c.holes.reduce((m, h) => (h.birdies + h.eagles > (m ? m.birdies + m.eagles : 0) ? h : m), null);
       return { ...c, best: best && best.birdies + best.eagles > 0 ? best : null };
     });
-}
-
-const arr = (v) => (!v ? [] : Array.isArray(v) ? v : Object.values(v));
-const groupsOf = (g) => (!g?.groups ? [] : Array.isArray(g.groups) ? g.groups : Object.values(g.groups));
-
-/**
- * How busy the casual games are — the admin Статистик tab's fold, without
- * the per-player table: games, this month's, players active in the last
- * thirty days, the busiest courses, and a month-by-month count for a bar
- * strip. Deleted games are out; a game with no readable date counts in the
- * totals and nowhere on the calendar.
- */
-export function casualActivity(games, { now = Date.now(), months = 6 } = {}) {
-  const live = (Array.isArray(games) ? games : []).filter(g => g && g.status !== 'deleted');
-  const d = new Date(now);
-  const ym = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  const thisMonth = ym(d);
-  const d30 = now - 30 * DAY;
-  const players = new Set();
-  const active30 = new Set();
-  const locCount = {};
-  const monthCount = {};
-  live.forEach(g => {
-    const month = String(g.date || '').slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(month)) monthCount[month] = (monthCount[month] || 0) + 1;
-    if (g.location) locCount[g.location] = (locCount[g.location] || 0) + 1;
-    const gMs = new Date(`${g.date}T${String(g.time || '00:00').padStart(5, '0')}`).getTime();
-    groupsOf(g).flatMap(arr).forEach(p => {
-      if (!p?.id) return;
-      players.add(p.id);
-      if (!isNaN(gMs) && gMs >= d30 && gMs <= now) active30.add(p.id);
-    });
-  });
-  const byMonth = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    const key = ym(m);
-    byMonth.push({ ym: key, count: monthCount[key] || 0 });
-  }
-  return {
-    games: live.length,
-    thisMonth: monthCount[thisMonth] || 0,
-    active30: active30.size,
-    players: players.size,
-    topLocations: Object.entries(locCount).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([name, count]) => ({ name, count })),
-    byMonth
-  };
 }

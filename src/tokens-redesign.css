@@ -1371,14 +1371,6 @@ a.tn-lb-row.tn-me:hover { background: var(--accent-soft); }
 .cw-div { font-size: 0.66rem; padding: 2px 8px; }
 .cw-year { font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--text-secondary); margin: 18px 0 2px; }
 .pub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.pub-bars-cap { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-top: 16px; }
-.pub-bars {
-  display: grid; grid-template-columns: 64px 1fr 32px; gap: 6px 10px; align-items: center;
-  margin-top: 8px; font-size: 0.78rem;
-}
-.pub-bars .pb-label { color: var(--text-secondary); font-weight: 700; }
-.pub-bars .pb-n { text-align: right; font-weight: 700; }
-.pub-bars .spc-bar > span { background: var(--gold); }
 .pub-years { margin-bottom: 14px; }
 /* Where the eagles and birdies fell: 18 cells, warmer the more birdies a hole gave. */
 .hole-course { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 14px; }

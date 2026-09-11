@@ -1,7 +1,7 @@
 // scripts/test-club-stats.mjs
-// The club's public numbers: a season in figures, the champions wall and the
-// casual-game activity, from hand-made tournaments and games. Pure model —
-// what the landing and the statistics page lay out. Run with: npm run test:mp
+// The club's public numbers: a season in figures and the champions wall,
+// from hand-made tournaments. Pure model — what the landing and the
+// statistics page lay out. Run with: npm run test:mp
 
 globalThis.localStorage = {
   _v: { golfup_lang: 'en' },
@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem(k) { delete this._v[k]; }
 };
 
-const { seasonStats, championsWall, casualActivity, seasonYears, defaultSeasonYear, tnYear, tnState, holeStats } =
+const { seasonStats, championsWall, seasonYears, defaultSeasonYear, tnYear, tnState, holeStats } =
   await import('../src/club-stats.js');
 const { SP_HOLES } = await import('../src/strokeplay.js');
 
@@ -196,31 +196,4 @@ test('holes: where the eagles and birdies fell, per course and hole', () => {
   const [s] = holeStats(SET(), { now: NOW });
   assert.deepEqual([s.eagles, s.birdies, s.cards], [2, 46, 18]);
   assert.equal(holeStats(SET(), { year: 2025, now: NOW }).length, 0);
-});
-
-const P = (id) => ({ id, name: id });
-const G = (id, date, time, location, players, extra = {}) => ({ id, date, time, location, groups: [players.map(P)], status: 'open', createdAt: 1, ...extra });
-
-test('casual activity: games, this month, active players, courses, the month strip', () => {
-  const games = [
-    G('g1', '2026-09-08', '08:00', 'Sky Resort Golf Club', ['a', 'b', 'c']),
-    G('g2', '2026-09-01', '13:00', 'Mt. Bogd Golf Club', ['a', 'd']),
-    G('g3', '2026-08-20', '09:00', 'Sky Resort Golf Club', ['e', 'f']),
-    G('g4', '2026-07-05', '09:00', 'Sky Resort Golf Club', ['a']),
-    G('g5', '2026-06-05', '09:00', 'Chinggis Khaan Golf', ['g'], { groups: { 0: { 0: P('g') } } }),   // RTDB's arrays-as-objects
-    G('g6', '2026-09-03', '09:00', 'Sky Resort Golf Club', ['z'], { status: 'deleted' }),
-    G('g7', 'someday', '', 'Mt. Bogd Golf Club', ['h'])
-  ];
-  const s = casualActivity(games, { now: NOW });
-  assert.equal(s.games, 6);                       // the deleted one is out, the undated one counts
-  assert.equal(s.thisMonth, 2);
-  assert.equal(s.active30, 6);                    // a b c d (September) + e f (20 Aug is inside thirty days)
-  assert.equal(s.players, 8);
-  assert.deepEqual(s.topLocations, [{ name: 'Sky Resort Golf Club', count: 3 }, { name: 'Mt. Bogd Golf Club', count: 2 }, { name: 'Chinggis Khaan Golf', count: 1 }]);
-  assert.deepEqual(s.byMonth, [
-    { ym: '2026-04', count: 0 }, { ym: '2026-05', count: 0 }, { ym: '2026-06', count: 1 },
-    { ym: '2026-07', count: 1 }, { ym: '2026-08', count: 1 }, { ym: '2026-09', count: 2 }
-  ]);
-  assert.ok(!JSON.stringify(s).includes('"name":"a"'), 'no player ids or names ride out');
-  assert.deepEqual(casualActivity([], { now: NOW }).byMonth.length, 6);
 });

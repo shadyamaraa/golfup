@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-11 (Public pages: the «Клубын тоглолт» block is gone)
+
+The casual-game activity block — total games, this month, active players,
+top courses, the six-month bars — is removed from the public landing and
+from the statistics page, at the owner's word. With it goes the one read
+of the `games` node the public pages made, so the landing no longer needs
+that node readable by visitors. `casualActivity` in `src/club-stats.js`,
+its tests, the `.pub-bars` styles and the `pubCasual` / `statByMonth`
+keys are removed; the admin's own statistics fold is untouched.
+
 ## 2026-09-10 (Tournament sponsors: a carousel that slides by itself)
 
 The tournament page stacked every partner as its own plaque, with the mark
