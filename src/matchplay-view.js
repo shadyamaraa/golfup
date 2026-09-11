@@ -431,18 +431,34 @@ export function historyHTML(list, currentId) {
 
 // Matches grouped the way the spec orders them for a phone (§22).
 function groupsHTML(mp, tnId, viewer, singles) {
-  const sorted = sortMatchesForDisplay(matchesOf(mp));
+  const sorted = sortMatchesForDisplay(matchesOf(mp), mp.sessions);
   if (!sorted.length) {
     return `<div class="empty-state" style="padding:30px 20px;"><p>${t('mpNoMatches')}</p></div>`;
   }
   const group = (label, states) => {
     const items = sorted.filter(x => states.includes(x.state));
     if (!items.length) return '';
+    // Two days' draws under one heading read as one list, so when a bucket
+    // spans more than one session each session gets its own line — day,
+    // format and start — the way the schedule tab and the start list do.
+    const split = !singles && new Set(items.map(x => x.match.sessionId || '')).size > 1;
+    let last = null;
+    const cards = items.map(x => {
+      const sid = x.match.sessionId || '';
+      let head = '';
+      if (split && sid !== last) {
+        last = sid;
+        const sess = mp.sessions?.[sid];
+        const text = sess ? [sessionLabel(sess), sess.startTime].filter(Boolean).join(' · ') : t('mpUngrouped');
+        head = `<div class="mpv-day" style="font-size:0.72rem;font-weight:800;color:var(--text-secondary);margin:12px 0 -2px;">${esc(text)}</div>`;
+      }
+      return head + cardHTML(mp, x.match, x.state, tnId, viewer, singles);
+    });
     return `
       <div class="section-head" style="margin-top:14px;">
         <h2 style="font-size:0.86rem;">${esc(label)} <span style="color:var(--text-secondary);font-weight:500;">(${items.length})</span></h2>
       </div>
-      ${items.map(x => cardHTML(mp, x.match, x.state, tnId, viewer, singles)).join('')}`;
+      ${cards.join('')}`;
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.

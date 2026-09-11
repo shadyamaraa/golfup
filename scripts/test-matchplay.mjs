@@ -135,6 +135,25 @@ test('spec §10: display order is LIVE, UPCOMING by tee time, COMPLETED', () => 
   assert.deepEqual(order, ['live', 'up2', 'up1', 'done']);
 });
 
+test('sortMatchesForDisplay: within a state the sessions keep their day and number before the clock', () => {
+  const sessions = {
+    d1: { id: 'd1', day: 1, number: 1, startTime: '09:30' },
+    d1b: { id: 'd1b', day: 1, number: 2, startTime: '13:00' },
+    d2: { id: 'd2', day: 2, number: 1, startTime: '08:00' }
+  };
+  const ms = [
+    { id: 'b1', sessionId: 'd2', number: 1, teeTime: '08:00' },
+    { id: 'a2', sessionId: 'd1', number: 2, teeTime: '09:40' },
+    { id: 'c1', sessionId: 'd1b', number: 1, teeTime: '' },          // untimed, alone in its session
+    { id: 'a1', sessionId: 'd1', number: 1, teeTime: '09:30' },
+    { id: 'live', sessionId: 'd2', number: 2, teeTime: '08:10', holes: holes('a') }
+  ];
+  // Day 2's 08:00 no longer lands ahead of day 1's 09:30.
+  assert.deepEqual(sortMatchesForDisplay(ms, sessions).map(x => x.match.id), ['live', 'a1', 'a2', 'c1', 'b1']);
+  // Without sessions: the plain clock, as before.
+  assert.deepEqual(sortMatchesForDisplay(ms).map(x => x.match.id), ['live', 'b1', 'a1', 'a2', 'c1']);
+});
+
 test('spec §26: lineup validation', () => {
   const roster = {
     p1: { teamId: 'a' }, p2: { teamId: 'a' },
@@ -426,10 +445,10 @@ test('mpSchedule: sessions by day and number, matches by tee time, loose ones la
   const flat = mpSchedule({ matches: SCHED.matches });
   assert.equal(flat.length, 1);
   assert.equal(flat[0].session, null);
-  assert.deepEqual(flat[0].matches.map(m => m.id), ['m3', 'm5', 'm4', 'm2', 'm1']);
+  assert.deepEqual(flat[0].matches.map(m => m.id), ['m4', 'm2', 'm1', 'm3', 'm5']);
   assert.deepEqual(mpSchedule({}), []);
   assert.deepEqual(mpSchedule(null), []);
-  // A match with no tee time of its own sorts at its session's start.
+  // A match with no tee time of its own comes after the timed ones, by number.
   const mixed = mpSchedule({
     sessions: { s1: { id: 's1', day: 1, number: 1, startTime: '09:30' } },
     matches: {
@@ -438,7 +457,7 @@ test('mpSchedule: sessions by day and number, matches by tee time, loose ones la
       z: { id: 'z', sessionId: 's1', number: 3, teeTime: '09:40' }
     }
   });
-  assert.deepEqual(mixed[0].matches.map(m => m.id), ['y', 'x', 'z']);
+  assert.deepEqual(mixed[0].matches.map(m => m.id), ['y', 'z', 'x']);
 });
 
 test('sessionDate: day 1 is the start date, later days count on, bad input is empty', () => {

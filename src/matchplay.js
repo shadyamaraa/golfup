@@ -205,16 +205,30 @@ export function holeTimeline(match) {
 
 // ---- Ordering ----
 
-// LIVE first, then UPCOMING by tee time, COMPLETED last (spec §10/§22) —
-// within a state the match number keeps the printed draw's order.
+// The clock order of a draw: matches with a tee time by the clock, then the
+// ones without one by number — a match nobody has timed yet belongs after
+// the timed ones, not between them.
+const byClock = (a, b) => {
+  const ta = String(a.teeTime || ''), tb = String(b.teeTime || '');
+  if (ta && tb && ta !== tb) return ta.localeCompare(tb);
+  if (!!ta !== !!tb) return ta ? -1 : 1;
+  return (Number(a.number) || 0) - (Number(b.number) || 0);
+};
+
+// LIVE first, then UPCOMING by tee time, COMPLETED last (spec §10/§22).
+// Within a state the sessions keep their day and number — two days' draws
+// never interleave by the clock — then the clock order of the draw
+// (byClock). Without sessions it is the plain clock order.
 const STATE_ORDER = { LIVE: 0, SUSPENDED: 1, UPCOMING: 2, COMPLETED: 3 };
 
-export function sortMatchesForDisplay(matches) {
+export function sortMatchesForDisplay(matches, sessions = {}) {
+  const sess = (m) => (m.sessionId && sessions?.[m.sessionId]) || null;
   return matchList(matches)
     .map(m => ({ match: m, state: matchState(m) }))
     .sort((x, y) => (STATE_ORDER[x.state] - STATE_ORDER[y.state])
-      || String(x.match.teeTime || '').localeCompare(String(y.match.teeTime || ''))
-      || (Number(x.match.number) || 0) - (Number(y.match.number) || 0));
+      || (Number(sess(x.match)?.day) || 0) - (Number(sess(y.match)?.day) || 0)
+      || (Number(sess(x.match)?.number) || 0) - (Number(sess(y.match)?.number) || 0)
+      || byClock(x.match, y.match));
 }
 
 // ---- Tee times ----
@@ -257,7 +271,7 @@ export function cascadeTeeTimes(matches, fromId, stepMin = 10) {
 // ---- Schedule ----
 
 // The draw as the members read it: sessions in day/number order, each with
-// its matches by tee time then number — the marshal table's order, shared
+// its matches in clock order (byClock) — the marshal table's order, shared
 // with the Хуваарь tab so paper and phone can never disagree. Matches with
 // no session come last under a null session; with no sessions at all every
 // match sits in that one block.
@@ -265,15 +279,10 @@ export function mpSchedule(mp) {
   const sessions = Object.values(mp?.sessions || {}).filter(Boolean)
     .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0)
       || (Number(a.number) || 0) - (Number(b.number) || 0));
-  // A match with no tee time of its own starts when its session does, so
-  // that is where it sorts — not ahead of every timed match.
-  const byTee = (start) => (a, b) =>
-    String(a.teeTime || start).localeCompare(String(b.teeTime || start))
-    || (Number(a.number) || 0) - (Number(b.number) || 0);
   const all = matchList(mp?.matches);
-  const of = (sid, start = '') => all.filter(m => (m.sessionId || null) === sid).sort(byTee(start));
-  const blocks = sessions.map(s => ({ session: s, matches: of(s.id, s.startTime || '') }));
-  const loose = sessions.length ? of(null) : all.slice().sort(byTee(''));
+  const of = (sid) => all.filter(m => (m.sessionId || null) === sid).sort(byClock);
+  const blocks = sessions.map(s => ({ session: s, matches: of(s.id) }));
+  const loose = sessions.length ? of(null) : all.slice().sort(byClock);
   if (loose.length) blocks.push({ session: null, matches: loose });
   return blocks;
 }
