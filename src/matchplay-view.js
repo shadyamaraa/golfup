@@ -438,10 +438,10 @@ function groupsHTML(mp, tnId, viewer, singles) {
   const group = (label, states) => {
     const items = sorted.filter(x => states.includes(x.state));
     if (!items.length) return '';
-    // Two days' draws under one heading read as one list, so when a bucket
-    // spans more than one session each session gets its own line — day,
-    // format and start — the way the schedule tab and the start list do.
-    const split = !singles && new Set(items.map(x => x.match.sessionId || '')).size > 1;
+    // Every session gets its own line — day, format and start — the way the
+    // schedule tab and the start list read, so a result is found by its
+    // session rather than by scanning one long list.
+    const split = !singles && Object.keys(mp.sessions || {}).length > 0;
     let last = null;
     const cards = items.map(x => {
       const sid = x.match.sessionId || '';
@@ -462,11 +462,13 @@ function groupsHTML(mp, tnId, viewer, singles) {
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.
+  // The finished matches sit at the very bottom: what is on the course and
+  // what is about to be stays in view, the results are read below.
   return [
     group(t('mpLive'), ['LIVE']),
     group(t('mpSuspended'), ['SUSPENDED']),
-    group(t('mpFinal'), ['COMPLETED']),
-    group(t('mpUpcoming'), ['UPCOMING'])
+    group(t('mpUpcoming'), ['UPCOMING']),
+    group(t('mpFinal'), ['COMPLETED'])
   ].join('');
 }
 

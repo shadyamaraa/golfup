@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-11 (Match Center: the finished matches at the bottom, a session line in every list)
+
+The finished matches now sit at the very bottom of the Match Center —
+LIVE, then suspended, then upcoming, then Дууссан — so what is on the
+course and what is about to be stays in view and the results are read
+below. Every list carries a line per session («Өдөр 1 — FOURSOMES ·
+09:30»), one session or many, so a result is found by its session. The
+order within a list is unchanged: session day and number, then the tee
+time. `groupsHTML` in `src/matchplay-view.js`; the render test follows.
+
 ## 2026-09-11 (Match Center: the matches keep to their days)
 
 The Match Center ordered the matches of a state by the clock alone, so day
