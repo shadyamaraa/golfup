@@ -30,7 +30,7 @@ import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
-import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid } from './matchplay.js';
+import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -2168,18 +2168,21 @@ function mpScheduleTabHTML(tn) {
           const st = matchState(m);
           const mine = !!myPid && ['a', 'b'].some(k => (m.players?.[k] || []).includes(myPid));
           const score = st !== 'COMPLETED' && canScore(currentUser, m, roster);
+          const lock = score ? matchLocked(tn, m, currentUser) : null;
           const label = stateLabel(st);
           return `
           <div style="${grid}padding:8px 2px;border-top:1px solid var(--border-color);${mine ? 'background:var(--accent-soft);border-radius:8px;' : ''}">
             <b style="font-size:0.85rem;text-align:center;">${esc(m.number ?? '')}</b>
-            <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(m.teeTime || s?.startTime || '–')}</span>
+            <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(m.teeTime || '–')}</span>
             <div style="min-width:0;font-size:0.8rem;line-height:1.5;">
               ${side(m, 'a')}${side(m, 'b')}
               ${mine || label || score ? `
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;">
                 ${mine ? `<span class="pill-soft" style="font-size:0.62rem;font-weight:800;">${t('mpMyMatch')}</span>` : ''}
                 ${label ? `<span style="font-size:0.66rem;font-weight:800;color:${st === 'LIVE' ? 'var(--red)' : 'var(--text-secondary)'};">${esc(label)}</span>` : ''}
-                ${score ? `<a href="#/score/${esc(tn.id)}/${esc(m.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.68rem;padding:2px 8px;">${t('mpEnterScore')}</a>` : ''}
+                ${!score ? '' : lock
+                  ? `<span class="pill-soft" style="margin-left:auto;font-size:0.66rem;font-weight:700;">🔒 ${esc(t('mpScoreOpens').replace('{time}', lock.time))}</span>`
+                  : `<a href="#/score/${esc(tn.id)}/${esc(m.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.68rem;padding:2px 8px;">${t('mpEnterScore')}</a>`}
               </div>` : ''}
             </div>
           </div>`;

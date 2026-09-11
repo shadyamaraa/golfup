@@ -265,12 +265,15 @@ export function mpSchedule(mp) {
   const sessions = Object.values(mp?.sessions || {}).filter(Boolean)
     .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0)
       || (Number(a.number) || 0) - (Number(b.number) || 0));
-  const byTee = (a, b) => String(a.teeTime || '').localeCompare(String(b.teeTime || ''))
+  // A match with no tee time of its own starts when its session does, so
+  // that is where it sorts — not ahead of every timed match.
+  const byTee = (start) => (a, b) =>
+    String(a.teeTime || start).localeCompare(String(b.teeTime || start))
     || (Number(a.number) || 0) - (Number(b.number) || 0);
   const all = matchList(mp?.matches);
-  const of = (sid) => all.filter(m => (m.sessionId || null) === sid).sort(byTee);
-  const blocks = sessions.map(s => ({ session: s, matches: of(s.id) }));
-  const loose = sessions.length ? of(null) : all.slice().sort(byTee);
+  const of = (sid, start = '') => all.filter(m => (m.sessionId || null) === sid).sort(byTee(start));
+  const blocks = sessions.map(s => ({ session: s, matches: of(s.id, s.startTime || '') }));
+  const loose = sessions.length ? of(null) : all.slice().sort(byTee(''));
   if (loose.length) blocks.push({ session: null, matches: loose });
   return blocks;
 }
@@ -319,6 +322,30 @@ export function mpNextMatch(mp, userId, { startDate } = {}) {
     || (Number(x.session?.number) || 0) - (Number(y.session?.number) || 0)
     || (Number(x.match.number) || 0) - (Number(y.match.number) || 0));
   return out[0];
+}
+
+// When a match may be scored: its own tee time, else its session's start,
+// on the session's calendar day. null when there is nothing honest to wait
+// for — no start date, no time — so an undated draw is never held.
+export function matchOpensAt(tn, match) {
+  const mp = tn?.mp || {};
+  const session = (match?.sessionId && mp.sessions?.[match.sessionId]) || null;
+  const date = sessionDate(tn?.startDate, session?.day || 1);
+  const raw = String(match?.teeTime || session?.startTime || '');
+  if (!date || !/^\d{1,2}:\d{2}$/.test(raw)) return null;
+  const time = raw.padStart(5, '0');
+  const ms = new Date(`${date}T${time}`).getTime();
+  return Number.isFinite(ms) ? { ms, date, time } : null;
+}
+
+// The wait before a match's tee time — {ms, date, time} while it is still
+// ahead, null once it has passed or when there is none. Players and their
+// designated scorers wait with the group; an admin or marshal is never held,
+// since a marshal moving a group up is exactly who has to score early.
+export function matchLocked(tn, match, user, now = Date.now()) {
+  if (user?.role === 'admin' || user?.role === 'marshal') return null;
+  const opens = matchOpensAt(tn, match);
+  return opens && opens.ms > now ? opens : null;
 }
 
 // ---- Validation (spec §26) ----

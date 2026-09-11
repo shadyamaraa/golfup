@@ -15,7 +15,7 @@ import { icon } from './icons.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
-  playerStats, pairStats, tournamentComplete, tnKind, rosterPid
+  playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked
 } from './matchplay.js';
 // The one definition of who may enter a match's scores — the same check the
 // scorer screen enforces, so a button shown here never leads to a dead end.
@@ -148,8 +148,18 @@ function sideLabel(mp, match, k, singles) {
 // The score-entry shortcut under a card / in the detail: shown to whoever the
 // scorer screen would actually let in — the match's own players, its assigned
 // scorers, and admin/marshal members.
+// The tournament the centre is showing — the score buttons read its dates
+// for the tee-time wait.
+let viewTn = null;
+
 function enterScoreHTML(mp, match, state, tnId, viewer) {
   if (!tnId || state === 'COMPLETED' || !canScore(viewer, match, mp.roster)) return '';
+  // Before the tee time the button waits, saying when it opens.
+  const lock = matchLocked(viewTn, match, viewer);
+  if (lock) return `
+    <div class="pill-soft" style="display:block;text-align:center;margin-top:4px;font-weight:700;">
+      🔒 ${esc(t('mpScoreOpens').replace('{time}', lock.time))}
+    </div>`;
   return `
     <a href="#/score/${esc(tnId)}/${esc(match.id)}" data-mpv-go="1" class="btn btn-primary btn-sm"
        style="display:block;text-align:center;text-decoration:none;margin-top:4px;">
@@ -478,6 +488,7 @@ function meBannerHTML(mp, pid, singles) {
 }
 
 export function renderMatchCenter(host, tn, ctx = {}) {
+  viewTn = tn;
   if (!host) return;
   const mp = tn?.mp;
   if (!mp || !Object.keys(mp.matches || {}).length) {
