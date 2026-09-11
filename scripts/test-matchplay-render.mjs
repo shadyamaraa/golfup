@@ -169,12 +169,15 @@ test('a spectator gets no banner, but every scored player can be shared from the
   assert.deepEqual(shared, ['p1', 'p2', 'p3', 'q1', 'q2', 'q3']);
 });
 
-test('LIVE comes before FINAL, which comes before UPCOMING', () => {
+test('LIVE comes before UPCOMING, and FINAL sits at the bottom, each list split by session', () => {
   const host = hostStub();
   renderMatchCenter(host, TN);
   const at = (s) => host.innerHTML.indexOf(s);
-  assert.ok(at('>LIVE ') < at('>Final '), 'live group precedes final');
-  assert.ok(at('>Final ') < at('>UPCOMING '), 'final group precedes upcoming');
+  assert.ok(at('>LIVE ') < at('>UPCOMING '), 'live group precedes upcoming');
+  assert.ok(at('>UPCOMING ') < at('>Final '), 'upcoming group precedes final');
+  // A session line heads the matches in every list, one session or many.
+  assert.ok(host.innerHTML.includes('class="mpv-day"'), 'session lines present');
+  assert.ok(at('class="mpv-day"') < at('data-mpv="open"'), 'the first card sits under a session line');
 });
 
 test('the session breakdown lists every session', () => {
