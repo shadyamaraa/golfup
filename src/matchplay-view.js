@@ -15,7 +15,7 @@ import { icon } from './icons.js';
 import {
   settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
-  playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked
+  playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked, teamColorOf
 } from './matchplay.js';
 // The one definition of who may enter a match's scores — the same check the
 // scorer screen enforces, so a button shown here never leads to a dead end.
@@ -29,10 +29,7 @@ const pts = (n) => (Number(n) % 1 ? Number(n).toFixed(1) : String(Number(n)));
 
 export const teamName = (mp, k) => mp?.teams?.[k]?.name || (k === 'a' ? 'Team A' : 'Team B');
 export const teamShort = (mp, k) => mp?.teams?.[k]?.short || teamName(mp, k);
-export const teamColor = (mp, k) => {
-  const c = mp?.teams?.[k]?.color;
-  return /^#[0-9a-fA-F]{6}$/.test(c) ? c : (k === 'a' ? '#1f6f43' : '#b3382c');
-};
+export const teamColor = (mp, k) => teamColorOf(mp, k);
 
 // A stored logo is only ever accepted as an image data URI — anything else
 // (a URL, markup, garbage) is ignored and the colour dot takes over. That is

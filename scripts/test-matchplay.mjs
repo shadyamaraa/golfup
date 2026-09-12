@@ -10,7 +10,7 @@ import {
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
   lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind,
   addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
-  matchOpensAt, matchLocked
+  matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -571,4 +571,16 @@ test('matchLocked: held before the tee time for players and scorers, never for o
   assert.equal(matchLocked(GATE, GATE.mp.matches.m5, player, before), null);
   assert.equal(matchLocked({ ...GATE, startDate: '' }, GATE.mp.matches.m1, player, before), null);
   assert.equal(matchLocked(GATE, GATE.mp.matches.m1, null, before)?.time, '09:40');
+});
+
+// ---- Team colours ----
+
+test('teamColorOf: a stored six-digit hex wins, anything else falls back to the crest colours', () => {
+  assert.deepEqual(TEAM_COLORS, { a: '#3D5A99', b: '#B45A1B' });
+  assert.equal(teamColorOf({ teams: { a: { color: '#123456' } } }, 'a'), '#123456');
+  assert.equal(teamColorOf({ teams: { a: { color: '' } } }, 'a'), '#3D5A99');
+  assert.equal(teamColorOf({ teams: { b: { color: 'red' } } }, 'b'), '#B45A1B');
+  assert.equal(teamColorOf({ teams: { b: { color: '#fff' } } }, 'b'), '#B45A1B');
+  assert.equal(teamColorOf({}, 'b'), '#B45A1B');
+  assert.equal(teamColorOf(null, 'a'), '#3D5A99');
 });

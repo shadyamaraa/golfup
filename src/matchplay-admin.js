@@ -19,7 +19,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { readImageFile, validImageData } from './media.js';
-import {
+import { teamColorOf,
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
   lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes, mpScoredRemovals
 } from './matchplay.js';
@@ -125,6 +125,12 @@ function teamBoxHTML(tn, teamId, users) {
           <input data-mp="team" data-team="${teamId}" data-f="name" value="${esc(team.name)}" placeholder="${teamId === 'a' ? 'Altai Eagles' : 'Wellcom Diesels'}" style="${INPUT}width:100%;" /></div>
         <div><span style="${LABEL}">${t('mpTeamShort')}</span>
           <input data-mp="team" data-team="${teamId}" data-f="short" value="${esc(team.short)}" placeholder="${teamId === 'a' ? 'ALTAI' : 'WELLCOM'}" maxlength="10" style="${INPUT}width:100%;" /></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <span style="${LABEL}margin:0;">${t('mpTeamColor')}</span>
+        <input data-mp="team" data-team="${teamId}" data-f="color" type="color" value="${esc(teamColorOf(mp, teamId))}"
+          style="width:44px;height:28px;padding:0;border:1px solid var(--border-color);border-radius:6px;background:none;cursor:pointer;" />
+        <span style="font-size:0.72rem;color:var(--text-muted);font-family:monospace;">${esc(teamColorOf(mp, teamId))}</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
         <span style="${LABEL}margin:0;">${t('mpTeamLogo')}</span>

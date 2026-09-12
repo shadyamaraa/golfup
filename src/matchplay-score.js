@@ -14,7 +14,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
-import { matchLocked,
+import { teamColorOf, matchLocked,
   settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED,
   holeChangeAction, canResolveHoleChange
 } from './matchplay.js';
@@ -53,10 +53,7 @@ export function canScore(user, match, roster) {
 // ---- Rendering ----
 
 const teamLabel = (mp, k) => mp?.teams?.[k]?.short || mp?.teams?.[k]?.name || k.toUpperCase();
-const teamColor = (mp, k) => {
-  const c = mp?.teams?.[k]?.color;
-  return /^#[0-9a-fA-F]{6}$/.test(c) ? c : (k === 'a' ? '#1f6f43' : '#b3382c');
-};
+const teamColor = (mp, k) => teamColorOf(mp, k);
 // Same acceptance rule as the public board: an image data URI or nothing.
 const teamLogo = (mp, k) => {
   const l = mp?.teams?.[k]?.logo;
