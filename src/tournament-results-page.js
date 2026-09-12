@@ -186,13 +186,28 @@ function sessionsHTML(model) {
         <table class="tnr-table">
           <thead><tr><th>#</th><th class="tnr-name" style="color:${esc(a.color)};">${esc(a.short)}</th><th>${t('mpFinal')}</th><th class="tnr-name" style="color:${esc(b.color)};">${esc(b.short)}</th></tr></thead>
           <tbody>
-            ${s.matches.map(m => `
-              <tr class="${m.state === 'COMPLETED' ? '' : 'tnr-out'}">
+            ${s.matches.map(m => {
+              // The side that won — or leads, while play is on — is marked
+              // three ways: its team colour on the names, a tick, and the
+              // arrow beside the score pointing its way. A bolder weight
+              // alone was not readable; a halved match says so in words.
+              const done = m.state === 'COMPLETED';
+              const side = done ? m.winner : m.leader;
+              const team = side ? model.teams[side] : null;
+              const color = team && /^#[0-9a-fA-F]{6}$/.test(team.color || '') ? team.color : '#C5780C';
+              const cell = (k, list) => side === k
+                ? `<td class="tnr-name tnr-win-cell" style="color:${color};background:${color}1A;">✓ ${names(list)}</td>`
+                : `<td class="tnr-name${side ? ' tnr-lost' : ''}">${names(list)}</td>`;
+              const score = done && m.winner === null ? t('mpHalved') : (m.result || '–');
+              const arrow = side ? `<span style="color:${color};">${side === 'a' ? '◀' : '▶'}</span>` : '';
+              return `
+              <tr class="${done ? '' : 'tnr-out'}">
                 <td>${m.number ?? ''}</td>
-                <td class="tnr-name${m.winner === 'a' ? ' tnr-winner' : ''}">${names(m.a)}</td>
-                <td class="tnr-tot">${esc(m.result || '–')}${m.state === 'LIVE' ? ` <small class="tnr-hcp">${t('mpThru')} ${m.thru}</small>` : ''}</td>
-                <td class="tnr-name${m.winner === 'b' ? ' tnr-winner' : ''}">${names(m.b)}</td>
-              </tr>`).join('')}
+                ${cell('a', m.a)}
+                <td class="tnr-tot">${side === 'a' ? `${arrow} ` : ''}${esc(score)}${side === 'b' ? ` ${arrow}` : ''}${m.state === 'LIVE' ? ` <small class="tnr-hcp">${t('mpThru')} ${m.thru}</small>` : ''}</td>
+                ${cell('b', m.b)}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>`;
@@ -278,7 +293,8 @@ const STYLE = `<style>
   .tnr-out td { color: #666; }
   .tnr-under { color: #D7263D; font-weight: 800; }
   .tnr-tot { font-weight: 800; }
-  .tnr-winner { font-weight: 900; }
+  .tnr-win-cell { font-weight: 900; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tnr-lost { color: #777; font-weight: 600; }
   .tnr-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .tnr-tile { border: 1px solid #e3dccb; border-radius: 10px; padding: 8px 10px; }
   .tnr-tile-cap { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #777; }

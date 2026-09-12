@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (Results page: an M Cup match says who won)
+
+The results page's session table printed «6 & 5» between the two pairs
+with the winner only a shade bolder, so nobody could tell which way a
+match went. The winning side — or the leading one while play is on — now
+carries its team colour on the names with a tick and a soft tint, the
+other side reads grey, and the score carries an arrow pointing the
+winner's way; a halved match says «ТЭНЦСЭН» instead of the raw HALVED.
+The tint prints. `sessionsHTML` in `src/tournament-results-page.js`.
+
 ## 2026-09-12 (M Cup schedule tab: a finished session drops to the bottom)
 
 On the Хуваарь tab a session whose every match is decided now moves below
