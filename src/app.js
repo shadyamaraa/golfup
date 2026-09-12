@@ -30,7 +30,7 @@ import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
-import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked } from './matchplay.js';
+import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked, teamColorOf } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -2135,7 +2135,7 @@ function mpScheduleTabHTML(tn) {
   if (!blocks.length) return `<div class="empty-state" style="padding:34px 20px;"><p>${t('mpNoMatches')}</p></div>`;
   const myPid = rosterPid(roster, currentUser?.id);
   const short = (k) => mp.teams?.[k]?.short || mp.teams?.[k]?.name || k.toUpperCase();
-  const color = (k) => /^#[0-9a-fA-F]{6}$/.test(mp.teams?.[k]?.color || '') ? mp.teams[k].color : (k === 'a' ? '#1f6f43' : '#b3382c');
+  const color = (k) => teamColorOf(mp, k);
   const names = (m, k) => (m.players?.[k] || []).map(pid => roster[pid]?.name || pid).filter(Boolean).join(' / ') || '—';
   const stateLabel = (st) => st === 'LIVE' ? t('mpLive') : st === 'SUSPENDED' ? t('mpSuspended') : st === 'COMPLETED' ? t('mpFinal') : '';
   const grid = 'display:grid;grid-template-columns:26px 54px 1fr;gap:8px;align-items:center;';

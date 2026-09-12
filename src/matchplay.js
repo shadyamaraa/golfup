@@ -364,6 +364,19 @@ export function matchLocked(tn, match, user, now = Date.now()) {
   return opens && opens.ms > now ? opens : null;
 }
 
+// ---- Team colours ----
+
+// The colours a cup's two teams wear on every screen when the organiser
+// has not picked their own: Altai's blue and Wellcom's burnt orange, read
+// off the club's two crests (kept away from the app's gold). A stored
+// six-digit hex wins over the default.
+export const TEAM_COLORS = { a: '#3D5A99', b: '#B45A1B' };
+
+export function teamColorOf(mp, k) {
+  const c = mp?.teams?.[k]?.color;
+  return /^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : (TEAM_COLORS[k] || TEAM_COLORS.a);
+}
+
 // ---- Validation (spec §26) ----
 
 const rosterTeam = (roster, pid) => roster?.[pid]?.teamId || null;

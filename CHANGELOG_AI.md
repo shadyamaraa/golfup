@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (M Cup: the teams wear their crest colours, and the admin can pick them)
+
+Both teams' colour fields were empty, so every screen fell back to a
+generic green and red written in four places. The defaults are now the
+crests' own — Altai Eagles blue `#3D5A99`, Wellcom Diesels burnt orange
+`#B45A1B` — in one place (`TEAM_COLORS` / `teamColorOf` in
+`src/matchplay.js`), used by the Match Center, the scorer, the schedule
+tab, the results page and the share cards; and the admin's team box gains
+a colour picker, so the next cup sets its own. The demo and casual match
+play are untouched.
+
 ## 2026-09-12 (Results page: an M Cup match says who won)
 
 The results page's session table printed «6 & 5» between the two pairs
