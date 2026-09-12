@@ -189,10 +189,13 @@ function cardHTML(mp, match, state, tnId, viewer, singles) {
   const sideHTML = (k) => {
     const names = playerNames(mp, match, k);
     const won = settled.finished && settled.winner === k;
+    // A decided match: the winner in bold, the loser in a plain weight and
+    // a quieter ink; a halved match leaves both sides as they are.
+    const lost = settled.finished && !!settled.winner && !won;
     return `
       <div style="display:flex;gap:7px;align-items:center;margin-top:3px;">
         ${teamMark(mp, k, 8)}
-        <span style="font-size:0.86rem;${won ? 'font-weight:800;' : ''}">${esc(names || '—')}</span>
+        <span style="font-size:0.86rem;${won ? 'font-weight:800;' : lost ? 'font-weight:400;color:var(--text-secondary);' : ''}">${esc(names || '—')}</span>
       </div>`;
   };
 
