@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (Eagle · Birdie: the tile reads «Best Hole»)
+
+The Eagle · Birdie block's tile was titled «Шилдэг нүх» in Mongolian; a
+member said it reads wrong and the club says «Best Hole», so the
+Mongolian label (and the English one's capitalisation) are now «Best
+Hole». The player card's own «Шилдэг нүх / Хамгийн муу нүх» pair is
+untouched.
+
 ## 2026-09-11 (Match Center: the finished matches at the bottom, a session line in every list)
 
 The finished matches now sit at the very bottom of the Match Center —
