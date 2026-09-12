@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (M Cup: a finished session folds shut)
+
+On the Match Center's «Дууссан» list and on the schedule tab, a session
+whose every match is decided now folds under one line — day, format and
+start, plus the session score on the Match Center (`ALTAI 3.5 – 2.5
+WELLCOM`) — closed by default; a tap opens it, and a fold the viewer
+opened stays open across the live repaints (the Match Center restores it
+from the DOM, the schedule tab keeps the open ids in a set). A session
+with a match still on the course is left unfolded, as are the LIVE and
+upcoming lists; the print page and the results page are untouched.
+`src/matchplay-view.js`, `src/app.js`, `src/tokens-redesign.css`,
+`scripts/test-matchplay-render.mjs`.
+
 ## 2026-09-12 (M Cup: the winner in bold, the loser in a plain weight)
 
 On the results page's session table and on the Match Center's cards the

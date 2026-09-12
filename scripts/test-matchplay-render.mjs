@@ -180,6 +180,46 @@ test('LIVE comes before UPCOMING, and FINAL sits at the bottom, each list split 
   assert.ok(at('class="mpv-day"') < at('data-mpv="open"'), 'the first card sits under a session line');
 });
 
+test('a session whose every match is decided folds shut in the results list, with its score', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TN);
+  const html = host.innerHTML;
+  const at = html.indexOf('data-mpv-fold="s1"');
+  assert.ok(at > 0, 'the finished FOURSOMES session is a fold');
+  assert.ok(html.indexOf('>Final ') < at, 'the fold sits in the Final list');
+  const tag = html.slice(html.lastIndexOf('<details', at), html.indexOf('>', at));
+  assert.ok(!/\sopen\b/.test(tag), 'closed by default');
+  assert.ok(html.includes('ALTAI 1.5 – 0.5 WELLCOM'), 'the session score is on the summary line');
+  assert.ok(!html.includes('data-mpv-fold="s2"'), 'a session still in play is not folded');
+});
+
+test('a session with a live match keeps its finished matches unfolded', () => {
+  const tn = structuredClone(TN);
+  tn.mp.matches.m4.holes = holes(...Array(18).fill(HALVED));
+  const host = hostStub();
+  renderMatchCenter(host, tn);
+  const html = host.innerHTML;
+  assert.ok(html.includes('data-mpv-fold="s1"'), 'the finished session still folds');
+  assert.ok(!html.includes('data-mpv-fold="s2"'), 'the FOURBALL session, one match live, does not');
+  const final = html.slice(html.indexOf('>Final '));
+  assert.ok(final.includes('class="mpv-day"'), 'its finished match sits under a plain session line');
+});
+
+test('a fold the viewer opened stays open across a repaint', () => {
+  const fake = { attrs: { 'data-mpv-fold': 's1' }, open: false, getAttribute(k) { return this.attrs[k]; } };
+  const host = {
+    innerHTML: '',
+    querySelector: () => null,
+    // The [open] selector only matches while the fake is open, as the DOM would.
+    querySelectorAll: (sel) => !sel.includes('data-mpv-fold') ? [] : sel.includes('[open]') ? (fake.open ? [fake] : []) : [fake]
+  };
+  renderMatchCenter(host, TN);
+  assert.equal(fake.open, false, 'nothing was open before the first paint');
+  fake.open = true;
+  renderMatchCenter(host, TN);
+  assert.equal(fake.open, true, 'restored after the repaint');
+});
+
 test('the session breakdown lists every session', () => {
   const host = hostStub();
   renderMatchCenter(host, TN);
