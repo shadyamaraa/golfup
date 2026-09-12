@@ -1,5 +1,14 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (M Cup schedule tab: a finished session drops to the bottom)
+
+On the Хуваарь tab a session whose every match is decided now moves below
+the ones still to play, in its own day order, with a «Дууссан» pill on
+its heading — what is on the course and what is to come stays on top, and
+the session drops only when its last live match is decided. The printable
+start list keeps the draw's order. `mpSchedule(mp, { doneLast })` in
+`src/matchplay.js`, each block now carrying `finished`; tested.
+
 ## 2026-09-12 (Eagle · Birdie: the tile reads «Best Hole»)
 
 The Eagle · Birdie block's tile was titled «Шилдэг нүх» in Mongolian; a

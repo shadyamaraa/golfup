@@ -2131,7 +2131,7 @@ function isMatchPlay(tn) {
 function mpScheduleTabHTML(tn) {
   const mp = tn.mp || {};
   const roster = mp.roster || {};
-  const blocks = mpSchedule(mp).filter(b => b.matches.length);
+  const blocks = mpSchedule(mp, { doneLast: true }).filter(b => b.matches.length);
   if (!blocks.length) return `<div class="empty-state" style="padding:34px 20px;"><p>${t('mpNoMatches')}</p></div>`;
   const myPid = rosterPid(roster, currentUser?.id);
   const short = (k) => mp.teams?.[k]?.short || mp.teams?.[k]?.name || k.toUpperCase();
@@ -2149,7 +2149,7 @@ function mpScheduleTabHTML(tn) {
       <b style="font-size:0.8rem;">${t('spSchedule')}</b>
       <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;gap:4px;">🖨 ${t('scPrint')}</a>
     </div>
-    ${blocks.map(({ session: s, matches }) => {
+    ${blocks.map(({ session: s, matches, finished }) => {
       const date = s ? sessionDate(tn.startDate, s.day) : '';
       const meta = [date ? formatDate(date) : '', s?.startTime || ''].filter(Boolean).join(' · ');
       return `
@@ -2157,6 +2157,7 @@ function mpScheduleTabHTML(tn) {
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:0 2px 6px;">
           <b style="font-size:0.85rem;">${s ? `${t('mpDay')} ${esc(s.day ?? '')}` : t('mpUngrouped')}</b>
           ${s?.format ? `<span class="pill-soft" style="font-size:0.66rem;">${esc(s.format)}</span>` : ''}
+          ${finished ? `<span class="pill-soft" style="font-size:0.62rem;font-weight:800;color:var(--text-secondary);">${t('mpFinal')}</span>` : ''}
           ${meta ? `<span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${esc(meta)}</span>` : ''}
         </div>
         <div style="${grid}padding:0 2px 4px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">

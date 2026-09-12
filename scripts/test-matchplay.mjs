@@ -460,6 +460,32 @@ test('mpSchedule: sessions by day and number, matches by tee time, loose ones la
   assert.deepEqual(mixed[0].matches.map(m => m.id), ['y', 'z', 'x']);
 });
 
+test('mpSchedule: with doneLast a session whose every match is decided moves to the end', () => {
+  const mp = {
+    sessions: {
+      s1: { id: 's1', day: 1, number: 1, startTime: '09:30' },
+      s2: { id: 's2', day: 1, number: 2, startTime: '13:00' },
+      s3: { id: 's3', day: 2, number: 1, startTime: '08:00' },
+      s4: { id: 's4', day: 2, number: 2, startTime: '13:00' }
+    },
+    matches: {
+      a: { id: 'a', sessionId: 's1', number: 1, holes: holes(...Array(10).fill('a')) },   // decided
+      b: { id: 'b', sessionId: 's1', number: 2, holes: holes(...Array(10).fill('b')) },   // decided
+      c: { id: 'c', sessionId: 's2', number: 1, holes: holes(...Array(10).fill('a')) },   // decided
+      d: { id: 'd', sessionId: 's2', number: 2, holes: holes('a', 'h') },                  // under way
+      e: { id: 'e', sessionId: 's3', number: 1 }                                           // upcoming
+    }
+  };
+  const plain = mpSchedule(mp);
+  assert.deepEqual(plain.map(b => b.session.id), ['s1', 's2', 's3', 's4']);
+  assert.deepEqual(plain.map(b => b.finished), [true, false, false, false]);
+  // s1 drops to the end; s2 stays up while d is on the course; the empty s4 is not "finished".
+  assert.deepEqual(mpSchedule(mp, { doneLast: true }).map(b => b.session.id), ['s2', 's3', 's4', 's1']);
+  // The last match of s2 decided → s2 follows s1 to the end, in day order.
+  mp.matches.d.holes = holes(...Array(10).fill('b'));
+  assert.deepEqual(mpSchedule(mp, { doneLast: true }).map(b => b.session.id), ['s3', 's4', 's1', 's2']);
+});
+
 test('sessionDate: day 1 is the start date, later days count on, bad input is empty', () => {
   assert.equal(sessionDate('2026-09-12', 1), '2026-09-12');
   assert.equal(sessionDate('2026-09-12', 2), '2026-09-13');

@@ -274,17 +274,24 @@ export function cascadeTeeTimes(matches, fromId, stepMin = 10) {
 // its matches in clock order (byClock) — the marshal table's order, shared
 // with the Хуваарь tab so paper and phone can never disagree. Matches with
 // no session come last under a null session; with no sessions at all every
-// match sits in that one block.
-export function mpSchedule(mp) {
+// match sits in that one block. Each block says whether every match in it
+// is decided; with `doneLast` those blocks move to the end, in their own
+// order — the screen keeps what is on the course and what is to come on
+// top, the paper keeps the draw's order.
+export function mpSchedule(mp, { doneLast = false } = {}) {
   const sessions = Object.values(mp?.sessions || {}).filter(Boolean)
     .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0)
       || (Number(a.number) || 0) - (Number(b.number) || 0));
   const all = matchList(mp?.matches);
   const of = (sid) => all.filter(m => (m.sessionId || null) === sid).sort(byClock);
-  const blocks = sessions.map(s => ({ session: s, matches: of(s.id) }));
+  const block = (session, matches) => ({
+    session, matches,
+    finished: matches.length > 0 && matches.every(m => matchState(m) === 'COMPLETED')
+  });
+  const blocks = sessions.map(s => block(s, of(s.id)));
   const loose = sessions.length ? of(null) : all.slice().sort(byClock);
-  if (loose.length) blocks.push({ session: null, matches: loose });
-  return blocks;
+  if (loose.length) blocks.push(block(null, loose));
+  return doneLast ? [...blocks.filter(b => !b.finished), ...blocks.filter(b => b.finished)] : blocks;
 }
 
 // A session's calendar date: day 1 is the tournament's start date, day 2
