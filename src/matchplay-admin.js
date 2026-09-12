@@ -38,6 +38,12 @@ const newId = (p) => `${p}_${Date.now().toString(36)}${Math.random().toString(36
 // save so the next mount re-reads what Firebase actually holds.
 const drafts = new Map();
 
+// Session boxes fold shut (a day's editor is six to twelve match cards
+// long); the ones the admin opened stay open across the section's constant
+// repaints. Keyed by tournament and session id.
+const foldOpen = new Set();
+const foldKey = (tn, sid) => `${tn.id}:${sid}`;
+
 const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 
 function draftFor(tn) {
@@ -274,9 +280,21 @@ function issuesHTML(tn, session) {
 function sessionBoxHTML(tn, session, users) {
   const mp = draftFor(tn).mp;
   const matches = sessionMatches(mp, session.id);
+  const finished = matches.length > 0 && matches.every(m => matchState(m) === 'COMPLETED');
+  const open = foldOpen.has(foldKey(tn, session.id));
+  // The summary is read-only on purpose: a control inside a <summary> would
+  // toggle the fold on every tap, so the editable row sits in the body.
+  const pill = (txt) => `<span class="pill-soft" style="font-size:0.66rem;">${esc(txt)}</span>`;
   return `
-    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;margin-top:8px;">
-      <div style="display:flex;gap:6px;align-items:end;flex-wrap:wrap;">
+    <details class="mpv-fold" data-mp-fold="${esc(session.id)}"${open ? ' open' : ''} style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;margin-top:8px;">
+      <summary style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82rem;">
+        <b>${t('mpDay')} ${esc(session.day ?? '')}</b>
+        ${pill(`№${session.number ?? ''}`)}
+        ${session.format ? pill(session.format) : ''}
+        ${session.startTime ? `<span style="color:var(--text-secondary);">${esc(session.startTime)}</span>` : ''}
+        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${matches.length} match${finished ? ` · ${t('mpFinal')}` : ''}</span>
+      </summary>
+      <div style="display:flex;gap:6px;align-items:end;flex-wrap:wrap;margin-top:8px;">
         <div><span style="${LABEL}">${t('mpDay')}</span>
           <input data-mp="session" data-session="${esc(session.id)}" data-f="day" type="number" min="1" max="9" value="${esc(session.day ?? '')}" style="${INPUT}width:58px;" /></div>
         <div><span style="${LABEL}">${t('mpSessionNo')}</span>
@@ -292,7 +310,7 @@ function sessionBoxHTML(tn, session, users) {
       ${matches.map(m => matchRowHTML(tn, m, users)).join('')}
       <button data-mp="add-match" data-session="${esc(session.id)}" class="btn btn-outline btn-sm" style="margin-top:8px;">+ ${t('mpAddMatch')}</button>
       ${issuesHTML(tn, session)}
-    </div>`;
+    </details>`;
 }
 
 function participationHTML(tn) {
@@ -512,6 +530,7 @@ function handleClick(tn, el, ctx, host) {
       format: last?.format || 'FOURSOMES',
       startTime: ''
     };
+    foldOpen.add(foldKey(tn, id));
   } else if (kind === 'del-session') {
     const id = el.dataset.session;
     const hasScores = sessionMatches(mp, id).some(m => Object.keys(m.holes || {}).length);
@@ -733,6 +752,12 @@ function wire(host, tn, ctx) {
   });
   host.querySelectorAll('button[data-mp]').forEach(el => {
     el.onclick = () => handleClick(tn, el, ctx, host);
+  });
+  host.querySelectorAll('details[data-mp-fold]').forEach(d => {
+    d.addEventListener('toggle', () => {
+      const key = foldKey(tn, d.dataset.mpFold);
+      if (d.open) foldOpen.add(key); else foldOpen.delete(key);
+    });
   });
   host.querySelectorAll('input[data-mp-logo-input]').forEach(inp => {
     inp.onchange = async () => {
