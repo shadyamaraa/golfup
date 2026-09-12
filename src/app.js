@@ -2128,6 +2128,10 @@ function isMatchPlay(tn) {
 // matches by tee time with both lineups in team colours. The member's own
 // match is marked, and a match the rules would let the viewer score carries
 // the scorer link, the way a flight carries its scorecard link.
+// Finished sessions on the schedule tab fold shut; the ones a viewer opened
+// stay open across the tab's live repaints (keyed by tournament and session).
+const mpFoldOpen = new Set();
+
 function mpScheduleTabHTML(tn) {
   const mp = tn.mp || {};
   const roster = mp.roster || {};
@@ -2152,14 +2156,20 @@ function mpScheduleTabHTML(tn) {
     ${blocks.map(({ session: s, matches, finished }) => {
       const date = s ? sessionDate(tn.startDate, s.day) : '';
       const meta = [date ? formatDate(date) : '', s?.startTime || ''].filter(Boolean).join(' · ');
+      // A finished session (already at the bottom) folds to its heading row;
+      // a tap unfolds the matches.
+      const fold = finished && !!s;
+      const foldKey = fold ? `${tn.id}:${s.id}` : '';
+      const wrap = fold ? 'details' : 'div';
+      const head = fold ? 'summary' : 'div';
       return `
-      <div class="surface-card" style="padding:10px 8px;margin-top:8px;">
-        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:0 2px 6px;">
+      <${wrap} class="surface-card${fold ? ' mpv-fold' : ''}"${fold ? ` data-mpv-fold="${esc(foldKey)}"${mpFoldOpen.has(foldKey) ? ' open' : ''}` : ''} style="padding:10px 8px;margin-top:8px;">
+        <${head}${fold ? ' class="mpv-fold-sum"' : ''} style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:0 2px 6px;">
           <b style="font-size:0.85rem;">${s ? `${t('mpDay')} ${esc(s.day ?? '')}` : t('mpUngrouped')}</b>
           ${s?.format ? `<span class="pill-soft" style="font-size:0.66rem;">${esc(s.format)}</span>` : ''}
           ${finished ? `<span class="pill-soft" style="font-size:0.62rem;font-weight:800;color:var(--text-secondary);">${t('mpFinal')}</span>` : ''}
           ${meta ? `<span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${esc(meta)}</span>` : ''}
-        </div>
+        </${head}>
         <div style="${grid}padding:0 2px 4px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
           <span style="text-align:center;">№</span>
           <span style="text-align:center;">${t('spTeeTime')}</span>
@@ -2188,7 +2198,7 @@ function mpScheduleTabHTML(tn) {
             </div>
           </div>`;
         }).join('')}
-      </div>`;
+      </${wrap}>`;
     }).join('')}`;
 }
 
@@ -2507,6 +2517,12 @@ function renderTnBoard() {
   // for the flight's own members and the officials the rules would let in.
   if (tnPageTab === 'schedule' && isMatchPlay(tn)) {
     host.innerHTML = mpScheduleTabHTML(tn);
+    host.querySelectorAll('details[data-mpv-fold]').forEach(d => {
+      d.addEventListener('toggle', () => {
+        const key = d.getAttribute('data-mpv-fold');
+        if (d.open) mpFoldOpen.add(key); else mpFoldOpen.delete(key);
+      });
+    });
     return;
   }
   if (tnPageTab === 'schedule') {

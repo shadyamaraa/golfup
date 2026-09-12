@@ -435,30 +435,51 @@ function groupsHTML(mp, tnId, viewer, singles) {
   if (!sorted.length) {
     return `<div class="empty-state" style="padding:30px 20px;"><p>${t('mpNoMatches')}</p></div>`;
   }
-  const group = (label, states) => {
+  // Every session gets its own line — day, format and start — the way the
+  // schedule tab and the start list read, so a result is found by its
+  // session rather than by scanning one long list.
+  const split = !singles && Object.keys(mp.sessions || {}).length > 0;
+  const totals = split ? sessionTotals(matchesOf(mp)) : {};
+  const sessionDone = (sid) => sorted.some(x => (x.match.sessionId || '') === sid)
+    && sorted.every(x => (x.match.sessionId || '') !== sid || x.state === 'COMPLETED');
+  const group = (label, states, { fold = false } = {}) => {
     const items = sorted.filter(x => states.includes(x.state));
     if (!items.length) return '';
-    // Every session gets its own line — day, format and start — the way the
-    // schedule tab and the start list read, so a result is found by its
-    // session rather than by scanning one long list.
-    const split = !singles && Object.keys(mp.sessions || {}).length > 0;
-    let last = null;
-    const cards = items.map(x => {
-      const sid = x.match.sessionId || '';
-      let head = '';
-      if (split && sid !== last) {
-        last = sid;
-        const sess = mp.sessions?.[sid];
-        const text = sess ? [sessionLabel(sess), sess.startTime].filter(Boolean).join(' · ') : t('mpUngrouped');
-        head = `<div class="mpv-day" style="font-size:0.72rem;font-weight:800;color:var(--text-secondary);margin:12px 0 -2px;">${esc(text)}</div>`;
+    // Consecutive matches of one session form a chunk under one line.
+    const chunks = [];
+    items.forEach(x => {
+      const sid = split ? (x.match.sessionId || '') : '';
+      const last = chunks[chunks.length - 1];
+      if (last && last.sid === sid) last.items.push(x);
+      else chunks.push({ sid, items: [x] });
+    });
+    const body = chunks.map(c => {
+      const cards = c.items.map(x => cardHTML(mp, x.match, x.state, tnId, viewer, singles)).join('');
+      if (!split) return cards;
+      const sess = mp.sessions?.[c.sid];
+      const text = sess ? [sessionLabel(sess), sess.startTime].filter(Boolean).join(' · ') : t('mpUngrouped');
+      // A session whose every match is decided folds under its line and
+      // score in the results list, so the second day's board is not read
+      // past the first day's six cards; a tap opens it, and the open state
+      // survives the live repaints (renderMatchCenter restores it).
+      if (fold && sess && sessionDone(c.sid)) {
+        const v = totals[c.sid] || { a: 0, b: 0 };
+        return `
+      <details class="mpv-fold" data-mpv-fold="${esc(c.sid)}">
+        <summary class="mpv-day mpv-fold-sum">
+          <span>${esc(text)}</span>
+          <span class="mpv-fold-score">${esc(teamShort(mp, 'a'))} ${pts(v.a)} – ${pts(v.b)} ${esc(teamShort(mp, 'b'))}</span>
+        </summary>
+        ${cards}
+      </details>`;
       }
-      return head + cardHTML(mp, x.match, x.state, tnId, viewer, singles);
+      return `<div class="mpv-day" style="font-size:0.72rem;font-weight:800;color:var(--text-secondary);margin:12px 0 -2px;">${esc(text)}</div>${cards}`;
     });
     return `
       <div class="section-head" style="margin-top:14px;">
         <h2 style="font-size:0.86rem;">${esc(label)} <span style="color:var(--text-secondary);font-weight:500;">(${items.length})</span></h2>
       </div>
-      ${cards.join('')}`;
+      ${body.join('')}`;
   };
   // Suspended matches keep their own heading rather than being counted under
   // LIVE, where the count would claim more play is under way than there is.
@@ -468,7 +489,7 @@ function groupsHTML(mp, tnId, viewer, singles) {
     group(t('mpLive'), ['LIVE']),
     group(t('mpSuspended'), ['SUSPENDED']),
     group(t('mpUpcoming'), ['UPCOMING']),
-    group(t('mpFinal'), ['COMPLETED'])
+    group(t('mpFinal'), ['COMPLETED'], { fold: true })
   ].join('');
 }
 
@@ -529,6 +550,9 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   // open must not snap shut on every incoming hole. (Optional call: the
   // render tests drive this with a bare {innerHTML} host.)
   const statsOpen = host.querySelector?.('details[data-mpv-stats]')?.open;
+  // Likewise a finished session the viewer unfolded in the results list.
+  const foldsOpen = new Set([...(host.querySelectorAll?.('details[data-mpv-fold][open]') || [])]
+    .map(d => d.getAttribute('data-mpv-fold')));
 
   const mePid = viewerPid(mp, viewer);
   const me = mePid ? meBannerHTML(mp, mePid, singles) : '';
@@ -548,6 +572,11 @@ export function renderMatchCenter(host, tn, ctx = {}) {
   if (statsOpen) {
     const d = host.querySelector?.('details[data-mpv-stats]');
     if (d) d.open = true;
+  }
+  if (foldsOpen.size) {
+    host.querySelectorAll('details[data-mpv-fold]').forEach(d => {
+      if (foldsOpen.has(d.getAttribute('data-mpv-fold'))) d.open = true;
+    });
   }
 
   host.querySelectorAll('button[data-mpv="open"]').forEach(b => b.onclick = () => {
