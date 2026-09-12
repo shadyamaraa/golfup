@@ -293,8 +293,8 @@ const STYLE = `<style>
   .tnr-out td { color: #666; }
   .tnr-under { color: #D7263D; font-weight: 800; }
   .tnr-tot { font-weight: 800; }
-  .tnr-win-cell { font-weight: 900; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .tnr-lost { color: #777; font-weight: 600; }
+  .sc-sheet .tnr-table .tnr-win-cell { font-weight: 900; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sc-sheet .tnr-table .tnr-lost { color: #666; font-weight: 400; }
   .tnr-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .tnr-tile { border: 1px solid #e3dccb; border-radius: 10px; padding: 8px 10px; }
   .tnr-tile-cap { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #777; }

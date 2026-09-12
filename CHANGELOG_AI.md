@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (M Cup: the winner in bold, the loser in a plain weight)
+
+On the results page's session table and on the Match Center's cards the
+losing side of a decided match now reads in a plain weight and a quieter
+ink, so the bold winner stands alone; a halved match leaves both sides
+as they are. On the results page the winner's bold weight had in fact never
+applied — the table's own name rule outranked it — so the two marks now
+carry the same weight of selector. `src/tournament-results-page.js`,
+`src/matchplay-view.js`.
+
 ## 2026-09-12 (M Cup: the teams wear their crest colours, and the admin can pick them)
 
 Both teams' colour fields were empty, so every screen fell back to a
