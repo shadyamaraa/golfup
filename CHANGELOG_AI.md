@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-09-12 (Admin M Cup editor: session boxes fold shut)
+
+In the admin's match play setup each session box is now a closed fold
+whose summary line reads the session — «Өдөр 1 · №1 · FOURSOMES · 09:30 ·
+6 match», with «Дууссан» once every match is decided; a tap opens the
+editable row (day, number, format, start, delete) and the match cards. A
+fold the admin opened stays open across the section's repaints (every
+player pick, tee time and format change repaints it), a session just
+added opens by itself, and the summary follows the draft's values. Same
+`.mpv-fold` styling as the Match Center and schedule folds.
+`src/matchplay-admin.js`.
+
 ## 2026-09-12 (M Cup: a finished session folds shut)
 
 On the Match Center's «Дууссан» list and on the schedule tab, a session
