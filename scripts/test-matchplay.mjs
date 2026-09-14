@@ -10,7 +10,9 @@ import {
   teamTotals, sessionTotals, holeTimeline, sortMatchesForDisplay,
   lineupIssues, participation, HALVED, UNGROUPED, playerStats, pairStats, tournamentComplete, holeChangeAction, canResolveHoleChange, tnKind,
   addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
-  matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS
+  matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS,
+  PLAYOFF_HOLES, isPlayoff, matchHoleNo, matchHoleCount, settleMatchOf,
+  mpOutcome, newPlayoffSession
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -120,10 +122,12 @@ test('spec §24: session totals group by sessionId', () => {
 test('spec §11: hole timeline carries per-hole result and running status', () => {
   const rows = holeTimeline({ holes: holes('a', HALVED, 'b') });
   assert.equal(rows.length, 18);
-  assert.deepEqual(rows[0], { hole: 1, result: 'a', status: '1 UP' });
-  assert.deepEqual(rows[1], { hole: 2, result: HALVED, status: '1 UP' });
-  assert.deepEqual(rows[2], { hole: 3, result: 'b', status: 'AS' });
-  assert.deepEqual(rows[3], { hole: 4, result: null, status: '' });
+  // `no` is the course hole the index is played on — itself, for an ordinary
+  // match; `extra` marks a sudden-death hole, which this one has none of.
+  assert.deepEqual(rows[0], { hole: 1, no: 1, extra: false, result: 'a', status: '1 UP' });
+  assert.deepEqual(rows[1], { hole: 2, no: 2, extra: false, result: HALVED, status: '1 UP' });
+  assert.deepEqual(rows[2], { hole: 3, no: 3, extra: false, result: 'b', status: 'AS' });
+  assert.deepEqual(rows[3], { hole: 4, no: 4, extra: false, result: null, status: '' });
 });
 
 test('spec §10: display order is LIVE, UPCOMING by tee time, COMPLETED', () => {
@@ -583,4 +587,210 @@ test('teamColorOf: a stored six-digit hex wins, anything else falls back to the 
   assert.equal(teamColorOf({ teams: { b: { color: '#fff' } } }, 'b'), '#B45A1B');
   assert.equal(teamColorOf({}, 'b'), '#B45A1B');
   assert.equal(teamColorOf(null, 'a'), '#3D5A99');
+});
+
+// ---- The playoff (level on points: 3 holes, then sudden death) ----
+
+// A playoff over 1, 8, 9: two a side, one ball, no point at stake.
+const PO = (...results) => ({
+  id: 'po', sessionId: 'sPo', number: 1, format: 'FOURSOMES',
+  playoff: true, holeList: [1, 8, 9], totalHoles: 3,
+  players: { a: ['a1', 'a2'], b: ['b1', 'b2'] },
+  holes: holes(...results)
+});
+
+test('a playoff is decided over its three holes exactly as a match is', () => {
+  // Won on the last of the three.
+  let s = settleMatchOf(PO('a', HALVED, HALVED));
+  assert.equal(s.finished, true);
+  assert.equal(s.winner, 'a');
+  assert.equal(s.result, '1 UP');
+  assert.equal(s.extraHoles, 0);
+  assert.equal(s.suddenDeath, false);
+  // Two up with one to play closes it out early, the third hole never played.
+  s = settleMatchOf(PO('a', 'a'));
+  assert.equal(s.result, '2 & 1');
+  assert.equal(matchState(PO('a', 'a')), 'COMPLETED');
+  // Part-played is live, nothing entered is upcoming.
+  assert.equal(matchState(PO(HALVED)), 'LIVE');
+  assert.equal(matchState(PO()), 'UPCOMING');
+});
+
+test('three halved holes send the playoff to sudden death rather than halving it', () => {
+  const s = settleMatchOf(PO(HALVED, HALVED, HALVED));
+  assert.equal(s.finished, false, 'a playoff is never halved — it plays on');
+  assert.equal(s.winner, null);
+  assert.equal(matchState(PO(HALVED, HALVED, HALVED)), 'LIVE');
+  // The same holes on an ordinary three-hole match ARE a halved match.
+  assert.equal(settleMatch(holes(HALVED, HALVED, HALVED), 3).finished, true);
+  assert.equal(settleMatch(holes(HALVED, HALVED, HALVED), 3).result, 'AS');
+});
+
+test('the first extra hole won ends the playoff, however long it runs', () => {
+  let s = settleMatchOf(PO(HALVED, HALVED, HALVED, 'a'));
+  assert.equal(s.finished, true);
+  assert.equal(s.winner, 'a');
+  assert.equal(s.result, '1 UP');
+  assert.equal(s.extraHoles, 1);
+  assert.equal(s.suddenDeath, true);
+  assert.equal(s.thru, 4);
+  // Three extra holes halved, the fourth won: b takes it at the seventh.
+  s = settleMatchOf(PO(HALVED, HALVED, HALVED, HALVED, HALVED, HALVED, 'b'));
+  assert.equal(s.winner, 'b');
+  assert.equal(s.extraHoles, 4);
+  assert.equal(s.thru, 7);
+  // An extra hole halved leaves it live, with one more to come.
+  s = settleMatchOf(PO(HALVED, HALVED, HALVED, HALVED));
+  assert.equal(s.finished, false);
+  assert.equal(s.extraHoles, 1);
+});
+
+test('sudden death is off unless the match asks for it, so every ordinary match settles as before', () => {
+  const eighteen = holes(...Array(18).fill(HALVED));
+  assert.equal(settleMatch(eighteen, 18).result, 'AS');
+  assert.equal(settleMatch(eighteen, 18).extraHoles, 0);
+  assert.equal(settleMatch(eighteen, 18).suddenDeath, false);
+  assert.equal(settleMatch(holes(...Array(10).fill('a')), 18).result, '10 & 8');
+  // A hole entered past the end of an ordinary match is still ignored.
+  assert.equal(settleMatch(holes(...Array(18).fill(HALVED), 'a'), 18).thru, 18);
+  // The flag alone changes nothing for a match that was already decided.
+  assert.equal(settleMatch(eighteen, 18, { suddenDeath: true }).finished, false);
+});
+
+test('matchHoleNo cycles the playoff holes, and leaves every other match alone', () => {
+  const po = PO();
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(h => matchHoleNo(po, h)), [1, 8, 9, 1, 8, 9, 1]);
+  // Holes stored as an RTDB object rather than an array read the same.
+  assert.equal(matchHoleNo({ playoff: true, holeList: { 0: 1, 1: 8, 2: 9 } }, 5), 8);
+  // No list: the index is the hole.
+  assert.equal(matchHoleNo({ holes: {} }, 7), 7);
+  assert.equal(matchHoleNo(null, 3), 3);
+  assert.equal(isPlayoff(po), true);
+  assert.equal(isPlayoff({ id: 'm1' }), false);
+  assert.deepEqual(PLAYOFF_HOLES, [1, 8, 9]);
+});
+
+test('a playoff in sudden death grows one hole at a time so the scorer always has the next one', () => {
+  assert.equal(matchHoleCount(PO()), 3);
+  assert.equal(matchHoleCount(PO(HALVED, HALVED)), 3);
+  // All square through three: a fourth cell appears.
+  assert.equal(matchHoleCount(PO(HALVED, HALVED, HALVED)), 4);
+  assert.equal(matchHoleCount(PO(HALVED, HALVED, HALVED, HALVED)), 5);
+  // Once it is won the strip stops where it ended.
+  assert.equal(matchHoleCount(PO(HALVED, HALVED, HALVED, 'a')), 4);
+  assert.equal(matchHoleCount(PO('a', HALVED, HALVED)), 3);
+  // An ordinary match is always its own length.
+  assert.equal(matchHoleCount({ holes: holes('a') }), 18);
+  assert.equal(matchHoleCount({ totalHoles: 9, holes: {} }), 9);
+});
+
+test('the playoff timeline names the course holes, extra ones included', () => {
+  const rows = holeTimeline(PO(HALVED, HALVED, HALVED, 'b'));
+  assert.equal(rows.length, 4);
+  assert.deepEqual(rows.map(r => r.no), [1, 8, 9, 1]);
+  assert.deepEqual(rows.map(r => r.extra), [false, false, false, true]);
+  assert.equal(rows[3].result, 'b');
+  assert.equal(rows[3].status, '1 UP');
+});
+
+test('a playoff wins the cup without moving the scoreboard', () => {
+  const won = PO(HALVED, HALVED, HALVED, 'a');
+  assert.deepEqual(matchPoints(won), { a: 0, b: 0 }, 'the tied score stands');
+  assert.deepEqual(teamTotals([{ holes: holes(...Array(10).fill('a')) }, won]), { a: 1, b: 0 });
+  // It does not inflate a session row either.
+  assert.deepEqual(sessionTotals([won])[won.sessionId], { a: 0, b: 0 });
+  // And nobody's personal record gains a point from it.
+  assert.equal(playerStats({ matches: { po: won } }).a1.points, 0);
+  assert.equal(playerStats({ matches: { po: won } }).a1.w, 1, 'the win itself still counts');
+});
+
+// One a side won, one halved: 1.5 – 1.5 with everything decided.
+const TIED_MP = {
+  sessions: { s1: { id: 's1', day: 1, number: 1, format: 'SINGLES', startTime: '08:00' } },
+  matches: {
+    m1: { id: 'm1', sessionId: 's1', number: 1, players: { a: ['a1'], b: ['b1'] }, holes: holes(...Array(10).fill('a')) },
+    m2: { id: 'm2', sessionId: 's1', number: 2, players: { a: ['a2'], b: ['b2'] }, holes: holes(...Array(10).fill('b')) },
+    m3: { id: 'm3', sessionId: 's1', number: 3, players: { a: ['a3'], b: ['b3'] }, holes: holes(...Array(18).fill(HALVED)) }
+  }
+};
+
+test('mpOutcome: level and all played asks for a playoff, and the playoff answers it', () => {
+  let o = mpOutcome(TIED_MP);
+  assert.deepEqual(o.totals, { a: 1.5, b: 1.5 });
+  assert.equal(o.complete, true);
+  assert.equal(o.tied, true);
+  assert.equal(o.winner, null);
+  assert.equal(o.playoff, null);
+  assert.equal(o.needsPlayoff, true);
+
+  // An unfinished playoff is not an answer yet.
+  const live = { ...TIED_MP, matches: { ...TIED_MP.matches, po: PO(HALVED) } };
+  o = mpOutcome(live);
+  assert.equal(o.needsPlayoff, false, 'one is drawn already — go and play it');
+  assert.equal(o.winner, null);
+  assert.equal(o.playoff.id, 'po');
+
+  // Decided in sudden death: the cup goes to a, the score stays level.
+  o = mpOutcome({ ...TIED_MP, matches: { ...TIED_MP.matches, po: PO(HALVED, HALVED, HALVED, 'a') } });
+  assert.equal(o.playoffWinner, 'a');
+  assert.equal(o.winner, 'a');
+  assert.deepEqual(o.totals, { a: 1.5, b: 1.5 });
+  assert.equal(o.tied, true);
+  assert.equal(o.needsPlayoff, false);
+});
+
+test('mpOutcome: a decided cup never asks for a playoff, and an unfinished one waits', () => {
+  const led = { ...TIED_MP, matches: { ...TIED_MP.matches, m3: { ...TIED_MP.matches.m3, holes: holes(...Array(10).fill('a')) } } };
+  let o = mpOutcome(led);
+  assert.deepEqual(o.totals, { a: 2, b: 1 });
+  assert.equal(o.winner, 'a');
+  assert.equal(o.tied, false);
+  assert.equal(o.needsPlayoff, false);
+
+  // Level on points but a match still out there: nothing is owed yet.
+  const playing = { ...TIED_MP, matches: { ...TIED_MP.matches, m4: { id: 'm4', sessionId: 's1', number: 4, players: { a: ['a4'], b: ['b4'] }, holes: holes('a') } } };
+  o = mpOutcome(playing);
+  assert.equal(o.complete, false);
+  assert.equal(o.needsPlayoff, false);
+
+  assert.equal(mpOutcome({}).needsPlayoff, false);
+  assert.equal(mpOutcome(null).winner, null);
+});
+
+test('newPlayoffSession hangs the extra match off the end of the draw', () => {
+  const mp = {
+    sessions: {
+      s1: { id: 's1', day: 1, number: 1, format: 'FOURSOMES' },
+      s2: { id: 's2', day: 2, number: 1, format: 'SINGLES' }
+    },
+    matches: {}
+  };
+  const { session, match } = newPlayoffSession(mp, { sessionId: 'sPo', matchId: 'mPo' });
+  // Last day, next number — so it sorts below everything already drawn.
+  assert.equal(session.day, 2);
+  assert.equal(session.number, 2);
+  assert.equal(session.format, 'FOURSOMES');
+  assert.equal(session.playoff, true);
+  assert.deepEqual(session.holeList, [1, 8, 9]);
+  assert.equal(match.sessionId, 'sPo');
+  assert.equal(match.totalHoles, 3);
+  assert.equal(match.playoff, true);
+  assert.deepEqual(match.players, { a: [], b: [] });
+  // Custom holes are taken as given, rubbish is dropped.
+  const two = newPlayoffSession(mp, { holes: [10, 17, '18', 0, 'x'], sessionId: 's', matchId: 'm' });
+  assert.deepEqual(two.match.holeList, [10, 17, 18]);
+  assert.equal(two.match.totalHoles, 3);
+  // An empty setup still produces a usable pair.
+  assert.equal(newPlayoffSession({}, { sessionId: 's', matchId: 'm' }).session.day, 1);
+});
+
+test('a playoff session is exempt from the twelve-per-team rule, but not from 2 v 2', () => {
+  const po = PO();
+  // The admin passes required: 0 for a playoff session — no player-count issue.
+  const roster = { a1: { teamId: 'a' }, a2: { teamId: 'a' }, b1: { teamId: 'b' }, b2: { teamId: 'b' } };
+  assert.deepEqual(lineupIssues([po], roster, { required: 0 }), []);
+  // A side left short is still reported.
+  const short = { ...po, players: { a: ['a1'], b: ['b1', 'b2'] } };
+  const issues = lineupIssues([short], roster, { required: 0 });
+  assert.ok(issues.some(i => i.kind === 'match-size' && i.teamId === 'a' && i.count === 1 && i.required === 2));
 });

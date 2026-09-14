@@ -378,13 +378,13 @@ test('the sample renders the whole board', () => {
 
 const rules = await import('../src/mcup-rules.js');
 
-test('the M Cup rulebook still composes its five blocks in order', () => {
+test('the M Cup rulebook still composes its blocks in order, playoff included', () => {
   // The per-format blocks are exported one by one so a casual scramble,
   // fourball or foursome game can show just its own. The club's document must
   // not have moved as a result — same blocks, same numbers, same order.
   const html = rules.ryderRulesHTML();
   const at = (needle) => html.indexOf(needle);
-  const marks = ['1. FOURBALL', '2. FOURSOMES', '3. SINGLES',
+  const marks = ['1. FOURBALL', '2. FOURSOMES', '3. SINGLES', '4. PLAYOFF',
     'Match play-ийн чухал ойлголтууд', 'Гол зарчим'].map(at);
   assert.ok(marks.every(i => i > 0), 'every section is present');
   assert.deepEqual(marks, [...marks].sort((x, y) => x - y), 'and in the document order');
@@ -392,6 +392,14 @@ test('the M Cup rulebook still composes its five blocks in order', () => {
   assert.ok(rules.fourballRulesHTML().includes('>FOURBALL'));
   assert.ok(rules.foursomesRulesHTML().includes('>FOURSOMES'));
   assert.ok(rules.singlesRulesHTML().includes('>SINGLES'));
+  // The tie-break names its three holes, sudden death, and that it pays nothing.
+  const po = rules.playoffRulesHTML();
+  assert.ok(po.includes('>PLAYOFF'));
+  assert.ok(po.includes('1, 8, 9'));
+  assert.ok(po.includes('sudden death'));
+  assert.ok(/тэнцсэн хэвээр/.test(po), 'the scoreboard is not moved by it');
+  // A casual team game's blurb must not drag the cup's tie-break in.
+  assert.ok(!rules.casualTeamRulesHTML('foursome').includes('PLAYOFF'));
 });
 
 test('a casual team game gets its own format blurb, and nothing else does', () => {
@@ -408,4 +416,90 @@ test('a casual team game gets its own format blurb, and nothing else does', () =
   assert.ok(sc.includes('WHS'), 'and it says the round does not post');
   assert.equal(rules.casualTeamRulesHTML('match'), '');
   assert.equal(rules.casualTeamRulesHTML(undefined), '');
+});
+
+// ---- The playoff ----
+
+// Two matches, one each way: level at 1 – 1 with everything decided.
+const TIED = {
+  id: 'mcup',
+  format: 'match',
+  mp: {
+    teams: {
+      a: { name: 'Altai Eagles', short: 'ALTAI', color: '#3D5A99' },
+      b: { name: 'Wellcom Diesels', short: 'WELLCOM', color: '#B45A1B' }
+    },
+    roster: {
+      p1: { teamId: 'a', name: 'Margad' }, p2: { teamId: 'a', name: 'Bat-Amgalan' },
+      q1: { teamId: 'b', name: 'Samadi' }, q2: { teamId: 'b', name: 'Solongobat' }
+    },
+    sessions: { s1: { id: 's1', day: 1, number: 1, format: 'SINGLES', startTime: '08:00' } },
+    matches: {
+      m1: { id: 'm1', sessionId: 's1', number: 1, players: { a: ['p1'], b: ['q1'] }, holes: holes(...Array(10).fill('a')) },
+      m2: { id: 'm2', sessionId: 's1', number: 2, players: { a: ['p2'], b: ['q2'] }, holes: holes(...Array(10).fill('b')) }
+    }
+  }
+};
+
+// The same cup with the playoff drawn, and whatever holes are handed in.
+const withPlayoff = (...results) => ({
+  ...TIED,
+  mp: {
+    ...TIED.mp,
+    sessions: {
+      ...TIED.mp.sessions,
+      sPo: { id: 'sPo', day: 1, number: 2, format: 'FOURSOMES', startTime: '', playoff: true, holeList: [1, 8, 9] }
+    },
+    matches: {
+      ...TIED.mp.matches,
+      po: {
+        id: 'po', sessionId: 'sPo', number: 1, format: 'FOURSOMES',
+        playoff: true, holeList: [1, 8, 9], totalHoles: 3,
+        players: { a: ['p1', 'p2'], b: ['q1', 'q2'] },
+        holes: holes(...results)
+      }
+    }
+  }
+});
+
+test('a cup that finishes level says so on the scoreboard instead of showing two equal numbers', () => {
+  const host = hostStub();
+  renderMatchCenter(host, TIED);
+  assert.match(host.innerHTML, /Level — a playoff decides it/);
+  // Both totals still read 1, and neither is claimed as a win.
+  assert.equal((host.innerHTML.match(/>1</g) || []).length >= 2, true);
+  assert.ok(!host.innerHTML.includes('🏆'));
+});
+
+test('the playoff card names itself and never hides in the finished fold', () => {
+  const host = hostStub();
+  renderMatchCenter(host, withPlayoff('h', 'h', 'h', 'a'));
+  const html = host.innerHTML;
+  assert.match(html, /Playoff/);
+  // The two ordinary matches fold away under their session; the playoff does not.
+  assert.ok(html.includes('data-mpv-fold="s1"'), 'the singles session folds');
+  assert.ok(!html.includes('data-mpv-fold="sPo"'), 'the playoff stays open');
+  assert.match(html, /Sudden death/);
+});
+
+test('winning the playoff takes the cup without touching the score', () => {
+  const host = hostStub();
+  renderMatchCenter(host, withPlayoff('h', 'h', 'h', 'a'));
+  const html = host.innerHTML;
+  assert.match(html, /🏆 ALTAI — won the playoff/);
+  // The session breakdown keeps the playoff out of its rows and states the
+  // verdict instead; the overall is still 1 — 1.
+  assert.match(html, /Session results/);
+  assert.ok(!/Playoff[^<]*<\/span>\s*<span[^>]*>0/.test(html), 'no 0 — 0 row for it');
+  assert.equal((html.match(/ALTAI <b>1<\/b>/) || []).length, 1, 'the score is untouched');
+});
+
+test('a playoff still being played is not a verdict', () => {
+  const host = hostStub();
+  renderMatchCenter(host, withPlayoff('h', 'h', 'h'));
+  const html = host.innerHTML;
+  assert.ok(!html.includes('🏆'), 'nobody has won yet');
+  assert.match(html, /Level — a playoff decides it/);
+  // All square through three and still live: the card says so, not HALVED.
+  assert.ok(!/Playoff[\s\S]{0,400}HALVED/.test(html));
 });

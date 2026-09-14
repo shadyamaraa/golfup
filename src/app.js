@@ -2158,15 +2158,16 @@ function mpScheduleTabHTML(tn) {
       const meta = [date ? formatDate(date) : '', s?.startTime || ''].filter(Boolean).join(' · ');
       // A finished session (already at the bottom) folds to its heading row;
       // a tap unfolds the matches.
-      const fold = finished && !!s;
+      const fold = finished && !!s && !s.playoff;
       const foldKey = fold ? `${tn.id}:${s.id}` : '';
       const wrap = fold ? 'details' : 'div';
       const head = fold ? 'summary' : 'div';
       return `
       <${wrap} class="surface-card${fold ? ' mpv-fold' : ''}"${fold ? ` data-mpv-fold="${esc(foldKey)}"${mpFoldOpen.has(foldKey) ? ' open' : ''}` : ''} style="padding:10px 8px;margin-top:8px;">
         <${head}${fold ? ' class="mpv-fold-sum"' : ''} style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:0 2px 6px;">
-          <b style="font-size:0.85rem;">${s ? `${t('mpDay')} ${esc(s.day ?? '')}` : t('mpUngrouped')}</b>
+          <b style="font-size:0.85rem;">${s?.playoff ? t('mpPlayoff') : s ? `${t('mpDay')} ${esc(s.day ?? '')}` : t('mpUngrouped')}</b>
           ${s?.format ? `<span class="pill-soft" style="font-size:0.66rem;">${esc(s.format)}</span>` : ''}
+          ${s?.playoff ? `<span class="pill-soft" style="font-size:0.66rem;">${esc((Array.isArray(s.holeList) ? s.holeList : []).join(', '))}</span>` : ''}
           ${finished ? `<span class="pill-soft" style="font-size:0.62rem;font-weight:800;color:var(--text-secondary);">${t('mpFinal')}</span>` : ''}
           ${meta ? `<span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${esc(meta)}</span>` : ''}
         </${head}>

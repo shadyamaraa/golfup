@@ -401,7 +401,7 @@ exports.sendPushOnNotification = functions.database
 // allowlist rules do not apply): a correction that CHANGES a final result
 // announces again, a same-result recompletion does not.
 
-function mpSettle(holes, totalHoles) {
+function mpSettle(holes, totalHoles, suddenDeath) {
   const total = Number(totalHoles) || 18;
   const wins = { a: 0, b: 0 };
   let thru = 0;
@@ -412,13 +412,28 @@ function mpSettle(holes, totalHoles) {
     thru = hole;
     if (Math.abs(wins.a - wins.b) > total - hole) break;
   }
+  // The playoff cannot be halved: level after its holes, it plays on until
+  // one is won. Same rule as settleMatch()'s suddenDeath option.
+  let sd = false;
+  if (suddenDeath && thru === total && wins.a === wins.b) {
+    for (let hole = total + 1; ; hole++) {
+      const v = holes && holes[hole];
+      if (v !== 'a' && v !== 'b' && v !== 'h') break;
+      thru = hole;
+      if (v === 'h') continue;
+      wins[v]++;
+      sd = true;
+      break;
+    }
+  }
   const margin = Math.abs(wins.a - wins.b);
   const leader = margin === 0 ? null : (wins.a > wins.b ? 'a' : 'b');
-  const remaining = total - thru;
+  const remaining = Math.max(0, total - thru);
   const closedOut = remaining > 0 && margin > remaining;
-  const finished = closedOut || thru === total;
+  const finished = closedOut || (thru >= total && !(suddenDeath && !leader));
   return {
     finished,
+    suddenDeath: sd,
     winner: finished && leader ? leader : null,
     result: !finished ? null : !leader ? 'HALVED' : closedOut ? `${margin} & ${remaining}` : `${margin} UP`
   };
@@ -441,7 +456,7 @@ exports.mcupMatchFinished = functions.database
     const match = mp && mp.matches && mp.matches[matchId];
     if (!tn || !match) return null;
 
-    const settled = mpSettle(change.after.val(), match.totalHoles);
+    const settled = mpSettle(change.after.val(), match.totalHoles, !!match.playoff);
     if (!settled.finished) return null;
 
     const notifiedRef = db.ref(`tournaments/${tnId}/mp/notified/${matchId}`);
@@ -460,22 +475,31 @@ exports.mcupMatchFinished = functions.database
     const short = (k) => (mp.teams && mp.teams[k] && (mp.teams[k].short || mp.teams[k].name))
       || names(k) || (k === 'a' ? 'A' : 'B');
 
+    const label = match.playoff ? 'Playoff' : `Match №${match.number || '?'}`;
     const title = settled.winner
-      ? `${tn.name || 'M Cup'}: Match №${match.number || '?'} — ${short(settled.winner)} ${settled.result}`
-      : `${tn.name || 'M Cup'}: Match №${match.number || '?'} — Тэнцэв`;
+      ? `${tn.name || 'M Cup'}: ${label} — ${short(settled.winner)} ${settled.result}${settled.suddenDeath ? ' (sudden death)' : ''}`
+      : `${tn.name || 'M Cup'}: ${label} — Тэнцэв`;
     let body = [names('a'), names('b')].filter(Boolean).join(' vs ');
 
     // When that was the last undecided match, lead with the tournament's
     // final score instead of burying it.
     const all = Object.values(mp.matches).filter(Boolean);
-    const settledAll = all.map((m) => mpSettle(m.holes, m.totalHoles));
+    const settledAll = all.map((m) => mpSettle(m.holes, m.totalHoles, !!m.playoff));
     if (settledAll.every((s) => s.finished)) {
+      // The playoff decides the cup, not the score: it is left out of the
+      // total, exactly as matchPoints() leaves it out on the client.
       const total = { a: 0, b: 0 };
-      settledAll.forEach((s) => {
+      all.forEach((m, i) => {
+        if (m.playoff) return;
+        const s = settledAll[i];
         if (!s.winner) { total.a += 0.5; total.b += 0.5; }
         else total[s.winner] += 1;
       });
       body = `Эцсийн дүн: ${short('a')} ${mpPts(total.a)} — ${mpPts(total.b)} ${short('b')}`;
+      const po = all.findIndex((m) => m.playoff);
+      if (po >= 0 && settledAll[po].winner) {
+        body += ` · ${short(settledAll[po].winner)} playoff-оор ялав`;
+      }
     }
 
     const now = Date.now();

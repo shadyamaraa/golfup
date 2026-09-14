@@ -73,6 +73,29 @@ export function singlesRulesHTML(n) {
     </details>`;
 }
 
+// The tie-break: what happens when the two teams finish level. The club's own
+// rule, added 2026 — three holes, then sudden death over the same three.
+export function playoffRulesHTML(n) {
+  return `    <details style="${S.d}">
+      <summary style="${S.sum}">${n ? n + '. ' : ''}PLAYOFF — оноо тэнцвэл</summary>
+      <p style="${S.p}">Бүх match дуусахад хоёр багийн оноо тэнцвэл цомыг
+      <b>playoff</b> шийднэ. Баг бүрээс <b>2 тоглогч</b> гарч,
+      <b>1, 8, 9</b> дугаартай гурван нүхийг <b>foursome</b> (нэг бөмбөгөөр
+      ээлжлэн цохих) форматаар тоглоно.</p>
+      <ul style="margin:6px 0 0;padding:0;list-style:none;">
+        <li style="${S.li}">Гурван нүхэнд илүү олон нүх хожсон баг → <b>цомын эзэн</b></li>
+        <li style="${S.li}">Гурван нүх тэнцвэл → <b>sudden death</b>: 1, 8, 9 нүхийг дахин эхнээс нь дараалан тоглоно</li>
+        <li style="${S.li}">Sudden death-д нүх хожсон эхний баг тэр дороо ялна</li>
+      </ul>
+      <div style="${S.ex}">
+        1-р нүх тэнцэв · 8-р нүх тэнцэв · 9-р нүх тэнцэв → sudden death<br/>
+        Дахин 1-р нүх тэнцэв → 8-р нүх дээр ALTAI хожив → <b>ALTAI цомыг авна</b>
+      </div>
+      <p style="${S.key}">Playoff онооны самбарыг хөдөлгөхгүй — тэмцээний дүн
+      тэнцсэн хэвээр үлдэж, зөвхөн цомын эзэн тодорно.</p>
+    </details>`;
+}
+
 // The match play vocabulary all three formats lean on.
 export function matchConceptsHTML() {
   return `    <details style="${S.d}">
@@ -154,6 +177,7 @@ export function ryderRulesHTML() {
       <li style="${S.li}">Нүх тэнцвэл → <b>HALVED</b> — онооны зөрүү өөрчлөгдөхгүй</li>
       <li style="${S.li}">18 нүх дуусахад илүү олон нүх хожсон тал → матчийн ялагч</li>
       <li style="${S.li}">Матч хожвол → багтаа <b>1 оноо</b>; тэнцвэл → тал бүр <b>½ оноо</b></li>
+      <li style="${S.li}">Тэмцээний эцсийн оноо тэнцвэл → <b>playoff</b> (доор, 4-р хэсэг)</li>
     </ul>
 
 ${fourballRulesHTML(1)}
@@ -161,6 +185,8 @@ ${fourballRulesHTML(1)}
 ${foursomesRulesHTML(2)}
 
 ${singlesRulesHTML(3)}
+
+${playoffRulesHTML(4)}
 
 ${matchConceptsHTML()}
 
