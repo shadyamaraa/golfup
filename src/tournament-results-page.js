@@ -168,7 +168,12 @@ function teamsHTML(model) {
       <div style="align-self:center;font-weight:800;color:#777;">—</div>
       ${side('b')}
     </div>
-    ${!model.winner && model.complete ? `<div class="tnr-sec" style="text-align:center;">${t('tnTied')}</div>` : ''}`;
+    ${model.tied && model.complete ? `
+      <div class="tnr-sec" style="text-align:center;">
+        ${t('tnTied')}${model.playoffWinner
+          ? ` · ${esc(model.teams[model.playoffWinner].short)} ${t('mpPlayoffWon')}`
+          : (model.needsPlayoff ? ` · ${t('mpPlayoff')}` : '')}
+      </div>` : ''}`;
 }
 
 function sessionsHTML(model) {
@@ -176,11 +181,17 @@ function sessionsHTML(model) {
   const b = model.teams.b;
   const names = (list) => esc(list.join(' / ') || '–');
   return model.sessions.filter(s => s.matches.length).map(s => {
-    const label = [s.day !== null ? `${t('mpDay')} ${s.day}` : '', s.format].filter(Boolean).join(' — ') || t('tnResultsMatches');
+    const label = s.playoff
+      ? [t('mpPlayoff'), s.format].filter(Boolean).join(' — ')
+      : ([s.day !== null ? `${t('mpDay')} ${s.day}` : '', s.format].filter(Boolean).join(' — ') || t('tnResultsMatches'));
     return `
       <div class="tnr-sec" style="display:flex;gap:8px;">
         <span>${esc(label)}</span>
-        <span style="margin-left:auto;color:#111;">${esc(resultPointsText(s.totals.a))} – ${esc(resultPointsText(s.totals.b))}</span>
+        <span style="margin-left:auto;color:#111;">${s.playoff
+          // The playoff pays nothing, so there is no score to print here; the
+          // tied line above already says the cup was decided on the course.
+          ? ''
+          : `${esc(resultPointsText(s.totals.a))} – ${esc(resultPointsText(s.totals.b))}`}</span>
       </div>
       <div class="sc-scroll">
         <table class="tnr-table">
@@ -198,7 +209,11 @@ function sessionsHTML(model) {
               const cell = (k, list) => side === k
                 ? `<td class="tnr-name tnr-win-cell" style="color:${color};background:${color}1A;">✓ ${names(list)}</td>`
                 : `<td class="tnr-name${side ? ' tnr-lost' : ''}">${names(list)}</td>`;
-              const score = done && m.winner === null ? t('mpHalved') : (m.result || '–');
+              // A playoff won in sudden death says so — '1 UP' alone would
+              // read like any other one-hole win.
+              const score = done && m.winner === null ? t('mpHalved')
+                : m.suddenDeath ? `${m.result} · ${t('mpSuddenDeath')}`
+                : (m.result || '–');
               const arrow = side ? `<span style="color:${color};">${side === 'a' ? '◀' : '▶'}</span>` : '';
               return `
               <tr class="${done ? '' : 'tnr-out'}">

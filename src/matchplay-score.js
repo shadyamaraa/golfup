@@ -15,8 +15,8 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { teamColorOf, matchLocked,
-  settleMatch, statusText, matchState, holeTimeline, DEFAULT_HOLES, HALVED,
-  holeChangeAction, canResolveHoleChange
+  settleMatchOf, statusText, matchState, holeTimeline, HALVED,
+  holeChangeAction, canResolveHoleChange, isPlayoff, matchHoleNo, matchHoleCount
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -120,10 +120,13 @@ function stripHTML(match, hole) {
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
                border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
                background:${bg};color:${fg};font-size:0.7rem;font-weight:700;">
-        <div style="font-size:0.58rem;opacity:0.75;">${r.hole}</div>${mark || '·'}
+        <div style="font-size:0.58rem;opacity:0.75;">${r.extra ? '+' : ''}${r.no}</div>${mark || '·'}
       </button>`;
   };
-  return `<div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:12px;">${rows.map(cell).join('')}</div>`;
+  // Nine to a row as always, but a playoff is three or four cells and should
+  // not be stretched across a nine-wide grid.
+  const cols = Math.min(9, Math.max(1, rows.length));
+  return `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:4px;margin-top:12px;">${rows.map(cell).join('')}</div>`;
 }
 
 // The label a proposal shows for each side of "W → A".
@@ -151,7 +154,7 @@ function pendingHTML(mp, match, user) {
     const canResolve = !mine && canResolveHoleChange(user, match, p.hole);
     return `
       <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:0.8rem;flex-wrap:wrap;">
-        <span><b>${esc(p.byName || '?')}</b> · ${t('mpHole')} ${p.hole}: ${esc(from)} → <b>${esc(to)}</b></span>
+        <span><b>${esc(p.byName || '?')}</b> · ${t('mpHole')} ${matchHoleNo(match, p.hole)}: ${esc(from)} → <b>${esc(to)}</b></span>
         ${canResolve ? `
           <span style="margin-left:auto;display:flex;gap:6px;">
             <button data-sc="resolve" data-hole="${p.hole}" data-ok="1" class="btn btn-primary btn-sm">${t('mpApprove')}</button>
@@ -202,12 +205,15 @@ function lockedHTML(tn, match, lock) {
 
 function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
   const mp = tn.mp || {};
-  const total = match.totalHoles || DEFAULT_HOLES;
-  const settled = settleMatch(match.holes, total);
+  const settled = settleMatchOf(match);
+  // A playoff in sudden death is one hole longer than it was a moment ago, so
+  // the playable count is asked for rather than read off totalHoles.
+  const total = matchHoleCount(match, settled);
   const state = matchState(match);
   const done = state === 'COMPLETED';
   // Follow the match unless the scorer stepped back to a specific hole.
   const hole = Math.min(viewHole ?? (settled.thru + 1), total);
+  const playoff = isPlayoff(match);
   const current = match.holes?.[hole] ?? null;
   const session = mp.sessions?.[match.sessionId] || {};
   const lead = settled.leader ? sideLabel(mp, match, settled.leader) : '';
@@ -219,7 +225,9 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
 
       <div style="margin-top:8px;">
         <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:700;">
-          ${t('mpMatchNo')}${esc(match.number ?? '')} · ${esc(session.format || '')} · ${esc(session.startTime || match.teeTime || '')}
+          ${playoff ? `${t('mpPlayoff')} · ` : `${t('mpMatchNo')}${esc(match.number ?? '')} · `}${esc(session.format || '')}${playoff
+            ? ` · ${holeTimeline(match).slice(0, Number(match.totalHoles) || 0).map(r => r.no).join(', ')}`
+            : ` · ${esc(session.startTime || match.teeTime || '')}`}
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
           ${teamMark(mp, 'a')}
@@ -238,6 +246,7 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
         <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">
           ${done ? t('mpFinal') : `${t('mpThru')} ${settled.thru}`}
           ${settled.dormie && !done ? ` · ${t('mpDormie')}` : ''}
+          ${playoff && settled.extraHoles ? ` · ${t('mpSuddenDeath')}` : ''}
         </div>
       </div>
 
@@ -248,8 +257,12 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
         </div>` : `
         <div style="margin-top:16px;">
           <div style="text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
-            ${t('mpHole')} ${hole}${current ? ` · ${t('mpEditing')}` : ''}
+            ${t('mpHole')} ${matchHoleNo(match, hole)}${current ? ` · ${t('mpEditing')}` : ''}
           </div>
+          ${playoff && hole > (Number(match.totalHoles) || 0) ? `
+          <div style="text-align:center;font-size:0.72rem;color:var(--amber);font-weight:700;margin-top:2px;">
+            ${t('mpSuddenDeath')} · ${hole - (Number(match.totalHoles) || 0)}. ${t('mpExtraHole')}
+          </div>` : ''}
           ${keypadHTML(mp, hole, current, match)}
         </div>`}
 
@@ -423,8 +436,11 @@ export async function renderScorerPage(tnId, matchId, ctx) {
       // a gap as the end of play, would discard every hole after it.
       const m = data?.mp?.matches?.[matchId];
       if (!m) return;
-      const total = m.totalHoles || DEFAULT_HOLES;
-      const settled = settleMatch(m.holes, total);
+      // Settled by the match's own rules (sudden death included), then asked
+      // how many holes are playable — the order matters for a playoff, whose
+      // length grows with the settle.
+      const settled = settleMatchOf(m);
+      const total = matchHoleCount(m, settled);
       if (kind === 'hole') {
         const hole = Math.min(viewHole ?? (settled.thru + 1), total);
         write(hole, b.dataset.value);

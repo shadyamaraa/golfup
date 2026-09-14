@@ -45,6 +45,36 @@ export const SESSION_PLAYERS_REQUIRED = 12;
 // Full roster size per team (spec §2).
 export const ROSTER_SIZE = 14;
 
+// ---- Playoff ----
+// When every match is decided and the two teams are level, the cup is played
+// off: three holes, two players a side, one ball (foursomes). Halved again
+// and it goes to sudden death over the same three holes, round and round,
+// until one of them is won. The playoff decides the cup ONLY — the tied score
+// stands, so a playoff match carries no point (see matchPoints).
+export const PLAYOFF_HOLES = [1, 8, 9];
+
+export const isPlayoff = (match) => !!match?.playoff;
+
+// The course holes a match is played on, when they are not simply 1..n.
+// Stored on the match as holeList; RTDB can hand it back as an array or as
+// an object keyed by index, so both are normalized here.
+function holeListOf(match) {
+  const raw = match?.holeList;
+  const list = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+  return list.map(n => Number(n)).filter(n => Number.isFinite(n) && n > 0);
+}
+
+/**
+ * The course hole a match's hole INDEX is played on. A playoff over 1, 8, 9
+ * cycles: index 4 is hole 1 again, 5 is 8, 6 is 9 — which is what sudden
+ * death means on the ground. Every ordinary match maps index to itself.
+ */
+export function matchHoleNo(match, hole) {
+  const list = holeListOf(match);
+  const i = Math.max(1, Number(hole) || 1);
+  return list.length ? list[(i - 1) % list.length] : i;
+}
+
 const other = (k) => (k === 'a' ? 'b' : 'a');
 
 // ---- Match scoring ----
@@ -69,10 +99,15 @@ const other = (k) => (k === 'a' ? 'b' : 'a');
  *   finished: boolean,
  *   closedOut: boolean,        // decided before the last hole
  *   winner: 'a'|'b'|null,      // null = halved or not finished
- *   result: string|null        // '4 & 3' | '2 UP' | 'AS' — finished only
+ *   result: string|null,       // '4 & 3' | '2 UP' | 'AS' — finished only
+ *   extraHoles: number,        // sudden-death holes played past totalHoles
+ *   suddenDeath: boolean       // won on an extra hole
  * }}
+ *
+ * With { suddenDeath: true } the match cannot be halved: level after the last
+ * hole, it plays on one hole at a time and the first hole won ends it.
  */
-export function settleMatch(holes, total = DEFAULT_HOLES) {
+export function settleMatch(holes, total = DEFAULT_HOLES, { suddenDeath = false } = {}) {
   // Coerced because it can arrive from storage: a "18" would compare unequal
   // to thru forever and the match would never finish.
   const totalHoles = Number(total) || DEFAULT_HOLES;
@@ -92,12 +127,30 @@ export function settleMatch(holes, total = DEFAULT_HOLES) {
     if (margin > totalHoles - hole) break; // closed out
   }
 
+  // Sudden death: all square with the regular holes played is not a halved
+  // match, it is one that goes on. Extra holes are indexed straight on
+  // (4, 5, 6 …) and each is settled on its own — the first one won ends it.
+  let extraHoles = 0;
+  let sdWinner = null;
+  if (suddenDeath && thru === totalHoles && wins.a === wins.b) {
+    for (let hole = totalHoles + 1; ; hole++) {
+      const v = holes?.[hole];
+      if (v !== 'a' && v !== 'b' && v !== HALVED) break;
+      extraHoles++;
+      thru = hole;
+      if (v === HALVED) { halved++; continue; }
+      wins[v]++;
+      sdWinner = v;
+      break;
+    }
+  }
+
   const margin = Math.abs(wins.a - wins.b);
   const leader = margin === 0 ? null : (wins.a > wins.b ? 'a' : 'b');
-  const holesRemaining = totalHoles - thru;
+  const holesRemaining = Math.max(0, totalHoles - thru);
   // A win decided on the last green is '1 UP', not a close-out.
   const closedOut = holesRemaining > 0 && margin > holesRemaining;
-  const finished = closedOut || (thru === totalHoles);
+  const finished = closedOut || (thru >= totalHoles && !(suddenDeath && !leader));
   const winner = finished && leader ? leader : null;
 
   let result = null;
@@ -110,8 +163,30 @@ export function settleMatch(holes, total = DEFAULT_HOLES) {
   return {
     thru, wins, halved, leader, margin, holesRemaining,
     dormie: !finished && margin > 0 && margin === holesRemaining,
-    finished, closedOut, winner, result
+    finished, closedOut, winner, result,
+    extraHoles, suddenDeath: !!sdWinner
   };
+}
+
+// Settle a match by its own rules — its hole count, and sudden death when it
+// is the playoff. Every caller that has the match itself should use this
+// rather than repeating `m.totalHoles || DEFAULT_HOLES`.
+export function settleMatchOf(match) {
+  return settleMatch(match?.holes, match?.totalHoles || DEFAULT_HOLES,
+    { suddenDeath: isPlayoff(match) });
+}
+
+/**
+ * How many hole cells a match shows. Fixed at totalHoles for an ordinary
+ * match; a playoff in sudden death grows by one unplayed hole at a time, so
+ * the scorer always has the next hole to enter and the strip shows how far
+ * the extra holes have run.
+ */
+export function matchHoleCount(match, settled) {
+  const totalHoles = Number(match?.totalHoles) || DEFAULT_HOLES;
+  if (!isPlayoff(match)) return totalHoles;
+  const s = settled || settleMatchOf(match);
+  return Math.max(totalHoles, s.thru + (s.finished ? 0 : 1));
 }
 
 // The status line a live card shows: 'AS', '2 UP', and once finished the
@@ -129,7 +204,7 @@ export function statusText(settled) {
 // nobody has to flip a state by hand. An explicit override (suspension is a
 // human decision) wins over everything.
 export function matchState(match) {
-  const settled = settleMatch(match?.holes, match?.totalHoles || DEFAULT_HOLES);
+  const settled = settleMatchOf(match);
   // A decided match is over whatever any flag says. Checking the flag first
   // would let a suspension nobody cleared — play resumes, the scorer keeps
   // tapping and never presses Resume — hold a finished match out of
@@ -144,8 +219,12 @@ export function matchState(match) {
 
 // Win 1, halve ½ each, unfinished nothing (spec §7).
 export function matchPoints(match) {
+  // The playoff settles the cup, not the scoreboard: a tie stays a tie and
+  // the extra match pays nothing, so every total derived from here — the
+  // overall, the session rows, a player's record — keeps reading 12 – 12.
+  if (isPlayoff(match)) return { a: 0, b: 0 };
   if (matchState(match) !== 'COMPLETED') return { a: 0, b: 0 };
-  const settled = settleMatch(match.holes, match.totalHoles || DEFAULT_HOLES);
+  const settled = settleMatchOf(match);
   if (!settled.winner) return { a: 0.5, b: 0.5 };
   return { a: settled.winner === 'a' ? 1 : 0, b: settled.winner === 'b' ? 1 : 0 };
 }
@@ -188,16 +267,22 @@ export function sessionTotals(matches) {
 // the status line as it stood after that hole. Holes past a close-out or a
 // gap carry result null, exactly as the settled match ignores them.
 export function holeTimeline(match) {
-  const totalHoles = match?.totalHoles || DEFAULT_HOLES;
-  const settled = settleMatch(match?.holes, totalHoles);
+  const totalHoles = Number(match?.totalHoles) || DEFAULT_HOLES;
+  const playoff = isPlayoff(match);
+  const opts = { suddenDeath: playoff };
+  const settled = settleMatch(match?.holes, totalHoles, opts);
+  const count = matchHoleCount(match, settled);
   const rows = [];
   const partial = {};
-  for (let hole = 1; hole <= totalHoles; hole++) {
+  for (let hole = 1; hole <= count; hole++) {
+    // `hole` stays the index the result is stored under; `no` is the course
+    // hole it is played on, which is all that differs for a playoff.
+    const at = { hole, no: matchHoleNo(match, hole), extra: hole > totalHoles };
     if (hole <= settled.thru) {
       partial[hole] = match.holes[hole];
-      rows.push({ hole, result: match.holes[hole], status: statusText(settleMatch(partial, totalHoles)) });
+      rows.push({ ...at, result: match.holes[hole], status: statusText(settleMatch(partial, totalHoles, opts)) });
     } else {
-      rows.push({ hole, result: null, status: '' });
+      rows.push({ ...at, result: null, status: '' });
     }
   }
   return rows;
@@ -479,7 +564,7 @@ export function playerStats(mp) {
   const row = (pid) => (out[pid] = out[pid] || { played: 0, w: 0, l: 0, h: 0, points: 0 });
   matchList(mp?.matches).forEach(m => {
     if (matchState(m) !== 'COMPLETED') return;
-    const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+    const settled = settleMatchOf(m);
     const points = matchPoints(m);
     TEAM_KEYS.forEach(teamId => {
       (m.players?.[teamId] || []).filter(Boolean).forEach(pid => {
@@ -502,7 +587,7 @@ export function pairStats(mp) {
   const out = {};
   matchList(mp?.matches).forEach(m => {
     if (matchState(m) !== 'COMPLETED') return;
-    const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+    const settled = settleMatchOf(m);
     TEAM_KEYS.forEach(teamId => {
       const ids = (m.players?.[teamId] || []).filter(Boolean);
       if (ids.length !== 2) return;
@@ -523,6 +608,62 @@ export function pairStats(mp) {
 export function tournamentComplete(mp) {
   const list = matchList(mp?.matches);
   return list.length > 0 && list.every(m => matchState(m) === 'COMPLETED');
+}
+
+/**
+ * Who has won the cup, and whether a playoff is owed — the one rule every
+ * screen should ask rather than comparing points itself.
+ *
+ * @returns {{
+ *   totals: {a, b},            // the scoreboard; a playoff never moves it
+ *   complete: boolean,         // every ordinary match decided
+ *   tied: boolean,
+ *   playoff: object|null,      // the playoff match, once an admin made one
+ *   playoffSettled: object|null,
+ *   playoffWinner: 'a'|'b'|null,
+ *   winner: 'a'|'b'|null,      // points leader, else the playoff's winner
+ *   needsPlayoff: boolean      // level, all played, and no playoff drawn yet
+ * }}
+ *
+ * `complete && !winner` is the other question worth asking: the cup is level
+ * and still unsettled, whether or not the playoff has been drawn.
+ */
+export function mpOutcome(mp) {
+  const all = matchList(mp?.matches);
+  const regular = all.filter(m => !isPlayoff(m));
+  const playoff = all.find(isPlayoff) || null;
+  const totals = teamTotals(all);
+  const complete = regular.length > 0 && regular.every(m => matchState(m) === 'COMPLETED');
+  const playoffSettled = playoff ? settleMatchOf(playoff) : null;
+  const playoffWinner = playoffSettled?.finished ? playoffSettled.winner : null;
+  const lead = totals.a > totals.b ? 'a' : totals.b > totals.a ? 'b' : null;
+  return {
+    totals, complete, tied: !lead, playoff, playoffSettled, playoffWinner,
+    winner: lead || playoffWinner || null,
+    // Only while there is no playoff at all: once one is drawn, the answer is
+    // to go and play it, not to draw another.
+    needsPlayoff: complete && !lead && !playoff
+  };
+}
+
+// A new playoff match and the session that holds it, ready for the admin to
+// fill in the four players. Pure: the caller stores what it is given.
+export function newPlayoffSession(mp, { holes = PLAYOFF_HOLES, sessionId, matchId } = {}) {
+  const list = Object.values(mp?.sessions || {}).filter(Boolean);
+  const day = list.reduce((d, s) => Math.max(d, Number(s.day) || 0), 1);
+  const number = list.filter(s => (Number(s.day) || 0) === day)
+    .reduce((n, s) => Math.max(n, Number(s.number) || 0), 0) + 1;
+  const holeList = (holes || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+  const session = {
+    id: sessionId, day, number, format: 'FOURSOMES', startTime: '',
+    playoff: true, holeList
+  };
+  const match = {
+    id: matchId, sessionId, number: 1, teeTime: '', format: 'FOURSOMES',
+    playoff: true, holeList, totalHoles: holeList.length,
+    players: { a: [], b: [] }
+  };
+  return { session, match };
 }
 
 // ---- Correction consent ----

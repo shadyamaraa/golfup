@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-09-14 (M Cup: a level cup is decided by a playoff over 1, 8 and 9)
+
+When every match is decided and the two teams are level, the cup now goes to
+a playoff: two players a side over holes 1, 8 and 9 in foursomes, and if
+that is halved, sudden death round the same three holes until one is won.
+The scoreboard says «Оноо тэнцлээ — playoff шийднэ» as soon as the tie is
+final, the admin's setup offers «Playoff үүсгэх» and the four players are
+picked there, and the scorer's screen names the course hole it is on
+(«НҮХ 8», not «НҮХ 2»), growing one hole at a time once sudden death starts.
+
+The playoff decides the cup only: it carries no point, so the score stays
+12 – 12 and every total, session row and player record reads as it did.
+Match Center, the schedule tab, the results page, the printed start list and
+the rulebook all name it, and the playoff never folds away with the finished
+sessions. `matchPoints` and the new `mpOutcome` in `src/matchplay.js` are the
+one place the rule lives; `settleMatch` gained a `suddenDeath` option and
+`holeTimeline` now carries each hole's course number. Ordinary matches are
+untouched — the flag is absent, so every path settles exactly as before,
+checked against the finished M Cup 2026's own data. The push notification's
+copy of the rule moved with it (`functions/index.js`), which takes effect on
+the next `firebase deploy --only functions`.
+
+`src/matchplay.js`, `src/matchplay-admin.js`, `src/matchplay-score.js`,
+`src/matchplay-view.js`, `src/tournament-results.js`,
+`src/tournament-results-page.js`, `src/schedule.js`, `src/mcup-rules.js`,
+`src/app.js`, `src/i18n.js`, `functions/index.js`,
+`scripts/test-matchplay.mjs`, `scripts/test-matchplay-render.mjs`.
+
 ## 2026-09-12 (Admin M Cup editor: session boxes fold shut)
 
 In the admin's match play setup each session box is now a closed fold

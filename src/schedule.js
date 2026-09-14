@@ -115,9 +115,13 @@ export async function renderTnSchedulePage(tnId, ctx) {
   const sessionHTML = ({ session, matches }) => {
     if (!matches.length) return '';
     const date = session ? sessionDate(tn.startDate, session.day) : '';
-    const head = session
-      ? `Day ${esc(session.day ?? '')}${date ? ` (${esc(date)})` : ''} · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${session.startTime ? ` · ${esc(session.startTime)}` : ''}`
-      : '';
+    const holes = Array.isArray(session?.holeList) ? session.holeList.join(', ') : '';
+    const head = !session ? ''
+      // The playoff is not a day of the draw — it is named, and its holes are
+      // what a marshal needs on paper.
+      : session.playoff
+        ? `Playoff · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${holes ? ` · ${esc(holes)}` : ''}`
+        : `Day ${esc(session.day ?? '')}${date ? ` (${esc(date)})` : ''} · ${esc(MP_FORMAT_LABELS[session.format] || session.format || '')}${session.startTime ? ` · ${esc(session.startTime)}` : ''}`;
     return `
       <div style="margin-top:16px;">
         ${head ? `<div style="font-weight:800;font-size:0.9rem;">${head}</div>` : ''}

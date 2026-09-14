@@ -13,9 +13,10 @@
 import { t } from './i18n.js';
 import { icon } from './icons.js';
 import {
-  settleMatch, statusText, matchState, matchPoints, teamTotals, sessionTotals,
-  holeTimeline, sortMatchesForDisplay, DEFAULT_HOLES, HALVED, TEAM_KEYS, UNGROUPED,
-  playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked, teamColorOf
+  settleMatchOf, statusText, matchState, matchPoints, teamTotals, sessionTotals,
+  holeTimeline, sortMatchesForDisplay, HALVED, TEAM_KEYS, UNGROUPED,
+  playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked, teamColorOf,
+  isPlayoff, mpOutcome
 } from './matchplay.js';
 // The one definition of who may enter a match's scores — the same check the
 // scorer screen enforces, so a button shown here never leads to a dead end.
@@ -62,6 +63,8 @@ function playerNames(mp, match, k) {
 
 const sessionLabel = (session) => {
   if (!session) return '';
+  // The playoff is not "Day 2 — Foursomes", it is the playoff.
+  if (session.playoff) return [t('mpPlayoff'), session.format].filter(Boolean).join(' — ');
   const day = session.day ? `${t('mpDay')} ${session.day}` : '';
   return [day, session.format].filter(Boolean).join(' — ');
 };
@@ -88,6 +91,13 @@ export function currentSession(mp) {
 function scoreboardHTML(mp) {
   const total = teamTotals(matchesOf(mp));
   const session = currentSession(mp);
+  const out = mpOutcome(mp);
+  // Level with everything played is not a result a viewer should have to
+  // infer from two equal numbers: the cup is either waiting on a playoff or
+  // has just been won in one.
+  const verdict = out.playoffWinner
+    ? `🏆 ${teamShort(mp, out.playoffWinner)} — ${t('mpPlayoffWon')}`
+    : (out.complete && !out.winner ? t('mpPlayoffTied') : '');
   const side = (k) => {
     const lead = total[k] > total[k === 'a' ? 'b' : 'a'];
     const logo = teamLogo(mp, k);
@@ -106,7 +116,11 @@ function scoreboardHTML(mp) {
         <div style="align-self:center;font-size:0.8rem;color:var(--text-secondary);font-weight:700;">—</div>
         ${side('b')}
       </div>
-      ${session ? `
+      ${verdict ? `
+        <div style="text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-color);
+                    font-size:0.82rem;font-weight:800;color:var(--gold-dark,var(--text-primary));">
+          ${esc(verdict)}
+        </div>` : session ? `
         <div style="text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-color);
                     font-size:0.78rem;font-weight:700;color:var(--text-secondary);letter-spacing:0.04em;">
           ${esc(sessionLabel(session).toUpperCase())}
@@ -165,9 +179,9 @@ function enterScoreHTML(mp, match, state, tnId, viewer) {
 }
 
 function cardHTML(mp, match, state, tnId, viewer, singles) {
-  const total = match.totalHoles || DEFAULT_HOLES;
-  const settled = settleMatch(match.holes, total);
+  const settled = settleMatchOf(match);
   const session = mp.sessions?.[match.sessionId] || {};
+  const playoff = isPlayoff(match);
   const stateText = { LIVE: t('mpLive'), COMPLETED: t('mpFinal'), SUSPENDED: t('mpSuspended') }[state]
     || t('mpUpcoming');
 
@@ -205,16 +219,19 @@ function cardHTML(mp, match, state, tnId, viewer, singles) {
              border:1px solid var(--border-color);font-family:var(--font);color:var(--text-primary);
              ${state === 'LIVE' ? 'border-left:3px solid var(--mpv-live,#d7263d);' : ''}">
       <div style="display:flex;gap:8px;align-items:center;">
-        <span style="font-size:0.72rem;font-weight:800;color:var(--text-secondary);">
-          ${t('mpMatchNo')}${esc(match.number ?? '')}
+        <span style="font-size:0.72rem;font-weight:800;color:${playoff ? 'var(--gold-dark,var(--text-secondary))' : 'var(--text-secondary)'};">
+          ${playoff ? t('mpPlayoff') : `${t('mpMatchNo')}${esc(match.number ?? '')}`}
         </span>
-        <span style="font-size:0.66rem;color:var(--text-muted);">${esc(sessionLabel(session) || match.format || '')}</span>
+        <span style="font-size:0.66rem;color:var(--text-muted);">${esc(playoff
+          ? (session.format || match.format || '')
+          : (sessionLabel(session) || match.format || ''))}</span>
         <span class="pill-soft" style="margin-left:auto;font-size:0.66rem;font-weight:800;">${esc(stateText)}</span>
       </div>
       ${sideHTML('a')}
       ${sideHTML('b')}
       <div style="display:flex;gap:10px;align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);">
         <b style="font-size:0.95rem;">${esc(lead)}</b>
+        ${playoff && settled.extraHoles ? `<span style="font-size:0.7rem;font-weight:800;color:var(--amber);">${t('mpSuddenDeath')}</span>` : ''}
         ${progress ? `<span style="font-size:0.76rem;color:var(--text-secondary);margin-left:auto;">${esc(progress)}</span>` : ''}
       </div>
     </button>
@@ -224,8 +241,7 @@ function cardHTML(mp, match, state, tnId, viewer, singles) {
 // ---- Detail modal (spec §11) ----
 
 function detailHTML(mp, match, singles, tnId, viewer) {
-  const total = match.totalHoles || DEFAULT_HOLES;
-  const settled = settleMatch(match.holes, total);
+  const settled = settleMatchOf(match);
   const session = mp.sessions?.[match.sessionId] || {};
   const rows = holeTimeline(match);
   const state = matchState(match);
@@ -237,7 +253,7 @@ function detailHTML(mp, match, singles, tnId, viewer) {
     return `
       <div style="text-align:center;border-radius:5px;padding:4px 0;background:${bg};color:${fg};
                   border:1px solid var(--border-color);font-size:0.7rem;font-weight:700;">
-        <div style="font-size:0.56rem;opacity:0.75;">${r.hole}</div>${mark}
+        <div style="font-size:0.56rem;opacity:0.75;">${r.extra ? '+' : ''}${r.no}</div>${mark}
       </div>`;
   };
 
@@ -262,7 +278,7 @@ function detailHTML(mp, match, singles, tnId, viewer) {
           ${state === 'COMPLETED' ? t('mpFinal') : `${t('mpThru')} ${settled.thru}`}
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:12px;">
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(9, Math.max(1, rows.length))},1fr);gap:4px;margin-top:12px;">
         ${rows.map(cell).join('')}
       </div>
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;text-align:center;">
@@ -307,10 +323,13 @@ function standingsHTML(mp) {
 
 function summaryHTML(mp) {
   const totals = sessionTotals(matchesOf(mp));
-  const sessions = Object.values(mp.sessions || {}).filter(Boolean)
+  // The playoff carries no points, so a row of its own would read 0 — 0 and
+  // say nothing; it gets the verdict line under the totals instead.
+  const sessions = Object.values(mp.sessions || {}).filter(s => s && !s.playoff)
     .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0)
       || (Number(a.number) || 0) - (Number(b.number) || 0));
   const overall = teamTotals(matchesOf(mp));
+  const out = mpOutcome(mp);
   if (!sessions.length) return '';
   return `
     <div class="surface-card" style="padding:14px;margin-top:12px;">
@@ -320,6 +339,13 @@ function summaryHTML(mp) {
         <span style="color:var(--text-secondary);">—</span>
         <span><b>${pts(overall.b)}</b> ${esc(teamShort(mp, 'b'))}</span>
       </div>
+      ${out.playoff ? `
+      <div style="display:flex;gap:8px;align-items:baseline;margin-top:6px;font-size:0.8rem;">
+        <span style="color:var(--text-secondary);">${t('mpPlayoff')}</span>
+        <span style="margin-left:auto;font-weight:800;">${out.playoffWinner
+          ? esc(`${teamShort(mp, out.playoffWinner)} ${t('mpPlayoffWon')}`)
+          : esc(statusText(settleMatchOf(out.playoff)) || t('mpLive'))}</span>
+      </div>` : ''}
       <div style="font-size:0.78rem;font-weight:800;margin-top:12px;">${t('mpSessionResults')}</div>
       ${sessions.map(s => [sessionLabel(s), totals[s.id]])
         // A match whose session was lost still holds points, so it gets a row
@@ -462,7 +488,8 @@ function groupsHTML(mp, tnId, viewer, singles) {
       // score in the results list, so the second day's board is not read
       // past the first day's six cards; a tap opens it, and the open state
       // survives the live repaints (renderMatchCenter restores it).
-      if (fold && sess && sessionDone(c.sid)) {
+      // The playoff never folds: it is the result everybody opened the page for.
+      if (fold && sess && !sess.playoff && sessionDone(c.sid)) {
         const v = totals[c.sid] || { a: 0, b: 0 };
         return `
       <details class="mpv-fold" data-mpv-fold="${esc(c.sid)}">

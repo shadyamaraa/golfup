@@ -16,8 +16,8 @@ import {
 } from './strokeplay.js';
 import { rankByDivision, winners, activeRound, isRetired, isCut } from './tournament-sheet.js';
 import {
-  teamTotals, sessionTotals, settleMatch, statusText, matchState, tournamentComplete,
-  playerStats, tnKind, DEFAULT_HOLES, UNGROUPED
+  teamTotals, sessionTotals, settleMatchOf, statusText, matchState, tournamentComplete,
+  playerStats, tnKind, UNGROUPED, isPlayoff, mpOutcome
 } from './matchplay.js';
 import { teamName, teamShort, teamColor, teamLogo } from './matchplay-view.js';
 
@@ -156,17 +156,22 @@ function ryderModel(tn, state) {
   const mp = tn?.mp || {};
   const matches = Object.values(mp.matches || {}).filter(Boolean);
   const total = teamTotals(matches);
-  const winner = total.a > total.b ? 'a' : total.b > total.a ? 'b' : null;
+  // Level on points, the cup goes to whoever won the playoff — mpOutcome is
+  // the one place that rule lives.
+  const out = mpOutcome(mp);
+  const winner = out.winner;
   const totals = sessionTotals(matches);
 
   const names = (m, k) => (m.players?.[k] || [])
     .map(pid => mp.roster?.[pid]?.name || '').filter(Boolean);
   const matchRow = (m) => {
     const st = matchState(m);
-    const settled = settleMatch(m.holes, m.totalHoles || DEFAULT_HOLES);
+    const settled = settleMatchOf(m);
     return {
       id: m.id,
       number: m.number ?? null,
+      playoff: isPlayoff(m),
+      suddenDeath: !!settled.suddenDeath,
       a: names(m, 'a'),
       b: names(m, 'b'),
       state: st,
@@ -188,6 +193,7 @@ function ryderModel(tn, state) {
     id: s.id,
     day: s.day ?? null,
     number: s.number ?? null,
+    playoff: !!s.playoff,
     format: s.format || '',
     startTime: s.startTime || '',
     totals: totals[s.id] || { a: 0, b: 0 },
@@ -219,6 +225,11 @@ function ryderModel(tn, state) {
     complete: tournamentComplete(mp),
     teams: { a: team('a'), b: team('b') },
     winner,
+    // Level on points and settled on the course: the score stays a draw and
+    // the cup is named separately.
+    tied: out.tied,
+    playoffWinner: out.playoffWinner,
+    needsPlayoff: out.needsPlayoff,
     sessions,
     matches: matches.length,
     played: matches.filter(m => matchState(m) === 'COMPLETED').length

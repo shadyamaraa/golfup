@@ -21,7 +21,8 @@ import { t } from './i18n.js';
 import { readImageFile, validImageData } from './media.js';
 import { teamColorOf,
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
-  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes, mpScoredRemovals
+  lineupIssues, participation, matchState, tnKind, addMinutesHHMM, cascadeTeeTimes, mpScoredRemovals,
+  isPlayoff, mpOutcome, newPlayoffSession, PLAYOFF_HOLES
 } from './matchplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -266,7 +267,10 @@ function issuesHTML(tn, session) {
     if (i.kind === 'unknown-player') return `${playerName(mp, i.playerId)} — ${t('mpIssueUnknown')}`;
     return i.kind;
   };
-  const issues = lineupIssues(matches, mp.roster, { required: SESSION_PLAYERS_REQUIRED });
+  // A playoff fields two a side, not twelve — the session rule does not apply
+  // to it, but the 2 v 2 symmetry check still does.
+  const issues = lineupIssues(matches, mp.roster,
+    { required: session?.playoff ? 0 : SESSION_PLAYERS_REQUIRED });
   if (!issues.length) {
     return `<div style="font-size:0.74rem;color:var(--success-color,#2e7d32);margin-top:6px;">✓ ${t('mpLineupOk')}</div>`;
   }
@@ -282,15 +286,18 @@ function sessionBoxHTML(tn, session, users) {
   const matches = sessionMatches(mp, session.id);
   const finished = matches.length > 0 && matches.every(m => matchState(m) === 'COMPLETED');
   const open = foldOpen.has(foldKey(tn, session.id));
+  const playoff = !!session.playoff;
+  const holeText = (Array.isArray(session.holeList) ? session.holeList : PLAYOFF_HOLES).join(', ');
   // The summary is read-only on purpose: a control inside a <summary> would
   // toggle the fold on every tap, so the editable row sits in the body.
   const pill = (txt) => `<span class="pill-soft" style="font-size:0.66rem;">${esc(txt)}</span>`;
   return `
     <details class="mpv-fold" data-mp-fold="${esc(session.id)}"${open ? ' open' : ''} style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;margin-top:8px;">
       <summary style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82rem;">
-        <b>${t('mpDay')} ${esc(session.day ?? '')}</b>
-        ${pill(`№${session.number ?? ''}`)}
+        <b>${playoff ? t('mpPlayoff') : `${t('mpDay')} ${esc(session.day ?? '')}`}</b>
+        ${playoff ? '' : pill(`№${session.number ?? ''}`)}
         ${session.format ? pill(session.format) : ''}
+        ${playoff ? pill(holeText) : ''}
         ${session.startTime ? `<span style="color:var(--text-secondary);">${esc(session.startTime)}</span>` : ''}
         <span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary);">${matches.length} match${finished ? ` · ${t('mpFinal')}` : ''}</span>
       </summary>
@@ -305,8 +312,13 @@ function sessionBoxHTML(tn, session, users) {
           </select></div>
         <div><span style="${LABEL}">${t('mpStart')}</span>
           <input data-mp="session" data-session="${esc(session.id)}" data-f="startTime" type="time" value="${esc(session.startTime || '')}" style="${INPUT}" /></div>
+        ${playoff ? `
+        <div><span style="${LABEL}">${t('mpPlayoffHoles')}</span>
+          <input data-mp="session" data-session="${esc(session.id)}" data-f="holeList" type="text" inputmode="numeric"
+                 value="${esc(holeText)}" placeholder="${PLAYOFF_HOLES.join(', ')}" style="${INPUT}width:96px;" /></div>` : ''}
         <button data-mp="del-session" data-session="${esc(session.id)}" class="btn btn-outline-danger btn-sm" style="margin-left:auto;">✕</button>
       </div>
+      ${playoff ? `<p style="font-size:0.7rem;color:var(--text-secondary);margin:6px 2px 0;">${t('mpPlayoffHint')} ${t('mpPlayoffNoPoints')}</p>` : ''}
       ${matches.map(m => matchRowHTML(tn, m, users)).join('')}
       <button data-mp="add-match" data-session="${esc(session.id)}" class="btn btn-outline btn-sm" style="margin-top:8px;">+ ${t('mpAddMatch')}</button>
       ${issuesHTML(tn, session)}
@@ -365,6 +377,24 @@ function singlesMatchesHTML(tn, users) {
       || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoMatches')}</p>`}`;
 }
 
+// Every match decided and the teams level: the cup is not won yet. The editor
+// says so and offers the extra match, rather than leaving the admin to work
+// out that a draw needs one and to build it by hand.
+function playoffPromptHTML(tn) {
+  const mp = draftFor(tn).mp;
+  if (!mpOutcome(mp).needsPlayoff) return '';
+  return `
+    <div class="surface-card" style="margin-top:10px;padding:12px;border:1px solid var(--amber);">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <b style="font-size:0.84rem;">${t('mpPlayoffTied')}</b>
+        <button data-mp="add-playoff" class="btn btn-primary btn-sm" style="margin-left:auto;">+ ${t('mpPlayoffCreate')}</button>
+      </div>
+      <p style="font-size:0.72rem;color:var(--text-secondary);margin:6px 0 0;">
+        ${PLAYOFF_HOLES.join(', ')} — ${t('mpPlayoffHint')} ${t('mpPlayoffNoPoints')}
+      </p>
+    </div>`;
+}
+
 function sectionHTML(tn, users) {
   const mp = draftFor(tn).mp;
   const dirty = drafts.get(tn.id)?.dirty;
@@ -381,6 +411,7 @@ function sectionHTML(tn, users) {
        </div>
        ${sessionList(mp).map(s => sessionBoxHTML(tn, s, users)).join('')
          || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:8px 0 0;">${t('mpNoSessions')}</p>`}
+       ${playoffPromptHTML(tn)}
        ${participationHTML(tn)}`;
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-color);">
@@ -432,6 +463,15 @@ async function saveDraft(tn, ctx) {
     // stale suspension on a decided match used to cost that match's point.
     const setup = { ...m, format: singles ? 'SINGLES' : session.format };
     SCORER_OWNED.forEach(f => { delete setup[f]; });
+    // The playoff's holes are edited on its session, so the match takes them
+    // from there the way it takes its format — one place to change them.
+    if (!singles && session.playoff) {
+      const holeList = (Array.isArray(session.holeList) && session.holeList.length
+        ? session.holeList : PLAYOFF_HOLES).map(Number).filter(n => n > 0);
+      setup.playoff = true;
+      setup.holeList = holeList;
+      setup.totalHoles = holeList.length;
+    }
     // A session switched to a smaller format leaves players in slots the form
     // no longer renders, which nothing could then clear.
     setup.players = {
@@ -487,7 +527,14 @@ function handleEdit(tn, el) {
     const s = mp.sessions[el.dataset.session];
     if (!s) return false;
     const f = el.dataset.f;
-    s[f] = (f === 'day' || f === 'number') ? (parseInt(el.value, 10) || null) : el.value;
+    if (f === 'holeList') {
+      // "1, 8, 9" — anything that is not a hole number is dropped, and an
+      // empty box falls back to the club's three.
+      const list = String(el.value).split(/[^0-9]+/).map(Number).filter(n => n > 0 && n <= 18);
+      s.holeList = list.length ? list : [...PLAYOFF_HOLES];
+    } else {
+      s[f] = (f === 'day' || f === 'number') ? (parseInt(el.value, 10) || null) : el.value;
+    }
   } else if (kind === 'match') {
     const m = mp.matches[el.dataset.match];
     if (!m) return false;
@@ -531,6 +578,14 @@ function handleClick(tn, el, ctx, host) {
       startTime: ''
     };
     foldOpen.add(foldKey(tn, id));
+  } else if (kind === 'add-playoff') {
+    if (!mpOutcome(mp).needsPlayoff) return;
+    const sessionId = newId('s');
+    const matchId = newId('m');
+    const { session, match } = newPlayoffSession(mp, { sessionId, matchId });
+    mp.sessions[sessionId] = session;
+    mp.matches[matchId] = match;
+    foldOpen.add(foldKey(tn, sessionId));
   } else if (kind === 'del-session') {
     const id = el.dataset.session;
     const hasScores = sessionMatches(mp, id).some(m => Object.keys(m.holes || {}).length);
