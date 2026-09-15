@@ -50,3 +50,19 @@ git status --short
 - Commit only when requested or when the workflow explicitly calls for it.
 - **Never push to `main` directly — always push to the feature branch.**
 - After pushing the branch, inform the user so they can review and merge on GitHub.
+
+After a branch is merged:
+
+```bash
+npm run tidy      # prune, fast-forward main, drop the merged local branches
+```
+
+Two things that are easy to get wrong — both are spelled out in `AGENTS.md`:
+
+- **Production deploys only on a marker.** The merge commit's title must
+  contain `[deploy]`, otherwise `main` moves and nothing ships. Afterwards
+  check that `ubgolf.club` and `golfup-app.web.app` serve the same new
+  `assets/index-*.js`.
+- **Cloud Functions are not in CI.** A change under `functions/` ships only
+  when the owner runs `firebase deploy --only functions` — say so whenever a
+  change touches that folder.

@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-09-15 (Repository housekeeping: one command, and the deploy marker written down)
+
+`npm run tidy` brings a clone back to "just main": it prunes, fast-forwards
+`main` and deletes the local branches whose remote is gone — one branch per
+piece of work, gone once it is merged. It refuses to run on a dirty tree,
+never touches `main` or the branch you are standing on, and prints each
+deleted branch with its commit so `git branch <name> <sha>` brings it back.
+
+`AGENTS.md` gains three sections that were until now unwritten: the branch
+lifecycle, the deploy rules — production ships only when the merge commit's
+title carries **`[deploy]`**, and Cloud Functions are not in CI at all — and
+how sessions are kept (one per project, named after the project, archived
+when done). `CLAUDE.md` points at them. Nothing about the app changes.
+
+`scripts/tidy.sh`, `package.json`, `AGENTS.md`, `CLAUDE.md`.
+
 ## 2026-09-14 (M Cup: a level cup is decided by a playoff over 1, 8 and 9)
 
 When every match is decided and the two teams are level, the cup now goes to

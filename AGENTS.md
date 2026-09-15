@@ -53,12 +53,74 @@ git pull origin main
 
 Commit only relevant files. Do not include `dist/`, `node_modules/`, local clones, or unrelated generated files.
 
+## Branch Lifecycle
+
+A branch lives for exactly one piece of work and does not outlive it:
+
+1. Cut it from an up-to-date `main` — `git checkout main && git pull origin main`.
+2. Do the work, push the branch, open a PR.
+3. The owner merges on GitHub, and GitHub deletes the head branch
+   (Settings → General → Pull Requests → *Automatically delete head branches*).
+4. Every clone runs **`npm run tidy`** to catch up: it prunes, fast-forwards
+   `main`, and deletes the local branches whose remote is gone.
+
+`npm run tidy` refuses to run on a dirty tree, never touches `main` or the
+branch you are standing on, and prints each deleted branch with its commit, so
+`git branch <name> <sha>` brings one back. A branch that was never pushed has
+no upstream and is left alone.
+
+Nothing else is expected to accumulate: after a merge the repository should
+show `main` and nothing more.
+
+## Deploy
+
+**Production deploys on a marker, not on every merge.** The workflow
+`.github/workflows/production-deploy.yml` runs only when the commit landing on
+`main` has **`[deploy]`** in its message — so the merge commit title must
+carry it:
+
+```
+Merge pull request #123: <title> [deploy]
+```
+
+A merge without the marker updates `main` and ships nothing. After the run,
+confirm both hosts serve the same new bundle:
+
+```bash
+curl -s https://ubgolf.club/        | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
+curl -s https://golfup-app.web.app/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
+```
+
+Other pipelines:
+
+- **Preview** — any push to a `claude/**` branch publishes a 7-day preview
+  channel (`.github/workflows/preview-deploy.yml`).
+- **Database rules** — deployed by the production workflow alongside hosting.
+- **Cloud Functions are NOT in CI.** `functions/` changes ship only when the
+  owner runs `firebase deploy --only functions` by hand. Say so explicitly
+  whenever a change touches `functions/`.
+
+## Sessions
+
+One AI session per project, named after the project rather than after the first
+task it happened to start with — a session that has run for weeks is impossible
+to find under the name of its first feature.
+
+- Keep the working agreement in this repository, not in a session's memory: a
+  new session must be productive after reading `AGENTS.md`, `PROJECT_NOTES.md`
+  and `TASKS.md`, with no oral history.
+- Archive a session once its project's work is done or it is superseded.
+- Anything learned that a future session would need — a marker like `[deploy]`,
+  a verification routine, a gotcha — belongs in these files on the way past.
+
 ## Commands
 
 ```bash
 npm run dev       # Start Vite dev server
 npm run build     # Build to dist/
 npm run preview   # Preview production build locally
+npm run test:mp   # Run the pure-module test suites
+npm run tidy      # Prune merged branches, fast-forward main
 ```
 
 Deploy hosting:
