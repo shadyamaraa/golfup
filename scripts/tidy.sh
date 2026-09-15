@@ -25,14 +25,23 @@ fi
 echo "→ Fetching and pruning…"
 git fetch origin --prune --quiet
 
+# Standing on a branch GitHub has deleted is the one case worth moving for;
+# otherwise stay put — running this mid-work should not relocate you.
 current=$(git rev-parse --abbrev-ref HEAD)
-if [ "$current" != "main" ]; then
-  echo "→ Switching from $current to main…"
+track=$(git for-each-ref --format '%(upstream:track)' "refs/heads/$current")
+if [ "$current" != "main" ] && [ "$track" = "[gone]" ]; then
+  echo "→ $current is gone on GitHub — switching to main…"
   git checkout --quiet main
+  current=main
 fi
 
 echo "→ Updating main…"
-git pull --ff-only --quiet origin main
+if [ "$current" = "main" ]; then
+  git pull --ff-only --quiet origin main
+else
+  # Fast-forward main without checking it out.
+  git fetch --quiet origin main:main
+fi
 
 # A branch whose upstream is [gone] was merged and deleted on GitHub. Anything
 # that never had an upstream is unpushed work in progress and is left alone.
@@ -41,7 +50,7 @@ gone=$(git for-each-ref --format '%(refname:short) %(upstream:track)' refs/heads
   | grep -v '^main$' || true)
 
 if [ -z "$gone" ]; then
-  echo "✓ Nothing to tidy · main $(git rev-parse --short HEAD)"
+  echo "✓ Nothing to tidy · main $(git rev-parse --short main)"
   exit 0
 fi
 
@@ -53,5 +62,5 @@ for b in $gone; do
   count=$((count + 1))
 done
 
-echo "✓ $count branch(es) deleted · main $(git rev-parse --short HEAD)"
+echo "✓ $count branch(es) deleted · main $(git rev-parse --short main)"
 echo "  (to bring one back: git branch <name> <sha> — the shas are printed above)"
