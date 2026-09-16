@@ -12,7 +12,9 @@ deleted branch with its commit so `git branch <name> <sha>` brings it back.
 lifecycle, the deploy rules — production ships only when the merge commit's
 title carries **`[deploy]`**, and Cloud Functions are not in CI at all — and
 how sessions are kept (one per project, named after the project, archived
-when done). `CLAUDE.md` points at them. Nothing about the app changes.
+when done, and never reaching across into another project's session — a
+session belongs to its own repository and site). `CLAUDE.md` points at them.
+Nothing about the app changes.
 
 `scripts/tidy.sh`, `package.json`, `AGENTS.md`, `CLAUDE.md`.
 

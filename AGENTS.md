@@ -109,7 +109,13 @@ to find under the name of its first feature.
 - Keep the working agreement in this repository, not in a session's memory: a
   new session must be productive after reading `AGENTS.md`, `PROJECT_NOTES.md`
   and `TASKS.md`, with no oral history.
-- Archive a session once its project's work is done or it is superseded.
+- Archive a session once this project's work in it is done or superseded.
+- **A session belongs to its own project.** From here, only UB Golf's own
+  sessions are ever renamed, tagged or archived. Another project — Mcup,
+  MTBogd, anything else — has its own repository, its own site and its own
+  session, and its housekeeping is decided there. Do not act on one from here,
+  and do not offer to: an offer made in passing is how the wrong session gets
+  archived.
 - Anything learned that a future session would need — a marker like `[deploy]`,
   a verification routine, a gotcha — belongs in these files on the way past.
 
