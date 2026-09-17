@@ -10,7 +10,7 @@ import { t } from './i18n.js';
 import {
   SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnOneBall, tnTeamRank,
   isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision,
-  spFlightGrid, spFollowHole
+  spFlightGrid, spFollowHole, spTeeOffMs
 } from './strokeplay.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
@@ -419,8 +419,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     // within the last eight hours, so a round on some other day shows nothing
     // rather than a nonsense figure.
     const elapsedText = () => {
-      if (!tn.startDate || !g.teeTime) return '';
-      const ms = new Date(`${tn.startDate}T${g.teeTime}`).getTime() + (Number(round) - 1) * 86400000;
+      const ms = spTeeOffMs(tn, round, g.teeTime);
+      if (ms === null) return '';
       const d = Date.now() - ms;
       if (!(d > 0 && d < 8 * 3600000)) return '';
       const h = Math.floor(d / 3600000);

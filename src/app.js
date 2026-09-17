@@ -9,7 +9,7 @@ import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admi
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide, mountSponsorCarousel
@@ -2018,6 +2018,9 @@ async function renderRankingPage() {
 // ---- Tournament page (#/tournament/:id) ----
 let tnPageData = null;
 let tnPageTab = 'board';
+// The round the stroke play schedule tab shows; null follows the round
+// being played. Reset when a tournament page opens.
+let tnSchedRound = null;
 let stopSponsors = null;   // the sponsor carousel's timer, one per paint
 let tnPageQuery = '';
 let tnPageLimit = TN_PAGE_SIZE;
@@ -2087,6 +2090,7 @@ async function renderTournamentPage(id) {
 
   // paintTournamentPage() settles the tab against what this tournament has.
   tnPageTab = isMatchPlay(tn) ? 'match' : 'board';
+  tnSchedRound = null;
   tnPageQuery = '';
   tnPageLimit = TN_PAGE_SIZE;
   paintTournamentPage(tn);
@@ -2119,8 +2123,11 @@ async function renderTournamentPage(id) {
 // A match play tournament — plain 1v1 or the Ryder Cup team kind — shows the
 // Live Match Center instead of a stroke leaderboard. Both can coexist: a
 // tournament that carries entries as well as matches keeps its board tab.
+// By kind alone: a cup with its matches not yet drawn is still a cup, and
+// opens on the Match Center's empty state rather than a stroke board that
+// has nothing to do with it.
 function isMatchPlay(tn) {
-  return tnKind(tn) !== 'stroke' && !!Object.keys(tn?.mp?.matches || {}).length;
+  return tnKind(tn) !== 'stroke';
 }
 
 // The M Cup's Хуваарь tab — the draw the marshal table prints, read on a
@@ -2207,16 +2214,11 @@ function tnTabsFor(tn) {
   const tabs = [];
   if (isMatchPlay(tn)) tabs.push('match');
   if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
-  if (isMatchPlay(tn)) {
-    // The draw as a tab of its own, as stroke play has it — sessions, tee
-    // times, lineups — then the rulebook tab (the Match Center's 📖 jumps here).
-    tabs.push('schedule');
-    tabs.push('info');
-  } else if (Object.values(tn?.sp?.groups || {}).some(r => r && Object.keys(r).length)) {
-    // Stroke play: the members called the info tab useless — the draw took
-    // its place as a tab of its own once a round has flights.
-    tabs.push('schedule');
-  }
+  // The draw and the facts as tabs of their own, for every kind alike: the
+  // schedule shows its empty state until a round has flights, and the info
+  // tab carries the course, its tee, PAR, the cut and the rulebook (the
+  // Match Center's 📖 jumps here).
+  tabs.push('schedule', 'info');
   return tabs;
 }
 
@@ -2302,20 +2304,35 @@ function paintTournamentPage(tn) {
 }
 
 function tnInfoHTML(tn) {
+  // The same rows for every kind: where, when, the course and its tee, PAR,
+  // then what the kind adds — holes and the cut for stroke play, the team
+  // shape for a team event — and the size of the field wherever it is kept.
+  const teeText = (x) => (x ? `${x.label} · ${x.rating}/${x.slope}` : '');
+  const tee = courseTees(tn.course).find(x => x.key === tn.tee);
+  const womenTee = courseTees(tn.course).find(x => x.key === tn.womenTee);
+  const count = spActive(tn)
+    ? Object.keys(tn.sp.players).length
+    : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
   const rows = [
     [t('location'), [tn.venue, tn.city].filter(Boolean).join(' · ')],
     [t('date'), tnDatesText(tn)],
     [t('gameFormat'), tnFormatText(tn)],
+    [t('spCourse'), courseByKey(tn.course)?.name || ''],
+    [t('spTee'), teeText(tee) || (tn.rating && tn.slope ? `${tn.rating}/${tn.slope}` : '')],
+    tnHasDivisions(tn) ? [t('spWomenTee'), teeText(womenTee) || t('spWomenTeeSame')] : ['', ''],
+    [t('tnFPar'), tn.par],
     tnKind(tn) === 'stroke'
       ? [t('tnHoles'), tn.rounds ? tn.rounds * SP_HOLES : null]
       : [t('tnRounds'), tn.rounds],
     tnKind(tn) === 'stroke'
       ? [t('spScoring'), tnScoring(tn) === 'stableford' ? t('spScoringStableford') : t('spScoringStrokes')]
       : ['', ''],
+    tn.cutAfterRound ? [t('tnFCutAfter'), `R${tn.cutAfterRound}${tn.cutSize ? ` · ${tn.cutSize}` : ''}`] : ['', ''],
+    tnHasDivisions(tn) ? [t('spDivisions'), t('spDivisionsGender')] : ['', ''],
     tnIsTeam(tn)
       ? [t('spTeamSize'), tnTeamSize(tn) === 2 ? t('spTeamSize2') : t('spTeamSize4')]
       : ['', ''],
-    [t('tnPlayers'), (tn.entries || []).length || tn.maxPlayers]
+    [t('tnPlayers'), count || tn.maxPlayers || null]
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
 
   // Each kind ships its rulebook: the Ryder Cup format carries the club's full
@@ -2372,7 +2389,7 @@ async function wireTnSubscribe(tn) {
     paintTnSubBtn();
     try {
       await store.setTnSubscribed(tn.id, currentUser.id, next);
-      showToast(next ? '🔔 ' + t('mpSubOn') : t('mpSubOff'), 'success');
+      showToast(next ? '🔔 ' + t(isMatchPlay(tn) ? 'mpSubOn' : 'spSubOn') : t('mpSubOff'), 'success');
     } catch (err) {
       tnSubState.on = !next;
       paintTnSubBtn();
@@ -2457,10 +2474,12 @@ function renderTnBoard() {
       })
     });
     // Below the board: the notification toggle (members only — a push needs
-    // an account to land on) and past match play tournaments.
+    // an account to land on; never on a finished cup, which has nothing
+    // left to announce — the leaderboard's terms) and past match play
+    // tournaments.
     host.insertAdjacentHTML('beforeend', `
       ${tnResultsCardHTML(tn)}
-      ${currentUser && store.isUsingFirebase() && tn.id !== MP_DEMO_ID
+      ${currentUser && store.isUsingFirebase() && tn.id !== MP_DEMO_ID && tnStatus(tn) !== 'final'
         ? `<button id="tn-sub-btn" class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;"></button>` : ''}
       <button id="tn-rules-link" class="btn btn-outline btn-sm" style="width:100%;margin-top:8px;">📖 ${t('mpRulesTitle')}</button>
       <div id="tn-mp-history"></div>`);
@@ -2495,9 +2514,9 @@ function renderTnBoard() {
   // time keeps it live (nothing honest to wait for).
   let myTeeWait = null;
   const myTee = myGid ? tn.sp?.groups?.[spRound]?.[myGid]?.teeTime : null;
-  if (myCardHref && myTee && tn.startDate) {
-    const opens = new Date(`${tn.startDate}T${myTee}`);
-    if (!isNaN(opens.getTime()) && Date.now() < opens.getTime()) myTeeWait = myTee;
+  if (myCardHref && myTee) {
+    const opens = spTeeOffMs(tn, spRound, myTee);
+    if (opens !== null && Date.now() < opens) myTeeWait = myTee;
   }
 
   // The enter-score shortcut, shared by both stroke tabs.
@@ -2527,14 +2546,27 @@ function renderTnBoard() {
     return;
   }
   if (tnPageTab === 'schedule') {
-    const spGroups = spActive(tn) ? spGroupList(tn, spRound) : [];
+    // Every round that has a draw is a tab of its own; the round being
+    // played is the default, and the member's own flight in whichever
+    // round is showing is marked — the M Cup's «Миний match» treatment.
+    const roundCount = spActive(tn) ? Math.max(1, Number(tn.rounds) || 1) : 1;
+    const drawnRounds = Array.from({ length: roundCount }, (_, i) => i + 1)
+      .filter(r => spGroupList(tn, r).length);
+    const schedRound = tnSchedRound && tnSchedRound <= roundCount ? tnSchedRound : spRound;
+    const myGidHere = myPid ? spPlayerGroup(tn.sp.players, myPid, schedRound) : null;
+    const spGroups = spActive(tn) ? spGroupList(tn, schedRound) : [];
     const schedHasHole = spGroups.some(g => g.startHole);
     const schedGrid = `display:grid;grid-template-columns:30px 66px ${schedHasHole ? '62px ' : ''}1fr;gap:8px;align-items:center;`;
     host.innerHTML = `
       ${ctaHTML}
+      ${drawnRounds.length > 1 ? `
+      <div class="seg-tabs tn-div-tabs">
+        ${drawnRounds.map(r => `
+          <button class="seg-tab${schedRound === r ? ' active' : ''}" data-tn-sched-round="${r}">R${r}</button>`).join('')}
+      </div>` : ''}
       ${spGroups.length ? `
       <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 0;">
-        <b style="font-size:0.8rem;">${t('spSchedule')} — R${spRound}</b>
+        <b style="font-size:0.8rem;">${t('spSchedule')} — R${schedRound}</b>
         <a href="#/tnschedule/${esc(tn.id)}" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;gap:4px;">🖨 ${t('scPrint')}</a>
       </div>
       <div style="${schedGrid}padding:8px 10px 2px;font-size:0.6rem;font-weight:700;color:var(--text-muted);white-space:nowrap;">
@@ -2545,20 +2577,22 @@ function renderTnBoard() {
       </div>
       ${spGroups.map(g => {
         const pids = Object.keys(g.players || {});
+        const mine = !!myGidHere && g.gid === myGidHere;
         const canIn = currentUser && (['admin', 'marshal'].includes(currentUser.role)
           || (myPid && g.players?.[myPid]));
         // A flight is normally one division — the draw keeps them apart — so
         // it carries one label; a hand-mixed flight tags each player instead.
         const divs = tnHasDivisions(tn) ? [...new Set(pids.map(pid => entryDivision(tn.sp.players, pid)))] : [];
         return `
-        <div class="surface-card" style="padding:10px 8px;margin-top:6px;">
+        <div class="surface-card" style="padding:10px 8px;margin-top:6px;${mine ? 'background:var(--accent-soft);' : ''}">
           <div style="${schedGrid}">
             <b style="font-size:0.85rem;text-align:center;">${esc(g.number ?? '')}</b>
             <span class="pill-soft" style="font-size:0.7rem;text-align:center;">${esc(g.teeTime || '–')}</span>
             ${schedHasHole ? `<span class="pill-soft" style="font-size:0.7rem;text-align:center;">${g.startHole ? esc(g.startHole) : '–'}</span>` : ''}
-            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${spRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">${t('spGroupCard')}</a>` : '<span></span>'}
+            ${canIn ? `<a href="#/spgroup/${esc(tn.id)}/${schedRound}/${esc(g.gid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;justify-self:end;">${t('spGroupCard')}</a>` : '<span></span>'}
           </div>
-          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">${divs.length === 1 ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);font-size:0.82rem;line-height:1.6;">${mine ? `
+            <span class="pill-soft" style="font-size:0.62rem;font-weight:800;">${t('spMyFlight')}</span>` : ''}${divs.length === 1 ? `
             <div class="tn-div-flight">${tnDivisionLabel(divs[0])}</div>` : ''}
             ${pids.map(pid => {
               const p = tn.sp.players[pid] || {};
@@ -2570,6 +2604,10 @@ function renderTnBoard() {
           </div>
         </div>`;
       }).join('')}` : `<div class="empty-state" style="padding:34px 20px;"><p>${t('spNoGroups')}</p></div>`}`;
+    host.querySelectorAll('[data-tn-sched-round]').forEach(b => b.onclick = () => {
+      tnSchedRound = Number(b.dataset.tnSchedRound);
+      renderTnBoard();
+    });
     return;
   }
 
@@ -2579,8 +2617,15 @@ function renderTnBoard() {
   const boards = tnBoards(tn);
   const ranked = boards.flatMap(b => b.ranked);
   const spPts = tnScoring(tn) === 'stableford';
+  // The notification toggle, members only (a push needs an account to land
+  // on) and never on a finished tournament — the same terms as the Match
+  // Center's, and on an empty board too: the draw being published is the
+  // one thing an empty board has to announce.
+  const subBtnHTML = currentUser && store.isUsingFirebase() && tn.id !== TN_DEMO.id && tnStatus(tn) !== 'final'
+    ? `<button id="tn-sub-btn" class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;"></button>` : '';
   if (!ranked.length) {
-    host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>`;
+    host.innerHTML = `<div class="empty-state" style="padding:34px 20px;"><p>${t('tnEmpty')}</p></div>${subBtnHTML}`;
+    wireTnSubscribe(tn);
     return;
   }
   const me = ranked.find(tnIsMe);
@@ -2629,6 +2674,7 @@ function renderTnBoard() {
       <span class="pill-soft" id="tn-count"></span>
     </div>
     <div id="tn-list"></div>
+    ${subBtnHTML}
     ${tn.updatedAt ? `<p class="tn-updated">${t('tnUpdated')}: ${timeAgo(tn.updatedAt)}</p>` : ''}
     ${tnIsTeam(tn) ? `
       <details style="margin-top:12px;">
@@ -2637,6 +2683,7 @@ function renderTnBoard() {
       </details>` : ''}`;
 
   wireTnShare(host, tn);
+  wireTnSubscribe(tn);
   const input = host.querySelector('#tn-q');
   input?.addEventListener('input', () => {
     tnPageQuery = input.value;
@@ -3230,8 +3277,8 @@ async function renderNextTeeFeature() {
     const gid = spPlayerGroup(tn.sp.players, myPid, round);
     const g = gid ? tn.sp.groups?.[round]?.[gid] : null;
     if (!g) continue;
-    const ms = tn.startDate && g.teeTime
-      ? new Date(`${tn.startDate}T${g.teeTime}`).getTime() : Infinity;
+    // Dated by the round's own day, not the tournament's first.
+    const ms = spTeeOffMs(tn, round, g.teeTime) ?? Infinity;
     cards.push({ tn, round, g, myPid, ms });
   }
   if (!cards.length) { host.innerHTML = ''; return; }
@@ -3247,7 +3294,7 @@ async function renderNextTeeFeature() {
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <span class="fc-eyebrow"><span class="fc-dot"></span>Tee time</span>
         <span style="font-size:0.75rem; color:rgba(243,239,228,0.7); font-weight:600;">
-          ${esc([tn.startDate ? formatDate(tn.startDate) : '', g.teeTime || ''].filter(Boolean).join(' · '))}
+          ${esc([spRoundDate(tn, round) ? formatDate(spRoundDate(tn, round)) : '', g.teeTime || ''].filter(Boolean).join(' · '))}
         </span>
       </div>
       <div class="fc-title">${esc(tn.name || '')}</div>
