@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
-  tnScoring, tnHigherWins, spMetricFor
+  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs
 } from '../src/strokeplay.js';
 import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -1100,4 +1100,28 @@ test('the flight follows its round from its starting hole', () => {
   delete g.startHole;
   tn.sp.scores.u1[1] = {};
   assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 1);
+});
+
+// ---- spRoundDate / spTeeOffMs: one day per round ----
+
+test('spRoundDate counts one calendar day per round, across a month end', () => {
+  const tn = { startDate: '2026-09-30' };
+  assert.equal(spRoundDate(tn, 1), '2026-09-30');
+  assert.equal(spRoundDate(tn, 2), '2026-10-01');
+  assert.equal(spRoundDate(tn, 3), '2026-10-02');
+  assert.equal(spRoundDate(tn, 0), '2026-09-30', 'a bad round reads as the first');
+  assert.equal(spRoundDate({ startDate: '' }, 2), '');
+  assert.equal(spRoundDate(null, 1), '');
+});
+
+test('spTeeOffMs is the round day plus the tee time, null without either', () => {
+  const tn = { startDate: '2026-09-30' };
+  const r1 = spTeeOffMs(tn, 1, '08:40');
+  const r2 = spTeeOffMs(tn, 2, '08:40');
+  assert.equal(r2 - r1, 86400000, 'round two tees off a day later');
+  const d = new Date(r2);
+  assert.deepEqual([d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()], [10, 1, 8, 40]);
+  assert.equal(spTeeOffMs(tn, 1, ''), null);
+  assert.equal(spTeeOffMs(tn, 1, 'noon'), null);
+  assert.equal(spTeeOffMs({ startDate: '' }, 1, '08:40'), null);
 });

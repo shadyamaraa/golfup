@@ -1,5 +1,30 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (Tournament page: the same tabs for every kind, the schedule by round, the round's own day)
+
+A tournament's page read its kind off whether it had matches: a cup with
+none yet opened as an empty stroke play leaderboard with no tabs. It reads
+the kind alone now (`isMatchPlay`), and every kind gets the same tab set —
+the Match Center or the leaderboard, then Хуваарь and Мэдээлэл always. The
+schedule tab shows its empty state until a round is drawn, and the info tab
+carries what every type now records: the course, its tee (and the women's
+tee), PAR, the cut, the divisions, the size of the field — plus the
+rulebook, as before. The 🔔 notification toggle sits under the stroke play
+leaderboard as it does under the Match Center (its toast says the draw
+being published is what it will announce; the Cloud Function that sends it
+is the next change).
+
+Stroke play's schedule tab gained the M Cup's two courtesies: every drawn
+round is a tab (R1 | R2), and the member's own flight in the round showing
+is marked «Миний флайт» on a tinted card. And a real bug: the home
+dashboard's Tee time card and the scorer's «Оноо оруулах — 08:40» lock
+dated every round with the tournament's first day, so round two showed
+day one's date and its lock never engaged. `spRoundDate` and `spTeeOffMs`
+in `src/strokeplay.js` are now the one reckoning of a round's day — the
+pace clock on the flight scorer uses them too. `src/app.js`,
+`src/strokeplay-score.js`; `spSubOn`, `spMyFlight` in `src/i18n.js`.
+Nothing stored changes.
+
 ## 2026-09-17 (One wizard: a cup leaves it with its draw laid out; every type names its course)
 
 The wizard offered all six types, but a Ryder Cup came out of it with two

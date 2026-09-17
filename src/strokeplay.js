@@ -30,7 +30,7 @@
 import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
 import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
-import { settleMatch, statusText, HALVED } from './matchplay.js';
+import { settleMatch, statusText, HALVED, sessionDate } from './matchplay.js';
 import { GENDERS, isGender } from './gender.js';
 
 export const SP_HOLES = 18;
@@ -451,6 +451,20 @@ export const spHasHcp = (tn) =>
 // The player's group id for a round, and the sorted group list.
 export const spPlayerGroup = (players, pid, round) =>
   players?.[pid]?.groups?.[round] || null;
+
+// A round's calendar day — the tournament's start date, one day per round,
+// the same reckoning the M Cup's sessions use — and the instant a flight
+// tees off on it. null when there is nothing honest to compute from: no
+// start date, no tee time. The one place the day-per-round rule lives, so
+// the home card, the scorer's lock and the pace clock cannot disagree.
+export const spRoundDate = (tn, round) => sessionDate(tn?.startDate, Math.max(1, Number(round) || 1));
+
+export function spTeeOffMs(tn, round, teeTime) {
+  const date = spRoundDate(tn, round);
+  if (!date || !/^\d{1,2}:\d{2}$/.test(String(teeTime || ''))) return null;
+  const ms = new Date(`${date}T${teeTime}`).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
 
 export function spGroupList(tn, round) {
   return Object.entries(tn?.sp?.groups?.[round] || {})
