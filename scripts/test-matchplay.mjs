@@ -12,7 +12,7 @@ import {
   addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
   matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS,
   PLAYOFF_HOLES, isPlayoff, matchHoleNo, matchHoleCount, settleMatchOf,
-  mpOutcome, newPlayoffSession, mpTemplate
+  mpOutcome, newPlayoffSession, mpTemplate, tnRoster, tnRosterCount
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -859,4 +859,27 @@ test('mpTemplate singles: a flat SINGLES list with no sessions and no team keys'
   // What keeps tnKind reading the record as plain match play.
   assert.equal(tnKind({ format: 'match', mp: { matches } }), 'match');
   assert.equal(tnKind({ format: 'ryder', mp: mpTemplate(M_CUP_PLAN) }), 'ryder');
+});
+
+// ---- tnRoster: one roster, wherever the kind keeps it ----
+
+test('tnRoster reads sp.players for stroke kinds and mp.roster for match play', () => {
+  const sp = { format: 'stroke', sp: { players: { u1: { name: 'A' }, 'a+b': { kind: 'team', name: 'T' } } } };
+  const cup = { format: 'ryder', mp: { roster: { u1: { name: 'A', teamId: 'a' } }, matches: {} } };
+  const draw = { format: 'match', mp: { roster: { u1: { name: 'A' }, u2: { name: 'B' } } } };
+  assert.deepEqual(Object.keys(tnRoster(sp)), ['u1', 'a+b']);
+  assert.deepEqual(Object.keys(tnRoster(cup)), ['u1']);
+  assert.deepEqual(Object.keys(tnRoster(draw)), ['u1', 'u2']);
+  assert.deepEqual(tnRoster({ format: 'stroke' }), {});
+  assert.deepEqual(tnRoster(null), {});
+  // A stroke record that happens to carry an mp node is still read as stroke.
+  assert.deepEqual(Object.keys(tnRoster({ format: 'stroke', sp: { players: { u9: {} } }, mp: { roster: { x: {} } } })), ['u9']);
+});
+
+test('tnRosterCount counts entries, falling back to a sheet-era entries snapshot', () => {
+  assert.equal(tnRosterCount({ format: 'stroke', sp: { players: { u1: { name: 'A' }, u2: { name: 'B' } } } }), 2);
+  assert.equal(tnRosterCount({ format: 'ryder', mp: { roster: { u1: {}, u2: {}, u3: {} } } }), 3);
+  assert.equal(tnRosterCount({ format: 'stroke', entries: [{ name: 'A' }, { name: 'B' }] }), 2);
+  assert.equal(tnRosterCount({ format: 'stroke', sp: { players: { u1: {} } }, entries: [{}, {}, {}] }), 1, 'the roster wins over the snapshot');
+  assert.equal(tnRosterCount({ format: 'ryder' }), 0);
 });

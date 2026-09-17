@@ -666,6 +666,22 @@ export function newPlayoffSession(mp, { holes = PLAYOFF_HOLES, sessionId, matchI
   return { session, match };
 }
 
+// The tournament's one roster, wherever its kind keeps it: stroke play's
+// sp.players (persons and, in a team event, the teams), match play's
+// mp.roster. The entry shape is one superset — { name, userId?, teamId?,
+// hcp?, status?, division?, groups?, kind?, members?, addedAt? } — and a
+// match play entry is a subset of it. Readers that need a kind's own
+// fields still read their own node; this is for everything that only asks
+// who is in.
+export const tnRoster = (tn) => (tnKind(tn) === 'stroke' ? tn?.sp?.players : tn?.mp?.roster) || {};
+
+// How many entries the roster holds — a sheet-era tournament with only its
+// entries snapshot counts those.
+export function tnRosterCount(tn) {
+  const n = Object.values(tnRoster(tn)).filter(Boolean).length;
+  return n || (Array.isArray(tn?.entries) ? tn.entries.length : 0);
+}
+
 // A whole draw from a plan — one row per session: the day, the format, how
 // many matches, when the first tees off. The shapes are the admin editor's
 // own (add-session, add-match), so it reads a templated draw as if it had
