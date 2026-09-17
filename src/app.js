@@ -3051,9 +3051,11 @@ function renderNotifications(notifs) {
       <div id="notif-list-wrap" style="display:${isOpen ? 'block' : 'none'};">
         <div class="notif-list">
           ${active.map(n => {
-            // M Cup results carry their own text and point at a tournament,
-            // not a game — everything below this branch is game-shaped.
-            if (n.type === 'mcup') {
+            // Tournament notifications — an M Cup result, a stroke play tee
+            // time, a published draw — carry their own text and point at a
+            // tournament, not a game; everything below this branch is
+            // game-shaped.
+            if (['mcup', 'tn_tee', 'tn_sched'].includes(n.type)) {
               // A result is read, not accepted or declined: one action —
               // opening the tournament — and that is what clears the row
               // (the whole group, so a "+2" goes with it).
@@ -3063,9 +3065,9 @@ function renderNotifications(notifs) {
                 ? ` data-tn="${esc(n.tnId)}" data-ids="${n.groupIds.join(',')}" role="button" tabindex="0" style="cursor:pointer;"`
                 : ''}>
                 <div class="notif-content">
-                  <span class="notif-icon">${icon('play', { size: 18 })}</span>
+                  <span class="notif-icon">${icon(n.type === 'mcup' ? 'play' : 'time', { size: 18 })}</span>
                   <div>
-                    <div class="notif-title">${esc(n.title || 'M Cup')}${n.extraCount > 0 ? ` <span class="notif-badge">+${n.extraCount}</span>` : ''}</div>
+                    <div class="notif-title">${esc(n.title || (n.type === 'mcup' ? 'M Cup' : 'UB Golf'))}${n.extraCount > 0 ? ` <span class="notif-badge">+${n.extraCount}</span>` : ''}</div>
                     <div class="notif-sub">${esc(n.body || '')}</div>
                   </div>
                 </div>

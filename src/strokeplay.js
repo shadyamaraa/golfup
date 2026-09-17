@@ -466,6 +466,75 @@ export function spTeeOffMs(tn, round, teeTime) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// >>> tee-notify (shared with functions/index.js — keep the two copies identical)
+// A round's draw read as instructions to people: for every player in a
+// flight that has a tee time, the time and the start hole (with the flight's
+// number and id for the message). A team entry opens up into its members,
+// WD/DQ and unknown pids are dropped, and a flight with no time is not an
+// instruction yet.
+function spTeeSlots(groups, players) {
+  const roster = players || {};
+  const out = {};
+  const dropped = (p) => ['WD', 'DQ'].includes(String((p && p.status) || '').toUpperCase());
+  Object.entries(groups || {}).forEach(([gid, g]) => {
+    if (!g || !/^\d{1,2}:\d{2}$/.test(String(g.teeTime || ''))) return;
+    Object.keys(g.players || {}).forEach((pid) => {
+      const p = roster[pid];
+      if (!p) return;
+      const members = p.kind === 'team' ? Object.keys(p.members || {}) : [pid];
+      members.forEach((m) => {
+        const mp = roster[m];
+        if (!mp || dropped(mp)) return;
+        out[m] = {
+          teeTime: g.teeTime,
+          startHole: g.startHole ? Number(g.startHole) : null,
+          number: g.number === undefined || g.number === null ? null : g.number,
+          gid
+        };
+      });
+    });
+  });
+  return out;
+}
+
+// What a slot says to the person: the time and the start hole. The flight's
+// number is left out on purpose — a renumbering that keeps everyone's time
+// is not news.
+function spTeeSig(slot) {
+  return slot ? `${slot.teeTime}|${slot.startHole === null || slot.startHole === undefined ? '' : slot.startHole}` : '';
+}
+
+// The account a roster entry reaches: a member's pid is their userId, an
+// older entry carries it, a hand-added guest (p_…) has none.
+function spTeeUid(pid, players) {
+  const p = (players || {})[pid];
+  return (p && p.userId) || (String(pid).startsWith('p_') ? null : pid);
+}
+
+// Who to tell, given the round's draw before and after a write, the roster,
+// and the ledger of what each player was last told — `prev`, or null on a
+// round the ledger has never seen, when what the record said before the
+// write stands in for it, so a round published before the ledger existed is
+// not re-announced whole on its first edit.
+//   sigs: what everyone is told now; notify: [{ pid, slot, prevSig }] whose
+//   instruction changed; firstPublish: the round had no times before this
+//   write and has them now.
+function spTeeAnnounce({ before, after, players, prev }) {
+  const slots = spTeeSlots(after, players);
+  const sigs = {};
+  Object.keys(slots).forEach((pid) => { sigs[pid] = spTeeSig(slots[pid]); });
+  const wasSlots = spTeeSlots(before, players);
+  const base = prev || Object.fromEntries(Object.keys(wasSlots).map((pid) => [pid, spTeeSig(wasSlots[pid])]));
+  const notify = Object.keys(slots)
+    .filter((pid) => base[pid] !== sigs[pid])
+    .map((pid) => ({ pid, slot: slots[pid], prevSig: base[pid] || '' }));
+  const firstPublish = !Object.keys(wasSlots).length && !!Object.keys(slots).length;
+  return { sigs, notify, firstPublish };
+}
+// <<< tee-notify
+
+export { spTeeSlots, spTeeSig, spTeeUid, spTeeAnnounce };
+
 export function spGroupList(tn, round) {
   return Object.entries(tn?.sp?.groups?.[round] || {})
     .filter(([, g]) => g)
