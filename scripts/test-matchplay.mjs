@@ -12,7 +12,7 @@ import {
   addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
   matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS,
   PLAYOFF_HOLES, isPlayoff, matchHoleNo, matchHoleCount, settleMatchOf,
-  mpOutcome, newPlayoffSession
+  mpOutcome, newPlayoffSession, mpTemplate
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -793,4 +793,70 @@ test('a playoff session is exempt from the twelve-per-team rule, but not from 2 
   const short = { ...po, players: { a: ['a1'], b: ['b1', 'b2'] } };
   const issues = lineupIssues([short], roster, { required: 0 });
   assert.ok(issues.some(i => i.kind === 'match-size' && i.teamId === 'a' && i.count === 1 && i.required === 2));
+});
+
+// ---- mpTemplate: the wizard's draw skeleton ----
+
+const M_CUP_PLAN = [
+  { day: 1, format: 'FOURSOMES', matches: 6, startTime: '09:30' },
+  { day: 1, format: 'FOURBALL', matches: 6, startTime: '14:00' },
+  { day: 2, format: 'SINGLES', matches: 12, startTime: '10:00' }
+];
+
+test('mpTemplate: the M Cup plan gives three sessions and twenty-four matches', () => {
+  const { sessions, matches } = mpTemplate(M_CUP_PLAN, { idBase: 'x' });
+  const ss = Object.values(sessions);
+  assert.equal(ss.length, 3);
+  assert.deepEqual(ss.map(s => [s.day, s.number, s.format, s.startTime]),
+    [[1, 1, 'FOURSOMES', '09:30'], [1, 2, 'FOURBALL', '14:00'], [2, 3, 'SINGLES', '10:00']]);
+  const ms = Object.values(matches);
+  assert.equal(ms.length, 24);
+  // Every match sits in its session, numbered within it, and carries the
+  // session's format — the shape the admin editor's own add-match writes.
+  const inSession = (sid) => ms.filter(m => m.sessionId === sid);
+  assert.deepEqual(inSession(ss[0].id).map(m => m.number), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(inSession(ss[2].id).map(m => m.number), Array.from({ length: 12 }, (_, i) => i + 1));
+  assert.ok(ms.every(m => m.format === sessions[m.sessionId].format));
+  assert.ok(ms.every(m => m.id.startsWith('m_x') && sessions[m.sessionId].id.startsWith('s_x')));
+  assert.deepEqual(ms[0].players, { a: [], b: [] });
+});
+
+test('mpTemplate: tee times chain ten minutes apart from the session start', () => {
+  const { sessions, matches } = mpTemplate(M_CUP_PLAN, { idBase: 'x' });
+  const sid = Object.keys(sessions)[0];
+  const times = Object.values(matches).filter(m => m.sessionId === sid).map(m => m.teeTime);
+  assert.deepEqual(times, ['09:30', '09:40', '09:50', '10:00', '10:10', '10:20']);
+  const singlesId = Object.keys(sessions)[2];
+  const last = Object.values(matches).filter(m => m.sessionId === singlesId).at(-1);
+  assert.equal(last.teeTime, '11:50');
+});
+
+test('mpTemplate: no start time leaves every tee time blank; bad rows are skipped', () => {
+  const { sessions, matches } = mpTemplate([
+    { day: 1, format: 'FOURBALL', matches: 2 },
+    { day: 1, format: 'nonsense', matches: 0 },
+    { day: 'x', format: 'SINGLES', matches: 1, startTime: '9:05' }
+  ], { idBase: 'y' });
+  const ss = Object.values(sessions);
+  assert.equal(ss.length, 2, 'a row with no matches makes no session');
+  assert.equal(ss[0].startTime, '');
+  assert.ok(Object.values(matches).filter(m => m.sessionId === ss[0].id).every(m => m.teeTime === ''));
+  assert.equal(ss[1].day, 1, 'a bad day falls back to 1');
+  assert.equal(ss[1].number, 2);
+  assert.equal(Object.values(matches).find(m => m.sessionId === ss[1].id).teeTime, '9:05');
+  assert.deepEqual(mpTemplate([], { idBase: 'z' }), { sessions: {}, matches: {} });
+  assert.deepEqual(mpTemplate(null), { sessions: {}, matches: {} });
+});
+
+test('mpTemplate singles: a flat SINGLES list with no sessions and no team keys', () => {
+  const { sessions, matches } = mpTemplate([{ matches: 3, startTime: '08:00' }], { idBase: 'q', singles: true });
+  assert.deepEqual(sessions, {});
+  const ms = Object.values(matches);
+  assert.equal(ms.length, 3);
+  assert.deepEqual(ms.map(m => m.number), [1, 2, 3]);
+  assert.ok(ms.every(m => m.format === 'SINGLES' && !('sessionId' in m)));
+  assert.deepEqual(ms.map(m => m.teeTime), ['08:00', '08:10', '08:20']);
+  // What keeps tnKind reading the record as plain match play.
+  assert.equal(tnKind({ format: 'match', mp: { matches } }), 'match');
+  assert.equal(tnKind({ format: 'ryder', mp: mpTemplate(M_CUP_PLAN) }), 'ryder');
 });
