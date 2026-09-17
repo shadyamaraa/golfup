@@ -1,5 +1,37 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (Stroke play: a push when your tee time is set or changed; the draw announced to subscribers)
+
+A stroke play tournament sent no notifications at all. A new Cloud
+Function, `spScheduleChanged`, fires on each round of a draw the admin
+saves, waits a minute for the saves to settle, reads the round back fresh
+and tells every rostered member whose tee time or start hole is new or
+changed — «EAGLE CUP 2026 — Таны tee time · R1 · 08:40 · Флайт 3», or
+«08:20 → 08:40» when it moved. What each player was last told is kept
+under `sp/notified/{round}`, so a retry, a redraw that keeps someone's time
+or a renumbering sends them nothing; on a round already published before
+the function existed, the record's previous state stands in for the
+ledger, so the first edit tells only the people it moved. Subscribers
+(the 🔔) hear «R1-ийн хуваарь зарлагдлаа» once per round, on its first
+publish. Guests added by hand have no account to reach; withdrawn players,
+finished tournaments and rounds already played are skipped; more than 300
+recipients is refused as a data accident. The rules that read the draw
+live in `src/strokeplay.js` (`spTeeSlots`, `spTeeSig`, `spTeeAnnounce`,
+tested in `scripts/test-tee-notify.mjs`) and are copied into the function
+between marked lines — a test keeps the copies identical.
+
+The push function now treats the three tournament kinds alike, with a
+stable tag so a corrected time replaces the earlier notification instead
+of stacking, and the bell lists them under a clock icon; a tee-time row
+expires by itself once the flight has gone off. Also fixed on the way: the
+M Cup result fan-out never stored the record's `id`, so those rows could
+not be dismissed from the bell.
+
+**Nothing of this runs until the owner deploys the functions**:
+`firebase deploy --only functions` (the earlier playoff and push changes
+are still waiting too — one deploy covers them all). `functions/index.js`,
+`src/strokeplay.js`, `src/app.js`.
+
 ## 2026-09-17 (Tournament page: the same tabs for every kind, the schedule by round, the round's own day)
 
 A tournament's page read its kind off whether it had matches: a cup with

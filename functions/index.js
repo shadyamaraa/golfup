@@ -354,14 +354,16 @@ exports.sendPushOnNotification = functions.database
 
     if (!user || user.notifyWeb === false || !user.fcmToken) return null;
 
-    // M Cup results carry their own ready-made text and link to a
-    // tournament rather than a game.
-    if (notif.type === 'mcup') {
+    // Tournament notifications — an M Cup result, a stroke play tee time,
+    // a published draw — carry their own ready-made text and link to the
+    // tournament rather than a game. A stable tag (a tee time corrected
+    // twice replaces itself on the lock screen) when the record has one.
+    if (['mcup', 'tn_tee', 'tn_sched'].includes(notif.type)) {
       await admin.messaging().send(pushMessage(user.fcmToken, {
-        title: notif.title || 'M Cup',
+        title: notif.title || 'UB Golf',
         body: notif.body || '',
         link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : APP_URL,
-        tag: notifId
+        tag: notif.tag || notifId
       }));
       console.log(`FCM mcup push sent to user ${userId} for notif ${notifId}`);
       return null;
@@ -502,17 +504,252 @@ exports.mcupMatchFinished = functions.database
       }
     }
 
+    // The record carries its own key as `id`: the client reads the list
+    // with Object.values() and dismisses by n.id, so a record without one
+    // could never be cleared from the bell.
     const now = Date.now();
-    await Promise.all(userIds.map((uid) =>
-      db.ref(`notifications/${uid}`).push({
+    await Promise.all(userIds.map((uid) => {
+      const ref = db.ref(`notifications/${uid}`).push();
+      return ref.set({
+        id: ref.key,
         type: 'mcup',
         title,
         body,
         tnId,
         gameId: `tn:${tnId}`,
         createdAt: now
-      })));
+      });
+    }));
 
     console.log(`mcup: notified ${userIds.length} subscribers of ${tnId}/${matchId} (${settled.result})`);
+    return null;
+  });
+
+// ---- Stroke play: push when a flight's tee time is set or changed ----
+// Fires once per round of a stroke play draw on every admin save (the
+// editor writes sp/groups/{round} whole). The round is read back fresh
+// after a short wait, so three saves in a row wake up looking at one
+// settled draw; who is told is decided against a ledger of what each
+// player was last told (sp/notified/{round}, admin SDK, the same idea as
+// mp/notified), so a retry, a redelivery or a redraw that keeps someone's
+// time sends them nothing. The players themselves get their own time;
+// subscribers (tnSubs) get one «хуваарь зарлагдлаа» per round, on its
+// first publish only. The rules that read the draw are a copy of
+// src/strokeplay.js — the client bundle cannot be imported here; keep the
+// marked block identical (scripts/test-tee-notify.mjs checks).
+const TEE_DEBOUNCE_MS = Number(process.env.TEE_DEBOUNCE_MS === undefined ? 60000 : process.env.TEE_DEBOUNCE_MS);
+const TEE_FANOUT_CAP = 300;
+
+// >>> tee-notify (shared with functions/index.js — keep the two copies identical)
+// A round's draw read as instructions to people: for every player in a
+// flight that has a tee time, the time and the start hole (with the flight's
+// number and id for the message). A team entry opens up into its members,
+// WD/DQ and unknown pids are dropped, and a flight with no time is not an
+// instruction yet.
+function spTeeSlots(groups, players) {
+  const roster = players || {};
+  const out = {};
+  const dropped = (p) => ['WD', 'DQ'].includes(String((p && p.status) || '').toUpperCase());
+  Object.entries(groups || {}).forEach(([gid, g]) => {
+    if (!g || !/^\d{1,2}:\d{2}$/.test(String(g.teeTime || ''))) return;
+    Object.keys(g.players || {}).forEach((pid) => {
+      const p = roster[pid];
+      if (!p) return;
+      const members = p.kind === 'team' ? Object.keys(p.members || {}) : [pid];
+      members.forEach((m) => {
+        const mp = roster[m];
+        if (!mp || dropped(mp)) return;
+        out[m] = {
+          teeTime: g.teeTime,
+          startHole: g.startHole ? Number(g.startHole) : null,
+          number: g.number === undefined || g.number === null ? null : g.number,
+          gid
+        };
+      });
+    });
+  });
+  return out;
+}
+
+// What a slot says to the person: the time and the start hole. The flight's
+// number is left out on purpose — a renumbering that keeps everyone's time
+// is not news.
+function spTeeSig(slot) {
+  return slot ? `${slot.teeTime}|${slot.startHole === null || slot.startHole === undefined ? '' : slot.startHole}` : '';
+}
+
+// The account a roster entry reaches: a member's pid is their userId, an
+// older entry carries it, a hand-added guest (p_…) has none.
+function spTeeUid(pid, players) {
+  const p = (players || {})[pid];
+  return (p && p.userId) || (String(pid).startsWith('p_') ? null : pid);
+}
+
+// Who to tell, given the round's draw before and after a write, the roster,
+// and the ledger of what each player was last told — `prev`, or null on a
+// round the ledger has never seen, when what the record said before the
+// write stands in for it, so a round published before the ledger existed is
+// not re-announced whole on its first edit.
+//   sigs: what everyone is told now; notify: [{ pid, slot, prevSig }] whose
+//   instruction changed; firstPublish: the round had no times before this
+//   write and has them now.
+function spTeeAnnounce({ before, after, players, prev }) {
+  const slots = spTeeSlots(after, players);
+  const sigs = {};
+  Object.keys(slots).forEach((pid) => { sigs[pid] = spTeeSig(slots[pid]); });
+  const wasSlots = spTeeSlots(before, players);
+  const base = prev || Object.fromEntries(Object.keys(wasSlots).map((pid) => [pid, spTeeSig(wasSlots[pid])]));
+  const notify = Object.keys(slots)
+    .filter((pid) => base[pid] !== sigs[pid])
+    .map((pid) => ({ pid, slot: slots[pid], prevSig: base[pid] || '' }));
+  const firstPublish = !Object.keys(wasSlots).length && !!Object.keys(slots).length;
+  return { sigs, notify, firstPublish };
+}
+// <<< tee-notify
+
+// A round's calendar day: the start date plus one day per round — the
+// client's spRoundDate (src/strokeplay.js), which is the M Cup's
+// sessionDate. Date strings only, so the server's UTC clock never enters.
+function spRoundDate(tn, round) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((tn && tn.startDate) || ''));
+  const r = Math.max(1, Number(round) || 1);
+  if (!m) return '';
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + r - 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+// Today in Ulaanbaatar (UTC+8): Cloud Functions run on UTC, and a round's
+// day is compared as a date string.
+const ubToday = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+
+// The client's tnStatus reading of "final": a stored status wins, else the
+// day after the end date.
+function tnFinal(tn) {
+  if (tn.status === 'final') return true;
+  if (tn.status === 'live' || tn.status === 'upcoming') return false;
+  const end = tn.endDate || tn.startDate;
+  return !!end && ubToday() > end;
+}
+
+exports.spScheduleChanged = functions
+  .runWith({ timeoutSeconds: 180 })
+  .database.ref('/tournaments/{tnId}/sp/groups/{round}')
+  .onWrite(async (change, context) => {
+    const { tnId, round } = context.params;
+    if (!/^[1-9]\d*$/.test(String(round))) return null;
+    const beforeVal = change.before.val();
+    // Every save rewrites every round, most of them unchanged: the cheapest
+    // and by far the most frequent exit.
+    if (JSON.stringify(beforeVal) === JSON.stringify(change.after.val())) return null;
+
+    if (TEE_DEBOUNCE_MS > 0) await new Promise((r) => setTimeout(r, TEE_DEBOUNCE_MS));
+
+    const db = admin.database();
+    const [tnSnap, subsSnap] = await Promise.all([
+      db.ref(`tournaments/${tnId}`).once('value'),
+      db.ref(`tnSubs/${tnId}`).once('value')
+    ]);
+    const tn = tnSnap.val();
+    if (!tn || tn.status === 'deleted' || tnFinal(tn)) return null;
+    if (Number(round) > Math.max(1, Number(tn.rounds) || 1)) return null;
+    const date = spRoundDate(tn, round);
+    if (date && date < ubToday()) return null;   // a round already played
+
+    // The settled draw, not the one this event carried.
+    const after = (tn.sp && tn.sp.groups && tn.sp.groups[round]) || null;
+    const players = (tn.sp && tn.sp.players) || {};
+
+    // One compare-and-set on the ledger, before anything is sent: a crash
+    // after it under-sends rather than double-sends.
+    const ledgerRef = db.ref(`tournaments/${tnId}/sp/notified/${round}`);
+    let plan = null;
+    let hadLedger = false;
+    const res = await ledgerRef.transaction((cur) => {
+      hadLedger = !!(cur && cur.subsAt !== undefined);
+      plan = spTeeAnnounce({ before: beforeVal, after, players, prev: cur && cur.p ? cur.p : null });
+      const sameSigs = !!cur && JSON.stringify(cur.p || {}) === JSON.stringify(plan.sigs);
+      if (sameSigs && hadLedger) return undefined;   // nothing new: abort
+      const subsAt = hadLedger ? cur.subsAt : (plan.firstPublish ? Date.now() : 0);
+      return { p: plan.sigs, subsAt, at: Date.now() };
+    });
+    if (!res.committed || !plan) return null;
+    // Subscribers hear of a round once, on its first publish. A round the
+    // ledger first meets already published (subsAt claimed as 0 above) is
+    // never announced — it was out before the function existed.
+    const announce = plan.firstPublish && !hadLedger;
+
+    const seen = new Set();
+    const targets = [];
+    plan.notify.forEach((n) => {
+      const uid = spTeeUid(n.pid, players);
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      targets.push({ uid, ...n });
+    });
+    const subs = announce ? Object.keys(subsSnap.val() || {}).filter((uid) => !seen.has(uid)) : [];
+    if (targets.length + subs.length > TEE_FANOUT_CAP) {
+      console.error(`tee: refusing to notify ${targets.length + subs.length} people for ${tnId} R${round}`);
+      return null;
+    }
+
+    const name = tn.name || 'Тэмцээн';
+    const now = Date.now();
+    const writes = [];
+    targets.forEach(({ uid, slot, prevSig }) => {
+      const moved = !!prevSig;
+      const prevTime = moved ? prevSig.split('|')[0] : '';
+      const body = [
+        `R${round}`,
+        moved && prevTime && prevTime !== slot.teeTime ? `${prevTime} → ${slot.teeTime}` : slot.teeTime,
+        slot.startHole ? `${slot.startHole}-р нүх` : '',
+        slot.number !== null ? `Флайт ${slot.number}` : ''
+      ].filter(Boolean).join(' · ');
+      const ref = db.ref(`notifications/${uid}`).push();
+      writes.push(ref.set({
+        id: ref.key,
+        type: 'tn_tee',
+        tnId,
+        round: Number(round),
+        title: `${name} — ${moved ? 'Tee time өөрчлөгдлөө' : 'Таны tee time'}`,
+        body,
+        teeTime: slot.teeTime,
+        startHole: slot.startHole,
+        number: slot.number,
+        kind: moved ? 'moved' : 'new',
+        // Grouped per round in the bell; expires by itself once the flight
+        // has gone off (the client drops a notification whose date and
+        // time have passed).
+        gameId: `tn:${tnId}:tee:${round}`,
+        gameDate: date || null,
+        gameTime: slot.teeTime,
+        tag: `tn:${tnId}:tee:${round}`,
+        createdAt: now
+      }));
+    });
+    if (subs.length) {
+      const slots = spTeeSlots(after, players);
+      const times = Object.keys(slots).map((pid) => slots[pid].teeTime).sort();
+      const flights = Object.values(after || {}).filter((g) => g && g.teeTime).length;
+      const body = `${flights} флайт${times.length ? ` · ${times[0]}–${times[times.length - 1]}` : ''}`;
+      subs.forEach((uid) => {
+        const ref = db.ref(`notifications/${uid}`).push();
+        writes.push(ref.set({
+          id: ref.key,
+          type: 'tn_sched',
+          tnId,
+          round: Number(round),
+          title: `${name}: R${round}-ийн хуваарь зарлагдлаа`,
+          body,
+          gameId: `tn:${tnId}:sched:${round}`,
+          gameDate: date || null,
+          gameTime: times[0] || null,
+          tag: `tn:${tnId}:sched:${round}`,
+          createdAt: now
+        }));
+      });
+    }
+    await Promise.all(writes);
+    console.log(`tee: ${tnId} R${round} — ${targets.length} players told, ${subs.length} subscribers announced`);
     return null;
   });
