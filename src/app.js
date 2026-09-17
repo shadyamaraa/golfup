@@ -30,7 +30,7 @@ import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
-import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked, teamColorOf } from './matchplay.js';
+import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked, teamColorOf, tnRosterCount } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
 import { ryderRulesHTML, matchRulesHTML, casualTeamRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 import { MP_DEMO, MP_DEMO_ID } from './matchplay-demo.js';
@@ -1076,11 +1076,7 @@ function myAvatarImage() {
 function tnBrowseCardsHTML(list) {
   return list.map(tn => {
     const state = tnStatus(tn);
-    // A match play tournament keeps its field in mp.roster, not sp.players —
-    // reading only the latter would print "0 тоглогч" under a full M Cup.
-    const count = spActive(tn)
-      ? Object.keys(tn.sp.players || {}).length
-      : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
+    const count = tnRosterCount(tn);
     const meta = [tnDatesText(tn), tn.venue].filter(Boolean).join(' · ');
     return `
       <a href="#/tournament/${esc(tn.id)}" class="game-card glass-card tn-br-card ${state === 'final' ? 'past-game-card' : ''}">
@@ -2310,9 +2306,7 @@ function tnInfoHTML(tn) {
   const teeText = (x) => (x ? `${x.label} · ${x.rating}/${x.slope}` : '');
   const tee = courseTees(tn.course).find(x => x.key === tn.tee);
   const womenTee = courseTees(tn.course).find(x => x.key === tn.womenTee);
-  const count = spActive(tn)
-    ? Object.keys(tn.sp.players).length
-    : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
+  const count = tnRosterCount(tn);
   const rows = [
     [t('location'), [tn.venue, tn.city].filter(Boolean).join(' · ')],
     [t('date'), tnDatesText(tn)],
@@ -9412,10 +9406,7 @@ async function renderAdminTournamentsTab() {
   const rowHTML = (tn) => {
     const open = adminOpenTn === tn.id;
     const state = tnStatus(tn);
-    // A match play tournament keeps its field in mp.roster, not sp.players.
-    const count = spActive(tn)
-      ? Object.keys(tn.sp.players).length
-      : Object.keys(tn.mp?.roster || {}).length || (tn.entries || []).length;
+    const count = tnRosterCount(tn);
     const meta = esc([tnDatesText(tn), tn.venue, `${count} ${t('tnPlayers')}`].filter(Boolean).join(' · '));
     // A deleted tournament is a reduced row: what it was, when it went, and
     // the one way back. No editor — even if adminOpenTn still points at it.
@@ -9537,6 +9528,8 @@ async function renderAdminTournamentsTab() {
   const form = document.getElementById('tn-create-form');
   mountTnWizard(form, {
     showToast,
+    // The roster step's picker: the members, fetched when that step opens.
+    loadUsers: () => store.loadAllUsers(),
     onCreated: async (id) => {
       // Every format finishes its setup in the editor now — match play its
       // rosters and pairings, stroke play its player list and HCPs — so a

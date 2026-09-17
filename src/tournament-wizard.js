@@ -24,6 +24,8 @@ import { COURSES, courseByKey } from './strokeplay.js';
 import { readImageFile, validImageData } from './media.js';
 import { courseTees } from './courses.js';
 import { FORMATS, TEAM_COLORS, mpTemplate } from './matchplay.js';
+import { rosterHTML, wireRoster } from './roster-admin.js';
+import { whsHcp, profileDivision } from './strokeplay-admin.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,7 +33,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
 const INPUT = 'padding:9px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-family:var(--font);width:100%;';
 const LABEL = 'font-size:0.72rem;color:var(--text-secondary);font-weight:700;display:block;margin:0 0 3px;';
 
-const STEPS = 5;
+const STEPS = 6;
 
 // The cup's draw as the club plays it — M Cup 2026's own layout. A row per
 // session: the day, the format, how many matches, when the first tees off.
@@ -55,8 +57,15 @@ const blank = () => ({
   teamBName: '', teamBShort: '', teamBColor: TEAM_COLORS.b,
   mpPlan: M_CUP_PLAN(),
   // A singles draw: how many matches to lay out, and when the first goes.
-  mpSingles: '8', mpSinglesStart: ''
+  mpSingles: '8', mpSinglesStart: '',
+  // Who is in — optional here, the editor has the same list. Entries in the
+  // one roster shape; a cup's carry the team they were filed under.
+  roster: {}, teamPick: 'a'
 });
+
+// The members, for the roster step's picker: loaded once, on first need.
+let wizUsers = null;
+let wizUsersLoading = null;
 
 let draft = blank();
 
@@ -167,7 +176,45 @@ function stepHTML() {
     return strokeStepHTML();
   }
 
+  if (draft.step === 5) return rosterStepHTML();
+
   return summaryHTML();
+}
+
+// The roster editor every type shares (roster-admin.js), over the draft:
+// pick now or leave it to the editor. A cup files each pick under the team
+// the toggle shows; a stroke event's picks arrive with their handicap on
+// this tee and, with divisions on, the division their profile says.
+function rosterOpts() {
+  const isMatch = draft.format === 'ryder' || draft.format === 'match';
+  const tnLike = { par: draft.par, rating: courseTees(draft.course).find(x => x.key === draft.tee)?.rating ?? null,
+    slope: courseTees(draft.course).find(x => x.key === draft.tee)?.slope ?? null, spDivisions: draft.spDivisions };
+  return {
+    users: wizUsers || [],
+    entries: () => draft.roster,
+    manual: !isMatch,
+    teams: draft.format === 'ryder'
+      ? [['a', draft.teamAShort || draft.teamAName || 'A'], ['b', draft.teamBShort || draft.teamBName || 'B']].map(([id, label]) => ({ id, label }))
+      : null,
+    teamPick: { get: () => draft.teamPick, set: (v) => { draft.teamPick = v; } },
+    enrich: isMatch ? undefined : (u) => {
+      const division = profileDivision(u, tnLike);
+      const hcp = whsHcp(u, tnLike, division);
+      return { ...(hcp !== null ? { hcp } : {}), ...(division ? { division } : {}) };
+    },
+    add: (pid, entry) => { draft.roster[pid] = entry; },
+    remove: (pid) => { delete draft.roster[pid]; return true; },
+    patch: (pid, ch) => { if (draft.roster[pid]) Object.assign(draft.roster[pid], ch); },
+    markDirty: () => {}
+  };
+}
+
+function rosterStepHTML() {
+  const n = Object.keys(draft.roster).length;
+  return `
+    <h4 style="margin:0 0 10px;">${t('mpParticipants')}${n ? ` — ${n}` : ''}</h4>
+    ${wizUsers ? rosterHTML(rosterOpts()) : `<div class="loading-spinner"></div>`}
+    <p style="margin:10px 0 0;font-size:0.74rem;color:var(--text-secondary);">${t('wzRosterHint')}</p>`;
 }
 
 // The cup: its two teams — name, short, colour, the way the editor's team
@@ -285,6 +332,7 @@ function summaryHTML() {
     ${line(t('spTee'), tee ? teeLabel(tee) : '')}
     ${line(t('tnFPar'), draft.par)}
     ${draft.logo ? line(t('tnLogoLabel'), '✓') : ''}
+    ${line(t('mpParticipants'), Object.keys(draft.roster).length ? String(Object.keys(draft.roster).length) : '')}
     ${draft.format === 'ryder'
       ? line(t('mpTeamName'), [draft.teamAName || 'A', draft.teamBName || 'B'].join(' vs '))
         + line(t('wzPlan'), `${planRows.length} session · ${planTotal} match`)
@@ -381,6 +429,12 @@ export function tnWizardRecord(d) {
       data.spTeamRank = data.spTeamSize === 2 && d.spTeamRank === 'match' ? 'match' : 'board';
     }
   }
+  // The roster, where the kind keeps it — only when somebody was picked, so
+  // a stroke event with nobody yet does not grow an empty sp node.
+  if (Object.keys(d.roster || {}).length) {
+    if (data.mp) data.mp.roster = d.roster;
+    else data.sp = { players: d.roster };
+  }
   return data;
 }
 
@@ -400,6 +454,18 @@ export const tnWizardDraft = (d = {}) => ({ ...blank(), ...d });
 export function mountTnWizard(host, ctx) {
   if (!host) return;
   paint(host, ctx);
+}
+
+// The members for the picker, fetched once through the mount's loader; the
+// step repaints when they land.
+function ensureUsers(host, ctx) {
+  if (wizUsers || wizUsersLoading || !ctx.loadUsers) return;
+  wizUsersLoading = Promise.resolve().then(() => ctx.loadUsers()).then((list) => {
+    wizUsers = (list || []).filter(u => u && u.id && u.status !== 'deleted');
+  }).catch(() => { wizUsers = []; }).finally(() => {
+    wizUsersLoading = null;
+    if (draft.step === 5 && document.body.contains(host)) paint(host, ctx);
+  });
 }
 
 function paint(host, ctx) {
@@ -491,6 +557,11 @@ function paint(host, ctx) {
     draft.format = b.dataset.wzType;
     paint(host, ctx);
   });
+
+  if (draft.step === 5) {
+    ensureUsers(host, ctx);
+    if (wizUsers) wireRoster(host, { ...rosterOpts(), showToast: ctx.showToast, repaint: () => paint(host, ctx) });
+  }
 
   host.querySelectorAll('button[data-wz-nav]').forEach(b => b.onclick = async () => {
     const nav = b.dataset.wzNav;

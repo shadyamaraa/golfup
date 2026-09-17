@@ -129,3 +129,19 @@ test('a singles draw is a flat match list and nothing that reads as a cup', () =
   const one = tnWizardRecord(tnWizardDraft({ ...common, format: 'match', mpSingles: '' }));
   assert.equal(Object.keys(one.mp.matches).length, 1);
 });
+
+test('the roster step writes where the kind keeps it — and nothing when nobody was picked', () => {
+  const roster = { u1: { name: 'A', userId: 'u1', addedAt: 1 }, u2: { name: 'B', userId: 'u2', addedAt: 2, teamId: 'b' } };
+  const stroke = tnWizardRecord(tnWizardDraft({ ...common, format: 'stroke', roster }));
+  assert.deepEqual(stroke.sp, { players: roster });
+  assert.ok(!('mp' in stroke));
+  assert.equal(spActive(stroke), true);
+  const cup = tnWizardRecord(tnWizardDraft({ ...common, format: 'ryder', teamAName: 'A', teamBName: 'B', roster }));
+  assert.deepEqual(cup.mp.roster, roster);
+  assert.ok(!('sp' in cup));
+  const draw = tnWizardRecord(tnWizardDraft({ ...common, format: 'match', roster }));
+  assert.deepEqual(Object.keys(draw.mp).sort(), ['matches', 'roster'], 'still no teams node on a singles draw');
+  const none = tnWizardRecord(tnWizardDraft({ ...common, format: 'stroke' }));
+  assert.ok(!('sp' in none), 'an empty roster grows no sp node');
+  assert.ok(!('roster' in tnWizardRecord(tnWizardDraft({ ...common, format: 'ryder', teamAName: 'A', teamBName: 'B' })).mp));
+});

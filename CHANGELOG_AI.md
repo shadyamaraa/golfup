@@ -1,5 +1,36 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (One roster: the same editor, the same rows, for every kind — and a roster step in the wizard)
+
+Stroke play and the M Cup each had their own way of putting people in: one
+a list with a search box, a guest field and «every member»; the other two
+team boxes of chips with a picker each, and a singles draw a third. Adding,
+listing and removing people is the same work, so it lives once now in
+`src/roster-admin.js` — the type-to-search picker, the guest field where a
+guest can score (stroke play only: a match is scored by its players' own
+accounts), «every member», one row per person with the date they were
+added and a ✕ — and each editor hands in what its kind reads off an entry:
+handicap, WD/DQ, division and the card for stroke play; the team for a cup,
+as a select on every row and a toggle on the picker, with the unplaced
+counted. The stroke roster behaves as it did; the cup's 28 chips became one
+list, and its entries carry `addedAt` from here on.
+
+The entry shape is one superset across kinds — `{ name, userId?, teamId?,
+hcp?, status?, division?, groups?, kind?, members?, addedAt? }` — and
+`tnRoster(tn)` / `tnRosterCount(tn)` in `src/matchplay.js` read it
+wherever the kind keeps it (`sp.players`, `mp.roster`), for everything that
+only asks who is in: the browse cards, the admin rows, the info tab, the
+club statistics. The storage paths stay as they are — the database rules
+name `sp/players` for stroke play scoring and the twenty-odd match play
+readers name `mp.roster` — so nothing stored changes.
+
+The wizard gained an «Оролцогчид» step for every type, the same editor over
+the draft: pick now, or leave it to the editor, it is the same list. A cup's
+picks file under the team the toggle shows; a stroke event's arrive with
+their WHS handicap on the chosen tee and their profile's division.
+`src/strokeplay-admin.js`, `src/matchplay-admin.js`,
+`src/tournament-wizard.js`, `src/club-stats.js`, `src/app.js`.
+
 ## 2026-09-17 (Stroke play: a push when your tee time is set or changed; the draw announced to subscribers)
 
 A stroke play tournament sent no notifications at all. A new Cloud

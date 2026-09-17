@@ -17,6 +17,7 @@
 // no longer holds.
 
 import * as store from './store.js';
+import { rosterHTML, wireRoster } from './roster-admin.js';
 import { t } from './i18n.js';
 import { readImageFile, validImageData } from './media.js';
 import { teamColorOf,
@@ -44,6 +45,8 @@ const drafts = new Map();
 // repaints. Keyed by tournament and session id.
 const foldOpen = new Set();
 const foldKey = (tn, sid) => `${tn.id}:${sid}`;
+// Which team the roster picker files a picked member under (a cup only).
+const teamPickFor = new Map();
 
 const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 
@@ -119,12 +122,6 @@ function teamBoxHTML(tn, teamId, users) {
   const over = roster.length > ROSTER_SIZE;
   const logo = validImageData(team.logo) ? team.logo : null;
 
-  const chip = (p) => `
-    <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name || p.id)}
-      <button data-mp="del-player" data-pid="${esc(p.id)}" data-team="${teamId}"
-        style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
-    </span>`;
-
   return `
     <div style="flex:1;min-width:230px;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;">
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;">
@@ -150,11 +147,37 @@ function teamBoxHTML(tn, teamId, users) {
       </div>
       <div style="margin-top:8px;">
         <span style="${LABEL}">${t('mpRoster')} — ${roster.length}/${ROSTER_SIZE}${over ? ' ⚠' : ''}</span>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
-          ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
-        </div>
-        <div style="margin-top:6px;">${pickerHTML('add-player', { team: teamId })}</div>
       </div>
+    </div>`;
+}
+
+// The one roster list, shared with stroke play (roster-admin.js): a cup's
+// entries file under a team — the picker's toggle says which, and every row
+// carries a team select — a singles draw's under none. No hand-typed
+// guests here: a match is scored by its players' own accounts, and a guest
+// has none.
+function rosterOpts(tn) {
+  const singles = tnKind(tn) === 'match';
+  const short = (k) => { const tm = draftFor(tn).mp.teams?.[k]; return tm?.short || tm?.name || k.toUpperCase(); };
+  return {
+    // Read afresh on every call: a clean draft is re-cloned by draftFor().
+    entries: () => draftFor(tn).mp.roster,
+    manual: false,
+    teams: singles ? null : TEAM_KEYS.map(k => ({ id: k, label: short(k) })),
+    teamPick: { get: () => teamPickFor.get(tn.id) || 'a', set: (v) => teamPickFor.set(tn.id, v) },
+    emptyText: '—'
+  };
+}
+
+function rosterSectionHTML(tn) {
+  const mp = draftFor(tn).mp;
+  const n = Object.values(mp.roster).filter(Boolean).length;
+  const unplaced = tnKind(tn) === 'match' ? 0
+    : Object.values(mp.roster).filter(p => p && !TEAM_KEYS.includes(p.teamId)).length;
+  return `
+    <div style="margin-top:12px;">
+      <span style="${LABEL}">${t(tnKind(tn) === 'match' ? 'mpParticipants' : 'mpRoster')} — ${n}${unplaced ? ` · ⚠ ${unplaced} ${t('spTeamFree').toLowerCase()}` : ''}</span>
+      ${rosterHTML(rosterOpts(tn))}
     </div>`;
 }
 
@@ -342,27 +365,6 @@ function participationHTML(tn) {
     </div>`;
 }
 
-// Plain match play: one participants list instead of two team boxes.
-function participantsBoxHTML(tn, users) {
-  const mp = draftFor(tn).mp;
-  const roster = Object.entries(mp.roster)
-    .map(([id, p]) => ({ id, name: p?.name || id }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const chip = (p) => `
-    <span class="pill-soft" style="font-size:0.72rem;">${esc(p.name)}
-      <button data-mp="del-player" data-pid="${esc(p.id)}"
-        style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;">✕</button>
-    </span>`;
-  return `
-    <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:10px;">
-      <span style="${LABEL}">${t('mpParticipants')} — ${roster.length}</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
-        ${roster.map(chip).join('') || `<span style="font-size:0.72rem;color:var(--text-muted);">—</span>`}
-      </div>
-      <div style="margin-top:6px;">${pickerHTML('add-player', { team: '' })}</div>
-    </div>`;
-}
-
 // The flat singles match list — no sessions, sides of one.
 function singlesMatchesHTML(tn, users) {
   const mp = draftFor(tn).mp;
@@ -400,11 +402,12 @@ function sectionHTML(tn, users) {
   const dirty = drafts.get(tn.id)?.dirty;
   const singles = tnKind(tn) === 'match';
   const body = singles
-    ? `${participantsBoxHTML(tn, users)}
+    ? `${rosterSectionHTML(tn)}
        ${singlesMatchesHTML(tn, users)}`
     : `<div style="display:flex;gap:10px;flex-wrap:wrap;">
          ${TEAM_KEYS.map(k => teamBoxHTML(tn, k, users)).join('')}
        </div>
+       ${rosterSectionHTML(tn)}
        <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
          <b style="font-size:0.85rem;">${t('mpSessions')}</b>
          <button data-mp="add-session" class="btn btn-outline btn-sm">+ ${t('mpAddSession')}</button>
@@ -627,22 +630,6 @@ function handleClick(tn, el, ctx, host) {
     if (Object.keys(m.holes || {}).length && !confirm(t('mpDelMatchScored'))) return;
     d.removed.add(el.dataset.match);
     delete mp.matches[el.dataset.match];
-  } else if (kind === 'add-player') {
-    // A roster entry is the member themselves: keyed by their userId, which
-    // is what lets the scorer screen recognise "this signed-in member plays
-    // in this match". The display name is a snapshot; the id is the truth.
-    const u = (ctx.users || []).find(x => x.id === el.value);
-    if (!u) return;
-    const entry = { name: store.memberName(u), userId: u.id };
-    // Team formats file the player under their team; singles has no teams.
-    if (el.dataset.team) entry.teamId = el.dataset.team;
-    mp.roster[u.id] = entry;
-  } else if (kind === 'del-player') {
-    const pid = el.dataset.pid;
-    const fielded = Object.values(mp.matches).some(m =>
-      TEAM_KEYS.some(k => (m?.players?.[k] || []).includes(pid)));
-    if (fielded && !confirm(t('mpDelPlayerFielded'))) return;
-    delete mp.roster[pid];
   } else if (kind === 'add-scorer') {
     const m = mp.matches[el.dataset.match];
     if (!m || !el.value) return;
@@ -722,13 +709,7 @@ function wirePickers(host, tn, ctx) {
         return pool.filter(p => !used.has(p.id))
           .map(p => ({ id: p.id, label: p.name || p.id, sub: '' }));
       }
-      const taken = kind === 'add-scorer'
-        ? new Set(Object.keys(mp.matches[inp.dataset.match]?.scorerIds || {}))
-        : new Set(Object.keys(mp.roster));
-      // One member, one roster entry — legacy entries may key by userId.
-      if (kind === 'add-player') {
-        Object.values(mp.roster).forEach(p => { if (p?.userId) taken.add(p.userId); });
-      }
+      const taken = new Set(Object.keys(mp.matches[inp.dataset.match]?.scorerIds || {}));
       return (ctx.users || [])
         .filter(u => u && u.id && !taken.has(u.id))
         .map(u => {
@@ -784,11 +765,46 @@ function wirePickers(host, tn, ctx) {
 
 function wire(host, tn, ctx) {
   wirePickers(host, tn, ctx);
+  // A roster entry is the member themselves: keyed by their userId, which
+  // is what lets the scorer screen recognise "this signed-in member plays
+  // in this match". The display name is a snapshot; the id is the truth.
+  // Taking one off who is fielded in a match empties that pick, so it asks.
+  // Every mutation takes the draft afresh and dirties it in the same call:
+  // draftFor() re-clones a clean draft, so a copy held from earlier would be
+  // the one nobody saves.
+  const dirty = (d) => {
+    d.dirty = true;
+    host.querySelector('button[data-mp="save"]')?.classList.replace('btn-outline', 'btn-primary');
+  };
+  wireRoster(host, {
+    ...rosterOpts(tn),
+    users: ctx.users || [],
+    showToast: ctx.showToast,
+    add: (pid, entry) => { const d = draftFor(tn); d.mp.roster[pid] = entry; dirty(d); },
+    remove: (pid) => {
+      const d = draftFor(tn);
+      const fielded = Object.values(d.mp.matches).some(m =>
+        TEAM_KEYS.some(k => (m?.players?.[k] || []).includes(pid)));
+      if (fielded && !confirm(t('mpDelPlayerFielded'))) return false;
+      delete d.mp.roster[pid];
+      dirty(d);
+      return true;
+    },
+    patch: (pid, ch) => {
+      const d = draftFor(tn);
+      const p = d.mp.roster[pid];
+      if (!p) return;
+      Object.entries(ch).forEach(([k, v]) => { if (v === null || v === undefined) delete p[k]; else p[k] = v; });
+      dirty(d);
+    },
+    repaint: () => paint(host, tn, ctx),
+    markDirty: () => dirty(draftFor(tn))
+  });
   host.querySelectorAll('input[data-mp], select[data-mp], textarea[data-mp]').forEach(el => {
     // Rosters and player picks reshape the section, so they repaint; plain
     // fields only mark the draft dirty and repaint nothing — no lost focus.
     el.onchange = () => {
-      if (el.dataset.mp === 'add-scorer' || el.dataset.mp === 'add-player') {
+      if (el.dataset.mp === 'add-scorer') {
         if (el.value) { handleClick(tn, el, ctx, host); }
         return;
       }

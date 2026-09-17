@@ -15,6 +15,7 @@ import { isGender, genderKey } from './gender.js';
 import { courseHandicap } from './handicap.js';
 import { addMinutesHHMM } from './matchplay.js';
 import { nameKey, nameMatches } from './tournament-sheet.js';
+import { rosterHTML, wireRoster, addedAtText } from './roster-admin.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -96,37 +97,32 @@ function rechainTees(d, round, fromGid, step = 10) {
 
 // ---- Rendering ----
 
-// «2026-09-17 19:08» in the browser's own clock — the club reads this in
-// Ulaanbaatar, and toLocaleString would spell the date differently in every
-// language the app carries.
-function addedAtText(at) {
-  const ms = Number(at) || 0;
-  if (!ms) return '';
-  const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function rowHTML(tn, pid, p) {
-  const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
-  const added = addedAtText(p.addedAt);
-  return `
-    <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
-      <span style="flex:1;min-width:130px;font-size:0.85rem;">
-        <b>${esc(p.name || pid)}</b>
-        ${p.userId || !pid.startsWith('p_') ? '' : ` <span class="pill-soft" style="font-size:0.62rem;">✍</span>`}
-        ${scored ? ` <span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
-        ${added ? `<span style="display:block;font-size:0.66rem;color:var(--text-secondary);margin-top:1px;">${t('spAddedAt')}: ${esc(added)}</span>` : ''}
-      </span>
+// The roster editor is shared with match play (roster-admin.js); what this
+// kind reads off an entry — the handicap, WD/DQ, the division, the card —
+// are its cells, and a ✓ marks an entry with scores on the board.
+function rosterOpts(tn, users, d) {
+  return {
+    users,
+    entries: () => d.players,
+    manual: true,
+    badgesHTML: (pid) => (Object.keys(tn.sp?.scores?.[pid] || {}).length
+      ? ` <span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''),
+    cellsHTML: (pid, p) => `
       <input data-sp="hcp" data-pid="${esc(pid)}" type="number" step="1" min="0" max="54"
         value="${esc(p.hcp ?? '')}" placeholder="${t('spHcp')}" title="${t('spHcp')}" style="${INPUT}width:74px;" />
       <select data-sp="status" data-pid="${esc(pid)}" style="${INPUT}width:80px;">
         ${['', 'WD', 'DQ'].map(s => `<option value="${s}"${(p.status || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
       </select>
       ${divisionSelectHTML(tn, 'data-sp', pid, p)}
-      ${tnOneBall(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
-      <button data-sp="del" data-pid="${esc(pid)}" class="btn btn-outline-danger btn-sm">✕</button>
-    </div>`;
+      ${tnOneBall(tn) ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}`,
+    // A picked member arrives with their WHS handicap on this tee and the
+    // division their profile says, when the tournament has divisions.
+    enrich: (u) => {
+      const division = profileDivision(u, tn);
+      const hcp = whsHcp(u, tn, division);
+      return { ...(hcp !== null ? { hcp } : {}), ...(division ? { division } : {}) };
+    }
+  };
 }
 
 // The division control on a roster row, shown only when the tournament has
@@ -155,7 +151,7 @@ function divisionSelectHTML(tn, attr, pid, p) {
 // A typed value always wins; this only ever fills blanks.
 // The tee is the division's: a woman's course handicap comes off the women's
 // rating and slope when the tournament has them.
-function whsHcp(u, tn, division = null) {
+export function whsHcp(u, tn, division = null) {
   const tee = tnTeeFor(tn, division);
   const ch = courseHandicap(u?.hcpIndex, tee.slope, tee.rating, Number(tn?.par) || null);
   return ch === null ? null : Math.max(0, Math.min(54, ch));
@@ -163,7 +159,7 @@ function whsHcp(u, tn, division = null) {
 
 // A member's division for this tournament, read off their profile — only
 // when the tournament has divisions, so an undivided roster stores nothing.
-function profileDivision(u, tn) {
+export function profileDivision(u, tn) {
   return tnHasDivisions(tn) && isGender(u?.gender) ? u.gender : null;
 }
 
@@ -187,21 +183,9 @@ function sectionHTML(tn, users) {
       <details data-sp-players${open ? ' open' : ''}>
         <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spPlayers')} — ${rows.length}${divCounts}</summary>
         <div style="margin-top:8px;">
-          <!-- Adding comes first: a 72-player roster put these controls a full
-               screen of scrolling below the list, so adding one more player
-               meant scrolling past everyone already on it. -->
-          <div style="position:relative;">
-            <input data-sp="pick" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
-              style="${INPUT}width:100%;box-sizing:border-box;" />
-            <div data-sp="pick-list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
-              max-height:220px;overflow-y:auto;border:1px solid var(--border-color);
-              background:var(--bg-card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.25);"></div>
-          </div>
-          <input data-sp="manual" placeholder="✍ ${t('spAddManual')}"
-            style="${INPUT}width:100%;box-sizing:border-box;margin-top:6px;" />
-          <button data-sp="add-all" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
-            👥 ${t('spAddAll')}
-          </button>
+          ${rosterHTML({
+            ...rosterOpts(tn, users, d),
+            extraHTML: `
           ${tn.rating && tn.slope ? `
           <button data-sp="hcp-whs" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
             ${t('spHcpFromWhs')}
@@ -213,11 +197,8 @@ function sectionHTML(tn, users) {
           ${unset.length ? `
           <p style="font-size:0.72rem;color:var(--amber);margin:8px 0 0;">
             ⚠ ${unset.length} ${t('spDivisionUnset')}: ${esc(unset.map(([, p]) => p.name).join(', '))}
-          </p>` : ''}
-          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-color);">
-            ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
-              || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
-          </div>
+          </p>` : ''}`
+          })}
         </div>
       </details>
       ${teamsHTML(tn, d)}
@@ -510,43 +491,30 @@ function wire(host, tn, ctx) {
     };
   });
 
-  host.querySelectorAll('button[data-sp="del"]').forEach(b => b.onclick = () => {
-    const pid = b.dataset.pid;
-    const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
-    if (scored && !confirm(t('spDelPlayerScored'))) return;
-    delete d.players[pid];
-    // Out of the roster means out of every round's draw too.
-    Object.values(d.groups).forEach(groups =>
-      Object.values(groups || {}).forEach(g => { if (g?.players) delete g.players[pid]; }));
-    d.removed.add(pid);
-    d.dirty = true;
-    paint(host, tn, ctx);
+  // Adding and removing people is the shared roster editor's; this kind's
+  // part is what a removal takes with it — the entry's place in every
+  // round's draw — and the confirm when the entry has scores.
+  wireRoster(host, {
+    ...rosterOpts(tn, ctx.users || [], d),
+    showToast: ctx.showToast,
+    add: (pid, entry) => { d.players[pid] = entry; d.dirty = true; },
+    remove: (pid) => {
+      const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
+      if (scored && !confirm(t('spDelPlayerScored'))) return false;
+      delete d.players[pid];
+      Object.values(d.groups).forEach(groups =>
+        Object.values(groups || {}).forEach(g => { if (g?.players) delete g.players[pid]; }));
+      d.removed.add(pid);
+      d.dirty = true;
+      return true;
+    },
+    patch: (pid, ch) => { if (d.players[pid]) Object.assign(d.players[pid], ch); },
+    repaint: () => paint(host, tn, ctx),
+    markDirty
   });
 
   wireGroups(host, tn, ctx, d, markDirty);
   wireTeams(host, tn, ctx, d, markDirty);
-
-  // The whole membership in one tap — every active member not already on
-  // the roster. Names come through memberName so they read first-name-first.
-  const addAll = host.querySelector('button[data-sp="add-all"]');
-  if (addAll) addAll.onclick = () => {
-    const adds = (ctx.users || []).filter(u =>
-      u && u.id && u.status !== 'hold' && !d.players[u.id]);
-    if (!adds.length) { ctx.showToast(t('spAddAllNone'), 'info'); return; }
-    if (!confirm(`${adds.length} ${t('spAddAllConfirm')}`)) return;
-    adds.forEach(u => {
-      const division = profileDivision(u, tn);
-      const hcp = whsHcp(u, tn, division);
-      d.players[u.id] = {
-        name: store.memberName(u), userId: u.id,
-        addedAt: Date.now(),
-        ...(hcp !== null ? { hcp } : {}),
-        ...(division ? { division } : {})
-      };
-    });
-    d.dirty = true;
-    paint(host, tn, ctx);
-  };
 
   // Fill the BLANK HCP fields from members' WHS indexes (courseHandicap on
   // this tournament's tee). Hand-entered values are never overwritten.
@@ -579,68 +547,6 @@ function wire(host, tn, ctx) {
     d.dirty = true;
     paint(host, tn, ctx);
   };
-
-  // Manual (non-member) player: type a name, press Enter.
-  const manual = host.querySelector('input[data-sp="manual"]');
-  if (manual) manual.onkeydown = (e) => {
-    if (e.key !== 'Enter') return;
-    const name = manual.value.trim();
-    if (!name) return;
-    const pid = `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    d.players[pid] = { name, addedAt: Date.now() };
-    d.dirty = true;
-    paint(host, tn, ctx);
-  };
-
-  // Member picker — the same type-to-search the match play editor uses.
-  const inp = host.querySelector('input[data-sp="pick"]');
-  const list = host.querySelector('[data-sp="pick-list"]');
-  if (!inp || !list) return;
-
-  const candidates = () => (ctx.users || [])
-    .filter(u => u && u.id && !d.players[u.id])
-    .map(u => {
-      const label = store.memberName(u);
-      return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
-    });
-
-  const show = () => {
-    const q = inp.value.trim().toLowerCase();
-    const all = candidates();
-    const hits = q ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q)) : all;
-    list.innerHTML = hits.length
-      ? hits.slice(0, 60).map(c => `
-        <div data-sp-id="${esc(c.id)}" data-sp-name="${esc(c.label)}" style="padding:8px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid var(--border-color);">
-          ${esc(c.label)}${c.sub ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${esc(c.sub)}</span>` : ''}
-        </div>`).join('')
-      : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
-    list.hidden = false;
-    list.querySelectorAll('[data-sp-id]').forEach(item => {
-      item.onpointerdown = (e) => {
-        e.preventDefault();
-        const id = item.dataset.spId;
-        const u = (ctx.users || []).find(x => x?.id === id);
-        const division = profileDivision(u, tn);
-        const hcp = whsHcp(u, tn, division);
-        d.players[id] = {
-          name: item.dataset.spName, userId: id,
-          addedAt: Date.now(),
-          ...(hcp !== null ? { hcp } : {}),
-          ...(division ? { division } : {})
-        };
-        d.dirty = true;
-        paint(host, tn, ctx);
-      };
-    });
-  };
-
-  inp.onfocus = show;
-  inp.oninput = show;
-  inp.onblur = () => setTimeout(() => {
-    if (!document.body.contains(inp)) return;
-    inp.value = '';
-    list.hidden = true;
-  }, 150);
 
   host.querySelector('button[data-sp="save"]').onclick = () => {
     saveDraft(tn, ctx).catch(err => {

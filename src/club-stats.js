@@ -10,7 +10,7 @@
 import { tnResultModel } from './tournament-results.js';
 import { spActive, isTeamEntry, teamMemberIds, tnScoring, tnIsTeam, tnPars, spPlayerCard, courseByKey, SP_HOLES } from './strokeplay.js';
 import { nameKey } from './tournament-sheet.js';
-import { tnKind } from './matchplay.js';
+import { tnKind, tnRoster } from './matchplay.js';
 import { tnLogo } from './tournament-media.js';
 
 const DAY = 86400000;
@@ -66,14 +66,13 @@ function personKeys(tn) {
   // nameKey wants two tokens; a one-word guest still needs a key of their own.
   const byName = (name) => `n:${nameKey(name) || String(name).trim().toLowerCase()}`;
   const keyOf = (id, rec) => rec?.userId || (String(id).startsWith('p_') && rec?.name ? byName(rec.name) : String(id));
-  if (spActive(tn)) {
-    Object.entries(tn.sp.players || {}).forEach(([pid, p]) => {
+  const roster = tnRoster(tn);
+  if (Object.keys(roster).length) {
+    Object.entries(roster).forEach(([pid, p]) => {
       if (!p) return;
       if (isTeamEntry(p)) teamMemberIds(p).forEach(id => keys.add(keyOf(id, p.members?.[id])));
       else keys.add(keyOf(pid, p));
     });
-  } else if (tn?.mp?.roster) {
-    Object.entries(tn.mp.roster).forEach(([pid, r]) => { if (r) keys.add(keyOf(pid, r)); });
   } else if (Array.isArray(tn?.entries)) {
     tn.entries.forEach(e => { if (e?.name) keys.add(e.userId || byName(e.name)); });
   }
