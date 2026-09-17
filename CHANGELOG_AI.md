@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (Tournament roster: the date a player was added, for the admin's eyes)
+
+There was no record anywhere of when a player joined a tournament's roster:
+the entry carries a name, a userId, a handicap and a division, `sp/audit`
+logs hole scores only, and Firebase orders keys alphabetically so even the
+order they arrived in was lost. Every roster-creation path — «Бүх гишүүнийг
+нэмэх», the non-member field, the name picker and team creation — now stamps
+`addedAt`, and the admin's roster row prints it under the name as «Нэмсэн:
+2026-09-17 19:08» in the browser's own clock. Nothing else shows it: the
+board, the results page, the scorecard and the printed sheets build their
+entries field by field and never carry it.
+
+The stamp is only ever carried through a save, never invented, so the 72
+players already on EAGLE CUP 2026 stay dateless rather than being marked
+with the date of whatever save comes next — the date cannot be backfilled,
+it starts from here. `src/strokeplay-admin.js`, `spAddedAt` in
+`src/i18n.js`. The M Cup's own roster (`mp/roster`) is untouched.
+
 ## 2026-09-17 (Tournament roster: adding a player comes before the list, not after it)
 
 The admin's «Тоглогчид» fold put the search box, the non-member field and

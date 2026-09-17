@@ -232,6 +232,8 @@ const T = {
     spWomenTee: 'Эмэгтэй тий', spWomenTeeSame: 'үндсэн тийтэй адил',
     spDivisionAuto: 'Авто', spDivisionFromProfile: '↻ Ангилал — профайлаас', spDivisionFromProfileNone: 'Бөглөх ангилал алга',
     spDivisionUnset: 'ангилалгүй',
+    // Роостерт нэмсэн огноо — зөвхөн админы самбарт харагдана.
+    spAddedAt: 'Нэмсэн',
     tnDivAll: 'Бүгд', tnDivShortMale: 'Эр', tnDivShortFemale: 'Эм',
     // The admin tab's deleted fold and its way back; the save-time confirms
     // that re-check removals against a fresh read.
@@ -598,6 +600,7 @@ const T = {
     spWomenTee: 'Women’s tee', spWomenTeeSame: 'same as the main tee',
     spDivisionAuto: 'Auto', spDivisionFromProfile: '↻ Divisions from profiles', spDivisionFromProfileNone: 'No blank divisions to fill',
     spDivisionUnset: 'no division',
+    spAddedAt: 'Added',
     tnDivAll: 'All', tnDivShortMale: 'M', tnDivShortFemale: 'W',
     tnAdmDeleted: 'Deleted', tnRestore: '↩ Restore', tnRestored: 'Tournament restored',
     spRemoveScoredFresh: 'These players have scores — they leave the board, their scores are kept:',
@@ -859,6 +862,7 @@ const T = {
     spWomenTee: '여성 티', spWomenTeeSame: '기본 티와 동일',
     spDivisionAuto: '자동', spDivisionFromProfile: '↻ 부문 — 프로필에서', spDivisionFromProfileNone: '채울 부문이 없습니다',
     spDivisionUnset: '부문 미지정',
+    spAddedAt: '추가',
     tnDivAll: '전체', tnDivShortMale: '남', tnDivShortFemale: '여',
     spRoundComplete: '라운드 종료',
     tnAdmDeleted: '삭제됨', tnRestore: '↩ 복원', tnRestored: '대회가 복원되었습니다',

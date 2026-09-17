@@ -96,14 +96,27 @@ function rechainTees(d, round, fromGid, step = 10) {
 
 // ---- Rendering ----
 
+// «2026-09-17 19:08» in the browser's own clock — the club reads this in
+// Ulaanbaatar, and toLocaleString would spell the date differently in every
+// language the app carries.
+function addedAtText(at) {
+  const ms = Number(at) || 0;
+  if (!ms) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function rowHTML(tn, pid, p) {
   const scored = !!Object.keys(tn.sp?.scores?.[pid] || {}).length;
+  const added = addedAtText(p.addedAt);
   return `
     <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
       <span style="flex:1;min-width:130px;font-size:0.85rem;">
         <b>${esc(p.name || pid)}</b>
         ${p.userId || !pid.startsWith('p_') ? '' : ` <span class="pill-soft" style="font-size:0.62rem;">✍</span>`}
         ${scored ? ` <span class="pill-soft" style="font-size:0.62rem;">✓</span>` : ''}
+        ${added ? `<span style="display:block;font-size:0.66rem;color:var(--text-secondary);margin-top:1px;">${t('spAddedAt')}: ${esc(added)}</span>` : ''}
       </span>
       <input data-sp="hcp" data-pid="${esc(pid)}" type="number" step="1" min="0" max="54"
         value="${esc(p.hcp ?? '')}" placeholder="${t('spHcp')}" title="${t('spHcp')}" style="${INPUT}width:74px;" />
@@ -248,8 +261,9 @@ function teamsHTML(tn, d) {
         ${tn.format === 'fourball' ? '' : `<a href="#/spscore/${esc(tn.id)}/${esc(tm.pid)}" class="btn btn-outline btn-sm" style="font-size:0.72rem;">${t('spScorecard')}</a>`}
         <button data-spt="disband" data-pid="${esc(tm.pid)}" class="btn btn-outline-danger btn-sm" title="${t('spTeamDisband')}">✕</button>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px;">
         ${tm.memberIds.map(pid => `<span class="pill-soft" style="font-size:0.72rem;">${esc(nameOf(pid))}</span>`).join('')}
+        ${addedAtText(tm.addedAt) ? `<span style="font-size:0.66rem;color:var(--text-secondary);">${t('spAddedAt')}: ${esc(addedAtText(tm.addedAt))}</span>` : ''}
       </div>
     </div>`;
   };
@@ -407,6 +421,10 @@ export function spDraftPatch(d) {
     if (isTeamEntry(p)) { rec.kind = 'team'; rec.members = p.members || {}; }
     if (p.hcp !== '' && p.hcp !== null && p.hcp !== undefined && !isNaN(Number(p.hcp))) rec.hcp = Number(p.hcp);
     if (p.status) rec.status = p.status;
+    // Carried through, never invented: an entry added before this field
+    // existed keeps none, rather than being stamped with the date of
+    // whatever save happens to come next.
+    if (p.addedAt) rec.addedAt = Number(p.addedAt) || null;
     // Written whenever it is valid, divisions on or off, so switching them
     // off and on again loses nobody's placing.
     if (isGender(p.division)) rec.division = p.division;
@@ -521,6 +539,7 @@ function wire(host, tn, ctx) {
       const hcp = whsHcp(u, tn, division);
       d.players[u.id] = {
         name: store.memberName(u), userId: u.id,
+        addedAt: Date.now(),
         ...(hcp !== null ? { hcp } : {}),
         ...(division ? { division } : {})
       };
@@ -568,7 +587,7 @@ function wire(host, tn, ctx) {
     const name = manual.value.trim();
     if (!name) return;
     const pid = `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    d.players[pid] = { name };
+    d.players[pid] = { name, addedAt: Date.now() };
     d.dirty = true;
     paint(host, tn, ctx);
   };
@@ -605,6 +624,7 @@ function wire(host, tn, ctx) {
         const hcp = whsHcp(u, tn, division);
         d.players[id] = {
           name: item.dataset.spName, userId: id,
+          addedAt: Date.now(),
           ...(hcp !== null ? { hcp } : {}),
           ...(division ? { division } : {})
         };
@@ -660,6 +680,7 @@ function wireTeams(host, tn, ctx, d, markDirty) {
       kind: 'team',
       name: typed || members.map(pid => String(d.players[pid]?.name || pid).split(' ')[0]).join(' / '),
       members: Object.fromEntries(members.map(pid => [pid, true])),
+      addedAt: Date.now(),
       hcp: ''
     };
     picked.clear();
