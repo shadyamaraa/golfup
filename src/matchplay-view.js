@@ -425,8 +425,10 @@ function statsHTML(mp) {
 // each with its derived final score. Rendered by app.js below the board once
 // the tournament list is in hand.
 export function historyHTML(list, currentId) {
+  // By kind, not by the literal format: a real M Cup is stored as 'ryder',
+  // and the old 'match' test left every one of them out of this list.
   const past = (Array.isArray(list) ? list : [])
-    .filter(tn => tn && tn.format === 'match' && tn.id !== currentId
+    .filter(tn => tn && tnKind(tn) === 'ryder' && tn.id !== currentId
       && tn.mp && tournamentComplete(tn.mp))
     .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
   if (!past.length) return '';

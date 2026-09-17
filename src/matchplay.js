@@ -666,6 +666,47 @@ export function newPlayoffSession(mp, { holes = PLAYOFF_HOLES, sessionId, matchI
   return { session, match };
 }
 
+// A whole draw from a plan — one row per session: the day, the format, how
+// many matches, when the first tees off. The shapes are the admin editor's
+// own (add-session, add-match), so it reads a templated draw as if it had
+// built it: sessions numbered through the plan, matches numbered within
+// their session, tee times chained ten minutes apart from the session's
+// start. Lineups stay empty for the admin to fill. With `singles` there are
+// no sessions and no teams — the matches stand in one flat SINGLES list,
+// which is what keeps tnKind reading the record as plain match play.
+// Pure: ids come from idBase so a test can pin them.
+export function mpTemplate(plan, { idBase = Date.now().toString(36), stepMin = 10, singles = false } = {}) {
+  const sessions = {};
+  const matches = {};
+  const time = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || '')) ? v : '');
+  let seq = 0;
+  (Array.isArray(plan) ? plan : []).forEach((row, i) => {
+    const count = Math.max(0, Math.floor(Number(row?.matches) || 0));
+    if (!count) return;
+    const format = singles ? 'SINGLES' : (FORMATS.includes(row?.format) ? row.format : 'FOURSOMES');
+    let clock = time(row?.startTime);
+    let sid = null;
+    if (!singles) {
+      sid = `s_${idBase}${i}`;
+      sessions[sid] = {
+        id: sid, day: Math.max(1, Number(row?.day) || 1),
+        number: Object.keys(sessions).length + 1, format, startTime: clock
+      };
+    }
+    for (let n = 1; n <= count; n++) {
+      const mid = `m_${idBase}${seq}`;
+      matches[mid] = {
+        id: mid, ...(sid ? { sessionId: sid } : {}),
+        number: singles ? seq + 1 : n, teeTime: clock, format,
+        players: { a: [], b: [] }
+      };
+      seq += 1;
+      clock = clock ? addMinutesHHMM(clock, stepMin) : '';
+    }
+  });
+  return { sessions, matches };
+}
+
 // ---- Correction consent ----
 
 // What entering `hole` should do for this user: write straight through, or

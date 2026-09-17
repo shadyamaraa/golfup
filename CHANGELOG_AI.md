@@ -1,5 +1,34 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (One wizard: a cup leaves it with its draw laid out; every type names its course)
+
+The wizard offered all six types, but a Ryder Cup came out of it with two
+team names and nothing else — no sessions, no matches — and since the page
+only reads a tournament as match play once it has a match, a new M Cup opened
+as an empty stroke play leaderboard with no tabs at all: no Match Center, no
+schedule, no rulebook, until the admin had built three sessions and
+twenty-four matches by hand. The wizard now lays the draw out itself: the
+cup step asks for the two teams (name, short, colour) and a session plan
+that starts as M Cup 2026's own — Day 1 Foursomes 6 and Fourball 6, Day 2
+Singles 12 — editable row by row, and `mpTemplate` in `src/matchplay.js`
+turns it into sessions and matches in the editor's own shape, tee times ten
+minutes apart from each session's start. A singles draw asks for its match
+count and writes a flat SINGLES list, never a teams node, so the kind test
+keeps reading it as plain match play.
+
+Step three is the same for every type now: dates, the course (venue, city
+and PAR fill themselves), its tee, the crest. A cup never scores against
+PAR, but it is played on a course too, and its print pages and share cards
+name it. Stroke play's own settings — rounds, cut, scoring, divisions,
+team shape — keep their step and write exactly what they did.
+
+Also fixed: the Match Center's list of past cups filtered on the literal
+format `'match'`, and a real M Cup is stored as `'ryder'`, so M Cup 2026
+never appeared in it. It filters by kind now. `src/tournament-wizard.js`
+(the record builder is exported as `tnWizardRecord` and pinned by
+`scripts/test-wizard.mjs`), `src/matchplay-view.js`. Nothing already
+stored changes shape.
+
 ## 2026-09-17 (Tournament roster: the date a player was added, for the admin's eyes)
 
 There was no record anywhere of when a player joined a tournament's roster:

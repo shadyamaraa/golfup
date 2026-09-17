@@ -121,6 +121,12 @@ const T = {
     wzRules: 'Дүрэм харах',
     wzWhenWhere: 'Огноо ба талбай', wzTypeSettings: 'Төрлийн тохиргоо',
     wzMatchHint: 'Бүрэлдэхүүн, session, хуваарь болон логог тэмцээн үүссэний дараа editor дээр тохируулна.',
+    // The draw the wizard lays out for a cup or a singles draw, ready for
+    // the editor to fill with players.
+    wzPlan: 'Session-ий загвар', wzPlanMatches: 'Match тоо',
+    wzPlanHint: 'M Cup 2026-ын загвар: Өдөр 1 — Foursomes 6, Fourball 6; Өдөр 2 — Singles 12. Засаж болно. Роостер, бүрэлдэхүүнийг editor дээр сонгоно.',
+    wzSinglesHint: 'Match бүр хоосон үүснэ — оролцогч, хосуудыг editor дээр сонгоно.',
+    wzCourseHint: 'Талбай сонгоход venue, хот, PAR өөрөө бөглөгдөнө.',
     wzSummary: 'Хураангуй', wzBack: 'Буцах', wzNext: 'Үргэлжлүүлэх', wzCreate: 'Тэмцээн үүсгэх',
     mpDevTitle: 'Оноо бичих төхөөрөмжүүд', mpDevThis: 'энэ төхөөрөмж',
     mpDevRoleAdmin: 'Админ', mpDevRoleScorer: 'Marshal / Marker', mpDevRolePlayer: 'Тоглогч',
@@ -493,6 +499,10 @@ const T = {
     wzRules: 'View rules',
     wzWhenWhere: 'Dates & venue', wzTypeSettings: 'Type settings',
     wzMatchHint: 'Rosters, sessions, pairings and logos are set up in the editor once the tournament exists.',
+    wzPlan: 'Session plan', wzPlanMatches: 'Matches',
+    wzPlanHint: 'The M Cup 2026 layout: Day 1 — Foursomes 6, Fourball 6; Day 2 — Singles 12. Edit freely. Rosters and lineups are picked in the editor.',
+    wzSinglesHint: 'Each match is created empty — players and pairings are picked in the editor.',
+    wzCourseHint: 'Picking a course fills the venue, city and PAR.',
     wzSummary: 'Summary', wzBack: 'Back', wzNext: 'Continue', wzCreate: 'Create tournament',
     mpDevTitle: 'Scoring devices', mpDevThis: 'this device',
     mpDevRoleAdmin: 'Admin', mpDevRoleScorer: 'Marshal / Marker', mpDevRolePlayer: 'Player',

@@ -13,7 +13,7 @@ globalThis.localStorage = {
   setItem(k, v) { this._v[k] = String(v); }
 };
 
-const { renderMatchCenter, viewerPid } = await import('../src/matchplay-view.js');
+const { renderMatchCenter, viewerPid, historyHTML } = await import('../src/matchplay-view.js');
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -502,4 +502,25 @@ test('a playoff still being played is not a verdict', () => {
   assert.match(html, /Level — a playoff decides it/);
   // All square through three and still live: the card says so, not HALVED.
   assert.ok(!/Playoff[\s\S]{0,400}HALVED/.test(html));
+});
+
+// ---- historyHTML: past cups are picked by kind ----
+
+test('historyHTML lists a finished ryder cup and leaves a singles draw out', () => {
+  const done = (id, format, extra = {}) => ({
+    id, format, name: id, startDate: '2025-09-01',
+    mp: {
+      teams: { a: { name: 'Altai', short: 'ALTAI' }, b: { name: 'Wellcom', short: 'WELLCOM' } },
+      matches: { m1: { id: 'm1', holes: holes('a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a') } },
+      ...extra
+    }
+  });
+  const ryder = done('cup-2025', 'ryder');
+  // A singles draw: no teams, no sessions — tnKind reads it as 'match'.
+  const singles = { id: 'draw-2025', format: 'match', name: 'draw', startDate: '2025-08-01',
+    mp: { matches: { m1: { id: 'm1', format: 'SINGLES', holes: holes('a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a') } } } };
+  const html = historyHTML([ryder, singles], 'current');
+  assert.ok(html.includes('cup-2025'), 'the ryder cup is listed');
+  assert.ok(!html.includes('draw-2025'), 'the singles draw is not');
+  assert.equal(historyHTML([ryder], 'cup-2025'), '', 'the cup on screen is not its own history');
 });
