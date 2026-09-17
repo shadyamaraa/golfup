@@ -1,5 +1,35 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (Stroke play: a «Флайтууд» tab — the Match Center's cards for the flights, a tap opening the 18-hole grid)
+
+The M Cup page opens on its Match Center: every match as a card under LIVE,
+Удахгүй and Дууссан, the viewer's own match marked, a tap opening the
+hole-by-hole story. A stroke play tournament had nothing like it — the
+board ranks people, the schedule lists the draw, and who is on the course
+right now and how far they are was nowhere. A drawn stroke event now has a
+«Флайтууд» tab beside the board (only once a round has flights; the tab
+strip shares a phone's width when it reaches four tabs): each flight as a
+card under the same three headings, per round under the round's own day
+line, the viewer's flight first in its round with the «Миний флайт» pill,
+each row's score against par (Stableford points under that scoring) and
+holes in, «Thru n» while it is out, a finished round folded shut with its
+open state kept across the live repaints, and the «Оноо оруулах» link for
+whoever the scorer would let in — admins and marshals on every unfinished
+flight, a member on their own. A tap opens the flight's grid, the one under
+the scorers (`src/flight-grid.js`): HOLE and PAR rows, rings and boxes, OUT
+/ IN / TOT, opened on the page of the hole being played, with the pager,
+the «Тойрог дууссан» pill and the scorer link; a grid left open follows
+the scores, the way an open match does. Reading only — the steppers stay
+the one way to write.
+
+The model is pure: `spFlightCards(tn)` in `src/strokeplay.js` reads every
+round's flights through `spFlightGrid` into `{ round, gid, number,
+teeTime, startHole, state, thru, rows }`; the view is the new
+`src/strokeplay-flights.js`, in the shape of `matchplay-view.js`, with
+`app.js` owning the modal and the live feed as it does for the cup. Tests:
+`scripts/test-flights-render.mjs` (new) and a `spFlightCards` case in
+`scripts/test-strokeplay.mjs`.
+
 ## 2026-09-17 (One roster: the same editor, the same rows, for every kind — and a roster step in the wizard)
 
 Stroke play and the M Cup each had their own way of putting people in: one

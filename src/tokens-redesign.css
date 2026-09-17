@@ -438,6 +438,9 @@ body { background: var(--bg-primary); color: var(--text-primary); }
   transition: var(--transition);
 }
 .seg-tab.active { background: var(--gold); color: #0C3051; font-weight: 800; }
+/* Four tabs on the tournament page (board · flights · schedule · info) share
+   a 390px phone's width instead of scrolling with the last one clipped. */
+.tn-tabs-dense .seg-tab { flex: 1 1 auto; min-width: 0; padding: 8px 6px; font-size: 0.8rem; }
 
 /* List row — surface row with navy leading icon tile */
 .list-row {

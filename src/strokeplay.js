@@ -466,6 +466,39 @@ export function spTeeOffMs(tn, round, teeTime) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// The flights as the Match Center reads matches: every drawn flight of
+// every round with its state — LIVE once a score is in, COMPLETED when
+// every card in it has all its holes, UPCOMING before — and each row's
+// running score, so a spectator sees who is on the course and how they
+// stand without opening a card. Rows come from spFlightGrid, so a team
+// event shows its teams and a fourball its pairs the way the grid does.
+// Ordered by round, then the draw's own order (flight number).
+export function spFlightCards(tn) {
+  const rounds = Math.max(1, Number(tn?.rounds) || 1);
+  const out = [];
+  for (let round = 1; round <= rounds; round++) {
+    for (const g of spGroupList(tn, round)) {
+      const grid = spFlightGrid(tn, round, g.gid);
+      if (!grid) continue;
+      const scoring = grid.rows.filter(r => r.kind !== 'pair');
+      const started = scoring.some(r => r.total.holesIn > 0);
+      const state = grid.complete ? 'COMPLETED' : started ? 'LIVE' : 'UPCOMING';
+      out.push({
+        round, gid: g.gid, number: g.number ?? null, teeTime: g.teeTime || '', startHole: g.startHole || null,
+        state,
+        // The furthest any card in the flight has got — the THRU a card shows.
+        thru: scoring.reduce((n, r) => Math.max(n, r.total.holesIn), 0),
+        rows: grid.rows.map(r => ({
+          pid: r.pid, name: r.name, kind: r.kind, link: r.link,
+          gross: r.total.gross, holesIn: r.total.holesIn, toPar: r.total.toPar, thru: r.thru,
+          points: r.holes.reduce((n, h) => n + (h.points ?? 0), 0)
+        }))
+      });
+    }
+  }
+  return out;
+}
+
 // >>> tee-notify (shared with functions/index.js — keep the two copies identical)
 // A round's draw read as instructions to people: for every player in a
 // flight that has a tee time, the time and the start hole (with the flight's
