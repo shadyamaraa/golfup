@@ -174,13 +174,10 @@ function sectionHTML(tn, users) {
       <details data-sp-players${open ? ' open' : ''}>
         <summary style="cursor:pointer;font-size:0.85rem;font-weight:800;">${t('spPlayers')} — ${rows.length}${divCounts}</summary>
         <div style="margin-top:8px;">
-          ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
-            || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
-          ${unset.length ? `
-          <p style="font-size:0.72rem;color:var(--amber);margin:6px 0 0;">
-            ⚠ ${unset.length} ${t('spDivisionUnset')}: ${esc(unset.map(([, p]) => p.name).join(', '))}
-          </p>` : ''}
-          <div style="position:relative;margin-top:8px;">
+          <!-- Adding comes first: a 72-player roster put these controls a full
+               screen of scrolling below the list, so adding one more player
+               meant scrolling past everyone already on it. -->
+          <div style="position:relative;">
             <input data-sp="pick" placeholder="🔍 ${t('mpTypeName')}" autocomplete="off"
               style="${INPUT}width:100%;box-sizing:border-box;" />
             <div data-sp="pick-list" hidden style="position:absolute;left:0;right:0;top:100%;margin-top:3px;z-index:30;
@@ -200,6 +197,14 @@ function sectionHTML(tn, users) {
           <button data-sp="division-profile" class="btn btn-outline btn-sm" style="width:100%;margin-top:6px;font-size:0.76rem;">
             ${t('spDivisionFromProfile')}
           </button>` : ''}
+          ${unset.length ? `
+          <p style="font-size:0.72rem;color:var(--amber);margin:8px 0 0;">
+            ⚠ ${unset.length} ${t('spDivisionUnset')}: ${esc(unset.map(([, p]) => p.name).join(', '))}
+          </p>` : ''}
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-color);">
+            ${rows.map(([pid, p]) => rowHTML(tn, pid, p)).join('')
+              || `<p style="font-size:0.78rem;color:var(--text-secondary);margin:0;">${t('spNoPlayers')}</p>`}
+          </div>
         </div>
       </details>
       ${teamsHTML(tn, d)}

@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-09-17 (Tournament roster: adding a player comes before the list, not after it)
+
+The admin's «Тоглогчид» fold put the search box, the non-member field and
+the three bulk buttons (add every member, HCP from WHS, divisions from
+profiles) *below* every player already on the roster. On EAGLE CUP 2026,
+72 players deep, adding one more meant scrolling a full screen past
+everyone first. The controls now open the fold and the roster follows them
+under a divider; the «N ангилалгүй» warning sits with the button that fixes
+it. The name picker still drops downward and now overlays the list, which
+is where there is room for it. `src/strokeplay-admin.js`.
+
 ## 2026-09-14 (M Cup: a level cup is decided by a playoff over 1, 8 and 9)
 
 When every match is decided and the two teams are level, the cup now goes to
