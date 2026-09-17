@@ -29,6 +29,7 @@ import { renderPublicHome, renderClubStatsPage, holesSectionHTML } from './publi
 import { shareGame } from './game-share.js';
 import { gameHoleCount } from './handicap.js';
 import { courseTees, coursePar, courseList } from './courses.js';
+import { renderSpFlights } from './strokeplay-flights.js';
 import { renderMatchCenter, stripSummary, historyHTML } from './matchplay-view.js';
 import { tnKind, matchState, mpSchedule, mpNextMatch, sessionDate, rosterPid, matchLocked, teamColorOf, tnRosterCount } from './matchplay.js';
 import { mergeRankingUpload, rankingMovement } from './ranking.js';
@@ -2210,6 +2211,8 @@ function tnTabsFor(tn) {
   const tabs = [];
   if (isMatchPlay(tn)) tabs.push('match');
   if (!isMatchPlay(tn) || (tn.entries || []).length) tabs.push('board');
+  // Stroke play's Match Center: the flights as cards, once a round is drawn.
+  if (!isMatchPlay(tn) && Object.values(tn?.sp?.groups || {}).some(r => r && Object.keys(r).length)) tabs.push('flights');
   // The draw and the facts as tabs of their own, for every kind alike: the
   // schedule shows its empty state until a round has flights, and the info
   // tab carries the course, its tee, PAR, the cut and the rulebook (the
@@ -2270,12 +2273,13 @@ function paintTournamentPage(tn) {
       ${tnSponsorsHTML(tn)}
 
       ${tnTabsFor(tn).length > 1 ? `
-      <div class="seg-tabs tn-tabs">
+      <div class="seg-tabs tn-tabs${tnTabsFor(tn).length > 3 ? ' tn-tabs-dense' : ''}">
         ${tnTabsFor(tn).map(tab => `
           <button class="seg-tab${tnPageTab === tab ? ' active' : ''}" data-tn-tab="${tab}">
             ${tab === 'match' ? t('mpMatchCenter')
               : tab === 'board' ? t('tnLeaderboard')
-                : tab === 'schedule' ? t('spSchedule') : t('tnInfo')}
+                : tab === 'flights' ? t('spFlights')
+                  : tab === 'schedule' ? t('spSchedule') : t('tnInfo')}
           </button>`).join('')}
       </div>` : ''}
 
@@ -2449,6 +2453,17 @@ function renderTnBoard() {
 
   if (tnPageTab === 'info') {
     host.innerHTML = tnInfoHTML(tn);
+    return;
+  }
+
+  if (tnPageTab === 'flights') {
+    renderSpFlights(host, tn, {
+      user: currentUser || null,
+      userId: currentUser?.id || null,
+      showModal: showMatchModal,
+      refreshModal: refreshMatchModal,
+      roundLabel: (r) => [`R${r}`, spRoundDate(tn, r) ? formatDate(spRoundDate(tn, r)) : ''].filter(Boolean).join(' · ')
+    });
     return;
   }
 

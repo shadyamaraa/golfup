@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
-  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs
+  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spFlightCards
 } from '../src/strokeplay.js';
 import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -1124,4 +1124,40 @@ test('spTeeOffMs is the round day plus the tee time, null without either', () =>
   assert.equal(spTeeOffMs(tn, 1, ''), null);
   assert.equal(spTeeOffMs(tn, 1, 'noon'), null);
   assert.equal(spTeeOffMs({ startDate: '' }, 1, '08:40'), null);
+});
+
+// ---- spFlightCards: the flights as the Match Center reads matches ----
+
+test('spFlightCards: a flight is LIVE once a score is in, COMPLETED when every card is full, UPCOMING before', () => {
+  const full = fullRound(4);
+  const half = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [i + 1, 4]));
+  const tn = {
+    id: 't', format: 'stroke', course: 'sky', rounds: 2, currentRound: 1, par: 72,
+    sp: {
+      players: {
+        u1: { name: 'A', userId: 'u1', groups: { 1: 'g1', 2: 'g2' } },
+        u2: { name: 'B', userId: 'u2', groups: { 1: 'g1', 2: 'g2' } },
+        u3: { name: 'C', userId: 'u3', groups: { 1: 'g2' } },
+        u4: { name: 'D', userId: 'u4', groups: { 1: 'g3' } }
+      },
+      groups: {
+        1: { g1: { number: 1, teeTime: '08:00', players: { u1: true, u2: true } },
+             g2: { number: 2, teeTime: '08:10', startHole: 10, players: { u3: true } },
+             g3: { number: 3, teeTime: '08:20', players: { u4: true } } },
+        2: { g2: { number: 1, teeTime: '09:00', players: { u1: true, u2: true } } }
+      },
+      scores: { u1: { 1: full }, u2: { 1: full }, u3: { 1: half } }
+    }
+  };
+  const cards = spFlightCards(tn);
+  assert.deepEqual(cards.map(c => [c.round, c.number, c.state]), [[1, 1, 'COMPLETED'], [1, 2, 'LIVE'], [1, 3, 'UPCOMING'], [2, 1, 'UPCOMING']]);
+  const live = cards[1];
+  assert.equal(live.thru, 9);
+  assert.equal(live.startHole, 10);
+  assert.deepEqual(live.rows.map(r => [r.name, r.holesIn, r.thru]), [['C', 9, '9']]);
+  const done = cards[0];
+  assert.deepEqual(done.rows.map(r => [r.name, r.gross, r.thru]), [['A', 72, 'F'], ['B', 72, 'F']]);
+  assert.equal(done.rows[0].toPar, 0, 'level par on a par-72 course');
+  assert.equal(cards[3].rows.length, 2, 'round two lists its own flight');
+  assert.deepEqual(spFlightCards({ format: 'stroke', sp: { players: {} } }), []);
 });
