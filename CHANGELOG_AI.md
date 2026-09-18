@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-18 (Flights editor: deleting a flight renumbers the rest)
+
+Deleting Group 2 in the flights editor left Group 1, 3, 4 standing, and
+the numbers stayed that way on the schedule, the flights tab and the
+scorecards. The remaining flights of the round now close the gap in the
+order they stood — 1, 2, 3 — as the ✕ is pressed (`renumberGroups` in
+`src/strokeplay-admin.js`). Only the label moves: tee times and start
+holes stay where the admin put them, and the tee-time notice reads
+neither the number, so nobody is notified by a renumbering.
+
 ## 2026-09-18 (Admin name pickers: a finger can scroll the list)
 
 The three type-to-search dropdowns of the admin editors — the flight

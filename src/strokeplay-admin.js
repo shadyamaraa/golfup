@@ -77,6 +77,18 @@ const groupList = (d, round) => Object.entries(d.groups[round] || {})
   .map(([gid, g]) => ({ gid, ...g }))
   .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
 
+// After a flight is deleted the rest close the gap: Group 1, 3, 4 read as
+// 1, 2, 3 again, in the order they stood. Only the label moves — tee times
+// and start holes stay where the admin put them, and the tee-time notice
+// reads neither the number, so nobody is told anything.
+export function renumberGroups(groups) {
+  Object.entries(groups || {})
+    .filter(([, g]) => g)
+    .sort((a, b) => (Number(a[1].number) || 0) - (Number(b[1].number) || 0))
+    .forEach(([, g], i) => { g.number = i + 1; });
+  return groups;
+}
+
 const groupOfPid = (d, round, pid) => {
   const hit = Object.entries(d.groups[round] || {})
     .find(([, g]) => g?.players?.[pid]);
@@ -744,6 +756,7 @@ function wireGroups(host, tn, ctx, d, markDirty) {
 
   host.querySelectorAll('button[data-spg="del-group"]').forEach(b => b.onclick = () => {
     delete d.groups[round]?.[b.dataset.gid];
+    renumberGroups(d.groups[round]);
     repaint();
   });
 
