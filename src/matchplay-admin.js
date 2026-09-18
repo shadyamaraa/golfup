@@ -20,6 +20,7 @@ import * as store from './store.js';
 import { rosterHTML, wireRoster } from './roster-admin.js';
 import { t } from './i18n.js';
 import { tnWriteError } from './tn-errors.js';
+import { wireNamePicker } from './name-picker.js';
 import { readImageFile, validImageData } from './media.js';
 import { teamColorOf,
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
@@ -728,36 +729,30 @@ function wirePickers(host, tn, ctx) {
       }
     };
 
-    const show = () => {
-      const q = inp.value.trim().toLowerCase();
-      const all = candidates();
-      const hits = q && inp.value !== original
-        ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q))
-        : all;
-      list.innerHTML = hits.length
-        ? hits.slice(0, 60).map(c => `
+    // A slot with a name in it: focusing selects the text so typing replaces it.
+    inp.addEventListener('focus', () => { if (inp.value) inp.select(); });
+    wireNamePicker({
+      input: inp, list, itemSelector: '[data-mpp-id]',
+      fill: () => {
+        const q = inp.value.trim().toLowerCase();
+        const all = candidates();
+        const hits = q && inp.value !== original
+          ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q))
+          : all;
+        list.innerHTML = hits.length
+          ? hits.slice(0, 60).map(c => `
           <div data-mpp-id="${esc(c.id)}" style="padding:8px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid var(--border-color);">
             ${esc(c.label)}${c.sub ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${esc(c.sub)}</span>` : ''}
           </div>`).join('')
-        : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
-      list.hidden = false;
-      list.querySelectorAll('[data-mpp-id]').forEach(item => {
-        // pointerdown fires before the input's blur, so the pick wins.
-        item.onpointerdown = (e) => { e.preventDefault(); pick(item.dataset.mppId); };
-      });
-    };
-
-    inp.onfocus = () => { if (inp.value) inp.select(); show(); };
-    inp.oninput = show;
-    inp.onblur = () => setTimeout(() => {
+          : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+      },
+      pick: (item) => pick(item.dataset.mppId),
       // A pick repaints and replaces this node; only an abandoned edit
       // needs its current value put back.
-      if (!document.body.contains(inp)) return;
-      inp.value = original;
-      list.hidden = true;
-    }, 150);
+      reset: () => { inp.value = original; }
+    });
 
-    inp.parentElement.querySelector('[data-mpp="clear"]')?.addEventListener('pointerdown', (e) => {
+    inp.parentElement.querySelector('[data-mpp="clear"]')?.addEventListener('click', (e) => {
       e.preventDefault();
       pick('');
     });

@@ -8,6 +8,7 @@
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { tnWriteError } from './tn-errors.js';
+import { wireNamePicker } from './name-picker.js';
 import {
   drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams,
   tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS, spScoredRemovals
@@ -753,7 +754,7 @@ function wireGroups(host, tn, ctx, d, markDirty) {
   });
 
   // Type-to-search per group: the same pattern as every other picker —
-  // focus shows all unassigned players, typing filters, pointerdown moves
+  // focus shows all unassigned players, typing filters, a tap on a row moves
   // the player into this group (and out of their old one).
   host.querySelectorAll('input[data-spg="find"]').forEach(inp => {
     const gid = inp.dataset.gid;
@@ -780,38 +781,30 @@ function wireGroups(host, tn, ctx, d, markDirty) {
           || a.name.localeCompare(b.name));
     };
 
-    const show = () => {
-      const q = inp.value.trim().toLowerCase();
-      const all = candidates();
-      const hits = q ? all.filter(c => c.name.toLowerCase().includes(q)) : all;
-      list.innerHTML = hits.length
-        ? hits.slice(0, 40).map(c => `
+    wireNamePicker({
+      input: inp, list, itemSelector: '[data-spg-pid]',
+      fill: () => {
+        const q = inp.value.trim().toLowerCase();
+        const all = candidates();
+        const hits = q ? all.filter(c => c.name.toLowerCase().includes(q)) : all;
+        list.innerHTML = hits.length
+          ? hits.slice(0, 40).map(c => `
           <div data-spg-pid="${esc(c.pid)}" style="padding:8px 10px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid var(--border-color);">
             ${esc(c.name)}${c.from ? ` <span style="color:var(--text-muted);font-size:0.7rem;">↪ ${esc(c.from)}</span>` : ''}
           </div>`).join('')
-        : `<div style="padding:8px 10px;font-size:0.76rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
-      list.hidden = false;
-      list.querySelectorAll('[data-spg-pid]').forEach(item => {
-        item.onpointerdown = (e) => {
-          e.preventDefault();
-          const pid = item.dataset.spgPid;
-          const g = d.groups[round]?.[gid];
-          if (!g) return;
-          const old = groupOfPid(d, round, pid);
-          if (old) delete d.groups[round][old].players[pid];
-          (g.players = g.players || {})[pid] = true;
-          repaint();
-        };
-      });
-    };
-
-    inp.onfocus = show;
-    inp.oninput = show;
-    inp.onblur = () => setTimeout(() => {
-      if (!document.body.contains(inp)) return;
-      inp.value = '';
-      list.hidden = true;
-    }, 150);
+          : `<div style="padding:8px 10px;font-size:0.76rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+      },
+      pick: (item) => {
+        const pid = item.dataset.spgPid;
+        const g = d.groups[round]?.[gid];
+        if (!g) return;
+        const old = groupOfPid(d, round, pid);
+        if (old) delete d.groups[round][old].players[pid];
+        (g.players = g.players || {})[pid] = true;
+        repaint();
+      },
+      reset: () => { inp.value = ''; }
+    });
   });
 
   // Excel/CSV import: rows of (group, name[, tee time]) become this round's
