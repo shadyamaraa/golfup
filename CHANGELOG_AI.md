@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-09-18 (Tournament board: the handicap under every name)
+
+The leaderboard list on the tournament page showed no handicap at all —
+the Net toggle applied it, the schedule tab, the card, the results sheet
+and the print card printed it, but the board itself did not. Each row
+now carries «HCP n» on the sub-line under the name, beside «Та» on your
+own row, the way the casual game's board reads («HCP 14 · Thru 12»): a
+column would not fit a phone beside the round chips, the sub-line costs
+no width. A player with no handicap on the roster, and a fourball pair
+(each member plays off their own), show nothing there. `src/app.js`
+`renderTnList`; the entry's `hcp` was already emitted by `spEntries`.
+
 ## 2026-09-18 (Admin saves refused: the device identity heals itself and says so)
 
 The owner pressed Save on the EAGLE CUP roster and got «PERMISSION_DENIED:
