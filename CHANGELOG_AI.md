@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-09-18 (Admin name pickers: a finger can scroll the list)
+
+The three type-to-search dropdowns of the admin editors — the flight
+editor's player finder, the roster editor's member picker (stroke play,
+the M Cup, the wizard) and the M Cup's match player and scorer pickers —
+picked a row on `pointerdown` and closed on the input's blur after 150 ms.
+A finger that lands on the list to scroll it lands on a row first, so the
+touch picked whoever was under it and the editor repainted, and the
+keyboard going away closed the list under the finger; on a phone the list
+could not be scrolled at all. One wiring for all of them now, in
+`src/name-picker.js` (`wireNamePicker`): a row is picked on click — a
+completed tap, which a scroll never produces; the list closes on a pick,
+on a tap outside the input and the list, on Escape, and on blur only when
+the list was not touched a moment ago; a touch inside the list stops
+there instead of reaching the page's pull-to-refresh. The M Cup's clear
+button taps too. Markup, search and repaint are as they were.
+`scripts/test-name-picker.mjs` drives the wiring through fake elements.
+
 ## 2026-09-18 (Tournament board: the handicap under every name)
 
 The leaderboard list on the tournament page showed no handicap at all —

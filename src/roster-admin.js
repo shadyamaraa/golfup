@@ -19,6 +19,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { wireNamePicker } from './name-picker.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -185,37 +186,28 @@ export function wireRoster(host, opts) {
   const list = host.querySelector('[data-ro="pick-list"]');
   if (!inp || !list) return;
 
-  const show = () => {
-    const q = inp.value.trim().toLowerCase();
-    const all = candidates(users, entries()).map(u => {
-      const label = store.memberName(u);
-      return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
-    });
-    const hits = q ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q)) : all;
-    list.innerHTML = hits.length
-      ? hits.slice(0, 60).map(c => `
+  wireNamePicker({
+    input: inp, list, itemSelector: '[data-ro-id]',
+    fill: () => {
+      const q = inp.value.trim().toLowerCase();
+      const all = candidates(users, entries()).map(u => {
+        const label = store.memberName(u);
+        return { id: u.id, label, sub: u.username && u.username !== label ? u.username : '' };
+      });
+      const hits = q ? all.filter(c => `${c.label} ${c.sub}`.toLowerCase().includes(q)) : all;
+      list.innerHTML = hits.length
+        ? hits.slice(0, 60).map(c => `
         <div data-ro-id="${esc(c.id)}" style="padding:8px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid var(--border-color);">
           ${esc(c.label)}${c.sub ? ` <span style="color:var(--text-muted);font-size:0.72rem;">${esc(c.sub)}</span>` : ''}
         </div>`).join('')
-      : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
-    list.hidden = false;
-    list.querySelectorAll('[data-ro-id]').forEach(item => {
-      // pointerdown fires before the input's blur, so the pick wins.
-      item.onpointerdown = (e) => {
-        e.preventDefault();
-        const u = users.find(x => x?.id === item.dataset.roId);
-        if (!u) return;
-        opts.add(u.id, memberEntry(u, { ...teamExtra(), ...(opts.enrich ? opts.enrich(u) : {}) }));
-        opts.repaint();
-      };
-    });
-  };
-
-  inp.onfocus = show;
-  inp.oninput = show;
-  inp.onblur = () => setTimeout(() => {
-    if (!document.body.contains(inp)) return;
-    inp.value = '';
-    list.hidden = true;
-  }, 150);
+        : `<div style="padding:8px 10px;font-size:0.78rem;color:var(--text-muted);">${t('mpNoneFound')}</div>`;
+    },
+    pick: (item) => {
+      const u = users.find(x => x?.id === item.dataset.roId);
+      if (!u) return;
+      opts.add(u.id, memberEntry(u, { ...teamExtra(), ...(opts.enrich ? opts.enrich(u) : {}) }));
+      opts.repaint();
+    },
+    reset: () => { inp.value = ''; }
+  });
 }
