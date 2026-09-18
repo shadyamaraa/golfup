@@ -1,5 +1,41 @@
 # CHANGELOG_AI.md
 
+## 2026-09-18 (Admin saves refused: the device identity heals itself and says so)
+
+The owner pressed Save on the EAGLE CUP roster and got «PERMISSION_DENIED:
+Permission denied». The rules were fine (unchanged since Sep 3, deployed by
+CI with every build) and so were the admin accounts; what the rules look
+up is this browser's anonymous-auth uid in `mpDevices`, and that identity
+was gone or unregistered. The app asked for anonymous sign-in exactly once,
+at startup, and never again: a network hiccup at that moment, or the SDK
+signing the browser out later when the anonymous user was deleted
+server-side (a token refresh answers USER_NOT_FOUND and the SDK calls
+signOut), left every tournament write refused until a full reload — and
+the registration's failure was a console warning, while the toast blamed
+the rules («deploy хийгдээгүй») or printed the raw code.
+
+`src/store.js`: `ensureAnonAuth` is the one place sign-in is asked for —
+it backs off and retries (2 s … a minute, eight attempts, again on
+`online`), and the auth observer signs in again when a uid that existed
+drops to null. `ensureDeviceAccess` returns its outcome and keeps it
+(`deviceAccessState`), its memo is keyed by the uid so a new identity
+registers afresh, and `repairDeviceAccess` puts identity and registration
+back on demand. A refused tournament write (`updateTournament`,
+`saveTournament`, `deleteTournament`, `restoreTournament`) runs the repair
+and is tried once more before its error reaches the caller.
+
+`src/tn-errors.js` (new): `tnWriteError` — the words for a refused write,
+«this browser is not registered as an admin device, reload and retry»,
+used by every tournament save (`app.js`, `strokeplay-admin.js`,
+`matchplay-admin.js`, `tournament-media.js`, `tournament-wizard.js`) —
+and `tnAccessBannerHTML`. The admin tournaments tab shows that banner at
+the top whenever this device cannot write (no identity, registration
+refused, or failed), with «Дахин бүртгэх»; the device card, which used to
+render nothing without a uid, now says so and offers the reconnect. Pure
+pieces (`isPermissionDenied`, `nextAuthRetryMs`, `deviceAccessProblem`,
+the two text builders) are tested in `scripts/test-device-access.mjs`.
+No rules, Firebase config or function change.
+
 ## 2026-09-17 (Stroke play: a «Флайтууд» tab — the Match Center's cards for the flights, a tap opening the 18-hole grid)
 
 The M Cup page opens on its Match Center: every match as a card under LIVE,

@@ -7,6 +7,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { tnWriteError } from './tn-errors.js';
 import {
   drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams,
   tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS, spScoredRemovals
@@ -551,7 +552,7 @@ function wire(host, tn, ctx) {
   host.querySelector('button[data-sp="save"]').onclick = () => {
     saveDraft(tn, ctx).catch(err => {
       console.error('[strokeplay-admin]', err);
-      ctx.showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+      ctx.showToast('⚠️ ' + tnWriteError(err, 'mpSaveFailed'), 'error');
     });
   };
 }

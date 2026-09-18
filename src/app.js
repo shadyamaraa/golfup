@@ -5,7 +5,8 @@ import * as mtbogd from './booking.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
-import { mountMpAdmin, discardMpDraft, mountDeviceAdmin } from './matchplay-admin.js';
+import { mountMpAdmin, discardMpDraft, mountDeviceAdmin, devRoleLabel } from './matchplay-admin.js';
+import { tnWriteError, tnAccessBannerHTML } from './tn-errors.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
@@ -9204,9 +9205,32 @@ const TN_INPUT = 'padding:9px;border-radius:7px;border:1px solid var(--border-co
 // uncaught rejection looks exactly like "the button does nothing". Every admin
 // action routes its failures here so the cause is on screen, not in the log.
 function tnAdminError(err) {
-  const msg = String(err?.message || err || '');
   console.error('[tournament]', err);
-  showToast('⚠️ ' + (/permission[_ ]denied/i.test(msg) ? t('tnErrRules') : (msg || t('tnErrSave'))), 'error');
+  showToast('⚠️ ' + tnWriteError(err), 'error');
+  // A refused write is this browser's identity, not the rules: show the state.
+  if (store.isPermissionDenied(err)) paintTnAccessBanner();
+}
+
+// The admin tab's warning when this browser cannot write tournaments — no
+// anonymous identity, or a registration the rules refused — with the repair
+// on it. Nothing shows while the device is in order. Not awaited by the tab:
+// a slow sign-in must not hold the list back.
+async function paintTnAccessBanner() {
+  if (!document.getElementById('tn-access') || !store.isUsingFirebase() || currentUser?.role !== 'admin') return;
+  // A cold load: the startup sign-in may still be in flight — wait for it
+  // rather than report an identity that is a second away.
+  if (!store.getDeviceUid()) await store.ensureAnonAuth();
+  const acc = await store.ensureDeviceAccess(currentUser);
+  const host = document.getElementById('tn-access');
+  if (!host) return;
+  host.innerHTML = tnAccessBannerHTML(acc, devRoleLabel);
+  const btn = document.getElementById('tn-access-retry');
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true;
+    const res = await store.repairDeviceAccess(currentUser);
+    showToast(res.ok ? '✅ ' + t('tnAccessOk') : '⚠️ ' + t('tnAccessStill'), res.ok ? 'success' : 'error');
+    await renderAdminTournamentsTab();
+  };
 }
 
 // The row editor's field set. Match play never sees the stroke play
@@ -9519,6 +9543,7 @@ async function renderAdminTournamentsTab() {
 
   el.innerHTML = `
     ${errBanner}
+    <div id="tn-access"></div>
     <style>details[data-tn-section]:not([open]) > summary .tn-sec-chev{transform:rotate(-90deg);}</style>
     <div id="tn-devices"></div>
     <div style="background:var(--bg-card-hover);border-radius:10px;padding:14px;margin-bottom:16px;">
@@ -9652,11 +9677,15 @@ async function renderAdminTournamentsTab() {
     if (tn) armTnAdminForm(tn);
   }
 
-  // Device approval card — which phones may write live scores. Renders only
-  // once anonymous auth is running; a no-op before the rules are deployed.
+  // This browser's own right to write, before anything else on the tab.
+  paintTnAccessBanner();
+
+  // Device approval card — which phones may write live scores; a reconnect
+  // when this browser has no identity at all.
   mountDeviceAdmin(document.getElementById('tn-devices'), {
     showToast,
-    adminName: displayUsername(currentUser) || currentUser?.name || ''
+    adminName: displayUsername(currentUser) || currentUser?.name || '',
+    onAccessChanged: () => paintTnAccessBanner()
   });
 
   // The open editor's format-specific setup lives in its own module — match

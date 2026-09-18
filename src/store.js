@@ -8,8 +8,15 @@ let auth = null;
 export let firebaseApp = null;
 let useFirebase = false;
 // The anonymous-auth uid of this browser, once sign-in resolves; null before
-// that and null forever when the Anonymous provider is not enabled.
+// that, and null again if the SDK signs the browser out (see below).
 let deviceUid = null;
+// A uid existed this session: a null after that is the SDK signing the
+// browser out — its token refresh was refused because the anonymous user is
+// gone server-side — not the quiet before the first sign-in.
+let hadUid = false;
+let anonAttempt = 0;
+let anonTimer = null;
+let anonInFlight = null;
 
 export async function initStore() {
   if (isFirebaseConfigured()) {
@@ -20,24 +27,76 @@ export async function initStore() {
       useFirebase = true;
       console.log('Firebase connected');
       // Anonymous auth stamps every request from this browser with a stable
-      // uid, which is what the database rules check before letting a device
-      // write live scores. The app's own sign-in is untouched. If the
-      // Anonymous provider is not enabled in the Firebase console this
-      // rejects and the uid stays null — everything else keeps working.
+      // uid, which is what the database rules look up in mpDevices before
+      // letting a device write under tournaments/. The app's own sign-in is
+      // untouched. If the Anonymous provider is not enabled in the Firebase
+      // console the sign-in rejects and the uid stays null — everything else
+      // keeps working.
       onAuthStateChanged(auth, (u) => {
-        deviceUid = u?.uid || null;
-        // A login can land before anonymous auth resolves; finish the
-        // deferred device registration once the uid exists.
-        if (deviceUid && pendingAccessUser) {
-          const usr = pendingAccessUser;
-          pendingAccessUser = null;
-          ensureDeviceAccess(usr);
+        const uid = u?.uid || null;
+        if (!uid && hadUid) {
+          // The SDK signed this browser out: a token refresh was refused
+          // because the anonymous user no longer exists (a console clean-up,
+          // the automatic one). Every tournament write would be refused from
+          // here on, so sign in again — a fresh uid, registered afresh.
+          setDeviceUid(null);
+          lastDeviceAccess = { ok: false, uid: null, want: deviceRoleFor(getUser()), role: null, reason: 'no-auth', at: Date.now() };
+          ensureAnonAuth(true);
+          return;
         }
+        setDeviceUid(uid);
       });
-      signInAnonymously(auth).catch((e) => console.warn('anon auth unavailable:', e?.code || e));
+      ensureAnonAuth(true);
+      // A sign-in that failed for want of a network is tried again when it returns.
+      if (typeof window !== 'undefined') {
+        window.addEventListener('online', () => { if (!deviceUid) ensureAnonAuth(true); });
+      }
     } catch (e) {
       console.warn('Firebase init failed, using localStorage', e);
     }
+  }
+}
+
+export const ANON_MAX_ATTEMPTS = 8;
+// The wait before the next anonymous sign-in attempt: 2 s, 4, 8, 16, 32,
+// then a minute, capped — a startup on a dead network keeps trying for a
+// few minutes and then leaves it to the `online` event and the retry buttons.
+export function nextAuthRetryMs(attempt, base = 2000, cap = 60000) {
+  return Math.min(cap, base * 2 ** Math.max(0, Number(attempt) || 0));
+}
+
+// The one place anonymous sign-in is asked for. The SDK hands back the
+// anonymous user it already has without a network call, so asking again
+// never mints a second identity; it signs in only when there is none.
+// Resolves to the uid, or null when the attempt failed (a retry is timed).
+export function ensureAnonAuth(reset = false) {
+  if (!auth) return Promise.resolve(null);
+  if (reset) { anonAttempt = 0; clearTimeout(anonTimer); anonTimer = null; }
+  if (anonInFlight) return anonInFlight;
+  anonInFlight = signInAnonymously(auth)
+    .then((cred) => { anonAttempt = 0; setDeviceUid(cred.user.uid); return cred.user.uid; })
+    .catch((e) => {
+      console.warn('anon auth unavailable:', e?.code || e);
+      if (anonAttempt < ANON_MAX_ATTEMPTS && !anonTimer) {
+        anonTimer = setTimeout(() => { anonTimer = null; ensureAnonAuth(); }, nextAuthRetryMs(anonAttempt++));
+      }
+      return null;
+    })
+    .finally(() => { anonInFlight = null; });
+  return anonInFlight;
+}
+
+// A new identity means a new registration: the memo is cleared and the
+// signed-in member, if any, is registered for it right away. The auth
+// observer hears of a sign-in a microtask later, so the credential's uid is
+// set here as well rather than waited for.
+function setDeviceUid(uid) {
+  if (uid === deviceUid) return;
+  deviceUid = uid;
+  ensuredAccessKey = null;
+  if (uid) {
+    hadUid = true;
+    ensureDeviceAccess(getUser());
   }
 }
 
@@ -795,13 +854,14 @@ export async function saveTournament(tn) {
   if (!useFirebase || !db) return;
   if (tn.id) throw new Error('saveTournament() is create-only — use updateTournament(id, patch)');
   tn.id = 'tn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-  await set(ref(db, 'tournaments/' + tn.id), { ...tn, updatedAt: Date.now() });
+  const rec = { ...tn, updatedAt: Date.now() };
+  await withDeviceAccess(() => set(ref(db, 'tournaments/' + tn.id), rec));
   return tn.id;
 }
 
 export async function deleteTournament(id) {
   if (!useFirebase || !db) return;
-  await update(ref(db, 'tournaments/' + id), { status: 'deleted', deletedAt: Date.now() });
+  await withDeviceAccess(() => update(ref(db, 'tournaments/' + id), { status: 'deleted', deletedAt: Date.now() }));
 }
 
 // The soft delete undone. The status goes back to null — read off the dates
@@ -811,7 +871,7 @@ export async function deleteTournament(id) {
 // draw and media were never touched by the delete, so nothing else to do.
 export async function restoreTournament(id) {
   if (!useFirebase || !db) return;
-  await update(ref(db, 'tournaments/' + id), { status: null, deletedAt: null });
+  await withDeviceAccess(() => update(ref(db, 'tournaments/' + id), { status: null, deletedAt: null }));
 }
 
 export function onTournamentsChanged(callback) {
@@ -839,7 +899,30 @@ export function onTournamentChanged(id, callback) {
 
 export async function updateTournament(id, patch) {
   if (!useFirebase || !db || !id) return;
-  await update(ref(db, 'tournaments/' + id), { ...patch, updatedAt: Date.now() });
+  const rec = { ...patch, updatedAt: Date.now() };
+  await withDeviceAccess(() => update(ref(db, 'tournaments/' + id), rec));
+}
+
+// A tournament write the rules refused is tried once more after the repair:
+// the identity may have dropped mid-session (a token refresh refused) or the
+// registration may never have gone through. A second refusal is the answer,
+// and the caller's error text (tn-errors.js) says what it means.
+async function withDeviceAccess(write) {
+  try {
+    return await write();
+  } catch (e) {
+    if (!isPermissionDenied(e)) throw e;
+    const acc = await repairDeviceAccess();
+    if (!acc.ok) throw e;
+    return write();
+  }
+}
+
+// PERMISSION_DENIED as the database reports it: `code` on a refused write,
+// «permission_denied at /path» in the message of a refused read.
+export function isPermissionDenied(err) {
+  return String(err?.code || '').toUpperCase() === 'PERMISSION_DENIED'
+    || /permission[_ ]denied/i.test(String(err?.message || (typeof err === 'string' ? err : '')));
 }
 
 // One scorer tap (spec §12) — or its undo (spec §13). `value` is the team key
@@ -988,39 +1071,71 @@ export function deviceRoleFor(user) {
 }
 
 const DEVICE_ROLE_RANK = { admin: 3, scorer: 2, player: 1 };
-let pendingAccessUser = null;
 // The router calls ensureDeviceAccess on every route; this memo keeps that a
-// no-op once the registration for this member+role has gone through.
+// no-op once the registration for this identity+member+role has gone
+// through. Keyed by the uid too: a new identity mid-session registers again.
 let ensuredAccessKey = null;
+// The last registration's outcome, for the admin tab's banner and the
+// write-error text: { ok, uid, want, role, reason, error?, at }.
+let lastDeviceAccess = null;
+export function deviceAccessState() { return lastDeviceAccess; }
 
 // Registers this browser in mpDevices for the logged-in member, so an admin
 // or marshal never has to file an access request. The rules verify the
-// claimed member's role server-side. Failures are silent: the manual
-// request/approve flow still exists as the fallback.
+// claimed member's role server-side. The outcome is returned and kept
+// (deviceAccessState) — the admin tab shows it, and a refused write repairs
+// through it; the manual request/approve flow still exists as the fallback.
 export async function ensureDeviceAccess(user) {
-  if (!useFirebase || !db || !user?.id) return;
-  if (!deviceUid) { pendingAccessUser = user; return; }
+  if (!useFirebase || !db) return { ok: true, reason: 'local' };
+  if (!user?.id) return (lastDeviceAccess = { ok: false, uid: deviceUid, want: null, role: null, reason: 'no-user', at: Date.now() });
   const want = deviceRoleFor(user);
-  const key = user.id + ':' + want;
-  if (ensuredAccessKey === key) return;
+  if (!deviceUid) return (lastDeviceAccess = { ok: false, uid: null, want, role: null, reason: 'no-auth', at: Date.now() });
+  const key = deviceUid + ':' + user.id + ':' + want;
+  if (ensuredAccessKey === key && lastDeviceAccess?.ok) return lastDeviceAccess;
+  let cur = null;
   try {
     const snap = await get(ref(db, 'mpDevices/' + deviceUid));
-    const cur = snap.exists() ? snap.val() : null;
+    cur = snap.exists() ? snap.val() : null;
     // A device an admin approved by hand may outrank what this member's role
     // maps to — never downgrade that grant.
-    if (!cur || ((DEVICE_ROLE_RANK[cur.role] || 0) <= (DEVICE_ROLE_RANK[want] || 0)
-      && (cur.role !== want || cur.userId !== user.id))) {
+    const write = !cur || ((DEVICE_ROLE_RANK[cur.role] || 0) <= (DEVICE_ROLE_RANK[want] || 0)
+      && (cur.role !== want || cur.userId !== user.id));
+    if (write) {
       await set(ref(db, 'mpDevices/' + deviceUid),
         { role: want, userId: user.id, name: user.name || '', at: Date.now() });
     }
     ensuredAccessKey = key;
+    return (lastDeviceAccess = { ok: true, uid: deviceUid, want, role: write ? want : cur.role, reason: null, at: Date.now() });
   } catch (e) {
     console.warn('device access:', e?.code || e);
+    return (lastDeviceAccess = {
+      ok: false, uid: deviceUid, want, role: cur?.role || null,
+      reason: isPermissionDenied(e) ? 'denied' : 'error', error: e?.code || String(e), at: Date.now()
+    });
   }
 }
 
+// Puts this browser's identity and registration back: signs in anonymously
+// if the uid is gone, forgets the memo, registers again. The admin tab's
+// «Дахин бүртгэх», the device card's reconnect and a refused write use it.
+export async function repairDeviceAccess(user = getUser()) {
+  if (!deviceUid) await ensureAnonAuth(true);
+  ensuredAccessKey = null;
+  return ensureDeviceAccess(user);
+}
+
+// What a banner should say about a registration outcome, or null when there
+// is nothing to say: 'no-auth' (no identity), 'denied' (the rules refused
+// the registration), 'error' (it could not be tried).
+export function deviceAccessProblem(acc) {
+  if (!acc || acc.reason === 'local' || acc.reason === 'no-user') return null;
+  if (!acc.uid) return 'no-auth';
+  return acc.ok ? null : (acc.reason === 'denied' ? 'denied' : 'error');
+}
+
 export async function deviceStatus() {
-  if (!useFirebase || !db || !deviceUid) return { uid: null, role: null, requested: false, registryEmpty: null };
+  const want = deviceRoleFor(getUser());
+  if (!useFirebase || !db || !deviceUid) return { uid: null, role: null, userId: null, want, requested: false, registryEmpty: null, access: lastDeviceAccess };
   const [dev, req, reg] = await Promise.all([
     get(ref(db, 'mpDevices/' + deviceUid)),
     get(ref(db, 'mpDeviceRequests/' + deviceUid)),
@@ -1030,8 +1145,10 @@ export async function deviceStatus() {
     uid: deviceUid,
     role: dev.exists() ? (dev.val()?.role || 'scorer') : null,
     userId: dev.exists() ? (dev.val()?.userId || null) : null,
+    want,
     requested: req.exists(),
-    registryEmpty: !reg.exists()
+    registryEmpty: !reg.exists(),
+    access: lastDeviceAccess
   };
 }
 

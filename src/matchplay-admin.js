@@ -19,6 +19,7 @@
 import * as store from './store.js';
 import { rosterHTML, wireRoster } from './roster-admin.js';
 import { t } from './i18n.js';
+import { tnWriteError } from './tn-errors.js';
 import { readImageFile, validImageData } from './media.js';
 import { teamColorOf,
   TEAM_KEYS, FORMATS, FORMAT_TEAM_SIZE, SESSION_PLAYERS_REQUIRED, ROSTER_SIZE,
@@ -641,7 +642,7 @@ function handleClick(tn, el, ctx, host) {
   } else if (kind === 'save') {
     saveDraft(tn, ctx).catch(err => {
       console.error('[matchplay-admin]', err);
-      ctx.showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+      ctx.showToast('⚠️ ' + tnWriteError(err, 'mpSaveFailed'), 'error');
     });
     return; // rerender happens after the write lands
   } else {
@@ -862,12 +863,13 @@ export function mountMpAdmin(host, tn, ctx) {
 // The database rules only let allowlisted anonymous-auth devices write under
 // tournaments/. This card is where the admin approves them: their own device
 // first (the registry's first claim bootstraps as admin), then each scorer's
-// phone as its request comes in. Hidden entirely while anonymous auth is not
-// running — in that state the rules are not gating anything yet.
+// phone as its request comes in. Without anonymous auth the rules refuse
+// every write under tournaments/, so a browser with no identity gets the
+// card too — saying so, with a reconnect — rather than nothing.
 
 const shortUid = (uid) => (uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : '');
 
-const devRoleLabel = (role) =>
+export const devRoleLabel = (role) =>
   role === 'admin' ? t('mpDevRoleAdmin')
     : role === 'player' ? t('mpDevRolePlayer') : t('mpDevRoleScorer');
 
@@ -878,11 +880,24 @@ const devRoleLabel = (role) =>
 let devCardOpen = false;
 
 async function deviceAdminHTML() {
+  if (!store.isUsingFirebase()) return '';
   // Members register their own device by role; by the time this card paints,
   // an admin or marshal normally already holds their access.
   await store.ensureDeviceAccess(store.getUser());
   const status = await store.deviceStatus();
-  if (!status.uid) return '';
+  if (!status.uid) {
+    // No identity: the sign-in failed, or the SDK signed the browser out.
+    return `
+    <details data-dev-card open
+      style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:10px;padding:12px;margin-bottom:14px;">
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <b style="font-size:0.85rem;">${t('mpDevTitle')}</b>
+        <span style="color:var(--amber);font-size:0.78rem;">⚠</span>
+      </summary>
+      <p style="font-size:0.78rem;color:var(--amber);margin:10px 0 0;">${t('mpDevNoAuth')}</p>
+      <button data-dev="reconnect" class="btn btn-primary btn-sm" style="margin-top:8px;">${t('tnAccessRetry')}</button>
+    </details>`;
+  }
   const { devices, requests } = await store.loadDeviceRegistry();
 
   const mine = status.role
@@ -963,11 +978,16 @@ export async function mountDeviceAdmin(host, ctx) {
         ? t('mpDevDenied') : (err?.message || t('mpSaveFailed'))), 'error');
     }
     await mountDeviceAdmin(host, ctx);
+    ctx.onAccessChanged?.();
   };
 
   host.querySelectorAll('button[data-dev]').forEach(b => b.onclick = () => {
     const kind = b.dataset.dev;
-    if (kind === 'claim') act(() => store.claimAdminDevice(ctx.adminName), t('mpDevClaimed'));
+    if (kind === 'reconnect') act(async () => {
+      const r = await store.repairDeviceAccess(store.getUser());
+      if (!r.ok) throw new Error(t('tnAccessStill'));
+    }, t('tnAccessOk'));
+    else if (kind === 'claim') act(() => store.claimAdminDevice(ctx.adminName), t('mpDevClaimed'));
     else if (kind === 'request') act(() => store.requestDeviceAccess(ctx.adminName), t('mpDevRequestSent'));
     else if (kind === 'approve') act(() => store.approveDevice(b.dataset.uid, b.dataset.name, 'scorer'), t('mpDevApproved'));
     else if (kind === 'promote') act(() => store.approveDevice(b.dataset.uid, b.dataset.name, 'admin'), t('mpDevApproved'));
