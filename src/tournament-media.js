@@ -22,6 +22,7 @@
 
 import { t } from './i18n.js';
 import * as store from './store.js';
+import { tnWriteError } from './tn-errors.js';
 import { readImageFile, validImageData, safeLink } from './media.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -375,7 +376,7 @@ export function mountTnMedia(host, tn, ctx = {}) {
         await ctx.rerender?.();
       } catch (err) {
         console.error('[tn-media]', err);
-        ctx.showToast?.('⚠️ ' + t('mpSaveFailed'), 'error');
+        ctx.showToast?.('⚠️ ' + tnWriteError(err, 'mpSaveFailed'), 'error');
       }
     }
   });

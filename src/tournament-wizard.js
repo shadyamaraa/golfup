@@ -16,6 +16,7 @@
 
 import * as store from './store.js';
 import { t } from './i18n.js';
+import { tnWriteError } from './tn-errors.js';
 import { ryderRulesHTML, matchRulesHTML, scrambleRulesHTML, fourballRulesHTML, foursomesRulesHTML } from './mcup-rules.js';
 
 // The 2 v 2 tournament types, all on the stroke play rails.
@@ -576,7 +577,7 @@ function paint(host, ctx) {
     } catch (err) {
       console.error('[tn-wizard]', err);
       b.disabled = false;
-      ctx.showToast?.('⚠️ ' + (err?.message || t('tnErrSave')), 'error');
+      ctx.showToast?.('⚠️ ' + tnWriteError(err, 'tnErrSave'), 'error');
     }
   });
 }
