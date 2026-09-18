@@ -1181,3 +1181,14 @@ test('renumberGroups closes the gap a deleted flight leaves, in the order the fl
   assert.deepEqual(renumberGroups({}), {});
   assert.equal(renumberGroups(null), null);
 });
+
+test('groupsNeedRenumber: a gap or a double asks for it, a round in order does not', async () => {
+  const { groupsNeedRenumber } = await import('../src/strokeplay-admin.js');
+  const g = (number) => ({ number, teeTime: '', players: {} });
+  assert.equal(groupsNeedRenumber({ g1: g(1), g3: g(3), g4: g(4) }), true, 'a gap');
+  assert.equal(groupsNeedRenumber({ a: g(1), b: g(1), c: g(2) }), true, 'a double');
+  assert.equal(groupsNeedRenumber({ a: g(2), b: g(3) }), true, 'not starting at one');
+  assert.equal(groupsNeedRenumber({ b: g(2), a: g(1), c: g(3), x: null }), false, 'in order, whatever the key order');
+  assert.equal(groupsNeedRenumber({}), false);
+  assert.equal(groupsNeedRenumber(null), false);
+});
