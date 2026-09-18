@@ -1161,3 +1161,23 @@ test('spFlightCards: a flight is LIVE once a score is in, COMPLETED when every c
   assert.equal(cards[3].rows.length, 2, 'round two lists its own flight');
   assert.deepEqual(spFlightCards({ format: 'stroke', sp: { players: {} } }), []);
 });
+
+test('renumberGroups closes the gap a deleted flight leaves, in the order the flights stood', async () => {
+  const { renumberGroups } = await import('../src/strokeplay-admin.js');
+  const groups = {
+    g1: { number: 1, teeTime: '08:00', players: { a: true } },
+    g3: { number: 3, teeTime: '08:20', startHole: 10, players: { c: true } },
+    g4: { number: 4, teeTime: '08:30', players: { d: true } },
+    gx: null
+  };
+  assert.equal(renumberGroups(groups), groups);
+  assert.deepEqual(Object.fromEntries(Object.entries(groups).filter(([, g]) => g).map(([k, g]) => [k, g.number])), { g1: 1, g3: 2, g4: 3 });
+  assert.equal(groups.g3.teeTime, '08:20', 'the tee time stays');
+  assert.equal(groups.g3.startHole, 10, 'and the start hole');
+  // Key order is not flight order: the numbers decide.
+  const out = { b: { number: 7, teeTime: '' }, a: { number: 2, teeTime: '' } };
+  renumberGroups(out);
+  assert.deepEqual([out.a.number, out.b.number], [1, 2]);
+  assert.deepEqual(renumberGroups({}), {});
+  assert.equal(renumberGroups(null), null);
+});
