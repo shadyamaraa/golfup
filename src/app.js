@@ -2793,6 +2793,12 @@ function renderTnList() {
     // A row opens that player's card. Sheet-era records carry no pid, so
     // those rows stay plain divs rather than offering a dead tap.
     const open = e.pid ? `#/spcard/${esc(tn.id)}/${esc(e.pid)}` : null;
+    // The handicap rides on the sub-line under the name, beside «Та» — the
+    // casual board's way: no column fits a phone beside the round chips. A
+    // player without one, and a fourball pair (each member plays off their
+    // own), show nothing there.
+    const hcp = typeof e.hcp === 'number' ? `${t('spHcp')} ${e.hcp}` : '';
+    const sub = [mine ? t('tnYou') : '', hcp].filter(Boolean).join(' · ');
     const inner = `
         <span class="tn-c-pos${e.rank <= 3 ? ' tn-top3' : ''}">
           <span class="tn-pos-n">${esc(e.posLabel)}</span>
@@ -2800,7 +2806,7 @@ function renderTnList() {
         </span>
         <span class="tn-c-name">
           <span class="tn-n">${esc(e.name || '')}</span>
-          ${mine ? `<span class="tn-sub">${t('tnYou')}</span>` : ''}
+          ${sub ? `<span class="tn-sub">${esc(sub)}</span>` : ''}
         </span>
         ${multi
           // A withdrawn player has no round scores; a line of empty chips is
