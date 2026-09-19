@@ -231,15 +231,18 @@ test('a team event draws teams by their derived division', () => {
   assert.deepEqual(flat.filter(p => div(p) === 'female'), ['b1+b2']);
 });
 
-test('with divisions off the draw is byte-for-byte what it was', () => {
+test('with divisions off the women are still drawn apart; the men are one field', () => {
   const tn = { ...FIELD(), spDivisions: '' };
   const seq = [0.3, 0.7, 0.1, 0.9, 0.5, 0.2, 0.8, 0.4, 0.6, 0.05];
   let i = 0;
   const groups = drawGroups(tn, { method: 'random', size: 4, rnd: () => seq[i++ % seq.length] });
-  // Ten players at size four spread 4/3/3 over ONE field, divisions ignored.
-  assert.deepEqual(groups.map(g => g.length), [4, 3, 3]);
+  // Six men spread 3/3, then the four women as their own flight — the board
+  // may rank them together, the draw never seats them together.
+  assert.deepEqual(groups.map(g => g.length), [3, 3, 4]);
+  assert.ok(groups[2].every(p => p.startsWith('w')), 'the women after the men');
   const stand = drawGroups(tn, { method: 'standings', size: 4 });
-  assert.ok(stand[stand.length - 1].includes('m1'), 'the overall leader goes out last');
+  assert.ok(stand[1].includes('m1'), 'the men\'s leader goes out last among the men');
+  assert.ok(stand[2].every(p => p.startsWith('w')));
 });
 
 test('a player’s field average is her own division’s', () => {
