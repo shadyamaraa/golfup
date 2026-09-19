@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
-  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spFlightCards
+  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spTodayRound, spLocalDate, spFlightCards
 } from '../src/strokeplay.js';
 import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -1100,6 +1100,31 @@ test('the flight follows its round from its starting hole', () => {
   delete g.startHole;
   tn.sp.scores.u1[1] = {};
   assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 1);
+});
+
+// ---- spTodayRound: the round whose day it is ----
+
+test('spTodayRound moves on to the next drawn round once the active round\'s day has gone, never back', () => {
+  const g = { g1: { number: 1, teeTime: '10:00', players: { a: true } } };
+  const tn = { startDate: '2026-09-19', rounds: 2, sp: { players: {}, groups: { 1: g, 2: g } } };
+  assert.equal(spTodayRound(tn, 1, '2026-09-19'), 1, 'R1 on its own day');
+  assert.equal(spTodayRound(tn, 1, '2026-09-20'), 2, 'the morning after R1, no R2 score yet');
+  assert.equal(spTodayRound(tn, 1, '2026-09-21'), 2, 'capped at the last round');
+  assert.equal(spTodayRound(tn, 1, '2026-09-18'), 1, 'before the tournament');
+  assert.equal(spTodayRound(tn, 2, '2026-09-20'), 2);
+  assert.equal(spTodayRound(tn, 2, '2026-09-19'), 2, 'a round with scores is never left');
+  assert.equal(spTodayRound({ ...tn, rounds: 3, sp: { players: {}, groups: { 1: g, 2: g, 3: g } } }, 1, '2026-09-21'), 3, 'two days gone → R3');
+  // No draw for R2 yet: the schedule stays on the last round that has one.
+  assert.equal(spTodayRound({ ...tn, sp: { players: {}, groups: { 1: g } } }, 1, '2026-09-20'), 1);
+  assert.equal(spTodayRound({ ...tn, rounds: 3, sp: { players: {}, groups: { 1: g, 3: g } } }, 1, '2026-09-21'), 1, 'R2 undrawn blocks the way to R3');
+  // No start date: the active round as it is; the active round is clamped.
+  assert.equal(spTodayRound({ ...tn, startDate: '' }, 1, '2026-09-20'), 1);
+  assert.equal(spTodayRound(tn, 5, '2026-09-20'), 2);
+  assert.equal(spTodayRound(tn, 0, '2026-09-19'), 1);
+  assert.equal(spTodayRound({ sp: {} }, undefined, '2026-09-19'), 1, 'a bare record');
+  // The local calendar date, zero-padded.
+  assert.equal(spLocalDate(new Date(2026, 8, 3, 7, 5).getTime()), '2026-09-03');
+  assert.match(spLocalDate(), /^\d{4}-\d{2}-\d{2}$/);
 });
 
 // ---- spRoundDate / spTeeOffMs: one day per round ----

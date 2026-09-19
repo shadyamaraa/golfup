@@ -10,7 +10,7 @@ import { tnWriteError, tnAccessBannerHTML } from './tn-errors.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs, spTodayRound } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide, mountSponsorCarousel
@@ -2513,7 +2513,10 @@ function renderTnBoard() {
     ? Object.keys(tn.sp.players).find(pid =>
       pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id)
     : null;
-  const spRound = spActive(tn) ? Math.min(Math.max(1, Number(tn.rounds) || 1), tnActiveRound(tn)) : 1;
+  // The round whose day it is: the one the field is in, or the next on the
+  // calendar once that day has gone — so the morning after R1 the schedule
+  // and the shortcut already read R2, before anyone has posted a stroke.
+  const spRound = spActive(tn) ? spTodayRound(tn, tnActiveRound(tn)) : 1;
   const myGid = myPid ? spPlayerGroup(tn.sp.players, myPid, spRound) : null;
   const myCardHref = myGid
     ? `#/spgroup/${esc(tn.id)}/${spRound}/${esc(myGid)}`
@@ -3291,7 +3294,8 @@ async function renderNextTeeFeature() {
     const myPid = Object.keys(tn.sp.players).find(pid =>
       pid === currentUser.id || tn.sp.players[pid]?.userId === currentUser.id);
     if (!myPid) continue;
-    const round = Math.min(Math.max(1, Number(tn.rounds) || 1), tnActiveRound(tn));
+    // The round whose day it is — R2's flight the morning after R1.
+    const round = spTodayRound(tn, tnActiveRound(tn));
     const gid = spPlayerGroup(tn.sp.players, myPid, round);
     const g = gid ? tn.sp.groups?.[round]?.[gid] : null;
     if (!g) continue;
