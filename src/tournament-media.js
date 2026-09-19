@@ -291,7 +291,7 @@ function sectionHTML(tn) {
           </div>
 
           <button data-tnm="save" class="btn ${d.dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
-            ${t('mpSave')}${d.dirty ? ' *' : ''}
+            ${t('save')}${d.dirty ? ' *' : ''}
           </button>
         </div>
       </details>
