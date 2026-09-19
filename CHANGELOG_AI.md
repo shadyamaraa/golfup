@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-09-19 (Stroke play and media editors: the save button reads «Хадгалах»)
+
+The stroke play editor's save button (roster, flights) and the media
+fold's read «Match play хадгалах» — the M Cup editor's `mpSave` label,
+borrowed when those editors were built. Both now use the app's plain
+`save` key («Хадгалах» / «Save» / «저장», `src/strokeplay-admin.js`,
+`src/tournament-media.js`); the M Cup editor keeps its own label.
+
 ## 2026-09-19 (Flights editor: «+ Групп нэмэх» — one more flight on top of the draw)
 
 A button under the round's flights appends one empty flight after the
