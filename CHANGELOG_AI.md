@@ -1,5 +1,17 @@
 # CHANGELOG_AI.md
 
+## 2026-09-18 (Flights editor: a «Дахин дугаарлах» button for a round already out of order)
+
+A round whose flight was deleted before renumbering became automatic
+stands at Group 1, 3, 4 — and a live tournament is no place to delete
+and re-add flights to fix that. The flights editor now shows
+«↻ Дахин дугаарлах» beside the Excel button whenever the round's numbers
+have a gap or a double (`groupsNeedRenumber`), and the tap closes the gap
+in the order the flights stand (`renumberGroups`); tee times and start
+holes stay, the save is the admin's, and the tee-time notice reads no
+number, so nobody is told. A round in order shows no button.
+`src/strokeplay-admin.js`, `src/i18n.js`.
+
 ## 2026-09-18 (Flights editor: deleting a flight renumbers the rest)
 
 Deleting Group 2 in the flights editor left Group 1, 3, 4 standing, and

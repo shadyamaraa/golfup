@@ -81,6 +81,15 @@ const groupList = (d, round) => Object.entries(d.groups[round] || {})
 // 1, 2, 3 again, in the order they stood. Only the label moves — tee times
 // and start holes stay where the admin put them, and the tee-time notice
 // reads neither the number, so nobody is told anything.
+// Whether the round's numbers have a gap or a double — what a flight
+// deleted before the gap closed itself leaves behind (Group 1, 3, 4). The
+// editor offers «Дахин дугаарлах» only then; a round in order shows nothing.
+export function groupsNeedRenumber(groups) {
+  const list = Object.values(groups || {}).filter(Boolean)
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+  return list.some((g, i) => Number(g.number) !== i + 1);
+}
+
 export function renumberGroups(groups) {
   Object.entries(groups || {})
     .filter(([, g]) => g)
@@ -342,7 +351,11 @@ function groupsHTML(tn, d) {
           ${Array.from({ length: roundCount }, (_, i) => `
             <button data-spg="round" data-round="${i + 1}" class="btn ${round === i + 1 ? 'btn-primary' : 'btn-outline'} btn-sm" style="font-size:0.72rem;">R${i + 1}</button>`).join('')}
         </span>
-        <button data-spg="import" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;">📄 Excel</button>
+        <span style="margin-left:auto;display:flex;gap:6px;">
+          ${groupsNeedRenumber(d.groups[round]) ? `
+          <button data-spg="renumber" class="btn btn-outline btn-sm" style="font-size:0.72rem;" title="${t('spRenumberHint')}">↻ ${t('spRenumber')}</button>` : ''}
+          <button data-spg="import" class="btn btn-outline btn-sm" style="font-size:0.72rem;">📄 Excel</button>
+        </span>
         <input data-spg-file type="file" accept=".xlsx,.xls,.csv" style="display:none;" />
       </div>
       ${(() => {
@@ -657,6 +670,12 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     groupRoundFor.set(tn.id, Number(b.dataset.round));
     paint(host, tn, ctx);
   });
+
+  // A round left at 1, 3, 4 by a deletion made before the gap closed
+  // itself: the numbers close up in the order the flights stand — nothing
+  // else moves, and the save is the admin's, as always.
+  const renumberBtn = host.querySelector('button[data-spg="renumber"]');
+  if (renumberBtn) renumberBtn.onclick = () => { renumberGroups(d.groups[round]); repaint(); };
 
   // The draw controls keep their values in drawCtl so repaints never reset
   // them; changing the method swaps the size/count field, so it repaints.
