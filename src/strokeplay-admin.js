@@ -103,6 +103,42 @@ export function renumberGroups(groups) {
   return groups;
 }
 
+// Appends `count` empty flights to a round — the map of the round's
+// flights, mutated — numbered after the last one, on the next slots, for
+// the admin who fills a flight by hand on top of a draw: the four a deleted
+// flight held, a late entry. A shotgun round — the control says so, or the
+// round's flights already carry start holes (the control forgets after a
+// reload; the round does not) — takes the shotgunSlots after the ones
+// drawn, timed from the earliest tee time on the round, so a flight added
+// to a 10:00 shotgun reads 10:10 and not the control's default. A
+// sequential round follows the last flight ten minutes on. The flights
+// already there are not touched. Returns the new gids; the gid carries the
+// clock, and that is the only thing here that is not pure.
+export function appendGroups(groups, { round = 1, count = 1, shotgun = false, firstTee = '', pars = null } = {}) {
+  const list = Object.values(groups || {}).filter(Boolean)
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+  const n = Math.min(40, Math.max(1, Number(count) || 1));
+  let number = list.reduce((m, g) => Math.max(m, Number(g.number) || 0), 0);
+  const shot = shotgun || list.some(g => g.startHole);
+  const base = list.map(g => g.teeTime).filter(Boolean).sort()[0] || firstTee || '';
+  const slots = shot ? shotgunSlots(pars, list.length + n, { firstTee: base }).slice(list.length) : [];
+  let clock = list.length ? (list.at(-1).teeTime || '') : (firstTee || '');
+  const gids = [];
+  for (let i = 0; i < n; i++) {
+    number += 1;
+    if (!shot && clock && (list.length || i > 0)) clock = addMinutesHHMM(clock, 10);
+    const gid = `g_${round}_${Date.now().toString(36)}${number}`;
+    groups[gid] = {
+      number,
+      teeTime: (shot ? slots[i]?.teeTime : clock) || '',
+      ...(shot && slots[i] ? { startHole: slots[i].startHole } : {}),
+      players: {}
+    };
+    gids.push(gid);
+  }
+  return gids;
+}
+
 const groupOfPid = (d, round, pid) => {
   const hit = Object.entries(d.groups[round] || {})
     .find(([, g]) => g?.players?.[pid]);
@@ -397,6 +433,7 @@ function groupsHTML(tn, d) {
       })()}
       ${groups.map(groupBox).join('')
         || `<p style="font-size:0.76rem;color:var(--text-secondary);margin:8px 0 0;">${t('spNoGroups')}</p>`}
+      <button data-spg="add-group" class="btn btn-outline btn-sm" style="margin-top:8px;font-size:0.76rem;">${t('spAddGroup')}</button>
       ${loose.length && groups.length ? `
         <p style="font-size:0.72rem;color:var(--amber);margin:6px 0 0;">
           ⚠ ${loose.length} ${t('spUnassigned')}: ${esc(loose.map(([, p]) => p.name).join(', '))}
@@ -702,6 +739,17 @@ function wireGroups(host, tn, ctx, d, markDirty) {
   // The mode moves the auto method (leaders last / first), so it repaints.
   bindCtl('select[data-spg="start-mode"]', 'mode', true);
 
+  // «+ Групп нэмэх»: one empty flight after the last, on the next slot, to
+  // fill by hand through its finder — the four a deleted flight held, a
+  // late entry. The draw is not touched.
+  const addBtn = host.querySelector('button[data-spg="add-group"]');
+  if (addBtn) addBtn.onclick = () => {
+    appendGroups(d.groups[round] = d.groups[round] || {}, {
+      round, count: 1, shotgun: c.mode === 'shotgun', firstTee: c.firstTee || '', pars: tnPars(tn)
+    });
+    repaint();
+  };
+
   // The draw: method + size + first tee → groups numbered in order. The
   // "empty groups" method APPENDS that many groups to fill by hand; the
   // real draws replace this round after a confirm.
@@ -712,23 +760,9 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     const method = drawMethod(c, round);
 
     if (method === 'empty') {
-      const count = Math.min(40, Math.max(1, Number(c.count) || 1));
-      const existing = groupList(d, round);
-      let number = existing.length ? Math.max(...existing.map(g => Number(g.number) || 0)) : 0;
-      let clock = existing.length ? existing.at(-1).teeTime || '' : firstTee;
-      const groups = (d.groups[round] = d.groups[round] || {});
-      // Shotgun: the new groups take the slots after the ones already drawn.
-      const slots = shotgun ? shotgunSlots(tnPars(tn), existing.length + count, { firstTee }).slice(existing.length) : [];
-      for (let i = 0; i < count; i++) {
-        number += 1;
-        if (!shotgun && clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
-        groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
-          number,
-          teeTime: (shotgun ? slots[i]?.teeTime : clock) || '',
-          ...(shotgun && slots[i] ? { startHole: slots[i].startHole } : {}),
-          players: {}
-        };
-      }
+      appendGroups(d.groups[round] = d.groups[round] || {}, {
+        round, count: c.count, shotgun, firstTee, pars: tnPars(tn)
+      });
       repaint();
       return;
     }
