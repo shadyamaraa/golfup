@@ -10,8 +10,7 @@ import { t } from './i18n.js';
 import { tnWriteError } from './tn-errors.js';
 import { wireNamePicker } from './name-picker.js';
 import {
-  drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams,
-  tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS, spScoredRemovals
+  drawGroups, spGroupList, tnIsTeam, tnOneBall, tnTeamSize, teamKeyOf, isTeamEntry, teamMemberIds, spTeams, tnHasDivisions, entryDivision, teamDerivedDivision, tnTeeFor, DIVISIONS, spScoredRemovals, shotgunSlots, tnPars
 } from './strokeplay.js';
 import { isGender, genderKey } from './gender.js';
 import { courseHandicap } from './handicap.js';
@@ -44,11 +43,17 @@ const teamsPerFlight = (tn) => Math.max(1, Math.floor(4 / tnTeamSize(tn)));
 const drawCtl = (tnId) => {
   let c = drawCtlFor.get(tnId);
   if (!c) {
-    c = { method: 'random', size: '4', count: '4', firstTee: '08:00', mode: 'seq' };
+    c = { method: null, size: '4', count: '4', firstTee: '08:00', mode: 'seq' };
     drawCtlFor.set(tnId, c);
   }
   return c;
 };
+// The draw method the controls stand at: the admin's pick, or — until they
+// pick — what the round asks for: the first round goes out at random, every
+// round after it by the standings, leaders last in a procession off the 1st
+// and leaders first in a shotgun (the leaders off the 1st, finishing on 18).
+const drawMethod = (c, round) => c.method
+  || (round > 1 ? (c.mode === 'shotgun' ? 'standingsFirst' : 'standings') : 'random');
 
 function draftFor(tn) {
   let d = drafts.get(tn.id);
@@ -360,16 +365,18 @@ function groupsHTML(tn, d) {
       </div>
       ${(() => {
         const c = drawCtl(tn.id);
+        const method = drawMethod(c, round);
         const sel = (v, cur) => String(v) === String(cur) ? ' selected' : '';
         return `
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">
         <select data-spg="method" style="${INPUT}font-size:0.78rem;">
-          <option value="random"${sel('random', c.method)}>${t('spDrawRandom')}</option>
-          <option value="hcp"${sel('hcp', c.method)}>${t('spDrawHcp')}</option>
-          <option value="standings"${sel('standings', c.method)}>${t('spDrawStandings')}</option>
-          <option value="empty"${sel('empty', c.method)}>${t('spEmptyGroups')}</option>
+          <option value="random"${sel('random', method)}>${t('spDrawRandom')}</option>
+          <option value="hcp"${sel('hcp', method)}>${t('spDrawHcp')}</option>
+          <option value="standings"${sel('standings', method)}>${t('spDrawStandings')}</option>
+          <option value="standingsFirst"${sel('standingsFirst', method)}>${t('spDrawStandingsFirst')}</option>
+          <option value="empty"${sel('empty', method)}>${t('spEmptyGroups')}</option>
         </select>
-        ${c.method === 'empty'
+        ${method === 'empty'
           ? `<input data-spg="empty-count" type="number" min="1" max="40" value="${esc(c.count)}" title="${t('spGroups')}" style="${INPUT}width:64px;" />`
           : team
             ? `<select data-spg="size" style="${INPUT}font-size:0.78rem;">
@@ -385,7 +392,8 @@ function groupsHTML(tn, d) {
           <option value="shotgun"${sel('shotgun', c.mode)}>${t('spShotgun')}</option>
         </select>
         <button data-spg="draw" class="btn btn-primary btn-sm">${t('spDraw')}</button>
-      </div>`;
+      </div>
+      ${c.mode === 'shotgun' ? `<p style="font-size:0.7rem;color:var(--text-muted);margin:4px 0 0;">${t('spShotgunRule')}</p>` : ''}`;
       })()}
       ${groups.map(groupBox).join('')
         || `<p style="font-size:0.76rem;color:var(--text-secondary);margin:8px 0 0;">${t('spNoGroups')}</p>`}
@@ -691,7 +699,8 @@ function wireGroups(host, tn, ctx, d, markDirty) {
   bindCtl('select[data-spg="size"]', 'size');
   bindCtl('input[data-spg="empty-count"]', 'count');
   bindCtl('input[data-spg="first-tee"]', 'firstTee');
-  bindCtl('select[data-spg="start-mode"]', 'mode');
+  // The mode moves the auto method (leaders last / first), so it repaints.
+  bindCtl('select[data-spg="start-mode"]', 'mode', true);
 
   // The draw: method + size + first tee → groups numbered in order. The
   // "empty groups" method APPENDS that many groups to fill by hand; the
@@ -700,20 +709,23 @@ function wireGroups(host, tn, ctx, d, markDirty) {
   if (drawBtn) drawBtn.onclick = () => {
     const shotgun = c.mode === 'shotgun';
     const firstTee = c.firstTee || '';
+    const method = drawMethod(c, round);
 
-    if (c.method === 'empty') {
+    if (method === 'empty') {
       const count = Math.min(40, Math.max(1, Number(c.count) || 1));
       const existing = groupList(d, round);
       let number = existing.length ? Math.max(...existing.map(g => Number(g.number) || 0)) : 0;
       let clock = existing.length ? existing.at(-1).teeTime || '' : firstTee;
       const groups = (d.groups[round] = d.groups[round] || {});
+      // Shotgun: the new groups take the slots after the ones already drawn.
+      const slots = shotgun ? shotgunSlots(tnPars(tn), existing.length + count, { firstTee }).slice(existing.length) : [];
       for (let i = 0; i < count; i++) {
         number += 1;
         if (!shotgun && clock && (existing.length || i > 0)) clock = addMinutesHHMM(clock, 10);
         groups[`g_${round}_${Date.now().toString(36)}${number}`] = {
           number,
-          teeTime: (shotgun ? firstTee : clock) || '',
-          ...(shotgun ? { startHole: ((number - 1) % 18) + 1 } : {}),
+          teeTime: (shotgun ? slots[i]?.teeTime : clock) || '',
+          ...(shotgun && slots[i] ? { startHole: slots[i].startHole } : {}),
           players: {}
         };
       }
@@ -722,7 +734,6 @@ function wireGroups(host, tn, ctx, d, markDirty) {
     }
 
     if (Object.keys(d.groups[round] || {}).length && !confirm(t('spRedrawConfirm'))) return;
-    const method = c.method;
     // The size control remembers "4" from an individual event; a team event
     // can never seat more teams than fit a flight of four.
     const size = tnIsTeam(tn)
@@ -730,20 +741,24 @@ function wireGroups(host, tn, ctx, d, markDirty) {
       : (Number(c.size) || 4);
     // The draw reads the DRAFT roster (unsaved adds included) but the live
     // scores, so a standings draw ranks on what the board shows.
+    // Who a roster entry is, for the women-apart rule when the roster
+    // carries no division: the member's profile answers.
+    const genderOf = (pid) => (ctx.users || []).find(u => u?.id && u.id === d.players[pid]?.userId)?.gender || null;
     const draw = drawGroups(
       { ...tn, sp: { ...(tn.sp || {}), players: d.players, scores: tn.sp?.scores || {} } },
-      { method, size, round });
+      { method, size, round, genderOf });
     const groups = {};
     let clock = firstTee;
+    // Shotgun: the slots skip the par 3s and double up the par 5s ten
+    // minutes apart once the course is full. Sequential: the 10-minute
+    // procession off the 1st.
+    const slots = shotgun ? shotgunSlots(tnPars(tn), draw.length, { firstTee }) : [];
     draw.forEach((pids, i) => {
       const gid = `g_${round}_${i + 1}`;
       groups[gid] = {
         number: i + 1,
-        // Shotgun: every flight starts at the shared tee time (retimed by
-        // hand per flight afterwards, e.g. a second group off the same hole
-        // 10 minutes later). Sequential: the 10-minute procession off the 1st.
-        teeTime: shotgun ? firstTee : (clock || ''),
-        ...(shotgun ? { startHole: (i % 18) + 1 } : {}),
+        teeTime: shotgun ? (slots[i]?.teeTime || '') : (clock || ''),
+        ...(shotgun && slots[i] ? { startHole: slots[i].startHole } : {}),
         players: Object.fromEntries(pids.map(pid => [pid, true]))
       };
       if (!shotgun && clock) clock = addMinutesHHMM(clock, 10);

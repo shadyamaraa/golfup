@@ -1,5 +1,26 @@
 # CHANGELOG_AI.md
 
+## 2026-09-19 (The draw: shotgun off the par 4s and 5s, the cut and the women respected, the standings by default)
+
+Four rules the auto draw now follows. A shotgun start puts no group on a
+par 3 — the first wave takes every other hole in order — and once the
+course is full the par 5s take a second group ten minutes behind, a third
+another ten after that (`shotgunSlots` in `src/strokeplay.js`; a course
+without known pars keeps the plain 1..18, wave by wave). A draw for a
+round past the cut leaves out everyone the cut took — per division, ties
+at the edge kept — before anyone has teed off in it (`cutSet` with
+`applied`), alongside the withdrawn and disqualified as before. Women and
+men are never drawn into one flight, whether or not the tournament ranks
+them apart: the roster's division, a team's from its members, a person's
+from their profile when the roster says nothing; men's flights first,
+then the women's, numbered on. And the standings draw comes in two
+directions — «тэргүүлэгчид сүүлд», the procession with the leaders off
+last, and «тэргүүлэгчид эхэнд», the shotgun with the leaders off the 1st
+to finish on 18 — with a player without a score counted as the worst in
+both. Until the admin picks a method, the first round goes out at random
+and every later round by the standings, leaders last in sequence and
+first in a shotgun. `src/strokeplay-admin.js`, `src/i18n.js`.
+
 ## 2026-09-18 (Flights editor: a «Дахин дугаарлах» button for a round already out of order)
 
 A round whose flight was deleted before renumbering became automatic

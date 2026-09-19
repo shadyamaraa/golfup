@@ -453,7 +453,7 @@ export function totalThrough(entry, upto) {
 // stored: the cut is re-derived every time, so a player who made it and then
 // withdraws frees their place and the next one is pulled in on the spot —
 // which is exactly the rule the organisers apply by hand.
-export function cutSet(entries, { cutAfterRound, cutSize, higherWins = false } = {}) {
+export function cutSet(entries, { cutAfterRound, cutSize, higherWins = false, applied = false } = {}) {
   const out = new Set();
   const after = Number(cutAfterRound) || 0;
   const size = Number(cutSize) || 0;
@@ -461,7 +461,9 @@ export function cutSet(entries, { cutAfterRound, cutSize, higherWins = false } =
   if (!after || !size) return out;
   // The cut only bites once the next round is under way. Until then the board
   // shows the whole field, which is what that day's standings should look like.
-  if (activeRound(list) <= after) return out;
+  // `applied` is the draw of that next round asking before anyone has teed
+  // off in it: the cut is taken as made.
+  if (!applied && activeRound(list) <= after) return out;
 
   const scored = [];
   list.forEach(e => {

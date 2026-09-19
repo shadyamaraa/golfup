@@ -1192,3 +1192,58 @@ test('groupsNeedRenumber: a gap or a double asks for it, a round in order does n
   assert.equal(groupsNeedRenumber({}), false);
   assert.equal(groupsNeedRenumber(null), false);
 });
+
+test('shotgunSlots: no par 3 in the first wave, the par 5s take the later waves ten minutes apart', async () => {
+  const { shotgunSlots, tnPars } = await import('../src/strokeplay.js');
+  const pars = tnPars({ course: 'sky' });   // par 3: 4, 8, 13, 17 · par 5: 1, 5, 12, 18
+  const s14 = shotgunSlots(pars, 14, { firstTee: '08:00' });
+  assert.deepEqual(s14.map(s => s.startHole), [1, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 18]);
+  assert.ok(s14.every(s => s.teeTime === '08:00'));
+  const s19 = shotgunSlots(pars, 19, { firstTee: '08:00' });
+  assert.deepEqual(s19.slice(14).map(s => [s.startHole, s.teeTime]), [[1, '08:10'], [5, '08:10'], [12, '08:10'], [18, '08:10'], [1, '08:20']]);
+  assert.ok(!s19.some(s => [4, 8, 13, 17].includes(s.startHole)), 'never a par 3');
+  // No pars known: the plain 1..18, then again ten minutes behind.
+  const plain = shotgunSlots(null, 20, { firstTee: '09:00' });
+  assert.deepEqual(plain.slice(0, 3).map(s => s.startHole), [1, 2, 3]);
+  assert.deepEqual([plain[18].startHole, plain[18].teeTime, plain[19].startHole], [1, '09:10', 2]);
+  assert.deepEqual(shotgunSlots(pars, 0), []);
+  assert.equal(shotgunSlots(pars, 16, {})[15].teeTime, '', 'no first tee, no time');
+});
+
+test('drawGroups leaves out whoever the cut took, for a round past the cut, ties kept', () => {
+  const r = (n) => { const h = fullRound(4); h[1] = n; return h; };   // 72 + (n − 4) to par
+  const tn = TN({ a: { name: 'a' }, b: { name: 'b' }, c: { name: 'c' }, d: { name: 'd' }, e: { name: 'e' } },
+    { a: { 1: r(2) }, b: { 1: r(4) }, c: { 1: r(4) }, d: { 1: r(7) }, e: { 1: r(9) } },
+    { cutAfterRound: 1, cutSize: 2 });
+  assert.deepEqual(drawGroups(tn, { method: 'random', rnd: () => 0.5, round: 1 }).flat().sort(), ['a', 'b', 'c', 'd', 'e'], 'the cut round itself draws everyone');
+  assert.deepEqual(drawGroups(tn, { method: 'random', rnd: () => 0.5, round: 2 }).flat().sort(), ['a', 'b', 'c'], 'top two and the tie at the edge');
+  const st = drawGroups(tn, { method: 'standings', size: 4, round: 2 }).flat();
+  assert.deepEqual(st.slice().sort(), ['a', 'b', 'c']);
+  assert.equal(st.at(-1), 'a', 'the leader goes out last among the survivors');
+  // cutSet itself: silent before the next round, made when asked as applied.
+  const entries = spEntries(tn, 'gross');
+  assert.equal(cutSet(entries, { cutAfterRound: 1, cutSize: 2 }).size, 0);
+  assert.equal(cutSet(entries, { cutAfterRound: 1, cutSize: 2, applied: true }).size, 2);
+});
+
+test('drawGroups keeps women and men apart in every tournament, the profile answering for a blank division', () => {
+  const tn = TN({
+    a: { name: 'a' }, b: { name: 'b', division: 'female' }, c: { name: 'c', userId: 'uc' }, d: { name: 'd', userId: 'ud' }
+  }, {});
+  const genderOf = (pid) => ({ c: 'female', d: 'male' })[pid] || null;
+  const groups = drawGroups(tn, { method: 'random', rnd: () => 0.5, size: 4, genderOf });
+  assert.deepEqual(groups.map(g => g.slice().sort()), [['a', 'd'], ['b', 'c']], 'men first, then the women');
+  // Without a profile to ask, a blank division draws with the men, as the board ranks it.
+  assert.deepEqual(drawGroups(tn, { method: 'random', rnd: () => 0.5, size: 4 }).map(g => g.slice().sort()), [['a', 'c', 'd'], ['b']]);
+});
+
+test('standingsFirst is the mirror of standings; a player without a score is the worst either way', () => {
+  const r70 = fullRound(4); r70[1] = 2;
+  const r80 = fullRound(4); r80[1] = 12;
+  const tn = TN({ lead: { name: 'lead' }, mid: { name: 'mid' }, tail: { name: 'tail' }, none: { name: 'none' } },
+    { lead: { 1: r70 }, mid: { 1: fullRound(4) }, tail: { 1: r80 } });
+  const last = drawGroups(tn, { method: 'standings', size: 2 });
+  assert.deepEqual(last, [['none', 'tail'], ['mid', 'lead']]);
+  const first = drawGroups(tn, { method: 'standingsFirst', size: 2 });
+  assert.deepEqual(first, [['lead', 'mid'], ['tail', 'none']]);
+});

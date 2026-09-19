@@ -30,8 +30,9 @@
 import { courseList, resolveCourse, coursePars, courseSIs } from './courses.js';
 import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
-import { settleMatch, statusText, HALVED, sessionDate } from './matchplay.js';
+import { settleMatch, statusText, HALVED, sessionDate, addMinutesHHMM } from './matchplay.js';
 import { GENDERS, isGender } from './gender.js';
+import { cutSet } from './tournament-sheet.js';
 
 export const SP_HOLES = 18;
 
@@ -595,38 +596,82 @@ export function chunkGroups(pids, size = 4) {
   return out;
 }
 
+// Where a shotgun field goes out, `count` slots of { startHole, teeTime }.
+// No group ever starts on a par 3 — a four-ball waiting on the short hole
+// holds up the whole course — so the first wave takes every other hole in
+// order, and when the field outgrows the course the next waves go off the
+// par 5s alone, `step` minutes behind: the long hole absorbs a second group
+// behind the first. A course whose pars are not known keeps the plain 1..18
+// procession, wave by wave.
+export function shotgunSlots(pars, count, { firstTee = '', step = 10 } = {}) {
+  const n = Math.max(0, Number(count) || 0);
+  const holes = Array.from({ length: SP_HOLES }, (_, i) => i + 1);
+  const parOf = (h) => Number(pars?.[h]) || 0;
+  const known = holes.some(h => parOf(h));
+  const first = known ? holes.filter(h => parOf(h) !== 3) : holes;
+  const fives = holes.filter(h => parOf(h) === 5);
+  const later = known && fives.length ? fives : first;
+  const out = [];
+  for (let wave = 0; out.length < n; wave++) {
+    const list = wave ? later : first;
+    if (!list.length) break;
+    const teeTime = wave && firstTee ? addMinutesHHMM(firstTee, step * wave) : (firstTee || '');
+    for (const h of list) {
+      if (out.length >= n) break;
+      out.push({ startHole: h, teeTime });
+    }
+  }
+  return out;
+}
+
 /**
  * The draw: an ordered list of groups (arrays of pids) by `method`.
- *   'random'    — shuffled (rnd() injectable so tests are deterministic);
- *   'hcp'       — snake seeding by HCP so every group mixes strong and weak;
- *   'standings' — by current total, LEADERS LAST (the professional draw:
- *                 the last group off holds the lead), needs `entries` from
- *                 spEntries(); players without a score go out first.
- * WD/DQ players are left out of every draw.
+ *   'random'         — shuffled (rnd() injectable so tests are deterministic);
+ *   'hcp'            — snake seeding by HCP so every group mixes strong and weak;
+ *   'standings'      — by current total, LEADERS LAST (the professional draw:
+ *                      the last group off holds the lead); players without a
+ *                      score have no standing and go out first;
+ *   'standingsFirst' — the mirror, the leaders' group first — a shotgun start
+ *                      that sends the leaders off the 1st to finish on 18.
+ * WD/DQ players are left out of every draw, and so is everyone the cut took
+ * once `round` is past it (the cut is taken as made for that round's draw,
+ * per division, even before anyone has teed off in it).
+ * Women and men are never drawn into one flight, whether or not the
+ * tournament ranks them apart: the roster's division, a team's from its
+ * members, a person's from their profile through `genderOf(pid)` when the
+ * roster says nothing. Men's flights first, then the women's, numbered on.
  */
-export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = Math.random } = {}) {
+export function drawGroups(tn, { method = 'random', size = 4, round = 1, rnd = Math.random, genderOf = null } = {}) {
   const players = tn?.sp?.players || {};
   // A team event draws TEAMS into flights; an individual event never draws a
   // team, even if a stray team entry is left over from a format change.
   const teamOnly = tnIsTeam(tn);
+  const higher = tnHigherWins(tn);
+  const standings = method === 'standings' || method === 'standingsFirst';
+  // The board, read once: the standings draw ranks on it, and the cut for a
+  // round past it is taken off it — per division, the way the board does.
+  const entries = spEntries(tn, higher ? 'stableford' : 'gross');
+  const cutOut = new Set();
+  const after = Number(tn?.cutAfterRound) || 0;
+  if (after && Number(tn?.cutSize) && Number(round) > after) {
+    const boards = tnHasDivisions(tn) ? DIVISIONS.map(d => entries.filter(e => e.division === d)) : [entries];
+    boards.forEach(list => cutSet(list, { cutAfterRound: after, cutSize: tn.cutSize, higherWins: higher, applied: true })
+      .forEach(e => cutOut.add(e.pid)));
+  }
   const pids = Object.keys(players).filter(pid => {
     const p = players[pid];
-    if (!p || isTeamEntry(p) !== teamOnly) return false;
+    if (!p || isTeamEntry(p) !== teamOnly || cutOut.has(pid)) return false;
     return !['WD', 'DQ'].includes(String(p.status || '').toUpperCase());
   });
 
-  // A divided field is drawn one division at a time: the women play a
-  // different tee, so a women's pair can never share a flight with a men's
-  // one. Men's flights first, then the women's, numbered on from where the
-  // men's stop — the shape of this season's two-tournament Han Bogd Cup.
-  const parts = tnHasDivisions(tn)
-    ? DIVISIONS.map(d => pids.filter(pid => entryDivision(players, pid) === d)).filter(l => l.length)
-    : [pids];
-  // 'standings' reads the board once, whichever division is being drawn.
-  const higher = tnHigherWins(tn);
-  const totals = method === 'standings'
-    ? new Map(spEntries(tn, higher ? 'stableford' : 'gross').map(e => [e.pid, e.total]))
-    : null;
+  const divisionOf = (pid) => {
+    const info = entryDivisionInfo(players, pid);
+    if (info.source !== 'fallback') return info.division;
+    const g = genderOf?.(pid);
+    return isGender(g) ? g : info.division;
+  };
+  const parts = DIVISIONS.map(d => pids.filter(pid => divisionOf(pid) === d)).filter(l => l.length);
+  const totals = standings ? new Map(entries.map(e => [e.pid, e.total])) : null;
   return parts.flatMap(list => drawList(players, list, { method, size, rnd, totals, higher }));
 }
 
@@ -649,16 +694,19 @@ function drawList(players, pids, { method, size, rnd, totals, higher }) {
     return buckets.filter(g => g.length);
   }
 
-  if (method === 'standings') {
+  if (method === 'standings' || method === 'standingsFirst') {
     // Whatever the tournament actually ranks by: a Stableford draw has to
     // read points, or "leaders last" would send the field out backwards.
-    // Worst first: the leaders land in the LAST group, teeing off last.
+    // No score is no standing — the worst there is.
     const key = (pid) => {
       const v = totals.get(pid);
-      if (v === null || v === undefined) return -Infinity;
+      if (v === null || v === undefined) return Infinity;
       return higher ? -v : v;
     };
-    pids.sort((a, b) => key(b) - key(a));
+    const best = (a, b) => { const ka = key(a), kb = key(b); return ka === kb ? 0 : (ka < kb ? -1 : 1); };
+    // Leaders last: worst first, so the leaders land in the LAST group and
+    // tee off last. Leaders first: the mirror, their group at the head.
+    pids.sort(method === 'standingsFirst' ? best : (a, b) => best(b, a));
     return chunkGroups(pids, size);
   }
 
