@@ -467,6 +467,31 @@ export function spTeeOffMs(tn, round, teeTime) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// The local calendar date, 'YYYY-MM-DD' — the browser's clock, which for
+// the club is Ulaanbaatar's; the shape spRoundDate speaks.
+export function spLocalDate(ms = Date.now()) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// The round whose day it is — what the schedule tab opens on, what the
+// home card and the enter-score shortcut point at. The round the field is
+// in (`active`: the highest with a score posted) unless its day has gone,
+// in which case the next round on the calendar, so the morning after R1
+// the schedule already reads R2 before anyone has posted a stroke in it.
+// It moves on only to a round that has a draw — an undrawn R2 leaves R1 in
+// view rather than an empty page — and never back: a round with scores is
+// the round. A record without a start date keeps the active round.
+// `today` is a local 'YYYY-MM-DD'; the tests hand one in.
+export function spTodayRound(tn, active, today = spLocalDate()) {
+  const rounds = Math.max(1, Number(tn?.rounds) || 1);
+  let r = Math.min(rounds, Math.max(1, Number(active) || 1));
+  if (!spRoundDate(tn, 1)) return r;
+  while (r < rounds && spRoundDate(tn, r) < today && spGroupList(tn, r + 1).length) r += 1;
+  return r;
+}
+
 // The flights as the Match Center reads matches: every drawn flight of
 // every round with its state — LIVE once a score is in, COMPLETED when
 // every card in it has all its holes, UPCOMING before — and each row's

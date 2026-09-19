@@ -1,5 +1,18 @@
 # CHANGELOG_AI.md
 
+## 2026-09-19 (Tournament page and home card: the round whose day it is)
+
+The schedule tab's default round, the «Оноо оруулах» shortcut and the
+home «Tee time» card read the round the field is in — the highest with a
+score posted — so the morning after R1, until somebody posted a stroke in
+R2, they still showed R1's flights. `spTodayRound(tn, active, today)` in
+`src/strokeplay.js` moves on from a round whose day has gone to the next
+round on the calendar, as long as that round has a draw (an undrawn R2
+keeps R1 in view, and the R1 | R2 picker is there either way); it never
+goes back, and a record without a start date keeps the active round. The
+board, the flights tab and the print pages are untouched. Tests in
+`scripts/test-strokeplay.mjs`.
+
 ## 2026-09-19 (Stroke play and media editors: the save button reads «Хадгалах»)
 
 The stroke play editor's save button (roster, flights) and the media
