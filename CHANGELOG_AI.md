@@ -1,5 +1,20 @@
 # CHANGELOG_AI.md
 
+## 2026-09-19 (Flights editor: «+ Групп нэмэх» — one more flight on top of the draw)
+
+A button under the round's flights appends one empty flight after the
+last, on the next slot, to fill by hand through the flight's finder — the
+four a deleted flight held, a late entry. `appendGroups` in
+`src/strokeplay-admin.js` is the one rule, now shared with the «Хоосон
+групп» method: a shotgun round — the control says so, or the round's
+flights already carry start holes, since the control forgets after a
+reload — takes the `shotgunSlots` after the ones drawn, timed from the
+round's own earliest tee time (a flight added to a 10:00 shotgun reads
+10:10, not the control's 08:00); a sequential round follows the last
+flight ten minutes on. The flights already there are untouched, and the
+round is saved as before, so a tee-time notice goes only to the players
+the new flight seats. Tests in `scripts/test-strokeplay.mjs`.
+
 ## 2026-09-19 (The draw: shotgun off the par 4s and 5s, the cut and the women respected, the standings by default)
 
 Four rules the auto draw now follows. A shotgun start puts no group on a

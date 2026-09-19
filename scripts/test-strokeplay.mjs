@@ -1193,6 +1193,46 @@ test('groupsNeedRenumber: a gap or a double asks for it, a round in order does n
   assert.equal(groupsNeedRenumber(null), false);
 });
 
+test('appendGroups: one more flight after the last, on the next slot, the rest untouched', async () => {
+  const { appendGroups } = await import('../src/strokeplay-admin.js');
+  const { shotgunSlots, tnPars } = await import('../src/strokeplay.js');
+  // An empty sequential round: the first flight at the first tee.
+  const empty = {};
+  const [g1] = appendGroups(empty, { round: 2, firstTee: '08:00' });
+  assert.ok(g1.startsWith('g_2_'));
+  assert.deepEqual(empty[g1], { number: 1, teeTime: '08:00', players: {} });
+  // Three sequential flights: the next follows ten minutes on; two at once chain.
+  const seq = {
+    a: { number: 1, teeTime: '08:00', players: { p: true } },
+    b: { number: 2, teeTime: '08:10', players: {} },
+    c: { number: 3, teeTime: '08:20', players: {} }
+  };
+  const [g4, g5] = appendGroups(seq, { round: 1, count: 2, firstTee: '07:00' });
+  assert.deepEqual([seq[g4].number, seq[g4].teeTime, seq[g5].number, seq[g5].teeTime], [4, '08:30', 5, '08:40']);
+  assert.equal('startHole' in seq[g4], false);
+  assert.deepEqual(seq.a, { number: 1, teeTime: '08:00', players: { p: true } }, 'the existing flights stay');
+  // A shotgun round drawn earlier — start holes on the flights, the control
+  // back at sequential after a reload: the next shotgun slot, timed from the
+  // round's own first tee, not the control's.
+  const pars = tnPars({ course: 'sky' });
+  const shot = {};
+  shotgunSlots(pars, 17, { firstTee: '10:00' })
+    .forEach((s, i) => { shot[`g_2_${i + 1}`] = { number: i + 1, teeTime: s.teeTime, startHole: s.startHole, players: {} }; });
+  const [g18] = appendGroups(shot, { round: 2, shotgun: false, firstTee: '08:00', pars });
+  assert.deepEqual(shot[g18], { number: 18, teeTime: '10:10', startHole: 18, players: {} });
+  assert.equal(Object.keys(shot).length, 18);
+  // An empty round with the control on shotgun: the 1st at the first tee.
+  const fresh = {};
+  const [s1] = appendGroups(fresh, { round: 1, shotgun: true, firstTee: '09:00', pars });
+  assert.deepEqual(fresh[s1], { number: 1, teeTime: '09:00', startHole: 1, players: {} });
+  // The count is clamped to at least one; a null slot in the map is skipped;
+  // no clock on the last flight → none on the new one.
+  const holed = { x: null, y: { number: 5, teeTime: '', players: {} } };
+  const more = appendGroups(holed, { round: 1, count: 0 });
+  assert.equal(more.length, 1);
+  assert.deepEqual(holed[more[0]], { number: 6, teeTime: '', players: {} });
+});
+
 test('shotgunSlots: no par 3 in the first wave, the par 5s take the later waves ten minutes apart', async () => {
   const { shotgunSlots, tnPars } = await import('../src/strokeplay.js');
   const pars = tnPars({ course: 'sky' });   // par 3: 4, 8, 13, 17 · par 5: 1, 5, 12, 18
