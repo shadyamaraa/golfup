@@ -1462,3 +1462,74 @@ html:not([data-theme="dark"]) .golf-ball {
   background: radial-gradient(circle at 35% 35%, rgba(12,48,81,0.08), rgba(12,48,81,0.02));
   border-color: rgba(12,48,81,0.08);
 }
+
+/* ---- Live board: the position chip beside a scorer row, and the sheet ---- */
+/* The chip: place · total, gold in the top three; a place that just changed
+   pulses green or red and carries its ▲/▼ for the animation's length. */
+.spg-pos {
+  display: inline-flex; align-items: center; gap: 5px; margin: 3px 0 0 6px; padding: 2px 8px 2px 7px;
+  border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-hover);
+  color: var(--text-primary); font-family: var(--font); font-size: 0.7rem; font-weight: 800;
+  line-height: 1.3; cursor: pointer; vertical-align: middle;
+}
+.spg-pos b { font-weight: 900; }
+.spg-pos.spg-top b { color: var(--gold-dark); }
+.spg-pos .tn-sc { font-size: 0.7rem; }
+.spg-pos[data-delta]::after { content: attr(data-delta); font-size: 0.66rem; font-weight: 900; }
+.spg-pos-up { animation: spg-up 4s ease-out; }
+.spg-pos-up::after { color: #1f8a4c; }
+.spg-pos-down { animation: spg-down 4s ease-out; }
+.spg-pos-down::after { color: var(--red); }
+@keyframes spg-up {
+  0% { background: rgba(31,138,76,0.3); border-color: #1f8a4c; transform: scale(1.08); }
+  20% { transform: scale(1); }
+  100% { background: var(--bg-card-hover); border-color: var(--border-color); }
+}
+@keyframes spg-down {
+  0% { background: rgba(215,38,61,0.24); border-color: var(--red); transform: scale(1.08); }
+  20% { transform: scale(1); }
+  100% { background: var(--bg-card-hover); border-color: var(--border-color); }
+}
+/* The sheet: the board's rows, the flight's marked, a live dot, rows that
+   slide (the transform is set from script) and flash when they change. */
+.lb-live {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; color: var(--red);
+}
+.lb-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: lb-pulse 1.6s ease-in-out infinite; }
+@keyframes lb-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+/* The sheet's own top padding would leave a band above the sticky header
+   for rows to show through — the padding moves into the head instead. */
+.lb-sheet { padding-top: 0; }
+.lb-sheet .shs-head { padding-top: 14px; }
+.lb-sub { font-size: 0.74rem; color: var(--text-secondary); margin: -4px 0 8px; }
+.lb-div {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gold-dark); margin: 10px 0 2px;
+}
+.lb-row {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) 54px 42px; align-items: center; gap: 8px;
+  padding: 8px 10px; background: var(--bg-card); border-top: 1px solid var(--border-card);
+}
+.lb-head {
+  position: sticky; top: 0; z-index: 1; border-top: 0; border-radius: 10px 10px 0 0;
+  background: var(--bg-card-hover);
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+}
+.lb-pos { font-size: 0.85rem; font-weight: 800; color: var(--text-secondary); white-space: nowrap; }
+.lb-top .lb-pos { color: var(--gold-dark); }
+.lb-mine { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--gold); }
+.lb-mine .tn-n { color: var(--gold-dark); }
+.lb-mine .tn-sub { color: var(--gold-dark); font-weight: 700; }
+.lb-full { display: flex; justify-content: center; margin-top: 12px; }
+.lb-flash { animation: lb-flash 1.2s ease-out; }
+@keyframes lb-flash {
+  from { box-shadow: inset 0 0 0 999px rgba(221,137,16,0.35); }
+  to { box-shadow: inset 0 0 0 999px rgba(221,137,16,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-live-dot { animation: none; }
+  .spg-pos-up, .spg-pos-down { animation-duration: 2.5s; }
+  @keyframes spg-up { 0% { background: rgba(31,138,76,0.3); } 100% { background: var(--bg-card-hover); } }
+  @keyframes spg-down { 0% { background: rgba(215,38,61,0.24); } 100% { background: var(--bg-card-hover); } }
+}

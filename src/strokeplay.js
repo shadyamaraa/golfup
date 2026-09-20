@@ -32,7 +32,7 @@ import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
 import { settleMatch, statusText, HALVED, sessionDate, addMinutesHHMM } from './matchplay.js';
 import { GENDERS, isGender } from './gender.js';
-import { cutSet } from './tournament-sheet.js';
+import { cutSet, rankByDivision } from './tournament-sheet.js';
 
 export const SP_HOLES = 18;
 
@@ -490,6 +490,34 @@ export function spTodayRound(tn, active, today = spLocalDate()) {
   if (!spRoundDate(tn, 1)) return r;
   while (r < rounds && spRoundDate(tn, r) < today && spGroupList(tn, r + 1).length) r += 1;
   return r;
+}
+
+// The board as the scorer sees it: every entry ranked the way the
+// leaderboard ranks them — by division where the tournament has them,
+// gross strokes or Stableford points, the cut applied — with the flight's
+// own entries marked, plus an index by pid for the position chips beside
+// the scorer's rows. Gross only: that is what the marker writes and the
+// board's default reading; the viewer's net toggle stays on the board page.
+// A fourball's entries are its teams, so a member has no line of their own.
+export function spLiveStandings(tn, pids = []) {
+  const points = tnScoring(tn) === 'stableford';
+  const entries = spEntries(tn, spMetricFor(tn, 'gross'));
+  const mine = new Set(Array.isArray(pids) ? pids : []);
+  const of = {};
+  const boards = rankByDivision(entries, {
+    cutAfterRound: tn?.cutAfterRound, cutSize: tn?.cutSize, higherWins: tnHigherWins(tn)
+  }).map(b => ({
+    division: b.division,
+    rows: b.entries.map(e => {
+      const row = {
+        pid: e.pid, name: e.name, rank: e.rank, posLabel: e.posLabel, total: e.total,
+        thru: e.thru || '', status: e.status || '', division: b.division, mine: mine.has(e.pid)
+      };
+      of[e.pid] = { rank: e.rank, posLabel: e.posLabel, total: e.total, thru: row.thru, status: row.status, division: b.division, size: b.entries.length };
+      return row;
+    })
+  }));
+  return { points, boards, of };
 }
 
 // The flights as the Match Center reads matches: every drawn flight of
