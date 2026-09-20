@@ -12,7 +12,8 @@ import {
   addMinutesHHMM, cascadeTeeTimes, mpSchedule, sessionDate, rosterPid, mpNextMatch,
   matchOpensAt, matchLocked, teamColorOf, TEAM_COLORS,
   PLAYOFF_HOLES, isPlayoff, matchHoleNo, matchHoleCount, settleMatchOf,
-  mpOutcome, newPlayoffSession, mpTemplate, tnRoster, tnRosterCount
+  mpOutcome, newPlayoffSession, mpTemplate, tnRoster, tnRosterCount,
+  matchAllowance, matchHoleStrokes
 } from '../src/matchplay.js';
 
 // Shorthand: holes('a', 'h', 'b') → {1:'a', 2:'h', 3:'b'}
@@ -882,4 +883,39 @@ test('tnRosterCount counts entries, falling back to a sheet-era entries snapshot
   assert.equal(tnRosterCount({ format: 'stroke', entries: [{ name: 'A' }, { name: 'B' }] }), 2);
   assert.equal(tnRosterCount({ format: 'stroke', sp: { players: { u1: {} } }, entries: [{}, {}, {}] }), 1, 'the roster wins over the snapshot');
   assert.equal(tnRosterCount({ format: 'ryder' }), 0);
+});
+
+// ---- matchAllowance / matchHoleStrokes: a singles match off handicap ----
+
+test('matchAllowance: a singles match gives the higher handicap the difference; teams and blanks give nothing', () => {
+  const mp = { roster: { p1: { name: 'A', hcp: 12 }, p2: { name: 'B', hcp: 18 }, p3: { name: 'C' }, p4: { name: 'D', hcp: 18.4 } } };
+  const m = (a, b) => ({ players: { a, b } });
+  assert.deepEqual(matchAllowance(mp, m(['p1'], ['p2'])), { net: true, a: 0, b: 6, hcp: { a: 12, b: 18 } });
+  assert.equal(matchAllowance(mp, m(['p2'], ['p1'])).a, 6, 'the other way round');
+  assert.deepEqual(matchAllowance(mp, m(['p2'], ['p2'])), { net: true, a: 0, b: 0, hcp: { a: 18, b: 18 } }, 'level');
+  assert.equal(matchAllowance(mp, m(['p1'], ['p4'])).b, 6, 'rounded');
+  assert.deepEqual(matchAllowance(mp, m(['p1'], ['p3'])), { net: false, a: 0, b: 0 }, 'no handicap on one side');
+  assert.deepEqual(matchAllowance(mp, m(['p1', 'p2'], ['p3', 'p4'])), { net: false, a: 0, b: 0 }, 'a team match plays level');
+  assert.deepEqual(matchAllowance(mp, m([], ['p2'])), { net: false, a: 0, b: 0 }, 'a side not picked yet');
+  assert.deepEqual(matchAllowance({}, m(['p1'], ['p2'])), { net: false, a: 0, b: 0 }, 'no roster');
+  assert.deepEqual(matchAllowance(mp, null), { net: false, a: 0, b: 0 });
+});
+
+test('matchHoleStrokes: by stroke index, a playoff hole read through its real number', () => {
+  const sis = { 1: 7, 2: 3, 3: 15, 4: 1, 5: 11 };
+  const mp = { roster: { p1: { hcp: 10 }, p2: { hcp: 14 }, p3: { hcp: 33 } } };
+  const m = { players: { a: ['p1'], b: ['p2'] } };           // b receives 4: on SI 1..4
+  assert.deepEqual(matchHoleStrokes(mp, m, 2, sis), { a: 0, b: 1 });
+  assert.deepEqual(matchHoleStrokes(mp, m, 4, sis), { a: 0, b: 1 });
+  assert.deepEqual(matchHoleStrokes(mp, m, 1, sis), { a: 0, b: 0 }, 'SI 7 is past the allowance');
+  assert.deepEqual(matchHoleStrokes(mp, m, 9, sis), { a: 0, b: 0 }, 'no stroke index for the hole');
+  assert.deepEqual(matchHoleStrokes(mp, m, 2, null), { a: 0, b: 0 }, 'no stroke indexes at all');
+  const big = { players: { a: ['p3'], b: ['p1'] } };          // a receives 23: one everywhere, two on SI 1..5
+  assert.deepEqual(matchHoleStrokes(mp, big, 4, sis), { a: 2, b: 0 });
+  assert.deepEqual(matchHoleStrokes(mp, big, 3, sis), { a: 1, b: 0 });
+  assert.deepEqual(matchHoleStrokes(mp, { players: { a: ['p1'], b: ['p2', 'p3'] } }, 2, sis), { a: 0, b: 0 }, 'a team side: level');
+  // A playoff over 1, 8, 9: its 4th hole is the 1st again.
+  const po = { playoff: true, holeList: [1, 8, 9], totalHoles: 3, players: { a: ['p1'], b: ['p2'] } };
+  assert.deepEqual(matchHoleStrokes(mp, po, 4, { 1: 2, 8: 9, 9: 18 }), { a: 0, b: 1 });
+  assert.deepEqual(matchHoleStrokes(mp, po, 2, { 1: 2, 8: 9, 9: 18 }), { a: 0, b: 0 });
 });

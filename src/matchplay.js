@@ -32,6 +32,8 @@
 // spec suggested null-for-halved, but RTDB deletes null values, so halved
 // needs a real sentinel to be storable at all.
 
+import { strokesReceived } from './handicap.js';
+
 export const TEAM_KEYS = ['a', 'b'];
 export const HALVED = 'h';
 export const DEFAULT_HOLES = 18;
@@ -171,6 +173,36 @@ export function settleMatch(holes, total = DEFAULT_HOLES, { suddenDeath = false 
 // Settle a match by its own rules — its hole count, and sudden death when it
 // is the playoff. Every caller that has the match itself should use this
 // rather than repeating `m.totalHoles || DEFAULT_HOLES`.
+// The strokes a singles match gives: each side one player, both with a
+// handicap on the roster, and the higher-handicap side receives the
+// difference — the WHS singles allowance is all of it — the other side
+// none. A team match, or a handicap missing on either side, gives nothing:
+// the M Cup is played level. Holes are still recorded as won, halved or
+// lost; this only says where a stroke falls, for the marker to weigh.
+export function matchAllowance(mp, match) {
+  const none = { net: false, a: 0, b: 0 };
+  const one = (k) => {
+    const list = (match?.players?.[k] || []).filter(Boolean);
+    if (list.length !== 1) return null;
+    const h = Number(mp?.roster?.[list[0]]?.hcp);
+    return Number.isFinite(h) ? h : null;
+  };
+  const ha = one('a');
+  const hb = one('b');
+  if (ha === null || hb === null) return none;
+  const diff = Math.round(Math.abs(ha - hb));
+  return { net: true, a: ha > hb ? diff : 0, b: hb > ha ? diff : 0, hcp: { a: ha, b: hb } };
+}
+
+// The strokes each side receives on a hole, by the course's stroke index —
+// a playoff's hole read through matchHoleNo. Nothing without stroke indexes.
+export function matchHoleStrokes(mp, match, hole, sis) {
+  const al = matchAllowance(mp, match);
+  if (!al.net) return { a: 0, b: 0 };
+  const si = Number(sis?.[matchHoleNo(match, hole)]) || 0;
+  return { a: strokesReceived(al.a, si), b: strokesReceived(al.b, si) };
+}
+
 export function settleMatchOf(match) {
   return settleMatch(match?.holes, match?.totalHoles || DEFAULT_HOLES,
     { suddenDeath: isPlayoff(match) });

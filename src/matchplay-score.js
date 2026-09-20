@@ -16,8 +16,10 @@ import * as store from './store.js';
 import { t } from './i18n.js';
 import { teamColorOf, matchLocked,
   settleMatchOf, statusText, matchState, holeTimeline, HALVED,
-  holeChangeAction, canResolveHoleChange, isPlayoff, matchHoleNo, matchHoleCount
+  holeChangeAction, canResolveHoleChange, isPlayoff, matchHoleNo, matchHoleCount,
+  matchAllowance, matchHoleStrokes
 } from './matchplay.js';
+import { tnSIs } from './strokeplay.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -87,26 +89,29 @@ function sideLabel(mp, match, k) {
 }
 
 // The three big buttons. Side names are on them, never colour alone (§23).
-function keypadHTML(mp, hole, current, match) {
-  const key = (value, label, color) => `
+// A side receiving a stroke on this hole says so on its button.
+function keypadHTML(mp, hole, current, match, strokes = { a: 0, b: 0 }) {
+  const key = (value, label, color, stroke = 0) => `
     <button data-sc="hole" data-value="${value}"
       style="flex:1;min-width:96px;padding:22px 10px;border-radius:14px;cursor:pointer;
              border:3px solid ${color};background:${current === value ? color : 'transparent'};
              color:${current === value ? '#fff' : 'var(--text-primary)'};
              font-size:1.05rem;font-weight:800;font-family:var(--font);line-height:1.25;">
-      ${esc(label)}${current === value ? '<div style="font-size:0.7rem;font-weight:600;opacity:0.85;">✓</div>' : ''}
+      ${esc(label)}${stroke ? `<div data-sc-stroke style="font-size:0.7rem;font-weight:800;opacity:0.9;">⛳ +${stroke}</div>` : ''}${current === value ? '<div style="font-size:0.7rem;font-weight:600;opacity:0.85;">✓</div>' : ''}
     </button>`;
   return `
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      ${key('a', sideLabel(mp, match, 'a'), teamColor(mp, 'a'))}
+      ${key('a', sideLabel(mp, match, 'a'), teamColor(mp, 'a'), strokes.a)}
       ${key(HALVED, t('mpHalved'), 'var(--text-secondary)')}
-      ${key('b', sideLabel(mp, match, 'b'), teamColor(mp, 'b'))}
+      ${key('b', sideLabel(mp, match, 'b'), teamColor(mp, 'b'), strokes.b)}
     </div>`;
 }
 
 // A compact strip of every hole — the correction affordance (§13): tapping a
 // played hole jumps back to it, and the keypad then edits that hole.
-function stripHTML(match, hole) {
+// `strokeOf(hole)` says whether a stroke falls on that hole: its cell carries
+// a dot beside the number, so the stroke holes read off the strip at once.
+function stripHTML(match, hole, strokeOf = null) {
   const rows = holeTimeline(match);
   const cell = (r) => {
     const on = r.hole === hole;
@@ -116,11 +121,11 @@ function stripHTML(match, hole) {
     const pend = !!match.pending?.[r.hole];
     const mark = pend ? '⏳' : r.result === 'a' ? 'A' : r.result === 'b' ? 'W' : r.result === HALVED ? '–' : '';
     return `
-      <button data-sc="goto" data-hole="${r.hole}"
+      <button data-sc="goto" data-hole="${r.hole}"${strokeOf?.(r.hole) ? ' data-sc-stroke-hole' : ''}
         style="min-width:30px;padding:5px 0;border-radius:6px;cursor:pointer;font-family:var(--font);
                border:${on ? '2px solid var(--text-primary)' : '1px solid var(--border-color)'};
                background:${bg};color:${fg};font-size:0.7rem;font-weight:700;">
-        <div style="font-size:0.58rem;opacity:0.75;">${r.extra ? '+' : ''}${r.no}</div>${mark || '·'}
+        <div style="font-size:0.58rem;opacity:0.75;">${r.extra ? '+' : ''}${r.no}${strokeOf?.(r.hole) ? '•' : ''}</div>${mark || '·'}
       </button>`;
   };
   // Nine to a row as always, but a playoff is three or four cells and should
@@ -217,6 +222,15 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
   const current = match.holes?.[hole] ?? null;
   const session = mp.sessions?.[match.sessionId] || {};
   const lead = settled.leader ? sideLabel(mp, match, settled.leader) : '';
+  // A singles match played off handicap: who receives how many strokes,
+  // and where one falls on the hole on screen.
+  const al = matchAllowance(mp, match);
+  const sis = tnSIs(tn);
+  const strokes = matchHoleStrokes(mp, match, hole, sis);
+  const strokeOf = (h) => { const s = matchHoleStrokes(mp, match, h, sis); return s.a > 0 || s.b > 0; };
+  const receiver = al.net ? (al.a ? 'a' : al.b ? 'b' : null) : null;
+  const strokeLine = (k, n) => esc(t('mpStrokes').replace('{name}', sideLabel(mp, match, k)).replace('{n}', n));
+  const holeSide = strokes.a ? 'a' : strokes.b ? 'b' : null;
 
   return `
     <div class="detail-container${fade ? ' fade-in' : ''}" style="--mp-a:${teamColor(mp, 'a')};--mp-b:${teamColor(mp, 'b')};max-width:560px;">
@@ -237,6 +251,11 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
           ${teamMark(mp, 'b')}
           <b>${esc(playerNames(mp, match, 'b'))}</b>
         </div>
+        ${al.net ? `
+        <div data-sc-allowance style="font-size:0.72rem;color:var(--text-secondary);margin-top:5px;">
+          ${esc(t('mpHcpLine').replace('{a}', al.hcp.a).replace('{b}', al.hcp.b))}${receiver
+            ? ` → <b style="color:${teamColor(mp, receiver)};">${strokeLine(receiver, al[receiver])}</b>` : ''}
+        </div>` : ''}
       </div>
 
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:14px;margin-top:12px;text-align:center;">
@@ -259,11 +278,15 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
           <div style="text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
             ${t('mpHole')} ${matchHoleNo(match, hole)}${current ? ` · ${t('mpEditing')}` : ''}
           </div>
+          ${holeSide ? `
+          <div data-sc-hole-stroke style="text-align:center;font-size:0.78rem;font-weight:800;margin-top:3px;color:${teamColor(mp, holeSide)};">
+            ⛳ ${strokeLine(holeSide, strokes[holeSide])}${sis?.[matchHoleNo(match, hole)] ? ` · SI ${esc(sis[matchHoleNo(match, hole)])}` : ''}
+          </div>` : ''}
           ${playoff && hole > (Number(match.totalHoles) || 0) ? `
           <div style="text-align:center;font-size:0.72rem;color:var(--amber);font-weight:700;margin-top:2px;">
             ${t('mpSuddenDeath')} · ${hole - (Number(match.totalHoles) || 0)}. ${t('mpExtraHole')}
           </div>` : ''}
-          ${keypadHTML(mp, hole, current, match)}
+          ${keypadHTML(mp, hole, current, match, strokes)}
         </div>`}
 
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -280,7 +303,7 @@ function screenHTML(tn, match, demo, user, ticker = '', fade = true) {
           ${t('mpSuspended')}
         </div>` : ''}
 
-      ${stripHTML(match, hole)}
+      ${stripHTML(match, hole, al.net ? strokeOf : null)}
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;text-align:center;">
         A = ${esc(sideLabel(mp, match, 'a'))} · W = ${esc(sideLabel(mp, match, 'b'))} · – = ${t('mpHalved')}
       </div>

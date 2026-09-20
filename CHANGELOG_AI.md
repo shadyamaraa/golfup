@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-09-20 (Match play: a handicap on the roster, and the strokes it gives shown hole by hole)
+
+A singles match play tournament (the President's Cup, two players) had
+nowhere to enter a handicap. The M Cup editor's roster now carries an HCP
+cell per player, seeded from the member's WHS index on the tournament's
+course and tee when the record knows them (`whsHcp`, shared with the
+stroke play roster) and typed over freely; it is saved with the roster.
+`matchAllowance(mp, match)` in `src/matchplay.js` gives the higher
+handicap the difference — the WHS singles allowance — when each side is
+one player with a handicap, and nothing otherwise, so the M Cup's team
+sessions stay level; `matchHoleStrokes` places those strokes by the
+course's stroke index, a playoff hole read through its real number. The
+scorer shows the allowance under the names, says on each hole who
+receives a stroke there (with its SI), badges that side's button and
+dots the stroke holes on the strip; the Match Center card carries the
+allowance beside the tee time. Holes are still recorded as won, halved
+or lost — the marker weighs the stroke. Tests in
+`scripts/test-matchplay.mjs`.
+
 ## 2026-09-20 (Scorers: «✓ Дуусгах» with the round's summary, «Өмнөх / Дараах», and a tournament over when the last card is in)
 
 Three asks from a member. The hole buttons on the flight scorer and the

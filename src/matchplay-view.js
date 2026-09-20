@@ -16,7 +16,7 @@ import {
   settleMatchOf, statusText, matchState, matchPoints, teamTotals, sessionTotals,
   holeTimeline, sortMatchesForDisplay, HALVED, TEAM_KEYS, UNGROUPED,
   playerStats, pairStats, tournamentComplete, tnKind, rosterPid, matchLocked, teamColorOf,
-  isPlayoff, mpOutcome
+  isPlayoff, mpOutcome, matchAllowance
 } from './matchplay.js';
 // The one definition of who may enter a match's scores — the same check the
 // scorer screen enforces, so a button shown here never leads to a dead end.
@@ -195,10 +195,18 @@ function cardHTML(mp, match, state, tnId, viewer, singles) {
       ? `${sideLabel(mp, match, settled.leader, singles)} ${statusText(settled)}`
       : (settled.finished ? t('mpTied') : 'AS');
 
-  // Tee time before the off, THRU once under way (spec §17).
-  const progress = state === 'UPCOMING'
-    ? (match.teeTime ? `${t('mpTee')} ${esc(match.teeTime)}` : '')
-    : (settled.finished ? '' : `${t('mpThru')} ${settled.thru}`);
+  // Tee time before the off, THRU once under way (spec §17) — and, in a
+  // singles match played off handicap, who receives how many strokes.
+  const al = matchAllowance(mp, match);
+  const give = al.net && (al.a || al.b)
+    ? esc(t('mpStrokes').replace('{name}', playerNames(mp, match, al.a ? 'a' : 'b')).replace('{n}', al.a || al.b))
+    : '';
+  const progress = [
+    state === 'UPCOMING'
+      ? (match.teeTime ? `${t('mpTee')} ${esc(match.teeTime)}` : '')
+      : (settled.finished ? '' : `${t('mpThru')} ${settled.thru}`),
+    give
+  ].filter(Boolean).join(' · ');
 
   const sideHTML = (k) => {
     const names = playerNames(mp, match, k);
