@@ -12,7 +12,7 @@ import {
   isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision,
   spFlightGrid, spFollowHole, spTeeOffMs, spLiveStandings
 } from './strokeplay.js';
-import { openLiveBoard, scoreText, scoreClass } from './live-board.js';
+import { openLiveBoard, openRoundSummary, scoreText, scoreClass } from './live-board.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
@@ -174,6 +174,20 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
       title: tnLive.name || '', onClose: () => { sheet = null; }
     });
   };
+  // «Дуусгах»: the card's round summed up, its place beside it, the board a
+  // tap away. Nothing is written.
+  const openSummary = () => {
+    if (!tnLive?.sp?.players?.[pid]) return;
+    const roundCount = Math.max(1, Number(tnLive.rounds) || 1);
+    const round = Math.min(roundCount, viewRound.get(key) || Number(tnLive.currentRound) || 1);
+    const holes = tnLive.sp.scores?.[pid]?.[round] || {};
+    const { gross, holesIn, toPar } = roundGross(holes, tnPars(tnLive));
+    openRoundSummary({
+      tn: tnLive, round, pids: [pid], fullHref: ctx.backHash || `#/tournament/${tnId}`, title: tnLive.name || '',
+      rows: [{ pid, name: tnLive.sp.players[pid]?.name || pid, gross, toPar, holesIn,
+        points: cardPoints(tnLive, holes, tnLive.sp.players[pid]?.hcp) }]
+    });
+  };
 
   const paint = () => {
     // Hole writes are awaited, so a member who scores and immediately leaves
@@ -224,6 +238,8 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
         ${head}
         ${ctx.ticker?.(tn) || ''}
         ${card}
+        ${roundGross(tn.sp?.scores?.[pid]?.[round]).holesIn >= SP_HOLES ? `
+        <button type="button" data-sps-finish class="btn btn-primary" style="display:block;width:100%;margin-top:12px;">✓ ${t('spFinish')}</button>` : ''}
       </div>`;
 
     host.querySelectorAll('button[data-sps-round]').forEach(b => b.onclick = () => {
@@ -231,6 +247,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
       paint();
     });
     host.querySelectorAll('[data-sps-board]').forEach(b => { b.onclick = openSheet; });
+    host.querySelectorAll('[data-sps-finish]').forEach(b => { b.onclick = openSummary; });
 
     host.querySelectorAll('input[data-sps-hole]').forEach(inp => {
       inp.onchange = async () => {
@@ -320,6 +337,22 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       fullHref: ctx.backHash || `#/tournament/${tnId}`,
       title: `${tnLive.name || ''} · R${round}`,
       onClose: () => { sheet = null; }
+    });
+  };
+  // «Дуусгах»: every card of the flight summed up, each with its live place,
+  // the board a tap away. Nothing is written — the cards stay correctable.
+  const openSummary = () => {
+    const grid = tnLive ? spFlightGrid(tnLive, round, gid) : null;
+    if (!grid) return;
+    const pts = tnScoring(tnLive) === 'stableford';
+    const g = tnLive.sp?.groups?.[round]?.[gid];
+    openRoundSummary({
+      tn: tnLive, round, pids: Object.keys(g?.players || {}),
+      fullHref: ctx.backHash || `#/tournament/${tnId}`, title: tnLive.name || '',
+      rows: grid.rows.filter(r => r.kind !== 'pair').map(r => ({
+        pid: r.pid, name: r.name, gross: r.total.gross, toPar: r.total.toPar, holesIn: r.total.holesIn,
+        points: pts ? r.holes.reduce((n, x) => n + (x.points ?? 0), 0) : null
+      }))
     });
   };
 
@@ -450,6 +483,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       patchGrid(host, grid, gridOpts(hole));
       const done = host.querySelector('[data-spg-done]');
       if (done) done.hidden = !grid.complete;
+      const fin = host.querySelector('[data-spgs-finish]');
+      if (fin) fin.hidden = !grid.complete;
       const clock = host.querySelector('[data-spg-clock]');
       if (clock) { const e = elapsedText(); clock.hidden = !e; clock.textContent = e ? `⏱ ${e}` : ''; }
     };
@@ -563,14 +598,15 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <button type="button" data-spgs-board class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;">🏆 ${t('tnLeaderboard')}</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
-            <button data-spgs-nav="-1" class="btn btn-outline btn-sm" style="width:52px;" ${hole <= 1 ? 'disabled' : ''}>‹</button>
+            <button data-spgs-nav="-1" class="btn btn-outline btn-sm" style="min-width:52px;" ${hole <= 1 ? 'disabled' : ''}>‹ ${t('scPrev')}</button>
             <div data-spgs-head style="flex:1;min-width:90px;text-align:center;">
               <b style="font-size:1.3rem;">${hole} / ${SP_HOLES}</b>
               ${pars?.[hole] ? `<div style="font-size:0.72rem;color:var(--text-secondary);">${t('gsPar')} ${pars[hole]}${sis?.[hole] ? ` · SI ${sis[hole]}` : ''}</div>` : ''}
             </div>
-            <button data-spgs-nav="1" class="btn btn-outline btn-sm" style="width:52px;" ${hole >= SP_HOLES ? 'disabled' : ''}>›</button>
+            <button data-spgs-nav="1" class="btn btn-outline btn-sm" style="min-width:52px;" ${hole >= SP_HOLES ? 'disabled' : ''}>${t('scNext')} ›</button>
           </div>
           ${pids.map(row).join('')}
+          <button type="button" data-spgs-finish class="btn btn-primary" style="display:block;width:100%;margin-top:12px;"${gridNow?.complete ? '' : ' hidden'}>✓ ${t('spFinish')}</button>
           ${teamLinesHTML(tn)}
           ${matchLineHTML(tn)}
           ${gridHTML(gridNow, gridOpts(hole))}
@@ -589,6 +625,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
 
     wirePager(host, pageOfHole(hole));
     host.querySelectorAll('[data-spgs-pos], [data-spgs-board]').forEach(b => { b.onclick = openSheet; });
+    host.querySelectorAll('[data-spgs-finish]').forEach(b => { b.onclick = openSummary; });
     patchPositions();
 
     // One tap = one write, updated in place so rapid taps never fight a

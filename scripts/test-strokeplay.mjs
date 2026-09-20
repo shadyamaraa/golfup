@@ -8,7 +8,7 @@ import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
   tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spTodayRound, spLocalDate, spFlightCards,
-  spLiveStandings
+  spLiveStandings, spFieldComplete
 } from '../src/strokeplay.js';
 import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -1150,6 +1150,36 @@ test('spLiveStandings ranks the field as the board does, marks the flight, and i
   const sf = spLiveStandings(fb, ['t1']);
   assert.equal(sf.of.a, undefined);
   assert.deepEqual([sf.of.t1.rank, sf.boards[0].rows[0].mine, sf.boards[0].rows.length], [1, true, 1]);
+});
+
+// ---- spFieldComplete: every standing card in ----
+
+test('spFieldComplete: every standing card in for every round — WD, DQ and the cut left out', () => {
+  const full = () => { const h = {}; for (let i = 1; i <= 18; i++) h[i] = 4; return h; };
+  const part = () => { const h = {}; for (let i = 1; i <= 17; i++) h[i] = 4; return h; };
+  const base = { format: 'stroke', course: 'sky', par: 72, rounds: 1,
+    sp: { players: { a: { name: 'A' }, b: { name: 'B' }, w: { name: 'W', status: 'WD' } }, scores: {} } };
+  const withScores = (scores, extra = {}) => ({ ...base, ...extra, sp: { ...base.sp, scores } });
+  assert.equal(spFieldComplete(withScores({ a: { 1: full() }, b: { 1: full() } })), true);
+  assert.equal(spFieldComplete(withScores({ a: { 1: full() }, b: { 1: part() } })), false, 'one card short');
+  assert.equal(spFieldComplete(withScores({ a: { 1: full() }, b: { 1: full() }, w: { 1: part() } })), true, 'a WD card does not count');
+  assert.equal(spFieldComplete(withScores({})), false, 'nothing scored');
+  assert.equal(spFieldComplete(withScores({ a: { 1: full() } })), false, 'one card never started');
+  // Two rounds: R1 in and R2 not yet is not over; R2 in is.
+  assert.equal(spFieldComplete(withScores({ a: { 1: full() }, b: { 1: full() } }, { rounds: 2 })), false);
+  assert.equal(spFieldComplete(withScores({ a: { 1: full(), 2: full() }, b: { 1: full(), 2: full() } }, { rounds: 2 })), true);
+  // The cut: b missed it and never played R2 — the field is still complete.
+  const cut = withScores({ a: { 1: full(), 2: full() }, b: { 1: { ...full(), 1: 9 } } }, { rounds: 2, cutAfterRound: 1, cutSize: 1 });
+  assert.equal(spFieldComplete(cut), true);
+  // A fourball counts its members' cards.
+  const fb = { format: 'fourball', spTeamSize: 2, course: 'sky', par: 72, rounds: 1, sp: {
+    players: { a: { name: 'A' }, b: { name: 'B' }, t1: { kind: 'team', name: 'AB', members: { a: true, b: true } } },
+    scores: { a: { 1: full() }, b: { 1: part() } } } };
+  assert.equal(spFieldComplete(fb), false);
+  fb.sp.scores.b = { 1: full() };
+  assert.equal(spFieldComplete(fb), true);
+  assert.equal(spFieldComplete({ format: 'match', mp: {} }), false, 'not stroke play');
+  assert.equal(spFieldComplete(null), false);
 });
 
 // ---- spTodayRound: the round whose day it is ----

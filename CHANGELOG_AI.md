@@ -1,5 +1,25 @@
 # CHANGELOG_AI.md
 
+## 2026-09-20 (Scorers: «✓ Дуусгах» with the round's summary, «Өмнөх / Дараах», and a tournament over when the last card is in)
+
+Three asks from a member. The hole buttons on the flight scorer and the
+casual scorer read «‹ Өмнөх» and «Дараах ›» instead of bare arrows. Once
+every card of the flight is in (or the single card is), a «✓ Дуусгах»
+button appears under the rows and opens the round's summary as a sheet
+(`openRoundSummary` in `src/live-board.js`, on the live board's own
+overlay): each card's gross with its to-par — Stableford points where
+the tournament is played that way — and its live place, then «Самбар
+үзэх →» to the board; nothing is written and nothing is locked, the
+cards stay correctable and the WHS posting happens on the 18th hole as
+before. And a tournament is over the moment the last card lands:
+`spFieldComplete(tn)` in `src/strokeplay.js` — every entry still standing
+(WD, DQ and the cut left out) with every round's card complete, a
+fourball through its members' cards — makes `tnStatus` read `final`
+whatever the calendar says, so the header pill, the board's THRU, the
+strip, the browse cards and the admin's folds all turn; a score cleared
+brings it back, and the admin's stored status still wins. Tests in
+`scripts/test-strokeplay.mjs`.
+
 ## 2026-09-20 (Scorers: the live board — a place beside every row, and the leaderboard as a sheet)
 
 The flight scorer and the single card show each player's live place on the

@@ -32,7 +32,7 @@ import { holePoints, roundPoints } from './stableford.js';
 import { strokesReceived } from './handicap.js';
 import { settleMatch, statusText, HALVED, sessionDate, addMinutesHHMM } from './matchplay.js';
 import { GENDERS, isGender } from './gender.js';
-import { cutSet, rankByDivision } from './tournament-sheet.js';
+import { cutSet, rankByDivision, noStanding } from './tournament-sheet.js';
 
 export const SP_HOLES = 18;
 
@@ -518,6 +518,33 @@ export function spLiveStandings(tn, pids = []) {
     })
   }));
   return { points, boards, of };
+}
+
+// Whether the field has finished: every entry still standing — WD, DQ and
+// the cut (once the next round is under way) left out — has every round's
+// card complete, a fourball entry through its members' cards. A tournament
+// nobody has scored in is not finished, and one not scored in the app never
+// is. tnStatus reads this to call a tournament final the moment the last
+// card is in, whatever the calendar says; a score cleared brings it back.
+export function spFieldComplete(tn) {
+  if (!spActive(tn)) return false;
+  const rounds = Math.max(1, Number(tn?.rounds) || 1);
+  const entries = rankByDivision(spEntries(tn, spMetricFor(tn, 'gross')), {
+    cutAfterRound: tn?.cutAfterRound, cutSize: tn?.cutSize, higherWins: tnHigherWins(tn)
+  }).flatMap(b => b.entries).filter(e => !noStanding(e.status));
+  if (!entries.length) return false;
+  let any = false;
+  for (const e of entries) {
+    const cards = tn.format === 'fourball' && e.memberIds ? e.memberIds : [e.pid];
+    for (const pid of cards) {
+      for (let r = 1; r <= rounds; r++) {
+        const n = roundGross(tn.sp?.scores?.[pid]?.[r]).holesIn;
+        if (n > 0) any = true;
+        if (n < SP_HOLES) return false;
+      }
+    }
+  }
+  return any;
 }
 
 // The flights as the Match Center reads matches: every drawn flight of
