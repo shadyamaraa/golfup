@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import {
   COURSES, courseByKey, roundGross, spEntries, spActive, spHasHcp, canScoreSp, SP_HOLES,
   holeDiffClass, spSegment, spPlayerCard, spPlayerStats,
-  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spTodayRound, spLocalDate, spFlightCards
+  tnScoring, tnHigherWins, spMetricFor, spRoundDate, spTeeOffMs, spTodayRound, spLocalDate, spFlightCards,
+  spLiveStandings
 } from '../src/strokeplay.js';
 import { rankEntries, cutSet, winners } from '../src/tournament-sheet.js';
 import { resolveCourse, courseTees, coursePars } from '../src/courses.js';
@@ -1100,6 +1101,55 @@ test('the flight follows its round from its starting hole', () => {
   delete g.startHole;
   tn.sp.scores.u1[1] = {};
   assert.equal(TEAM.spFollowHole(tn, g, pids, 1), 1);
+});
+
+// ---- spLiveStandings: the board as the scorer sees it ----
+
+test('spLiveStandings ranks the field as the board does, marks the flight, and indexes a chip per entry', () => {
+  // A round on sky: fours everywhere, the 1st (a par 5) carrying the rest.
+  const holes = (gross) => { const h = {}; for (let i = 1; i <= 18; i++) h[i] = 4; h[1] = 4 + (gross - 72); return h; };
+  const players = { a: { name: 'A' }, b: { name: 'B' }, c: { name: 'C' }, d: { name: 'D' }, e: { name: 'E', status: 'WD' } };
+  const tn = { format: 'stroke', course: 'sky', par: 72, rounds: 1,
+    sp: { players, scores: { a: { 1: holes(70) }, b: { 1: holes(72) }, c: { 1: holes(72) }, d: { 1: { 1: 5, 2: 5 } } } } };
+  const st = spLiveStandings(tn, ['b', 'd']);
+  assert.equal(st.points, false);
+  assert.equal(st.boards.length, 1);
+  assert.equal(st.boards[0].division, null);
+  assert.deepEqual(st.boards[0].rows.map(r => [r.pid, r.posLabel, r.total, r.thru, r.mine]), [
+    ['a', '1', -2, 'F', false], ['b', 'T2', 0, 'F', true], ['c', 'T2', 0, 'F', false],
+    ['d', '4', 1, '2', true], ['e', 'WD', null, '', false]
+  ]);
+  assert.deepEqual(st.of.a, { rank: 1, posLabel: '1', total: -2, thru: 'F', status: '', division: null, size: 5 });
+  assert.equal(st.of.e.rank, Infinity);
+  assert.equal(st.of.zzz, undefined);
+  assert.deepEqual(spLiveStandings(tn).boards[0].rows.filter(r => r.mine), [], 'no flight given, nothing marked');
+  // Divisions: two boards, each with its own places.
+  const div = { ...tn, spDivisions: 'gender', sp: { ...tn.sp, players: {
+    a: { name: 'A', division: 'male' }, b: { name: 'B', division: 'male' },
+    c: { name: 'C', division: 'female' }, d: { name: 'D', division: 'female' }, e: { name: 'E', status: 'WD', division: 'male' } } } };
+  const sd = spLiveStandings(div, ['c']);
+  assert.deepEqual(sd.boards.map(b => [b.division, b.rows.map(r => r.pid + ':' + r.posLabel)]), [
+    ['male', ['a:1', 'b:2', 'e:WD']], ['female', ['c:1', 'd:2']]
+  ]);
+  assert.deepEqual([sd.of.c.division, sd.of.c.size, sd.of.c.rank, sd.boards[1].rows[0].mine], ['female', 2, 1, true]);
+  // Stableford: points, the higher the better.
+  const stb = spLiveStandings({ ...tn, spScoring: 'stableford', sp: { ...tn.sp, players: { a: { name: 'A', hcp: 0 }, b: { name: 'B', hcp: 0 } } } });
+  assert.equal(stb.points, true);
+  assert.ok(stb.boards[0].rows[0].total > stb.boards[0].rows[1].total);
+  assert.equal(stb.boards[0].rows[0].pid, 'a');
+  // The cut, once the next round is under way: the cut player has no place.
+  const cut = { ...tn, rounds: 2, cutAfterRound: 1, cutSize: 2,
+    sp: { ...tn.sp, scores: { ...tn.sp.scores, a: { 1: holes(70), 2: { 1: 4 } } } } };
+  const sc = spLiveStandings(cut, ['d']);
+  assert.deepEqual([sc.of.d.status, sc.of.d.posLabel, sc.of.d.rank], ['CUT', 'CUT', Infinity]);
+  assert.equal(sc.of.b.posLabel, 'T2', 'a tie at the edge is kept');
+  // A fourball: the teams are the entries, a member has no line of their own.
+  const fb = { format: 'fourball', spTeamSize: 2, course: 'sky', par: 72, rounds: 1, sp: {
+    players: { a: { name: 'A' }, b: { name: 'B' }, t1: { kind: 'team', name: 'AB', members: { a: true, b: true } } },
+    scores: { a: { 1: holes(74) }, b: { 1: holes(71) } } } };
+  const sf = spLiveStandings(fb, ['t1']);
+  assert.equal(sf.of.a, undefined);
+  assert.deepEqual([sf.of.t1.rank, sf.boards[0].rows[0].mine, sf.boards[0].rows.length], [1, true, 1]);
 });
 
 // ---- spTodayRound: the round whose day it is ----

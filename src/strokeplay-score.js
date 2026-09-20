@@ -10,8 +10,9 @@ import { t } from './i18n.js';
 import {
   SP_HOLES, roundGross, canScoreSp, tnPars, tnSIs, tnScoring, tnOneBall, tnTeamRank,
   isTeamEntry, teamMemberIds, spFlightMatch, fourballRound, tnTeeFor, entryDivision,
-  spFlightGrid, spFollowHole, spTeeOffMs
+  spFlightGrid, spFollowHole, spTeeOffMs, spLiveStandings
 } from './strokeplay.js';
+import { openLiveBoard, scoreText, scoreClass } from './live-board.js';
 import { roundPoints } from './stableford.js';
 import { roundFromTournament, handicapIndex } from './handicap.js';
 import { fmtToPar } from './game-score.js';
@@ -164,6 +165,15 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
   // rebuilding this screen for those re-ran the fade-in animation, which reads
   // as the page jumping while somebody is entering their score.
   let lastBody = null;
+  // The live board as a sheet over the card; it goes with the screen.
+  let sheet = null;
+  const openSheet = () => {
+    if (sheet || !tnLive) return;
+    sheet = openLiveBoard({
+      tn: tnLive, pids: [pid], fullHref: ctx.backHash || `#/tournament/${tnId}`,
+      title: tnLive.name || '', onClose: () => { sheet = null; }
+    });
+  };
 
   const paint = () => {
     // Hole writes are awaited, so a member who scores and immediately leaves
@@ -175,6 +185,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
       host.innerHTML = `<div class="empty-state" style="padding:30px 20px;"><p>${t('spNoPlayers')}</p></div>`;
       return;
     }
+    sheet?.update(tn);
     // A remote update mid-typing must not eat the keystrokes; the next
     // commit repaints anyway.
     if (host.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT') return;
@@ -185,9 +196,21 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
     // Flight-mates may edit each other's cards for the round they share.
     const editable = canScoreSp(ctx.user, pid, tn.sp.players, round);
 
+    // The player's live position beside the title, and the way to the board.
+    const st = spLiveStandings(tn, [pid]);
+    const pos = st.of[pid];
+    const chip = pos && pos.rank !== Infinity ? `
+          <button type="button" data-sps-board class="spg-pos${pos.rank <= 3 ? ' spg-top' : ''}">
+            <b>${pos.rank === 1 ? '🏆 ' : ''}${esc(pos.posLabel)}</b>
+            <span class="tn-sc ${scoreClass(pos.total, st.points)}">${scoreText(pos.total, st.points)}</span>
+          </button>` : '';
     const head = `
         <a href="${ctx.backHash || `#/tournament/${esc(tnId)}`}" class="back-link">← ${t('back')}</a>
-        <h2 class="detail-title" style="margin:8px 0 10px;">${t('spCardOf')}</h2>`;
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 10px;flex-wrap:wrap;">
+          <h2 class="detail-title" style="margin:0;flex:1;min-width:0;">${t('spCardOf')}</h2>
+          ${chip}
+          <button type="button" data-sps-board class="btn btn-outline btn-sm" style="flex:0 0 auto;">🏆 ${t('tnLeaderboard')}</button>
+        </div>`;
     const card = cardHTML(tn, pid, round, editable);
     // Nothing this card shows has changed: refresh the leaderboard strip in
     // place and leave the rest of the DOM — and the caret — alone.
@@ -207,6 +230,7 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
       viewRound.set(key, Number(b.dataset.spsRound));
       paint();
     });
+    host.querySelectorAll('[data-sps-board]').forEach(b => { b.onclick = openSheet; });
 
     host.querySelectorAll('input[data-sps-hole]').forEach(inp => {
       inp.onchange = async () => {
@@ -254,7 +278,8 @@ export function renderSpScorer(host, tnId, pid, ctx = {}) {
   });
   // No live store (local mode): render once from what the caller loaded.
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
-  return off || (() => { });
+  const stop = off || (() => { });
+  return () => { sheet?.close(); stop(); };
 }
 
 // ---- Group card (one flight, hole by hole) ----
@@ -283,6 +308,20 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
   // structure holds, a paint patches the rows that changed instead.
   let paintedKey = null;
   let inPlace = null;
+  // The live board as a sheet over the card, and each row's last known
+  // position — what the chip's ▲/▼ measures a new score against.
+  let sheet = null;
+  const prevRank = new Map();
+  const openSheet = () => {
+    if (sheet || !tnLive) return;
+    const g = tnLive.sp?.groups?.[round]?.[gid];
+    sheet = openLiveBoard({
+      tn: tnLive, pids: Object.keys(g?.players || {}),
+      fullHref: ctx.backHash || `#/tournament/${tnId}`,
+      title: `${tnLive.name || ''} · R${round}`,
+      onClose: () => { sheet = null; }
+    });
+  };
 
   // The first hole any of the flight still has empty, scanning from the
   // flight's starting hole (spFollowHole). Recomputed on every paint while
@@ -373,6 +412,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             <span data-spgs-total="${esc(pid)}" style="font-size:0.74rem;color:var(--text-secondary);">
               ${tallyText(holes, pid)}
             </span>
+            <button type="button" data-spgs-pos="${esc(pid)}" class="spg-pos" hidden></button>
           </span>
           ${canEdit ? stepBtn('minus', pid, '−', strokes === null) : ''}
           <div data-spgs-val="${esc(pid)}" style="width:44px;text-align:center;font-size:1.5rem;font-weight:800;color:${strokeColor(strokes, pars?.[hole] || null)};">
@@ -412,6 +452,36 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       if (done) done.hidden = !grid.complete;
       const clock = host.querySelector('[data-spg-clock]');
       if (clock) { const e = elapsedText(); clock.hidden = !e; clock.textContent = e ? `⏱ ${e}` : ''; }
+    };
+    // Every row's live position, refilled in place from one ranking of the
+    // whole field: a score on this screen or anywhere else moves the flight
+    // as the board would, and a row whose place changed says by how much —
+    // ▲2 in green, ▼1 in red — for a few seconds. A row with no line of its
+    // own on the board (a fourball's member) shows nothing. The open sheet
+    // gets the same change.
+    const patchPositions = () => {
+      const st = spLiveStandings(tnLive, flightPids);
+      pids.forEach(pid => {
+        const el = host.querySelector(`[data-spgs-pos="${CSS.escape(pid)}"]`);
+        if (!el) return;
+        const p = st.of[pid];
+        if (!p || p.rank === Infinity) { el.hidden = true; prevRank.delete(pid); return; }
+        el.hidden = false;
+        el.className = `spg-pos${p.rank <= 3 ? ' spg-top' : ''}`;
+        el.innerHTML = `<b>${p.rank === 1 ? '🏆 ' : ''}${esc(p.posLabel)}</b>`
+          + `<span class="tn-sc ${scoreClass(p.total, st.points)}">${scoreText(p.total, st.points)}</span>`;
+        const was = prevRank.get(pid);
+        prevRank.set(pid, p.rank);
+        if (was === undefined || was === p.rank) return;
+        const up = p.rank < was;
+        el.dataset.delta = `${up ? '▲' : '▼'}${Math.abs(was - p.rank)}`;
+        el.classList.add(up ? 'spg-pos-up' : 'spg-pos-down');
+        el.addEventListener('animationend', () => {
+          el.classList.remove('spg-pos-up', 'spg-pos-down');
+          delete el.dataset.delta;
+        }, { once: true });
+      });
+      sheet?.update(tnLive);
     };
     // Time since the flight teed off — the pace-of-play glance a tour card
     // carries. The tee-off instant is the tournament's start date, one day
@@ -490,7 +560,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
             ${g.startHole ? `<span class="pill-soft" style="font-size:0.7rem;">${t('spStartHole')} ${esc(g.startHole)}</span>` : ''}
             <span class="pill-soft" data-spg-clock style="font-size:0.7rem;"${elapsedText() ? '' : ' hidden'}>${elapsedText() ? `⏱ ${elapsedText()}` : ''}</span>
             <span class="pill-soft" data-spg-done style="font-size:0.7rem;background:var(--gold);color:#0C3051;"${gridNow?.complete ? '' : ' hidden'}>${t('spRoundComplete')}</span>
-            <span style="margin-left:auto;font-size:0.74rem;color:var(--text-secondary);">${esc(tn.name || '')}</span>
+            <button type="button" data-spgs-board class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.72rem;">🏆 ${t('tnLeaderboard')}</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
             <button data-spgs-nav="-1" class="btn btn-outline btn-sm" style="width:52px;" ${hole <= 1 ? 'disabled' : ''}>‹</button>
@@ -518,6 +588,8 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     });
 
     wirePager(host, pageOfHole(hole));
+    host.querySelectorAll('[data-spgs-pos], [data-spgs-board]').forEach(b => { b.onclick = openSheet; });
+    patchPositions();
 
     // One tap = one write, updated in place so rapid taps never fight a
     // repaint. The tap also pins the hole: the last player's seeded score
@@ -579,7 +651,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
         // The write is awaited, so this may resume on another screen. Skip the
         // DOM touch-up then — but still post the round: a round completed on
         // this very tap must reach the member's handicap either way.
-        if (ctx.alive?.() !== false) { updateRow(pid); patchTnGrid(); }
+        if (ctx.alive?.() !== false) { updateRow(pid); patchTnGrid(); patchPositions(); }
         if (saved) finalizeSpRoundIfComplete(tnLive, tnId, pid, round);
       }
     });
@@ -593,6 +665,7 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
       if (ctx.tickerPatch && !ctx.tickerPatch(host, tnLive)) return false;
       pids.forEach(updateRow);
       patchTnGrid();
+      patchPositions();
       return true;
     };
   };
@@ -605,5 +678,6 @@ export function renderSpGroupScorer(host, tnId, round, gid, ctx = {}) {
     paint();
   });
   if (!off && ctx.tn) { tnLive = ctx.tn; paint(); }
-  return off || (() => { });
+  const stop = off || (() => { });
+  return () => { sheet?.close(); stop(); };
 }

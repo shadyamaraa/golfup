@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-09-20 (Scorers: the live board — a place beside every row, and the leaderboard as a sheet)
+
+The flight scorer and the single card show each player's live place on the
+board beside their row — «T5 · +3», the top three in gold, 🏆 for the
+leader — refilled in place from one ranking of the whole field on every
+score, this screen's or anyone's; a place that just changed pulses green
+or red with its ▲2 / ▼1 for a few seconds, so a marker sees what a stroke
+did the moment it is entered. The chip, and a «🏆 Тэргүүлэгчид» button on
+both scorers, open the leaderboard as a sheet over the card
+(`src/live-board.js`): every division with its own positions, the
+flight's rows marked «⛳ Энэ флайт» and scrolled into view, a live dot,
+and «Бүтэн самбар →» to the board page. The sheet stays live while open:
+rows slide to their new places (measure, repaint, invert, play) and flash
+when their line changed. `spLiveStandings(tn, pids)` in
+`src/strokeplay.js` is the one model — gross strokes or Stableford
+points, the cut applied, a fourball's teams as the entries — so the chips,
+the sheet and the board page cannot disagree. Tests in
+`scripts/test-strokeplay.mjs`.
+
 ## 2026-09-19 (Tournament page and home card: the round whose day it is)
 
 The schedule tab's default round, the «Оноо оруулах» shortcut and the
