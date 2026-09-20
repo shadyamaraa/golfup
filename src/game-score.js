@@ -858,11 +858,11 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
       </div>
 
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
-        <button data-gs="prev" ${hole <= 1 ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">‹</button>
+        <button data-gs="prev" ${hole <= 1 ? 'disabled' : ''} class="btn btn-outline btn-sm" style="min-width:52px;">‹ ${t('scPrev')}</button>
         <div id="gs-hole-label" style="flex:1;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
           ${holeHeaderHTML(game, hole, holeCount)}
         </div>
-        <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="width:52px;">›</button>
+        <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="min-width:52px;">${t('scNext')} ›</button>
       </div>
 
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:4px 14px;margin-top:10px;">

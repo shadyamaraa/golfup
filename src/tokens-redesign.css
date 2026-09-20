@@ -1533,3 +1533,9 @@ html:not([data-theme="dark"]) .golf-ball {
   @keyframes spg-up { 0% { background: rgba(31,138,76,0.3); } 100% { background: var(--bg-card-hover); } }
   @keyframes spg-down { 0% { background: rgba(215,38,61,0.24); } 100% { background: var(--bg-card-hover); } }
 }
+/* The round summary: name · score · place, and the two ways out. */
+.lb-sum { grid-template-columns: minmax(0, 1fr) auto auto; }
+.lb-summary .lb-row:first-child { border-top: 0; }
+.lb-sum .tn-c-tot small { font-size: 0.78rem; font-weight: 800; margin-left: 2px; }
+.lb-actions { display: flex; gap: 8px; margin-top: 14px; }
+.lb-actions .btn { flex: 1; justify-content: center; }

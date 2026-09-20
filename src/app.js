@@ -10,7 +10,7 @@ import { tnWriteError, tnAccessBannerHTML } from './tn-errors.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs, spTodayRound } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs, spTodayRound, spFieldComplete } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide, mountSponsorCarousel
@@ -1474,6 +1474,10 @@ function tnStatus(tn) {
   if (start === null) return 'upcoming';
   const now = Date.now();
   if (now < start) return 'upcoming';
+  // Every card in: the tournament is over the moment the last score lands,
+  // whatever the calendar says — and a score cleared brings it back. The
+  // admin's stored status, above, still wins either way.
+  if (spActive(tn) && spFieldComplete(tn)) return 'final';
   const end = tnDayMs(tn?.endDate || tn?.startDate);
   if (end !== null && now >= end + 86400000) return 'final';
   return 'live';

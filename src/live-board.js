@@ -14,6 +14,12 @@
 //     title     the line under the heading (tournament · round)
 //     onClose   told when the sheet is dismissed
 //   → { update(tn), close } — or null when a sheet is already open.
+//
+// The same sheet carries the round's summary the «Дуусгах» button opens:
+//   openRoundSummary({ tn, round, rows, pids, fullHref, title, onClose })
+//     rows  [{ pid, name, gross, toPar, holesIn, points }] — each card's
+//           score; the live place beside it is read off the board.
+//   → { close } — or null.
 
 import { t } from './i18n.js';
 import { spLiveStandings } from './strokeplay.js';
@@ -43,6 +49,13 @@ export function scoreClass(v, points = false) {
 const thruText = (r) => (/^(WD|DQ|CUT)$/i.test(r.status) ? String(r.status).toUpperCase() : (r.thru || '–'));
 const divisionLabel = (d) => (d === 'female' ? t('genderFemale') : t('genderMale'));
 
+// The place chip as the scorer's rows wear it.
+const placeChipHTML = (p, points) => (p && p.rank !== Infinity ? `
+  <span class="spg-pos${p.rank <= 3 ? ' spg-top' : ''}" style="margin:0;">
+    <b>${p.rank === 1 ? '🏆 ' : ''}${esc(p.posLabel)}</b>
+    <span class="tn-sc ${scoreClass(p.total, points)}">${scoreText(p.total, points)}</span>
+  </span>` : '');
+
 // A row carries a signature of what it shows, so a repaint can tell a row
 // that changed (it flashes) from one that only moved.
 const rowHTML = (r, points) => `
@@ -68,26 +81,16 @@ export function listHTML({ points, boards }) {
     ${b.rows.map(r => rowHTML(r, points)).join('')}`).join('');
 }
 
-export function openLiveBoard({ tn, pids = [], fullHref = '', title = '', onClose = null } = {}) {
+// One sheet at a time, in the share sheet's clothes: a backdrop tap, ✕ or
+// Escape closes it; a link marked data-lb="full" navigates and closes, so
+// the sheet never lingers over the page it opened.
+function sheetOverlay(inner, { onClose = null } = {}) {
   if (document.querySelector('.modal-overlay[data-lb]')) return null;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay shs-overlay fade-in';
   overlay.setAttribute('data-lb', '1');
-  overlay.innerHTML = `
-    <div class="shs-sheet lb-sheet" role="dialog" aria-label="${esc(t('tnLeaderboard'))}">
-      <div class="shs-head">
-        <span class="lb-live"><span class="lb-live-dot"></span>LIVE</span>
-        <h3>🏆 ${esc(t('tnLeaderboard'))}</h3>
-        <button type="button" class="btn btn-outline btn-sm" data-lb="close" aria-label="${esc(t('close'))}">✕</button>
-      </div>
-      ${title ? `<div class="lb-sub">${esc(title)}</div>` : ''}
-      <div data-lb="list"></div>
-      <a href="${esc(fullHref)}" class="btn btn-primary btn-sm lb-full" data-lb="full">${esc(t('spFullBoard'))} →</a>
-    </div>`;
+  overlay.innerHTML = `<div class="shs-sheet lb-sheet" role="dialog">${inner}</div>`;
   document.body.appendChild(overlay);
-  const sheet = overlay.querySelector('.lb-sheet');
-  const list = overlay.querySelector('[data-lb="list"]');
-
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   const close = () => {
     if (!overlay.isConnected) return;
@@ -96,10 +99,27 @@ export function openLiveBoard({ tn, pids = [], fullHref = '', title = '', onClos
     onClose?.();
   };
   document.addEventListener('keydown', onKey);
-  overlay.querySelector('[data-lb="close"]').onclick = close;
+  overlay.querySelectorAll('[data-lb="close"]').forEach(b => { b.onclick = close; });
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  // The link navigates; the sheet must not linger over the page it opens.
-  overlay.querySelector('[data-lb="full"]').addEventListener('click', () => setTimeout(close, 0));
+  overlay.querySelectorAll('[data-lb="full"]').forEach(a => a.addEventListener('click', () => setTimeout(close, 0)));
+  return { overlay, sheet: overlay.querySelector('.lb-sheet'), close };
+}
+
+const headHTML = (title, sub) => `
+  <div class="shs-head">
+    ${title}
+    <button type="button" class="btn btn-outline btn-sm" data-lb="close" aria-label="${esc(t('close'))}">✕</button>
+  </div>
+  ${sub ? `<div class="lb-sub">${esc(sub)}</div>` : ''}`;
+
+export function openLiveBoard({ tn, pids = [], fullHref = '', title = '', onClose = null } = {}) {
+  const box = sheetOverlay(`
+    ${headHTML(`<span class="lb-live"><span class="lb-live-dot"></span>LIVE</span><h3>🏆 ${esc(t('tnLeaderboard'))}</h3>`, title)}
+    <div data-lb="list"></div>
+    <a href="${esc(fullHref)}" class="btn btn-primary btn-sm lb-full" data-lb="full">${esc(t('spFullBoard'))} →</a>`, { onClose });
+  if (!box) return null;
+  const { overlay, sheet, close } = box;
+  const list = overlay.querySelector('[data-lb="list"]');
 
   const update = (live) => {
     if (!overlay.isConnected) return;
@@ -142,4 +162,32 @@ export function openLiveBoard({ tn, pids = [], fullHref = '', title = '', onClos
     sheet.scrollTop += r.top - s.top - (s.height - r.height) / 2;
   }
   return { update, close };
+}
+
+// The round's summary the «Дуусгах» button opens once every card of the
+// flight is in: each card's score — gross with its to-par, or Stableford
+// points — and its live place on the board, then the way to the board.
+// Nothing is written and nothing is locked; the sheet is the full stop a
+// marker was missing after the 18th hole.
+export function openRoundSummary({ tn, round, rows = [], pids = [], fullHref = '', title = '', onClose = null } = {}) {
+  const st = spLiveStandings(tn, pids);
+  const row = (r) => {
+    const score = st.points && r.points !== null && r.points !== undefined
+      ? `<b>${esc(r.points)}</b> <small>${esc(t('spPoints'))}</small>`
+      : `<b>${esc(r.gross)}</b>${r.toPar === null || r.toPar === undefined ? '' : ` <small class="${scoreClass(r.toPar)}">${scoreText(r.toPar)}</small>`}`;
+    return `
+      <div class="lb-row lb-sum">
+        <span class="tn-c-name"><span class="tn-n">${esc(r.name)}</span></span>
+        <span class="tn-c-tot">${score}</span>
+        <span>${placeChipHTML(st.of[r.pid], st.points)}</span>
+      </div>`;
+  };
+  const box = sheetOverlay(`
+    ${headHTML(`<h3>✓ ${esc(t('spRoundComplete'))}</h3>`, [title, `R${round}`].filter(Boolean).join(' · '))}
+    <div class="lb-summary">${rows.map(row).join('')}</div>
+    <div class="lb-actions">
+      <a href="${esc(fullHref)}" class="btn btn-primary" data-lb="full">${esc(t('spSeeBoard'))} →</a>
+      <button type="button" class="btn btn-outline" data-lb="close">${esc(t('close'))}</button>
+    </div>`, { onClose });
+  return box ? { close: box.close } : null;
 }
