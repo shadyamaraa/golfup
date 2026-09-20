@@ -18,6 +18,7 @@
 
 import * as store from './store.js';
 import { rosterHTML, wireRoster } from './roster-admin.js';
+import { whsHcp } from './strokeplay-admin.js';
 import { t } from './i18n.js';
 import { tnWriteError } from './tn-errors.js';
 import { wireNamePicker } from './name-picker.js';
@@ -167,6 +168,14 @@ function rosterOpts(tn) {
     manual: false,
     teams: singles ? null : TEAM_KEYS.map(k => ({ id: k, label: short(k) })),
     teamPick: { get: () => teamPickFor.get(tn.id) || 'a', set: (v) => teamPickFor.set(tn.id, v) },
+    // A singles match gives strokes by handicap, so the roster carries one
+    // per player — seeded from the member's WHS index on this course when
+    // the record knows its tee, typed over freely.
+    cellsHTML: (pid, p) => `
+      <input data-mpr="hcp" data-pid="${esc(pid)}" type="number" step="1" min="0" max="54"
+        value="${esc(p.hcp ?? '')}" placeholder="${t('spHcp')}" title="${t('spHcp')}"
+        style="padding:8px;border-radius:7px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-family:var(--font);font-size:0.85rem;width:74px;" />`,
+    enrich: (u) => { const hcp = whsHcp(u, tn, null); return hcp !== null ? { hcp } : {}; },
     emptyText: '—'
   };
 }
@@ -795,6 +804,18 @@ function wire(host, tn, ctx) {
     },
     repaint: () => paint(host, tn, ctx),
     markDirty: () => dirty(draftFor(tn))
+  });
+  // The handicap cell writes straight to the entry: no repaint, no lost focus.
+  host.querySelectorAll('input[data-mpr="hcp"]').forEach(inp => {
+    inp.onchange = () => {
+      const d = draftFor(tn);
+      const p = d.mp.roster[inp.dataset.pid];
+      if (!p) return;
+      const n = Number(inp.value);
+      if (inp.value.trim() === '' || !Number.isFinite(n)) delete p.hcp;
+      else p.hcp = Math.max(0, Math.min(54, Math.round(n)));
+      dirty(d);
+    };
   });
   host.querySelectorAll('input[data-mp], select[data-mp], textarea[data-mp]').forEach(el => {
     // Rosters and player picks reshape the section, so they repaint; plain
