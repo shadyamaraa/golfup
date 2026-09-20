@@ -432,7 +432,7 @@ function sectionHTML(tn, users) {
       <h4 style="margin:0 0 8px;">${t('mpSetup')}</h4>
       ${body}
       <button data-mp="save" class="btn ${dirty ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-top:12px;">
-        ${t('mpSave')}${dirty ? ' *' : ''}
+        ${t('save')}${dirty ? ' *' : ''}
       </button>
     </div>`;
 }

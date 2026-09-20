@@ -1,5 +1,12 @@
 # CHANGELOG_AI.md
 
+## 2026-09-20 (M Cup editor: the save button reads «Хадгалах» too)
+
+The match play editor's save button still read «Match play хадгалах» /
+«Save match play setup» after the stroke play and media editors went to
+the plain `save` key on 09-19; it now uses the same key, and the
+`mpSave` label, used nowhere else, is gone from `src/i18n.js`.
+
 ## 2026-09-20 (Match play: a handicap on the roster, and the strokes it gives shown hole by hole)
 
 A singles match play tournament (the President's Cup, two players) had
