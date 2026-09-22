@@ -8,7 +8,7 @@ import {
   FORMATS, TEAM_FORMATS, gameFormat, isStrokeFormat, isTeamFormat, isOneBallFormat,
   pairKey, pairingOptions, groupOrder, groupPairs, groupTeams, teamContests,
   nextPairing, pairAllowance, groupAllowance, teamHcp, teamAllowance,
-  netStrokes, allowanceTotal, teamStrokesOf, teamBallLine, gameHasAnyScore,
+  netStrokes, allowanceTotal, teamStrokesOf, teamBallLine, gameHasAnyScore, gameUntouched,
   matchHoles, matchResult, groupMatches, groupTeamMatches, skinsResult, stablefordResult
 } from '../src/game-formats.js';
 import { HALVED } from '../src/matchplay.js';
@@ -663,6 +663,25 @@ test('gameHasAnyScore sees a team ball as well as a player card', () => {
   assert.equal(gameHasAnyScore(withTeamScores(G(), { [TA]: { 1: 0 } })), false);
   assert.equal(gameHasAnyScore(withScores(G(), { p1: {} })), false);
   assert.equal(gameHasAnyScore(null), false);
+});
+
+test('gameUntouched: nothing entered at all — a conceded hole counts as played', () => {
+  assert.equal(gameUntouched(G()), true);
+  assert.equal(gameUntouched(null), true, 'no game is nothing to keep');
+  assert.equal(gameUntouched(withScores(G(), { p1: { 1: 4 } })), false);
+  assert.equal(gameUntouched(withTeamScores(G(), { [TA]: { 1: 4 } })), false);
+  // Cleared holes and an empty card are still untouched.
+  assert.equal(gameUntouched(withScores(G(), { p1: {} })), true);
+  assert.equal(gameUntouched(withTeamScores(G(), { [TA]: { 1: 0 } })), true);
+  // A hole set by hand is a record of play even with no strokes behind it —
+  // what gameHasAnyScore alone does not see.
+  const conceded = { ...G(), holeOverrides: { [TA]: { 3: 'p1' } } };
+  assert.equal(gameHasAnyScore(conceded), false);
+  assert.equal(gameUntouched(conceded), false);
+  assert.equal(gameUntouched({ ...G(), holeOverrides: { [TA]: {} } }), true);
+  assert.equal(gameUntouched({ ...G(), holeOverrides: { [TA]: { 3: null } } }), true);
+  // A handicap typed for a player is not a score.
+  assert.equal(gameUntouched({ ...G(), hcp: { p1: 12 } }), true);
 });
 
 // ---- The group's card: gameGroupGrid ----

@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-09-22 (Casual games: an admin can close or delete a past game nobody scored)
+
+A game whose tee time has gone by was frozen for everyone — the delete
+button was hidden and `handleDelete` refused — so a game that never
+happened sat in the list until the archive swallowed it. An admin now
+gets two buttons on such a game, on the game page and on every row of
+the admin panel's game list: «🏁 Хаах», which stamps the same
+`finishedAt` the scorer's 🏁 does (the scorer can still reopen it), and
+«Устгах», the existing soft delete, restorable from the admin panel.
+Both appear only where nothing at all was entered: `gameUntouched(game)`
+in `src/game-formats.js` reads no strokes, no team ball and no hole set
+by hand, so a game with a single hole in it stays frozen for the admin
+too, and the creator's own past games are unchanged. The confirms say
+what happens and that it can be undone. Tests in
+`scripts/test-game-formats.mjs`.
+
 ## 2026-09-20 (M Cup editor: the save button reads «Хадгалах» too)
 
 The match play editor's save button still read «Match play хадгалах» /

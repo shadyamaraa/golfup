@@ -21,7 +21,7 @@ import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import {
   gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult,
-  isTeamFormat, groupTeamMatches, gameHasAnyScore
+  isTeamFormat, groupTeamMatches, gameHasAnyScore, gameUntouched
 } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
@@ -4367,6 +4367,12 @@ function renderGameView(game) {
   // A locked game the group is still playing is not a past game, and the
   // notice under the header must not call it one.
   const isLiveNow = isGameLive(game, now);
+  // An admin tidying up after the fact: a game whose tee time has gone by
+  // with not one hole entered never happened, so it can be closed out (🏁)
+  // or removed. A game with a score in it is somebody's round and stays —
+  // for everyone, the creator included.
+  const isAdmin = currentUser?.role === 'admin';
+  const adminTidy = isAdmin && isPast && gameUntouched(game);
 
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
@@ -4389,7 +4395,8 @@ function renderGameView(game) {
           <span class="game-date-badge large">${dateStr}</span>
           <div style="display:flex; gap: 8px;">
             ${!isReadOnly && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<a href="#/edit/${game.id}" class="btn btn-outline btn-sm" style="gap:5px;">${icon('edit', { size: 14 })} Edit</a>` : ''}
-            ${!isPast && (isCreator || (currentUser && currentUser.role === 'admin')) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
+            ${adminTidy && !isGameFinished(game) ? `<button class="btn btn-outline btn-sm" id="close-game-btn" style="gap:5px;">🏁 ${t('gameClose')}</button>` : ''}
+            ${(!isPast || adminTidy) && (isCreator || isAdmin) ? `<button class="btn btn-danger btn-sm" id="delete-game-btn">${t('delete')}</button>` : ''}
           </div>
         </div>
         <h2 class="detail-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${icon('location', { size: 19 })} ${esc(game.location)} ${game.isPrivate ? '<span style="opacity:0.7;" title="' + t('gamePrivate') + '">' + icon('lock', { size: 15 }) + '</span>' : ''} ${gameCommunities.length > 0 ? '<span class="pill-soft">' + esc(communityAudienceLabel(gameCommunities)) + '</span>' : ''} ${gameFormat(game) !== 'stroke' ? '<span class="pill-soft">' + t(FORMAT_LABEL_KEY[gameFormat(game)]) + '</span>' : ''}</h2>
@@ -4553,6 +4560,7 @@ function renderGameView(game) {
   });
   document.getElementById('leave-btn')?.addEventListener('click', () => handleLeave(game));
   document.getElementById('delete-game-btn')?.addEventListener('click', () => handleDelete(game));
+  document.getElementById('close-game-btn')?.addEventListener('click', () => handleCloseGame(game));
   document.getElementById('share-viber-btn')?.addEventListener('click', () => shareViber(game));
   // The result board's own share: the picture, the story, the text — once
   // anyone has scored. The Viber button above stays the invitation.
@@ -5117,13 +5125,32 @@ async function handleLeave(game) {
   showToast('👋 ' + t('leave'), 'info');
 }
 
+// A game nobody played, closed out by an admin: the 🏁 the scorer would
+// have pressed. Nothing is deleted and the scorer can still reopen it, so
+// this is only the tidy-up that takes it out of the active feed.
+async function handleCloseGame(game) {
+  if (!confirm(t('confirmCloseGame'))) return;
+  try {
+    await store.saveGameFinished(game.id, true);
+  } catch (err) {
+    showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error');
+    return;
+  }
+  game.finishedAt = Date.now();
+  renderGameView(game);
+  showToast('🏁 ' + t('gameClosed'), 'success');
+}
+
 async function handleDelete(game) {
   const gDate = new Date(`${game.date}T${(game.time || '00:00').padStart(5, '0')}`).getTime();
-  if (!isNaN(gDate) && gDate < Date.now()) {
+  const past = !isNaN(gDate) && gDate < Date.now();
+  // A game that has teed off is frozen: it is somebody's round. The one way
+  // back is an admin removing a game nobody ever scored.
+  if (past && !(currentUser?.role === 'admin' && gameUntouched(game))) {
     showToast(t('cannotDeletePast'), 'error');
     return;
   }
-  if (!confirm(game.bookingCode ? t('confirmDeleteBooking') : t('confirmDelete'))) return;
+  if (!confirm(past ? t('confirmDeletePastGame') : game.bookingCode ? t('confirmDeleteBooking') : t('confirmDelete'))) return;
 
   const joinedIds = [...new Set(
     ensureGroups(game.groups).flatMap(grp => ensureArray(grp))
@@ -5524,6 +5551,12 @@ async function renderAdminPanel() {
     past.sort((a,b) => b.gMs - a.gMs);
     deleted.sort((a,b) => b.gMs - a.gMs);
 
+    // A game whose tee time has gone by with nothing entered is the admin's
+    // to tidy: close it out or take it off the board. The tee time, not the
+    // abandon net, so the same games offer it here as on the game page; one
+    // already deleted is only restorable.
+    const tidy = (g) => g.status !== 'deleted' && gameStartMs(g) < now && gameUntouched(g);
+
     const renderRow = ({ g, isCreator }, showRestore = false) => {
       const role = isCreator ? icon('edit', { size: 13 }) : icon('play', { size: 13 });
       const deletedLabel = g.status === 'deleted' ? ` <span style="font-size:0.75rem;background:var(--danger-color);color:#fff;border-radius:4px;padding:1px 5px;">устсан</span>` : '';
@@ -5535,6 +5568,8 @@ async function renderAdminPanel() {
         </div>
         <a href="#/game/${g.id}" class="btn btn-sm btn-outline" style="font-size:0.8rem;">Харах</a>
         ${showRestore ? `<button class="btn btn-sm btn-primary restore-game-btn" data-id="${g.id}" style="font-size:0.8rem;">↩ Сэргээх</button>` : ''}
+        ${tidy(g) && !isGameFinished(g) ? `<button class="btn btn-sm btn-outline close-game-row" data-id="${g.id}" style="font-size:0.8rem;">🏁 ${t('gameClose')}</button>` : ''}
+        ${tidy(g) ? `<button class="btn btn-sm btn-danger delete-game-row" data-id="${g.id}" style="font-size:0.8rem;">${t('delete')}</button>` : ''}
       </div>`;
     };
 
@@ -5554,6 +5589,28 @@ async function renderAdminPanel() {
         await store.restoreGame(btn.dataset.id);
         btn.closest('div[style]').remove();
         showToast('✅ Тоглолт сэргээгдлээ', 'success');
+      });
+    });
+
+    // The same two tidy-ups the game page offers, on the row itself, so a
+    // run of empty games goes in one pass. The list is re-read after each,
+    // which is what moves a deleted one down into its own section.
+    resultsEl.querySelectorAll('.close-game-row').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(t('confirmCloseGame'))) return;
+        try { await store.saveGameFinished(btn.dataset.id, true); }
+        catch (err) { showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error'); return; }
+        showToast('🏁 ' + t('gameClosed'), 'success');
+        lookupRunForUser(uid);
+      });
+    });
+    resultsEl.querySelectorAll('.delete-game-row').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(t('confirmDeletePastGame'))) return;
+        try { await store.deleteGame(btn.dataset.id); }
+        catch (err) { showToast('⚠️ ' + (err?.message || t('mpSaveFailed')), 'error'); return; }
+        showToast('🗑️ ' + t('gameDeleted'), 'info');
+        lookupRunForUser(uid);
       });
     });
   };
