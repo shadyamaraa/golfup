@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-09-22 (Guest home: the news leads the page)
+
+On the signed-out home the news carousel sat at the very bottom, under
+the ranking, where a visitor reached it only by scrolling the whole
+page. It now opens the page, above the hero banner, so whatever the club
+is announcing is the first thing a visitor reads
+(`src/public-home.js`). Nothing else moves: the hero, tournaments,
+results, holes, champions and ranking keep their order, the member home
+is untouched, and a club with no news still shows its welcome card.
+
 ## 2026-09-22 (Casual games: an admin can close or delete a past game nobody scored)
 
 A game whose tee time has gone by was frozen for everyone — the delete
