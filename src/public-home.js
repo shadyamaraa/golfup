@@ -213,13 +213,13 @@ export async function renderPublicHome(ctx = {}) {
   setPageTitle(ctx, 'UB Golf Club');
   main.innerHTML = `
     <div class="home-container fade-in pub-home">
+      <div id="home-news" style="margin-bottom:24px;"></div>
       <div id="pub-hero"></div>
       <div id="pub-active"></div>
       <div id="pub-results"></div>
       <div id="pub-holes"></div>
       <div id="pub-champions"></div>
       <div id="home-ranking"></div>
-      <div id="home-news" style="margin-top:24px;"></div>
     </div>`;
   const alive = ctx.alive || (() => true);
 
