@@ -419,6 +419,17 @@ export function gameHasAnyScore(game) {
   return any(game?.scores) || any(game?.teamScores);
 }
 
+// Nothing was entered at all: no strokes, no team ball, and no hole set by
+// hand either. A game nobody ever touched — the one an admin may close out
+// or remove once its tee time has gone by, where a game with a single hole
+// in it is somebody's round and stays. Stricter than gameHasAnyScore,
+// which the scorecard asks and which a conceded hole alone does not answer.
+export function gameUntouched(game) {
+  if (gameHasAnyScore(game)) return false;
+  return !Object.values(game?.holeOverrides || {})
+    .some(h => Object.values(h || {}).some(v => v !== null && v !== undefined && v !== ''));
+}
+
 // ---- Skins ----
 
 // Hole by hole: the pot is one skin plus whatever carried; the unique lowest
