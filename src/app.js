@@ -3586,7 +3586,13 @@ async function renderCreateGame() {
   const otherInviteUsers = availableUsers.filter(u => !currentUserFollows[u.id]).sort((a, b) => displayUsername(a).localeCompare(displayUsername(b)));
   let selectedInviteIds = [];
   let selectedHoles = 'full18';
-  let selectedScoreMode = 'normal';
+  // The club plays its casual rounds as the competition format — front 9,
+  // back 9 and the 18 as three contests — so that is what a new game opens
+  // on; «Энгийн 18» is one tap away, and a non-stroke format drops it.
+  // strokeScoreMode remembers the stroke-play choice while another format
+  // has the mode row hidden, so coming back restores it.
+  let selectedScoreMode = 'comp';
+  let strokeScoreMode = 'comp';
   let selectedFormat = 'stroke';
 
   main().innerHTML = `
@@ -3658,8 +3664,8 @@ async function renderCreateGame() {
           <div class="create-section" id="mode-section">
             <div class="cs-label">${t('gsMode')}</div>
             <div class="chip-row" id="mode-chips">
-              <button type="button" class="seg-chip active" data-mode="normal">${t('gsModeNormal')}</button>
-              <button type="button" class="seg-chip" data-mode="comp">${t('gsModeComp')}</button>
+              <button type="button" class="seg-chip" data-mode="normal">${t('gsModeNormal')}</button>
+              <button type="button" class="seg-chip active" data-mode="comp">${t('gsModeComp')}</button>
             </div>
           </div>
 
@@ -3961,7 +3967,8 @@ async function renderCreateGame() {
 
   // Format: stroke play, or a match play family format read off the same
   // strokes (see src/game-formats.js). Competition 9/9 is a stroke play
-  // idea, so the mode row leaves with it.
+  // idea, so the mode row leaves with it — and comes back as it was, rather
+  // than quietly dropping the default on a trip through another format.
   document.querySelectorAll('#format-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('#format-chips .seg-chip').forEach(c => c.classList.remove('active'));
@@ -3970,10 +3977,10 @@ async function renderCreateGame() {
       const stroke = selectedFormat === 'stroke';
       document.getElementById('format-hint').style.display = stroke ? 'none' : '';
       document.getElementById('mode-section').style.display = stroke ? '' : 'none';
-      if (!stroke) {
-        selectedScoreMode = 'normal';
-        document.querySelectorAll('#mode-chips .seg-chip').forEach(c => c.classList.toggle('active', c.dataset.mode === 'normal'));
-      }
+      if (!stroke) strokeScoreMode = selectedScoreMode;
+      selectedScoreMode = stroke ? strokeScoreMode : 'normal';
+      document.querySelectorAll('#mode-chips .seg-chip')
+        .forEach(c => c.classList.toggle('active', c.dataset.mode === selectedScoreMode));
     });
   });
 

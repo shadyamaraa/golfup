@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-10-05 (Create a casual game: Competition 9/9 is the default)
+
+The club plays its casual rounds as the competition format — front 9,
+back 9 and the 18 counted as three contests — but the create page opened
+on «Энгийн 18» and somebody had to remember the second tap. The scoring
+mode now starts on «Competition 9/9» (`src/app.js`, the create page's
+own state and its chip row); the normal reading is one tap away,
+choosing a non-stroke format still drops the mode as it did, and games
+already created keep whatever mode they were given.
+
 ## 2026-09-22 (Guest home: the news leads the page)
 
 On the signed-out home the news carousel sat at the very bottom, under
