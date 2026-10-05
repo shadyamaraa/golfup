@@ -918,7 +918,8 @@ async function finalizeRoundIfComplete(game, playerId) {
 /**
  * Render the group scorecard.
  * ctx: { main() → the page element, user, showToast(msg, type),
- *        onUnsub(fn) — register a listener teardown }
+ *        onUnsub(fn) — register a listener teardown,
+ *        onFinished() — the round was just finished: take the member on }
  */
 export async function renderGameScorePage(gameId, groupIdx, ctx) {
   const host = ctx.main();
@@ -1252,6 +1253,13 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
         store.saveGameFinished(gameId, next).then(local => {
           if (local) data = local;
           else data.finishedAt = next ? Date.now() : null;
+          // A finished round is read on the game's board, the whole field on
+          // one screen; reopening one stays here to carry on scoring.
+          if (next && ctx.onFinished) {
+            ctx.showToast?.('🏁 ' + t('gsFinishedToast'));
+            ctx.onFinished();
+            return;
+          }
           paint();
         }).catch(err => {
           console.error('[gscore]', err);

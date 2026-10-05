@@ -1,5 +1,39 @@
 # CHANGELOG_AI.md
 
+## 2026-10-05 (A finished round in reach: the board on 🏁, a last-round card, Back that goes back)
+
+Members said that once a round was scored, seeing the card and the result
+meant Home → Games → the history fold → the game: finishing takes a game
+out of every home list at once.
+
+- **🏁 lands on the board.** The casual scorer's «Тоглолт дуусгах»
+  (`src/game-score.js`, a new `ctx.onFinished`) now says «Тоглолт дууслаа»
+  and opens the game page on its «Онооны нэгтгэл», the whole field on one
+  screen. When the scorer was opened from that game page it steps back onto
+  that entry rather than stacking a second copy. Reopening a round
+  («Үргэлжлүүлэх») stays on the scorer.
+- **«Сүүлийн тоглолт» on the member home** (`renderLastRoundFeature` in
+  `src/app.js`): the newest past game you played in, for the history's
+  seven days — your gross and to-par, net (F / B / 18 in Competition 9/9),
+  your place on the board in stroke play, and two buttons: «Онооны хуудас»
+  (the printable card) and «Онооны нэгтгэл» (the game page, opened on its
+  board). The place comes from `strokeBoardRows`, now shared with the game
+  page's board so the two can't disagree; handicaps come from the game's
+  players' own records, fetched per player once per game (not the whole
+  users list).
+- **«← Буцах» goes back.** Every back link used to point at a fixed page,
+  mostly Home, whatever the member had come from. Each routed history
+  entry is now stamped with its depth in this tab (`stampNav`), and a back
+  link with an app page under it calls `history.back()`; the first page of
+  a tab (a shared link, a fresh open) still follows its own href.
+  Redirects now replace their entry instead of adding one (`navReplace`):
+  sign-in bounces, the create form after saving, the join pages, a deleted
+  game, the guards, an empty checkout, and the order/payment completions. So Back
+  never lands on a form already sent or a page that only bounces on.
+  Saving a game or profile edit, cancelling a join payment or a checkout,
+  and finishing a round step back onto the page they were opened from when
+  it is the entry underneath (`navReturn`).
+
 ## 2026-10-05 (Create a casual game: Competition 9/9 is the default)
 
 The club plays its casual rounds as the competition format — front 9,
