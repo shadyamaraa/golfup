@@ -21,7 +21,7 @@ import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import {
   gameFormat, FORMAT_LABEL_KEY, FORMATS, groupMatches, skinsResult, stablefordResult,
-  isTeamFormat, groupTeamMatches, gameHasAnyScore, gameUntouched
+  isTeamFormat, isOneBallFormat, groupTeamMatches, gameHasAnyScore, gameUntouched
 } from './game-formats.js';
 import { renderScorecardPage } from './scorecard.js';
 import { renderTnSchedulePage } from './schedule.js';
@@ -72,6 +72,48 @@ let viewEpoch = 0;
 const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
 let homeFilter = 'all';
 let homeGamesCache = [];
+// A game page asked to open on its score board — set by the scorer's 🏁 and
+// the home's last-round card just before they route there, and spent by the
+// first paint of that game's page so later repaints leave the scroll alone.
+let boardFocusGameId = null;
+
+// ---- Back: the page you came from ----
+// Each history entry the app routes is stamped with how many of the app's
+// own pages lie under it in this tab. A back link with one under it steps
+// back to that page — the one the member actually came from — and only on
+// the first page of a tab (a shared link, a fresh open) does it follow its
+// own href. Redirects replace their entry instead of adding one, so Back
+// never lands on a form already sent or a page that only bounces on.
+let navDepth = -1;          // -1 until this document's first route
+let navReplacing = false;
+const navTrail = [];        // the hash at each depth, as far as this tab has seen
+
+function stampNav(hash) {
+  const st = history.state;
+  if (st && Number.isInteger(st.ugDepth)) navDepth = st.ugDepth;   // back, forward, reload
+  else {
+    navDepth = navDepth < 0 ? 0 : navReplacing ? navDepth : navDepth + 1;
+    try { history.replaceState({ ...(st || {}), ugDepth: navDepth }, ''); } catch (_) { }
+  }
+  navReplacing = false;
+  navTrail[navDepth] = hash;
+}
+
+// A redirect, not a step: the entry being left is overwritten.
+function navReplace(hash) {
+  if ((location.hash || '#/') === hash) return;
+  navReplacing = true;
+  location.replace(hash);
+}
+
+// Done with a page opened from `hash` (a form saved, a round finished): step
+// back onto that entry when it is the one underneath, rather than stacking a
+// second copy of it over the form; otherwise replace this entry with it.
+function navReturn(hash) {
+  if (navDepth > 0 && navTrail[navDepth - 1] === hash) history.back();
+  else navReplace(hash);
+}
+
 let historyOpen = false;
 let archiveOpen = false;
 // The Games page browses two things now — casual games and tournaments — and
@@ -395,6 +437,7 @@ export async function router() {
   if (isRouting) return;
   isRouting = true;
   const hash = location.hash || '#/';
+  stampNav(hash);
 
   try {
 
@@ -454,11 +497,11 @@ export async function router() {
       || hash.startsWith('#/join/') || hash === '#/kitchen' || hash === '#/styleguide';
     if (!currentUser) {
       if (hash !== '#/login') pendingAuthRedirect = hash;
-      if (!guestOk) { location.hash = '#/login'; return; }
+      if (!guestOk) { navReplace('#/login'); return; }
     }
 
     if (hash === '#/login') {
-      if (currentUser) { location.hash = '#/'; return; }
+      if (currentUser) { navReplace('#/'); return; }
       renderAuth();
     }
     else if (hash === '#/' || hash === '#/home') {
@@ -528,7 +571,9 @@ export async function router() {
       const [gsGameId, gsGroupIdx] = hash.split('#/gscore/')[1].split('/');
       await renderGameScorePage(gsGameId, parseInt(gsGroupIdx, 10) || 0, {
         main, user: currentUser, showToast, alive: viewAlive(),
-        onUnsub: (fn) => activeUnsubs.push(fn)
+        onUnsub: (fn) => activeUnsubs.push(fn),
+        // 🏁 lands on the game's score board, where the whole field's result is.
+        onFinished: () => { boardFocusGameId = gsGameId; navReturn('#/game/' + gsGameId); }
       });
     }
     else if (hash.startsWith('#/scorecard/')) await renderScorecardPage(hash.split('#/scorecard/')[1], {
@@ -865,7 +910,7 @@ function renderAuth() {
       store.ensureDeviceAccess(user);
       initFCM(user);
       showToast(t('welcome') + ' ' + user.name + '!', 'success');
-      location.hash = pendingAuthRedirect && pendingAuthRedirect !== '#/login' ? pendingAuthRedirect : '#/';
+      navReplace(pendingAuthRedirect && pendingAuthRedirect !== '#/login' ? pendingAuthRedirect : '#/');
       pendingAuthRedirect = null;
       router();
       if (needsProfileCompletion(user)) {
@@ -1209,6 +1254,7 @@ async function renderHome() {
       <div id="home-news"></div>
       <div id="next-tee-feature"></div>
       <div id="next-game-feature"></div>
+      <div id="last-round-feature"></div>
       <div id="notifications-section"></div>
       <div class="section-head" style="margin-top:24px;">
         <h2>${t('upcoming')}</h2>
@@ -1235,6 +1281,7 @@ async function renderHome() {
   renderHomeNews();
   renderNextTeeFeature();
   renderNextGameFeature(games);
+  renderLastRoundFeature(games);
   renderHomeUpcoming(games);
   renderHomeHoles();
   renderHomeRanking();
@@ -1243,6 +1290,7 @@ async function renderHome() {
     const unsub = store.onAllGamesChanged((gs) => {
       homeGamesCache = gs;
       renderNextGameFeature(gs);
+      renderLastRoundFeature(gs);
       renderHomeUpcoming(gs);
     });
     if (unsub) activeUnsubs.push(unsub);
@@ -3420,6 +3468,99 @@ function renderNextGameFeature(games) {
     </a>`;
 }
 
+// ---- Home: the round you just played ----
+// Finishing a game — or the day running out on it — takes it off the home
+// page at once, and its card and result were then three taps deep: Games,
+// the history fold, the game. This keeps the newest round you played in
+// within reach for the history's seven days: your score, your place, and a
+// way straight to the scorecard and to the board.
+function lastRoundOf(games, now = Date.now()) {
+  if (!currentUser) return null;
+  const me = currentUser.id;
+  // A one-ball format has no strokes of yours — the team's ball is the round.
+  const played = (g) => isOneBallFormat(g) ? gameHasAnyScore(g)
+    : Object.values(g.scores?.[me]?.holes || {}).some(Boolean);
+  return (games || [])
+    .filter(g => g && g.status !== 'deleted' && isGamePast(g, now))
+    .map(g => ({ g, ms: gameStartMs(g),
+      gi: ensureGroups(g.groups).findIndex(grp => ensureArray(grp).some(p => p?.id === me)) }))
+    .filter(x => x.gi >= 0 && !isNaN(x.ms) && now - x.ms <= ARCHIVE_AFTER_MS && played(x.g))
+    .sort((a, b) => b.ms - a.ms)[0] || null;
+}
+
+// The players' own records back the handicap where the game has none typed
+// in. Fetched per player, once per game — not the whole users list — the
+// way the printable scorecard does it; every listener tick reuses them.
+let lastRoundUsers = { id: null, ready: null };
+
+async function renderLastRoundFeature(games) {
+  const host = document.getElementById('last-round-feature');
+  if (!host) return;
+  const last = lastRoundOf(games);
+  if (!last) { host.innerHTML = ''; return; }
+  const { g } = last;
+  if (lastRoundUsers.id !== g.id) {
+    const ids = ensureGroups(g.groups).flatMap(grp => ensureArray(grp)).map(p => p?.id).filter(Boolean);
+    lastRoundUsers = {
+      id: g.id,
+      ready: Promise.all(ids.map(id => store.loadUserById(id).catch(() => null)))
+        .then(recs => Object.fromEntries(recs.filter(Boolean).map(u => [u.id, u])))
+    };
+  }
+  const users = { ...allUsersMap, ...(await lastRoundUsers.ready) };
+  // The page may have moved on, or a newer tick drawn a newer round.
+  if (!host.isConnected || lastRoundOf(homeGamesCache)?.g.id !== g.id) return;
+
+  const me = currentUser.id;
+  const holeCount = gameHoleCount(g);
+  const fmt = gameFormat(g);
+  const tpCls = (v) => v === null ? '' : v < 0 ? 'tn-sc-under' : v > 0 ? 'tn-sc-over' : 'tn-sc-even';
+  const tp = (v) => v === null ? '' : `<span class="${tpCls(v)}">${fmtToPar(v)}</span>`;
+  let figs = '';
+  let place = null;
+  if (!isOneBallFormat(g)) {
+    const hcp = gamePlayingHcp(g, me, users[me] || currentUser);
+    const line = gameScoreLine(g, me, hcp);
+    const parts = [`<b>${line.total}</b> ${tp(line.toPar)}`];
+    if (isCompMode(g)) {
+      if (line.netF !== null) parts.push(`F ${tp(line.netF)}`);
+      if (line.netB !== null) parts.push(`B ${tp(line.netB)}`);
+      if (line.netToPar !== null) parts.push(`18 ${tp(line.netToPar)}`);
+    } else if (line.net !== null) {
+      parts.push(`${t('gsNet')} ${line.netToPar !== null ? tp(line.netToPar) : line.net}`);
+    }
+    if (line.thru < holeCount) parts.push(`${t('mpThru')} ${line.thru}`);
+    figs = parts.join(' · ');
+    if (fmt === 'stroke') {
+      const { rows } = strokeBoardRows(g, users);
+      const i = rows.findIndex(r => r.p.id === me);
+      if (i >= 0 && rows.length > 1) place = { pos: i + 1, of: rows.length };
+    }
+  }
+  // Competition 9/9 reads off its F / B / 18 figures; any other format names
+  // itself ahead of them, since its result is not a stroke total.
+  if (fmt !== 'stroke') figs = [esc(t(FORMAT_LABEL_KEY[fmt])), figs].filter(Boolean).join(' · ');
+  host.innerHTML = `
+    <div class="last-round">
+      <a href="#/game/${g.id}" class="lr-link" data-board-focus="${g.id}">
+        <div class="tile-icon">${icon('scorecard', { size: 20 })}</div>
+        <div class="lr-body">
+          <div class="lr-eyebrow">🏁 ${t('lastRound')} · ${formatDate(g.date)}</div>
+          <div class="lr-title">${esc(g.location || '-')}</div>
+          ${figs ? `<div class="lr-figs">${figs}</div>` : ''}
+        </div>
+        ${place ? `<div class="lr-place"><small>${t('tnPos')}</small><b>${place.pos}</b><small>/ ${place.of}</small></div>` : ''}
+      </a>
+      <div class="lr-actions">
+        <a href="#/scorecard/${g.id}" class="btn btn-outline btn-sm">${icon('scorecard', { size: 15 })} ${t('gsTitle')}</a>
+        <a href="#/game/${g.id}" class="btn btn-primary btn-sm" data-board-focus="${g.id}">${icon('leaderboard', { size: 15 })} ${t('gsLeaderboard')}</a>
+      </div>
+    </div>`;
+  host.querySelectorAll('[data-board-focus]').forEach(a => a.onclick = () => {
+    boardFocusGameId = a.dataset.boardFocus;
+  });
+}
+
 function renderGamesHome(games) {
   const activeContainer = document.getElementById('active-games-list');
   const pastContainer = document.getElementById('past-games-list');
@@ -4259,7 +4400,7 @@ async function renderCreateGame() {
     }
 
     showToast('✅ ' + t('createGame') + '!', 'success');
-    location.hash = '#/game/' + game.id;
+    navReplace('#/game/' + game.id);
   });
 }
 
@@ -4302,7 +4443,7 @@ async function renderGameDetail(gameId) {
   } catch (error) {
     console.error('Render game detail failed:', error);
     showToast('Мэдээлэл уншихад алдаа гарлаа. Та дахин нэвтэрч үзнэ үү.', 'error');
-    location.hash = '#/';
+    navReplace('#/');
   }
 }
 
@@ -4493,7 +4634,7 @@ function renderGameView(game) {
           </div>` : ''}
       </div>
 
-      ${gameScoreboardHTML(game)}
+      <div id="game-board">${gameScoreboardHTML(game)}</div>
 
       ${groups.map((grp, i) => renderGroupCard(grp, i, game, isPast)).join('')}
 
@@ -4608,6 +4749,22 @@ function renderGameView(game) {
     });
   });
   setupFollowListeners();
+
+  // Sent here to read the result: open on the board, just under the sticky
+  // header. Measured on layout, not on screen — the page is still sliding up
+  // its 16px fade-in, which scrollIntoView would bake into the offset — and
+  // instant, as the live listener repaints a moment later and would cut a
+  // smooth scroll off half way.
+  if (boardFocusGameId === game.id) {
+    boardFocusGameId = null;
+    const board = document.getElementById('game-board');
+    if (board) {
+      let y = 0;
+      for (let n = board; n; n = n.offsetParent) y += n.offsetTop;
+      const head = document.getElementById('app-header')?.offsetHeight || 56;
+      window.scrollTo(0, Math.max(0, y - head - 12));
+    }
+  }
 }
 
 function followBtn(uid) {
@@ -4809,6 +4966,26 @@ function gameStablefordBoardHTML(game) {
     </div>`;
 }
 
+// The stroke play board's order: every fielded player with a stroke in,
+// ranked on net once every one of them has a net, else on gross. The home
+// page's last-round card reads its place from here too, so the place it
+// shows is the line the board lists.
+function strokeBoardRows(game, usersById = allUsersMap) {
+  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
+  const rows = players
+    .map(p => {
+      const hcp = gamePlayingHcp(game, p.id, usersById[p.id]);
+      const line = gameScoreLine(game, p.id, hcp);
+      return { p, hcp, ...line };
+    })
+    .filter(r => r.thru > 0);
+  const byNet = rows.every(r => r.net !== null);
+  // Rank by net-to-par where possible — with mixed thru counts the absolute
+  // net misleads, the par-relative one doesn't.
+  rows.sort((a, b) => (byNet ? (a.netToPar ?? a.net) - (b.netToPar ?? b.net) : a.total - b.total));
+  return { rows, byNet };
+}
+
 function gameScoreboardHTML(game) {
   // The match play family reads the same strokes differently — see
   // src/game-formats.js; stroke play keeps the ranked table below.
@@ -4816,19 +4993,8 @@ function gameScoreboardHTML(game) {
   if (fmt === 'match' || isTeamFormat(game)) return gameMatchBoardHTML(game);
   if (fmt === 'skins') return gameSkinsBoardHTML(game);
   if (fmt === 'stableford') return gameStablefordBoardHTML(game);
-  const players = ensureGroups(game.groups).flatMap(g => ensureArray(g)).filter(Boolean);
-  const rows = players
-    .map(p => {
-      const hcp = gamePlayingHcp(game, p.id, allUsersMap[p.id]);
-      const line = gameScoreLine(game, p.id, hcp);
-      return { p, hcp, ...line };
-    })
-    .filter(r => r.thru > 0);
+  const { rows, byNet } = strokeBoardRows(game);
   if (!rows.length) return '';
-  const byNet = rows.every(r => r.net !== null);
-  // Rank by net-to-par where possible — with mixed thru counts the absolute
-  // net misleads, the par-relative one doesn't.
-  rows.sort((a, b) => (byNet ? (a.netToPar ?? a.net) - (b.netToPar ?? b.net) : a.total - b.total));
   const holeCount = gameHoleCount(game);
   const comp = isCompMode(game);
   const netColor = (v) => v !== null && v < 0 ? 'var(--red)' : 'var(--text-primary)';
@@ -4900,7 +5066,7 @@ async function renderJoinGame(gameId) {
     renderAuth();
     return;
   }
-  location.hash = '#/game/' + gameId;
+  navReplace('#/game/' + gameId);
 }
 
 // Payment step shown before joining a game that has a paid MTBogd tee-time
@@ -4909,8 +5075,8 @@ async function renderJoinGame(gameId) {
 async function renderJoinPay(gameId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const game = await store.loadGame(gameId);
-  if (!game) { location.hash = '#/'; return; }
-  if (isPlayerInGame(game, currentUser.id)) { location.hash = '#/game/' + gameId; return; }
+  if (!game) { navReplace('#/'); return; }
+  if (isPlayerInGame(game, currentUser.id)) { navReplace('#/game/' + gameId); return; }
 
   // MTBogd bills a flat rate per booked slot (not split per player), so the
   // only real number to show is the total it reports — no per-player guess.
@@ -4959,7 +5125,7 @@ async function renderJoinPay(gameId) {
       chip.classList.add('active');
     });
   });
-  document.getElementById('jp-cancel-btn').onclick = () => { location.hash = '#/game/' + gameId; };
+  document.getElementById('jp-cancel-btn').onclick = () => { navReturn('#/game/' + gameId); };
   let submitting = false;
   document.getElementById('jp-join-btn').onclick = async () => {
     if (submitting) return;
@@ -5196,7 +5362,7 @@ async function handleDelete(game) {
   }
 
   showToast('🗑️ ' + t('gameDeleted'), 'info');
-  location.hash = '#/';
+  navReplace('#/');
 }
 
 
@@ -5268,7 +5434,7 @@ function copyGameLink(game) {
 // ---- Admin Panel ----
 async function renderAdminPanel() {
   if (!currentUser || currentUser.role !== 'admin') {
-    location.hash = '#/';
+    navReplace('#/');
     return;
   }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
@@ -6194,7 +6360,7 @@ function showUserDetailsModal(user) {
 async function renderEditGame(gameId) {
   const game = await store.loadGame(gameId);
   if (!game || (currentUser.role !== 'admin' && game.createdBy !== currentUser.id)) {
-    location.hash = '#/';
+    navReplace('#/');
     return;
   }
   // Block editing if more than 1 hour has passed since game start
@@ -6202,7 +6368,7 @@ async function renderEditGame(gameId) {
   const gDate = new Date(gDateStr).getTime();
   const isReadOnly = !isNaN(gDate) && (gDate + (1 * 60 * 60 * 1000)) < Date.now();
   if (isReadOnly && currentUser.role !== 'admin') {
-    location.hash = `#/game/${gameId}`;
+    navReplace(`#/game/${gameId}`);
     return;
   }
 
@@ -6463,7 +6629,7 @@ async function renderEditGame(gameId) {
     }
 
     showToast('✅ Saved!', 'success');
-    location.hash = '#/game/' + game.id;
+    navReturn('#/game/' + game.id);
   });
 
   document.getElementById('edit-add-player-btn')?.addEventListener('click', () => {
@@ -7288,6 +7454,16 @@ export function initApp() {
   });
 
   window.addEventListener('hashchange', router);
+  // Every «← Буцах» on every screen: back to the page it was opened from
+  // when the tab has one under it (see stampNav), its own href otherwise.
+  // An element's own click handler (the checkout keeping its cart) runs first.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a.back-link');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (navDepth <= 0) return;
+    e.preventDefault();
+    history.back();
+  });
   // Load admin-added circles before the first render so they show everywhere.
   refreshCommunities().finally(router);
 }
@@ -7578,7 +7754,7 @@ function wireProfileForm(scope, user, afterSave) {
 
 // ---- Profile edit page (#/profile/edit) ----
 async function renderProfileEdit() {
-  if (!currentUser) { location.hash = '#/'; return; }
+  if (!currentUser) { navReplace('#/'); return; }
   // Render from the record as the database holds it, not from the session
   // copy. The copy can be older than the record — the scorer writes hcpIndex,
   // an admin can edit the member, the gender backfill wrote a key this session
@@ -7637,13 +7813,13 @@ async function renderProfileEdit() {
     });
   });
 
-  wireProfileForm(main(), user, () => { location.hash = '#/profile'; });
+  wireProfileForm(main(), user, () => { navReturn('#/profile'); });
 }
 
 // ---- Profile page (#/profile) — prototype layout, real data ----
 async function renderProfile() {
   const u = currentUser;
-  if (!u) { location.hash = '#/'; return; }
+  if (!u) { navReplace('#/'); return; }
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   let games = [];
   try { games = await store.loadAllGames(); } catch (_) {}
@@ -8033,7 +8209,7 @@ async function renderCheckout(gameId) {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
 
   const cartEntries = Object.entries(foodCart).filter(([, qty]) => qty > 0);
-  if (cartEntries.length === 0) { location.hash = gameId ? '#/order/' + gameId : '#/menu'; return; }
+  if (cartEntries.length === 0) { navReplace(gameId ? '#/order/' + gameId : '#/menu'); return; }
 
   let menuItems, tables;
   try {
@@ -8175,7 +8351,7 @@ async function renderCheckout(gameId) {
   });
 
   root.querySelector('#co-back').addEventListener('click', () => { preserveCartOnce = true; });
-  root.querySelector('#co-cancel').onclick = () => { preserveCartOnce = true; location.hash = backHash; };
+  root.querySelector('#co-cancel').onclick = () => { preserveCartOnce = true; navReturn(backHash); };
 
   let submitting = false;
   root.querySelector('#co-submit').onclick = async () => {
@@ -8232,7 +8408,7 @@ async function renderCheckout(gameId) {
       } else {
         foodCart = {};
         showToast('✅ ' + t('orderPlaced'), 'success');
-        location.hash = gameId ? '#/game/' + gameId : '#/';
+        navReplace(gameId ? '#/game/' + gameId : '#/');
       }
     } catch (err) {
       showToast('Алдаа: ' + err.message, 'error');
@@ -8307,7 +8483,7 @@ async function showQpayModal(orderId, total, opts = {}) {
       } else {
         showToast('✅ ' + t('qpaySuccess'), 'success');
       }
-      location.hash = doneHash;
+      navReplace(doneHash);
     }, 1500);
   }
 
@@ -8316,13 +8492,13 @@ async function showQpayModal(orderId, total, opts = {}) {
 
   const dismiss = async () => {
     detach();
-    if (settled) { modal.remove(); location.hash = doneHash; return; }
+    if (settled) { modal.remove(); navReplace(doneHash); return; }
     // Backed out before paying — remove the dangling unpaid record so it never
     // shows up as a phantom order, then leave to a safe page.
     try { await store.cancelPendingPayment(orderId); } catch (_) {}
     modal.remove();
     showToast(t('qpayCancelled'), 'info');
-    location.hash = cancelHash;
+    navReplace(cancelHash);
   };
 
   closeBtn.onclick = dismiss;
@@ -8434,10 +8610,10 @@ async function showMtbogdQpayModal(bookingId, gameId) {
     checkBtn.style.display = 'none';
     statusEl.textContent = '';
     successEl.style.display = 'block';
-    setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); location.hash = doneHash; }, 1500);
+    setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); navReplace(doneHash); }, 1500);
   }
 
-  const dismissMq = () => { stop(); modal.remove(); location.hash = doneHash; };
+  const dismissMq = () => { stop(); modal.remove(); navReplace(doneHash); };
   closeBtn.onclick = dismissMq;
   // Same as the order modal: a backdrop tap must stop the poll, not just hide it.
   modal.addEventListener('click', (e) => { if (e.target === modal) dismissMq(); });

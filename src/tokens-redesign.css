@@ -627,6 +627,31 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .feature-card .fc-av-more { background: rgba(243,239,228,0.14); color: #F3EFE4; }
 
+/* ---- Home: the round you just played (renderLastRoundFeature) ---- */
+.last-round {
+  margin-bottom: 14px; padding: 13px;
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  border-radius: 16px; box-shadow: var(--shadow-card);
+}
+.last-round .lr-link { display: flex; align-items: center; gap: 13px; text-decoration: none; color: inherit; }
+.last-round .lr-body { flex: 1; min-width: 0; }
+.last-round .lr-eyebrow {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--gold-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.last-round .lr-title {
+  font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.last-round .lr-figs { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.last-round .lr-figs b { font-size: 1rem; font-weight: 800; color: var(--text-primary); }
+.last-round .lr-figs span { font-weight: 800; }
+.last-round .lr-place { flex-shrink: 0; text-align: center; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.last-round .lr-place b { display: block; font-size: 1.4rem; font-weight: 800; color: var(--text-primary); }
+.last-round .lr-place small { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; color: var(--text-secondary); }
+.last-round .lr-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.last-round .lr-actions .btn { gap: 6px; justify-content: center; }
+
 /* ---- Home news carousel ---- */
 .news-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin-bottom: 14px; }
 .news-carousel::-webkit-scrollbar { display: none; }
