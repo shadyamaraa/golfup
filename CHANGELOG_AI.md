@@ -1,5 +1,15 @@
 # CHANGELOG_AI.md
 
+## 2026-10-06 (Last-round card: the gross, then the net)
+
+A member pointed out that the home card's «92 +20» says one thing twice —
+92 on a par 72 is +20 — while the figure that counts is the net after the
+handicap. The card's line (`renderLastRoundFeature`, `src/app.js`) now
+reads «92 · Нет +6», and in Competition 9/9 «92 · Нет +6 · F +6 · B E»:
+the gross to-par is gone, and so is the «18» that only repeated the net.
+Without a handicap it shows the gross alone. The place and the board are
+unchanged.
+
 ## 2026-10-05 (A finished round in reach: the board on 🏁, a last-round card, Back that goes back)
 
 Members said that once a round was scored, seeing the card and the result
