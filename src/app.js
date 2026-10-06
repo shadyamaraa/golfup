@@ -3521,13 +3521,15 @@ async function renderLastRoundFeature(games) {
   if (!isOneBallFormat(g)) {
     const hcp = gamePlayingHcp(g, me, users[me] || currentUser);
     const line = gameScoreLine(g, me, hcp);
-    const parts = [`<b>${line.total}</b> ${tp(line.toPar)}`];
+    // The gross, then the net that counts. The gross to-par is the gross
+    // again in other words (92 on a par 72 is +20), so the line reads
+    // «92 · Нет +6»; Competition 9/9 adds its two nines, its 18 being that
+    // same net.
+    const parts = [`<b>${line.total}</b>`];
+    if (line.net !== null) parts.push(`${t('gsNet')} ${line.netToPar !== null ? tp(line.netToPar) : line.net}`);
     if (isCompMode(g)) {
       if (line.netF !== null) parts.push(`F ${tp(line.netF)}`);
       if (line.netB !== null) parts.push(`B ${tp(line.netB)}`);
-      if (line.netToPar !== null) parts.push(`18 ${tp(line.netToPar)}`);
-    } else if (line.net !== null) {
-      parts.push(`${t('gsNet')} ${line.netToPar !== null ? tp(line.netToPar) : line.net}`);
     }
     if (line.thru < holeCount) parts.push(`${t('mpThru')} ${line.thru}`);
     figs = parts.join(' · ');
