@@ -26,17 +26,21 @@ export const COURSE_DATA = {
       red: { rating: 69.1, slope: 122 },
     },
   },
-  'Chinggis Khaan Golf Course': {   // Riverside Golf Club (Terelj) official scorecard
+  // The course's own scorecard (MGA, mga.mn): out 35, in 37. The pars and
+  // stroke indexes once held here came from another card and matched no
+  // hole on this course. Games and tournaments read pars from here at
+  // render time, so a correction reaches rounds already in play; their
+  // entered strokes are untouched, only the to-par read off them moves.
+  'Chinggis Khaan Golf Course': {
     key: 'chinggis',
     city: 'Ulaanbaatar',
     par: 72,
-    pars: { 1: 4, 2: 4, 3: 3, 4: 5, 5: 4, 6: 4, 7: 3, 8: 5, 9: 4, 10: 4, 11: 5, 12: 3, 13: 4, 14: 4, 15: 5, 16: 3, 17: 4, 18: 4 },
-    si:   { 1: 17, 2: 15, 3: 7, 4: 3, 5: 13, 6: 1, 7: 9, 8: 11, 9: 5, 10: 10, 11: 2, 12: 18, 13: 6, 14: 12, 15: 16, 16: 8, 17: 14, 18: 4 },
+    pars: { 1: 4, 2: 4, 3: 4, 4: 4, 5: 5, 6: 3, 7: 4, 8: 4, 9: 3, 10: 4, 11: 5, 12: 4, 13: 5, 14: 3, 15: 4, 16: 3, 17: 5, 18: 4 },
+    si:   { 1: 9, 2: 1, 3: 11, 4: 7, 5: 15, 6: 13, 7: 3, 8: 5, 9: 17, 10: 6, 11: 16, 12: 8, 13: 12, 14: 14, 15: 4, 16: 10, 17: 18, 18: 2 },
+    // The card rates White for men and Red for ladies.
     tees: {
-      professional: { rating: 74.1, slope: 137 },
-      regular: { rating: 71.1, slope: 135 },
-      senior: { rating: 68.3, slope: 126 },
-      lady: { rating: 70.5, slope: 138 },
+      white: { rating: 69.2, slope: 119 },
+      red: { rating: 71.2, slope: 127 },
     },
   },
 };

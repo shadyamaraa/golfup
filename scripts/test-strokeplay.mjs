@@ -37,6 +37,20 @@ test('the registry answers by key, name and legacy alias alike', () => {
   // on the same registry entry.
   assert.equal(resolveCourse('Chinggis Khaan Golf Club').name, 'Chinggis Khaan Golf Course');
   assert.equal(resolveCourse('Chinggis Khaan Golf Course').key, 'chinggis');
+  // Chinggis Khaan's own card: out 35, in 37, the 2nd the hardest hole, the
+  // 17th the easiest; odd indexes out, even ones in; White and Red rated.
+  const ck = courseByKey('chinggis');
+  const sum = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => ck.pars[from + i]).reduce((a, b) => a + b, 0);
+  assert.equal(sum(1, 9), 35);
+  assert.equal(sum(10, 18), 37);
+  assert.equal(sum(1, 18), ck.par);
+  assert.deepEqual([ck.pars[5], ck.pars[6], ck.pars[9], ck.pars[13], ck.pars[17]], [5, 3, 3, 5, 5]);
+  assert.equal(ck.si[2], 1);
+  assert.equal(ck.si[17], 18);
+  assert.deepEqual(Object.values(ck.si).sort((a, b) => a - b), Array.from({ length: 18 }, (_, i) => i + 1));
+  for (let h = 1; h <= 9; h++) assert.equal(ck.si[h] % 2, 1);
+  for (let h = 10; h <= 18; h++) assert.equal(ck.si[h] % 2, 0);
+  assert.deepEqual(courseTees('chinggis').map(x => [x.key, x.rating, x.slope]), [['white', 69.2, 119], ['red', 71.2, 127]]);
   assert.deepEqual(courseTees('sky'), courseTees('Sky Resort Golf Club'));
   assert.ok(courseTees('sky').some(x => x.key === 'blue' && x.rating === 71.5 && x.slope === 130));
   assert.equal(resolveCourse(''), null);

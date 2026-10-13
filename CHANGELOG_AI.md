@@ -1,5 +1,23 @@
 # CHANGELOG_AI.md
 
+## 2026-10-13 (Chinggis Khaan: the course's own card)
+
+The pars and stroke indexes held for Chinggis Khaan Golf Course came from
+another card and matched no hole on the course (the totals agreed at 72,
+the holes did not). `src/courses.js` now carries the course's own MGA
+scorecard: pars 4 4 4 4 5 3 4 4 3 (out 35) · 4 5 4 5 3 4 3 5 4 (in 37),
+stroke indexes 9 1 11 7 15 13 3 5 17 · 6 16 8 12 14 4 10 18 2, and the
+card's two rated tees — White 69.2 / 119 (men), Red 71.2 / 127 (ladies) —
+in place of the four tees from that other card.
+
+Pars are read from the registry at render time, so the game in play today
+(`g_1791859306785_geiy`, 6 players, holes 1–4 in) takes the correct card
+the moment this deploys, with no database write: its strokes stay as
+entered, only the to-par read off them follows the right pars (identical
+after hole 4, since both cards sum to 16 there). Records that stored a tee
+snapshot keep their own rating/slope numbers. `scripts/test-strokeplay.mjs`
+checks the card: nines 35 / 37, SI 1–18 once each, odd out and even in.
+
 ## 2026-10-06 (Last-round card: the gross, then the net)
 
 A member pointed out that the home card's «92 +20» says one thing twice —
