@@ -1,5 +1,26 @@
 # CHANGELOG_AI.md
 
+## 2026-10-20 (GHIN lookup on staging)
+
+First step of the GHIN API connection, read-only and on GHIN's staging
+(UAT) environment. `functions/ghin.js` logs in to the GHIN Admin Portal
+API (`GHIN_EMAIL` / `GHIN_PASSWORD` in Secret Manager), caches the 24-hour
+token and retries once on a 401; `GHIN_BASE_URL` switches environments.
+A new `ghinGolfer` function at `/api/ghin/golfer?ghin=…` (hosting rewrite
+in `firebase.json`) returns one golfer trimmed to name, club, status and
+Handicap Index — not a generic proxy, since the login can read every
+golfer's email, phone and birth date.
+
+The profile's GHIN field gets a «GHIN шалгах» button
+(`store.fetchGhinGolfer`) that shows who GHIN has under the typed number
+and their HI; nothing is saved yet. `scripts/test-ghin.mjs` covers the
+client against a fake GHIN; `scripts/ghin-smoke.mjs <number>` checks the
+real staging API with credentials from the environment.
+
+Deploy needs the two secrets set first (`firebase functions:secrets:set
+GHIN_EMAIL`, `… GHIN_PASSWORD`) and then `firebase deploy --only
+functions:ghinGolfer,hosting`.
+
 ## 2026-10-13 (Chinggis Khaan: the course's own card)
 
 The pars and stroke indexes held for Chinggis Khaan Golf Course came from

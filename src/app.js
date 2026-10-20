@@ -7637,7 +7637,11 @@ function profileFormInner(user) {
         </div>
         <div class="input-group" style="margin-top: 10px;">
           <label>${t('gsGhinNumber')}</label>
-          <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" />
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" style="flex:1; min-width:0;" />
+            <button type="button" class="btn btn-outline btn-sm" id="profile-ghin-check" style="white-space:nowrap;">${t('ghinCheck')}</button>
+          </div>
+          <div id="profile-ghin-result" style="font-size:0.8rem; margin-top:6px;"></div>
           <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('gsGhinHint')}</div>
         </div>
       </div>
@@ -7693,6 +7697,35 @@ function wireProfileForm(scope, user, afterSave) {
         showToast(t('avatarUploadFail'), 'error');
       }
       fileInput.value = '';
+    };
+  }
+  // GHIN lookup: shows who GHIN has under the typed number and their Handicap
+  // Index, so a member can confirm the number before saving. Nothing is stored.
+  const ghinBtn = scope.querySelector('#profile-ghin-check');
+  const ghinOut = scope.querySelector('#profile-ghin-result');
+  if (ghinBtn && ghinOut) {
+    ghinBtn.onclick = async () => {
+      const num = scope.querySelector('#profile-ghin-number').value.replace(/\D/g, '');
+      if (!/^\d{7,8}$/.test(num)) { showToast(t('gsGhinInvalid'), 'error'); return; }
+      ghinBtn.disabled = true;
+      ghinOut.style.color = 'var(--text-secondary)';
+      ghinOut.textContent = t('ghinChecking');
+      try {
+        const g = await store.fetchGhinGolfer(num);
+        if (!g) {
+          ghinOut.style.color = 'var(--danger-color)';
+          ghinOut.textContent = t('ghinNotFound');
+        } else {
+          ghinOut.style.color = 'var(--emerald)';
+          ghinOut.textContent = `✓ ${[g.firstName, g.lastName].filter(Boolean).join(' ')}` +
+            (g.clubName ? ` · ${g.clubName}` : '') +
+            ` · ${t('gsHcpIndex')} ${g.handicapIndex ?? '—'}`;
+        }
+      } catch (_) {
+        ghinOut.style.color = 'var(--danger-color)';
+        ghinOut.textContent = t('ghinError');
+      }
+      ghinBtn.disabled = false;
     };
   }
   const saveBtn = scope.querySelector('#profile-modal-save');

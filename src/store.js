@@ -1246,6 +1246,17 @@ export function onOrderChanged(id, cb) {
   return onValue(r, (snap) => cb(snap.exists() ? { id, ...snap.val() } : null));
 }
 
+// ---- GHIN lookup (staging until GHIN grants production) ----
+// Name, club and Handicap Index for one GHIN number, via the ghinGolfer
+// function — the GHIN login stays server-side. Null when GHIN has no such golfer.
+export async function fetchGhinGolfer(ghinNumber) {
+  const res = await fetch('/api/ghin/golfer?ghin=' + encodeURIComponent(ghinNumber));
+  if (res.status === 404) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'GHIN lookup failed');
+  return data.golfer;
+}
+
 // ---- QPay helpers (food orders only; tee-time QPay is owned by MTBogd) ----
 export async function createQpayInvoice(orderId) {
   const res = await fetch('/api/qpay/invoice', {
