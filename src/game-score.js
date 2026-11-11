@@ -830,14 +830,20 @@ function formatReportHTML(game, players, usersById, groupIdx) {
   return body ? `<div style="margin:4px 0 8px;">${body}</div>` : '';
 }
 
-// The hole header: "3-р Нүх · Пар 4 · SI 9" over a small "3 / 18" where the
-// course card is known; the plain "НҮХ 3 / 18" otherwise.
+// The hole header: "3-р Нүх · Пар 4" over a small "SI 9 · 3 / 18" where the
+// course card is known; the plain "НҮХ 3 / 18" otherwise. The SI rides the
+// small line: between the «‹ Өмнөх» and «Дараах ›» buttons a phone leaves no
+// room for it on the big one, and it wrapped there into a lone large number
+// that read as a score.
 function holeHeaderHTML(game, hole, holeCount) {
   const par = holePar(game, hole);
   const si = holeSI(game, hole);
   if (!par) return `${t('mpHole')} ${hole} / ${holeCount}`;
-  return `${holeTitle(hole)} · ${t('gsPar')} ${par}${si ? ` · SI ${si}` : ''}
-    <div style="font-size:0.68rem;font-weight:700;color:var(--text-secondary);letter-spacing:0.06em;">${hole} / ${holeCount}</div>`;
+  // Sized to the room between the buttons (the label's clamp), and when even
+  // that is too little the line breaks between the hole and its par, never
+  // inside either.
+  return `<span style="white-space:nowrap;">${holeTitle(hole)} ·</span> <span style="white-space:nowrap;">${t('gsPar')} ${par}</span>
+    <div style="font-size:0.68rem;font-weight:700;color:var(--text-secondary);letter-spacing:0.06em;">${si ? `SI ${si} · ` : ''}${hole} / ${holeCount}</div>`;
 }
 
 function screenHTML(game, groupIdx, user, fade, usersById) {
@@ -859,7 +865,7 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
 
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
         <button data-gs="prev" ${hole <= 1 ? 'disabled' : ''} class="btn btn-outline btn-sm" style="min-width:52px;">‹ ${t('scPrev')}</button>
-        <div id="gs-hole-label" style="flex:1;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:0.04em;">
+        <div id="gs-hole-label" style="flex:1;min-width:0;text-align:center;font-size:clamp(0.95rem, 4.4vw, 1.15rem);font-weight:800;letter-spacing:0.04em;">
           ${holeHeaderHTML(game, hole, holeCount)}
         </div>
         <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="min-width:52px;">${t('scNext')} ›</button>

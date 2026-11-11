@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-11-11 (Casual scorer: the SI on the small line)
+
+On a phone the casual scorer's hole header «11-р Нүх · Пар 5 · SI 16» did
+not fit between «‹ Өмнөх» and «Дараах ›», and the «16» wrapped onto a line
+of its own as a large number that read like a score. `holeHeaderHTML`
+(`src/game-score.js`) now puts the SI on the small line, «SI 16 · 11 / 18»,
+the way the tournament scorer already does; the title scales to the room
+(`clamp(0.95rem, 4.4vw, 1.15rem)`) so it stays on one line down to 360 px,
+and on narrower screens it breaks between the hole and its par, never
+inside either.
+
 ## 2026-10-13 (Chinggis Khaan: the course's own card)
 
 The pars and stroke indexes held for Chinggis Khaan Golf Course came from
