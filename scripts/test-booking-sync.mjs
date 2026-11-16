@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   bookingState, compareBooking, verifyOutcome, attachable, remoteSummary,
   bookingReason, logEntry, gamePlayerCount,
+  BOOK_MODES, bookModeOf, seatsToBook, bookingRoster, bookingPrice,
 } from '../src/booking-sync.js';
 import { MTBOGD_CONFIG } from '../src/config.js';
 
@@ -113,4 +114,52 @@ test('gamePlayerCount: arrays, objects, duplicates', () => {
   assert.equal(gamePlayerCount({ groups: { a: { x: { id: 'u1' }, y: { id: 'u1' } } } }), 1);
   assert.equal(gamePlayerCount({}), 0);
   assert.equal(gamePlayerCount(null), null);
+});
+
+// ---- Seats and per-player pricing (MTBogd bills per player since 2026-11) ----
+
+test('bookModeOf reads a known mode and nothing else', () => {
+  assert.deepEqual(BOOK_MODES, ['flight', 'self']);
+  assert.equal(bookModeOf({ bookingMode: 'flight' }), 'flight');
+  assert.equal(bookModeOf({ bookingMode: 'self' }), 'self');
+  assert.equal(bookModeOf({ bookingMode: 'all' }), null);
+  assert.equal(bookModeOf({}), null);
+  assert.equal(bookModeOf(null), null);
+});
+
+test('seatsToBook: the whole flight, or the players already in', () => {
+  assert.equal(seatsToBook('flight', 4, 1), 4);
+  assert.equal(seatsToBook('flight', '5', 2), 5);
+  assert.equal(seatsToBook('flight', 0, 2), 1);
+  assert.equal(seatsToBook('self', 4, 1), 1);
+  assert.equal(seatsToBook('self', 4, 3), 3);
+  assert.equal(seatsToBook('self', 4, 0), 1);      // the booker always holds a seat
+  assert.equal(seatsToBook(undefined, 4, 2), 2);
+});
+
+test('bookingRoster pads a flight booking to its seats and leaves others as they are', () => {
+  const a = { name: 'Bat', phone: '99' }, b = { name: 'Bold' };
+  const flight = { bookingMode: 'flight', bookingSeats: 4 };
+  assert.deepEqual(bookingRoster(flight, [a, b], 'Mak'), [a, b, { name: 'Mak' }, { name: 'Mak' }]);
+  // A full (or overfull) flight is sent as it stands.
+  assert.deepEqual(bookingRoster({ bookingMode: 'flight', bookingSeats: 2 }, [a, b, a], 'Mak'), [a, b, a]);
+  // Self and legacy bookings send the roster: the bill follows who joined.
+  assert.deepEqual(bookingRoster({ bookingMode: 'self', bookingSeats: 4 }, [a], 'Mak'), [a]);
+  assert.deepEqual(bookingRoster({}, { x: a, y: b }, 'Mak'), [a, b]);
+  assert.deepEqual(bookingRoster(flight, null, 'Mak'), [{ name: 'Mak' }, { name: 'Mak' }, { name: 'Mak' }, { name: 'Mak' }]);
+});
+
+test('bookingPrice reads the per-player record and tolerates the flat one', () => {
+  // Per-player (today): unit × count = total.
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 380000, playerCount: 4, greenFeePrice: 1520000 }),
+    { unit: 380000, seats: 4, total: 1520000 });
+  // Total missing: worked out from unit × count.
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 300000, players: [{}, {}] }), { unit: 300000, seats: 2, total: 600000 });
+  // Flat-price days: no unit, the total stands alone.
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: null, playerCount: 3, greenFeePrice: 300000 }), { unit: null, seats: 3, total: 300000 });
+  // qpay-status shape: only an amount.
+  assert.deepEqual(bookingPrice({ amount: 380000 }), { unit: null, seats: null, total: 380000 });
+  assert.equal(bookingPrice({}), null);
+  assert.equal(bookingPrice(null), null);
+  assert.equal(bookingPrice({ greenFeePrice: 0, amount: 'x' }), null);
 });
