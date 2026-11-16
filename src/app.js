@@ -2,6 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
+import { toE164, samePhone, codeOk, otpErrorKey, RESEND_SECONDS } from './phone-auth.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -62,6 +63,15 @@ const QPAY_ENABLED = false;
 // it has been tried with a real payment; the restaurant's QPay is the flag
 // above and stays apart.
 const TEE_QPAY_ENABLED = false;
+// Signing in by a code sent to the member's phone (docs/phone-login.md). It
+// is built and waits here: until the SMS has been seen to arrive on real
+// phones, the sign-in page asks for the password as before and the code flow
+// opens only at #/login-sms. `true` makes the code the sign-in page's
+// default, with the password one link away — kept as the way in for a
+// member the SMS does not reach.
+const PHONE_LOGIN_DEFAULT = false;
+// The two addresses of the sign-in page.
+const isLoginHash = (h) => h === '#/login' || h === '#/login-sms';
 
 let currentUser = null;
 let allUsersMap = {};
@@ -494,20 +504,20 @@ export async function router() {
     // lists, the ranking, the statistics, and the sign-in page itself.
     // Everything else — games, orders, the scorer screens — sends them to
     // sign in, and remembers where they were so sign-in brings them back.
-    const guestOk = hash === '#/' || hash === '#/home' || hash === '#/login'
+    const guestOk = hash === '#/' || hash === '#/home' || isLoginHash(hash)
       || hash === '#/tournaments' || hash === '#/ranking' || hash === '#/stats'
       || hash.startsWith('#/tournament/') || hash.startsWith('#/scorecard/')
       || hash.startsWith('#/tnschedule/') || hash.startsWith('#/spcard/')
       || hash.startsWith('#/spsheet/') || hash.startsWith('#/tnresult/')
       || hash.startsWith('#/join/') || hash === '#/kitchen' || hash === '#/styleguide';
     if (!currentUser) {
-      if (hash !== '#/login') pendingAuthRedirect = hash;
+      if (!isLoginHash(hash)) pendingAuthRedirect = hash;
       if (!guestOk) { navReplace('#/login'); return; }
     }
 
-    if (hash === '#/login') {
+    if (isLoginHash(hash)) {
       if (currentUser) { navReplace('#/'); return; }
-      renderAuth();
+      renderAuth(hash === '#/login-sms' ? 'otp' : null);
     }
     else if (hash === '#/' || hash === '#/home') {
       if (currentUser) await renderHome();
@@ -648,7 +658,7 @@ function updateHeader() {
   if (guestLogin) {
     guestLogin.textContent = t('guestLogin');
     const h = location.hash || '#/';
-    guestLogin.classList.toggle('hidden', !!currentUser || isKiosk || h === '#/login' || h === '#/kitchen');
+    guestLogin.classList.toggle('hidden', !!currentUser || isKiosk || isLoginHash(h) || h === '#/kitchen');
   }
 }
 
@@ -665,7 +675,7 @@ function updateBottomNav(hash) {
       const gActive = (hash === '#/' || hash === '#/home' || hash === '#/stats') ? 'home'
         : (hash === '#/tournaments' || /^#\/(tournament|tnresult|tnschedule|spcard|spsheet)\//.test(hash)) ? 'tn'
         : hash === '#/ranking' ? 'rank'
-        : hash === '#/login' ? 'login'
+        : isLoginHash(hash) ? 'login'
         : '';
       guest.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === gActive));
     }
@@ -836,23 +846,22 @@ function showOnboarding() {
 }
 
 // ---- Auth View ----
-function renderAuth() {
+// The sign-in page. Two ways in share one card: the code sent to the
+// member's phone, and the password. `mode` forces one ('otp' / 'password');
+// without it PHONE_LOGIN_DEFAULT decides.
+function renderAuth(mode) {
+  const startOtp = mode ? mode === 'otp' : PHONE_LOGIN_DEFAULT;
+  // The link to the other way in: always from the code to the password (the
+  // fallback), and from the password to the code only once the code is the
+  // default or this page was opened as the code's.
+  const offerOtp = PHONE_LOGIN_DEFAULT || mode === 'otp';
+
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
         <img src="/logo-v-navy.svg" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
-        <form id="auth-form" class="auth-form">
-          <div class="input-group">
-            <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="12" autocomplete="tel" />
-          </div>
-          <div id="auth-name-group" class="input-group hidden">
-            <input type="text" id="auth-name" placeholder="${t('needName')}" minlength="2" maxlength="20" />
-          </div>
-          <div class="input-group">
-            <input type="password" id="auth-password" placeholder="${t('password')}" required minlength="1" />
-          </div>
-          <button type="submit" class="btn btn-primary btn-lg" id="auth-submit-btn">${t('start')}</button>
-        </form>
+        <div id="auth-body"></div>
+        <div id="otp-recaptcha"></div>
       </div>
       <div class="auth-bg-decoration">
         <div class="golf-ball"></div>
@@ -861,72 +870,198 @@ function renderAuth() {
       </div>
     </div>`;
 
-  const phoneInput = document.getElementById('auth-phone');
-  const nameGroup = document.getElementById('auth-name-group');
-  const nameInput = document.getElementById('auth-name');
+  const body = document.getElementById('auth-body');
+  const linkStyle = 'background:none;border:none;padding:6px 4px;cursor:pointer;font-family:var(--font);font-size:0.85rem;color:var(--text-secondary);text-decoration:underline;';
+  let resendTimer = null;
+  const stopResend = () => { if (resendTimer) { clearInterval(resendTimer); resendTimer = null; } };
+  activeUnsubs.push(stopResend);
 
-  phoneInput.addEventListener('blur', async () => {
-    const phone = phoneInput.value.trim();
-    if (phone.length >= 8) {
-      const user = await store.findUserByPhone(phone);
-      nameGroup.classList.add('hidden');
-      nameInput.required = false;
-      if (!user) showToast(t('userNotFound'), 'error');
+  // Signed in, by either way: the session, the device's access, push, and
+  // back to where the member was headed.
+  function completeLogin(user) {
+    stopResend();
+    currentUser = user;
+    store.saveUser(user);
+    store.ensureDeviceAccess(user);
+    initFCM(user);
+    showToast(t('welcome') + ' ' + user.name + '!', 'success');
+    navReplace(pendingAuthRedirect && !isLoginHash(pendingAuthRedirect) ? pendingAuthRedirect : '#/');
+    pendingAuthRedirect = null;
+    router();
+    if (needsProfileCompletion(user)) {
+      setTimeout(() => showProfileModal(currentUser, { required: true }), 0);
     }
-  });
+  }
 
-  document.getElementById('auth-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('auth-submit-btn');
-    const resetAuthButton = () => {
-      btn.disabled = false;
-      btn.textContent = t('start');
-    };
-    try {
+  // ---- The password ----
+  function showPassword() {
+    stopResend();
+    body.innerHTML = `
+      <form id="auth-form" class="auth-form">
+        <div class="input-group">
+          <input type="tel" id="auth-phone" placeholder="${t('phone')}" required minlength="8" maxlength="16" autocomplete="tel" />
+        </div>
+        <div class="input-group">
+          <input type="password" id="auth-password" placeholder="${t('password')}" required minlength="1" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" id="auth-submit-btn">${t('start')}</button>
+      </form>
+      ${offerOtp ? `<div style="margin-top:14px;"><button type="button" id="auth-use-otp" style="${linkStyle}">${t('otpUseSms')}</button></div>` : ''}`;
+
+    const phoneInput = document.getElementById('auth-phone');
+    phoneInput.addEventListener('blur', async () => {
       const phone = phoneInput.value.trim();
-      const pass = document.getElementById('auth-password').value;
+      if (phone.length >= 8) {
+        const user = await store.findUserByPhone(phone);
+        if (!user) showToast(t('userNotFound'), 'error');
+      }
+    });
+    document.getElementById('auth-use-otp')?.addEventListener('click', () => showOtpPhone(phoneInput.value.trim()));
 
+    document.getElementById('auth-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('auth-submit-btn');
+      const reset = () => { btn.disabled = false; btn.textContent = t('start'); };
+      try {
+        const phone = phoneInput.value.trim();
+        const pass = document.getElementById('auth-password').value;
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        const user = await store.findUserByPhone(phone);
+        if (!user) { showToast(t('userNotFound'), 'error'); reset(); return; }
+        if (user.password !== pass) { showToast('Нууц үг буруу байна.', 'error'); reset(); return; }
+        if (user.status === 'hold') { showToast('Таны эрхийг түр хаасан байна.', 'error'); reset(); return; }
+        // A code identity left on this browser by another member's sign-in
+        // must not speak for this one.
+        store.signOutPhoneAuth();
+        completeLogin(user);
+      } catch (err) {
+        console.error('Auth error:', err);
+        showToast('Алдаа гарлаа.', 'error');
+        reset();
+      }
+    });
+  }
+
+  // ---- The code, step 1: whose phone ----
+  // The number must be a member's before anything is sent: an SMS costs
+  // money, and a stranger's number has no account to sign in to.
+  function showOtpPhone(prefill = '') {
+    stopResend();
+    body.innerHTML = `
+      <form id="otp-phone-form" class="auth-form">
+        <div class="input-group">
+          <input type="tel" id="otp-phone" placeholder="${t('phone')}" required minlength="8" maxlength="16" autocomplete="tel" value="${esc(prefill)}" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" id="otp-send-btn">${t('otpSend')}</button>
+      </form>
+      <p style="margin:12px 0 0;font-size:0.8rem;line-height:1.45;color:var(--text-secondary);">${t('otpHint')}</p>
+      <div style="margin-top:8px;"><button type="button" id="auth-use-password" style="${linkStyle}">${t('otpUsePassword')}</button></div>`;
+
+    const phoneInput = document.getElementById('otp-phone');
+    document.getElementById('auth-use-password').addEventListener('click', () => { showPassword(); document.getElementById('auth-phone').value = phoneInput.value.trim(); });
+    document.getElementById('otp-phone-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('otp-send-btn');
+      const reset = () => { btn.disabled = false; btn.textContent = t('otpSend'); };
       btn.disabled = true;
       btn.textContent = '...';
-
-      let user = await store.findUserByPhone(phone);
-
-      if (!user) {
-        showToast(t('userNotFound'), 'error');
-        resetAuthButton();
-        return;
-      } else {
-        // Login
-        if (user.password !== pass) {
-          showToast('Нууц үг буруу байна.', 'error');
-          resetAuthButton();
-          return;
-        }
-        if (user.status === 'hold') {
-          showToast('Таны эрхийг түр хаасан байна.', 'error');
-          resetAuthButton();
-          return;
-        }
+      try {
+        const typed = phoneInput.value.trim();
+        const member = await store.findUserByPhone(typed);
+        if (!member) { showToast(t('userNotFound'), 'error'); reset(); return; }
+        if (member.status === 'hold') { showToast('Таны эрхийг түр хаасан байна.', 'error'); reset(); return; }
+        const e164 = toE164(member.phone);
+        if (!e164) { showToast(t('otpErrInvalidPhone'), 'error'); reset(); return; }
+        const handle = await store.requestPhoneCode(e164, document.getElementById('otp-recaptcha'));
+        showOtpCode(member, e164, handle, typed);
+      } catch (err) {
+        console.warn('phone code request:', err?.code || err);
+        showToast(t(otpErrorKey(err)), 'error');
+        reset();
       }
+    });
+  }
 
-      // Success
-      currentUser = user;
-      store.saveUser(user);
-      store.ensureDeviceAccess(user);
-      initFCM(user);
-      showToast(t('welcome') + ' ' + user.name + '!', 'success');
-      navReplace(pendingAuthRedirect && pendingAuthRedirect !== '#/login' ? pendingAuthRedirect : '#/');
-      pendingAuthRedirect = null;
-      router();
-      if (needsProfileCompletion(user)) {
-        setTimeout(() => showProfileModal(currentUser, { required: true }), 0);
-      }
-    } catch (err) {
-      console.error('Auth error:', err);
-      showToast('Алдаа гарлаа.', 'error');
-      resetAuthButton();
+  // ---- The code, step 2: the six digits ----
+  function showOtpCode(member, e164, handle, typed) {
+    body.innerHTML = `
+      <form id="otp-code-form" class="auth-form">
+        <p style="margin:0;font-size:0.88rem;line-height:1.45;color:var(--text-secondary);">${t('otpSentTo').replace('{phone}', `<strong style="color:var(--text-primary);white-space:nowrap;">${esc(e164)}</strong>`)}</p>
+        <div class="input-group">
+          <input type="text" id="otp-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="${t('otpCode')}" required style="text-align:center;letter-spacing:0.35em;font-weight:700;" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" id="otp-verify-btn">${t('otpVerify')}</button>
+      </form>
+      <div style="margin-top:12px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;">
+        <button type="button" id="otp-resend" style="${linkStyle}" disabled></button>
+        <button type="button" id="otp-change" style="${linkStyle}">${t('otpChangePhone')}</button>
+      </div>`;
+
+    const codeInput = document.getElementById('otp-code');
+    const resendBtn = document.getElementById('otp-resend');
+    codeInput.focus();
+
+    // Another code only after a minute: each one is an SMS, and the provider
+    // refuses a number that is asked for too often.
+    function startResendWait() {
+      stopResend();
+      let left = RESEND_SECONDS;
+      const paint = () => {
+        resendBtn.disabled = left > 0;
+        resendBtn.style.opacity = left > 0 ? '0.55' : '1';
+        resendBtn.style.cursor = left > 0 ? 'default' : 'pointer';
+        resendBtn.textContent = left > 0 ? t('otpResendIn').replace('{s}', left) : t('otpResend');
+      };
+      paint();
+      resendTimer = setInterval(() => { left -= 1; paint(); if (left <= 0) stopResend(); }, 1000);
     }
-  });
+    startResendWait();
+
+    resendBtn.addEventListener('click', async () => {
+      if (resendBtn.disabled) return;
+      resendBtn.disabled = true;
+      try {
+        handle = await store.requestPhoneCode(e164, document.getElementById('otp-recaptcha'));
+        showToast(t('otpResent'), 'success');
+        startResendWait();
+      } catch (err) {
+        console.warn('phone code resend:', err?.code || err);
+        showToast(t(otpErrorKey(err)), 'error');
+        resendBtn.disabled = false;
+      }
+    });
+    document.getElementById('otp-change').addEventListener('click', () => showOtpPhone(typed));
+
+    document.getElementById('otp-code-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('otp-verify-btn');
+      const reset = () => { btn.disabled = false; btn.textContent = t('otpVerify'); };
+      const code = codeInput.value.trim();
+      if (!codeOk(code)) { showToast(t('otpErrBadCode'), 'error'); return; }
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const proof = await store.confirmPhoneCode(handle, code);
+        // The provider vouches for a phone; it must be this member's.
+        if (!samePhone(proof.phone, member.phone)) {
+          store.signOutPhoneAuth();
+          showToast(t('otpErrGeneric'), 'error');
+          reset();
+          return;
+        }
+        completeLogin({ ...member, authUid: proof.uid, phoneVerifiedAt: Date.now() });
+      } catch (err) {
+        console.warn('phone code confirm:', err?.code || err);
+        showToast(t(otpErrorKey(err)), 'error');
+        codeInput.select();
+        reset();
+      }
+    });
+  }
+
+  if (startOtp) showOtpPhone(); else showPassword();
 
   document.getElementById('admin-login-link').addEventListener('click', async (e) => {
     e.preventDefault();
@@ -1407,7 +1542,7 @@ async function renderGlobalSponsor(data) {
 function updateGlobalSponsorVisibility(hash) {
   const host = document.getElementById('global-sponsor');
   if (!host) return;
-  const hide = isKiosk || hash === '#/kitchen' || hash === '#/login' || host.dataset.has !== '1';
+  const hide = isKiosk || hash === '#/kitchen' || isLoginHash(hash) || host.dataset.has !== '1';
   host.classList.toggle('hidden', hide);
 }
 

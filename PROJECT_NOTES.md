@@ -38,6 +38,12 @@ Roles:
 - `marshal`: operational access, can see all games
 - `user`: normal player
 
+Sign-in: a member is found by `phone`. Today the password (stored on the
+member) signs them in. Sign-in by SMS code (Firebase Phone Auth) is built
+and on trial at `#/login-sms`; `PHONE_LOGIN_DEFAULT` in `src/app.js` makes
+it the default, with the password as the fallback. The SMS provider is
+meant to be replaced by a domestic one. See `docs/phone-login.md`.
+
 ### Circles
 
 Circle membership is assigned by admin when creating or editing users.
