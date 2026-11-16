@@ -105,7 +105,10 @@ async function startVerify(deps, body) {
   if (!found) return fail(404, 'USER_NOT_FOUND', 'No member has this phone number');
   const [key, user] = found;
   if (user.status === 'hold') return fail(403, 'USER_HELD', 'This member is on hold');
-  const memberId = String(user.id || key);
+  // The member is who the record's key says. The `id` inside the record is
+  // written by the app, like the rest of the public record, and proves
+  // nothing — a token minted from it could name any member.
+  const memberId = String(key);
 
   // verify.mn refuses a second live session with the same phone and text;
   // six random digits all but never repeat, and one more draw settles it.

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const qpay = require('./qpay');
 const phoneVerify = require('./phone-verify');
 const passwords = require('./passwords');
+const memberPrivate = require('./member-private');
 
 admin.initializeApp();
 
@@ -44,7 +45,18 @@ exports.adminLogin = functions
     const expected = process.env.ADMIN_PASSWORD;
     const provided = (req.body && req.body.password) || '';
     if (expected && provided === expected) {
-      res.status(200).json({ ok: true });
+      // The system admin is a member too (users/admin_uid, role admin). The
+      // token makes this browser that member for the database rules, which
+      // open the private half of the member records (userPrivate) only to a
+      // signed-in member. Without it the sign-in still works; the admin just
+      // sees no phone numbers.
+      let token = null;
+      try {
+        token = await admin.auth().createCustomToken('system-admin', { memberId: 'admin_uid' });
+      } catch (e) {
+        console.warn('admin sign-in: custom token not minted:', e.code || e.message);
+      }
+      res.status(200).json({ ok: true, token });
     } else {
       res.status(401).json({ ok: false });
     }
@@ -362,6 +374,12 @@ function signInEndpoint(run, options = {}) {
       res.set(CORS_HEADERS);
       if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
       if (req.method !== 'POST') { res.status(405).json({ error: { code: 'METHOD', message: 'POST only' } }); return; }
+      // Which version of the sign-in functions is deployed here — asked by
+      // migratePrivateFields before it moves the phone numbers.
+      if (req.body && req.body.ping === true) {
+        res.status(200).json({ ok: true, v: memberPrivate.SIGN_IN_VERSION });
+        return;
+      }
       try {
         const out = await run(req.body || {});
         if (out.body && out.body.tokenError) console.warn('sign-in: custom token not minted:', out.body.tokenError);
@@ -374,7 +392,16 @@ function signInEndpoint(run, options = {}) {
 }
 
 const VERIFY_MN = { secrets: ['VERIFY_MN_API_KEY'] };
-const loadAllUsers = async () => (await admin.database().ref('users').once('value')).val();
+// The members as sign-in needs them: the public records (users) with the
+// private half (userPrivate — the phone number among it) laid over. A phone
+// still on a public record is read too, so this works before, during and
+// after the move (migratePrivateFields).
+const loadPublicUsers = async () => (await admin.database().ref('users').once('value')).val();
+const loadPrivates = async () => (await admin.database().ref('userPrivate').once('value')).val();
+const loadAllUsers = async () => {
+  const [users, privates] = await Promise.all([loadPublicUsers(), loadPrivates()]);
+  return users ? memberPrivate.mergeUsers(users, privates) : users;
+};
 
 exports.phoneVerifyStart = signInEndpoint((body) => phoneVerify.startVerify({
   apiKey: process.env.VERIFY_MN_API_KEY,
@@ -429,6 +456,47 @@ exports.migratePasswords = signInEndpoint((body) => passwords.migratePasswords({
   loadUser: loadMember,
   loadUsers: loadAllUsers,
   removePlain: (key) => admin.database().ref(`users/${key}/password`).remove(),
+}, body), { timeoutSeconds: 300 });
+
+// ---- The private half of a member's record ----
+// Phone numbers, bank details and club codes live under userPrivate/{id},
+// which the database rules open only to a signed-in member. The logic is in
+// ./member-private.js.
+
+// The sign-in functions that find a member by phone, asked which version is
+// deployed: the names of those that would not see a phone once it has moved.
+const PHONE_READERS = ['phoneVerifyStart', 'passwordLogin'];
+async function outdatedSignInFunctions() {
+  const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || admin.app().options.projectId;
+  const outdated = [];
+  for (const name of PHONE_READERS) {
+    let v = 0;
+    try {
+      const r = await fetch(`https://us-central1-${project}.cloudfunctions.net/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ping: true }),
+      });
+      const data = await r.json();
+      v = Number(data && data.v) || 0;
+    } catch (_) {
+      v = 0;
+    }
+    if (v < memberPrivate.SIGN_IN_VERSION) outdated.push(name);
+  }
+  return outdated;
+}
+
+// Run once by an admin, from the app's Users tab.
+exports.migratePrivateFields = signInEndpoint((body) => memberPrivate.migratePrivateFields({
+  verifyIdToken,
+  loadUser: loadMember,
+  loadUsers: loadPublicUsers,
+  loadPrivates,
+  writePrivate: (memberId, patch) => admin.database().ref(`userPrivate/${memberId}`).update(patch),
+  clearPublic: (key, fields) => admin.database().ref(`users/${key}`)
+    .update(Object.fromEntries(fields.map(k => [k, null]))),
+  signInReady: outdatedSignInFunctions,
 }, body), { timeoutSeconds: 300 });
 
 const APP_URL = 'https://ubgolf.club';

@@ -148,6 +148,10 @@ let adminStatsMonth = 'all'; // admin stats tab month filter (YYYY-MM or 'all')
 let lastNotifsCache = [];    // latest notifications, for the header bell shortcut
 let pendingOpenNotifs = false; // bell tapped off-home → open the list after nav
 let pendingAuthRedirect = null;
+// The session this browser woke up with is looked at once (see
+// store.settleSession). When it had to be ended, the sign-in page says why.
+let sessionSettled = false;
+let sessionEndedNotice = false;
 
 // Past games stay in History for this many days, then move to Archive.
 const ARCHIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -460,6 +464,18 @@ export async function router() {
     if (isKiosk) {
       document.getElementById('app-header')?.style.setProperty('display', 'none', 'important');
       if (hash !== '#/kitchen') { location.hash = '#/kitchen'; return; }
+    }
+
+    // A session from before members had a Firebase identity cannot read the
+    // other members' phone numbers and bank details any more: it is ended
+    // once, and the member lands on the sign-in page, told why. The kiosk
+    // has no member session.
+    if (!sessionSettled && !isKiosk) {
+      sessionSettled = true;
+      if ((await store.settleSession()) === 'end') {
+        sessionEndedNotice = true;
+        if (!isLoginHash(hash)) { pendingAuthRedirect = hash; navReplace('#/login'); return; }
+      }
     }
 
     currentUser = store.getUser();
@@ -880,6 +896,7 @@ function renderAuth(mode) {
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
         <img src="/logo-v-navy.svg" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
+        ${sessionEndedNotice ? `<p id="auth-notice" style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:var(--bg-card-hover);font-size:0.85rem;line-height:1.45;color:var(--text-primary);">${t('sessionEnded')}</p>` : ''}
         <div id="auth-body"></div>
       </div>
       <div class="auth-bg-decoration">
@@ -903,6 +920,8 @@ function renderAuth(mode) {
     stopWait();
     currentUser = user;
     store.saveUser(user);
+    store.markSession();
+    sessionEndedNotice = false;
     store.ensureDeviceAccess(user);
     initFCM(user);
     showToast(t('welcome') + ' ' + user.name + '!', 'success');
@@ -930,51 +949,27 @@ function renderAuth(mode) {
       ${offerSms ? `<div style="margin-top:14px;"><button type="button" id="auth-use-sms" style="${linkStyle}">${t('svUseSms')}</button></div>` : ''}`;
 
     const phoneInput = document.getElementById('auth-phone');
-    phoneInput.addEventListener('blur', async () => {
-      const phone = phoneInput.value.trim();
-      if (phone.length >= 8) {
-        const user = await store.findUserByPhone(phone);
-        if (!user) showToast(t('userNotFound'), 'error');
-      }
-    });
     document.getElementById('auth-use-sms')?.addEventListener('click', () => showSmsPhone(phoneInput.value.trim()));
 
+    // The server finds the member by phone and checks the password: the
+    // member list a visitor can read carries no phone numbers. The member's
+    // record is read once they are in.
     document.getElementById('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('auth-submit-btn');
       const reset = () => { btn.disabled = false; btn.textContent = t('start'); };
+      const phone = phoneInput.value.trim();
+      const pass = document.getElementById('auth-password').value;
+      btn.disabled = true;
+      btn.textContent = '...';
       try {
-        const phone = phoneInput.value.trim();
-        const pass = document.getElementById('auth-password').value;
-        btn.disabled = true;
-        btn.textContent = '...';
-
-        const user = await store.findUserByPhone(phone);
-        if (!user) { showToast(t('userNotFound'), 'error'); reset(); return; }
-        if (user.status === 'hold') { showToast(t('svErrHeld'), 'error'); reset(); return; }
-        // Passwords are checked by the server. A record that still carries
-        // its own has not been moved there yet (the admin's one-off move):
-        // until then it is checked here, as it always was.
-        let authUid = null;
-        if (typeof user.password === 'string' && user.password !== '') {
-          if (user.password !== pass) { showToast(t('pwErrWrong'), 'error'); reset(); return; }
-          // A Firebase identity left on this browser by another member's
-          // sign-in must not speak for this one.
-          store.signOutPhoneAuth();
-        } else {
-          try {
-            authUid = (await store.passwordSignIn(phone, pass)).uid;
-          } catch (err) {
-            console.warn('sign-in by password:', err?.code || err);
-            showToast(passwordErrorText(err), 'error');
-            reset();
-            return;
-          }
-        }
-        completeLogin({ ...user, ...(authUid && { authUid }) });
+        const { memberId, uid } = await store.passwordSignIn(phone, pass);
+        const user = await store.loadSignedInMember(memberId, mnLocal(phone) || phone);
+        if (!user) { showToast(t('svErrGeneric'), 'error'); reset(); return; }
+        completeLogin({ ...user, ...(uid && { authUid: uid }) });
       } catch (err) {
-        console.error('Auth error:', err);
-        showToast('Алдаа гарлаа.', 'error');
+        console.warn('sign-in by password:', err?.code || err);
+        showToast(passwordErrorText(err), 'error');
         reset();
       }
     });
@@ -983,6 +978,9 @@ function renderAuth(mode) {
   // ---- The SMS, step 1: whose phone ----
   // The number must be a member's, and a Mongolian one: the provider works
   // with Mongolian operators only, so a foreign number keeps the password.
+  // The server is the one that knows whose phone it is — the member list a
+  // visitor can read carries no phone numbers — and says so when it is no
+  // one's, a held member's, or a foreign number.
   function showSmsPhone(prefill = '') {
     stopWait();
     body.innerHTML = `
@@ -1009,12 +1007,7 @@ function renderAuth(mode) {
       btn.textContent = '...';
       try {
         const typed = phoneInput.value.trim();
-        const member = await store.findUserByPhone(typed);
-        if (!member) { showToast(t('userNotFound'), 'error'); reset(); return; }
-        if (member.status === 'hold') { showToast(t('svErrHeld'), 'error'); reset(); return; }
-        if (!mnLocal(member.phone)) { showToast(t('svErrForeign'), 'error'); reset(); return; }
-        const session = await store.startPhoneVerify(member.phone);
-        showSmsSend(member, session, typed);
+        showSmsSend(await store.startPhoneVerify(typed), typed);
       } catch (err) {
         console.warn('sign-in by SMS, start:', err?.code || err);
         showToast(t(verifyErrorKey(err)), 'error');
@@ -1029,7 +1022,7 @@ function renderAuth(mode) {
   // comes back from the SMS app). Each SMS to the short code is charged to
   // the member whether it matches or not, so the send button goes the moment
   // the sign-in is through, and an expired code says not to send it.
-  function showSmsSend(member, session, typed) {
+  function showSmsSend(session, typed) {
     stopWait();
     const expAt = Date.parse(session.expiresAt) || (Date.now() + 5 * 60 * 1000);
     const shortcode = esc(session.shortcode || '144773');
@@ -1085,7 +1078,7 @@ function renderAuth(mode) {
         btn.disabled = true;
         btn.textContent = '...';
         try {
-          showSmsSend(member, await store.startPhoneVerify(member.phone), typed);
+          showSmsSend(await store.startPhoneVerify(typed), typed);
         } catch (err) {
           console.warn('sign-in by SMS, new code:', err?.code || err);
           showToast(t(verifyErrorKey(err)), 'error');
@@ -1103,9 +1096,13 @@ function renderAuth(mode) {
         const out = await store.checkPhoneVerify(session);
         if (over) return;
         if (out.status === 'VERIFIED') {
-          // Through: nothing more to send.
-          stopWait();
+          // Through: nothing more to send. The member's record is read now
+          // that this browser is them; if it cannot be read just now the
+          // wait goes on and the next check tries again — with no new SMS.
           document.getElementById('sv-send')?.remove();
+          const member = await store.loadSignedInMember(session.memberId, session.phone);
+          if (over || !member) return;
+          stopWait();
           completeLogin({ ...member, ...(out.uid && { authUid: out.uid }), phoneVerifiedAt: Date.now() });
         } else if (out.status === 'EXPIRED') {
           expire();
@@ -1146,14 +1143,11 @@ function renderAuth(mode) {
     const pwd = prompt("System Admin Password:");
     if (!pwd) return;
     try {
-      const res = await fetch('/api/admin-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pwd })
-      });
-      if (res.ok) {
+      if (await store.adminPasswordSignIn(pwd)) {
         currentUser = { id: "admin_uid", name: "System Admin", role: "admin", status: "active", createdAt: Date.now() };
         store.saveUser(currentUser);
+        store.markSession();
+        sessionEndedNotice = false;
         location.hash = '#/admin';
         router();
       } else {
@@ -5938,6 +5932,18 @@ async function renderAdminPanel() {
             <button type="button" id="pw-migrate-btn" class="btn btn-primary btn-sm">${t('pwMigrateBtn')}</button>
           </div>` : '';
           })()}
+          ${(() => {
+            // Phone numbers, bank details and club codes still sitting on the
+            // public member records, which anyone can read without signing
+            // in. An admin moves them to the private half once; when none
+            // are left this notice is gone.
+            const n = store.unmovedPrivateCount();
+            return n ? `
+          <div id="priv-migrate" style="background:var(--bg-card-hover);border-left:4px solid var(--danger-color);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="flex:1;min-width:200px;font-size:0.9rem;color:var(--text-primary);">${t('privMigrateNotice').replace('{n}', n)}</span>
+            <button type="button" id="priv-migrate-btn" class="btn btn-primary btn-sm">${t('privMigrateBtn')}</button>
+          </div>` : '';
+          })()}
           <div style="background: var(--bg-card-hover); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
             <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
               <h3 style="margin:0;">${t('createUser')}</h3>
@@ -6280,6 +6286,27 @@ async function renderAdminPanel() {
     }
   });
 
+  document.getElementById('priv-migrate-btn')?.addEventListener('click', async (e) => {
+    if (!confirm(t('privMigrateConfirm'))) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const out = await store.migratePrivateFields();
+      showToast(t('privMigrateDone').replace('{n}', out.cleared ?? 0), 'success');
+      renderAdminPanel();
+    } catch (err) {
+      console.warn('migrate private fields:', err?.code || err);
+      showToast(err?.status === 404 && !err?.code ? t('privMigrateNotDeployed')
+        : err?.code === 'FUNCTIONS_OUTDATED' ? t('privMigrateOutdated')
+        : err?.code === 'UNAUTHENTICATED' ? t('pwMigrateNeedsSignIn')
+        : err?.code === 'FORBIDDEN' ? t('pwMigrateAdminOnly')
+        : passwordErrorText(err), 'error');
+      btn.disabled = false;
+      btn.textContent = t('privMigrateBtn');
+    }
+  });
+
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
   createUserToggle?.addEventListener('click', () => {
@@ -6335,11 +6362,21 @@ async function renderAdminPanel() {
       return;
     }
 
-    const created = await store.adminCreateUser(name, phone, 'user', communities, {
-      lastName, firstName,
-      fullName: [firstName, lastName].filter(Boolean).join(' '),
-      gender, ghinNumber, ubgolfMemberId,
-    });
+    // The phone goes to the private half of the record, which only an
+    // admin's own sign-in may write: a refusal is said, not swallowed.
+    let created;
+    try {
+      created = await store.adminCreateUser(name, phone, 'user', communities, {
+        lastName, firstName,
+        fullName: [firstName, lastName].filter(Boolean).join(' '),
+        gender, ghinNumber, ubgolfMemberId,
+      });
+    } catch (err) {
+      console.warn('create member:', err?.message || err);
+      showToast(t('memberSaveRefused'), 'error');
+      submitBtn.disabled = false;
+      return;
+    }
     // A member signs in by SMS; a password is only given when the admin
     // typed one, and it goes to the server, not onto the record.
     if (pass) await setPasswordFor(created.id, pass);
@@ -6592,7 +6629,15 @@ function showAdminEditUserModal(user, onSaved) {
     // saved either, so the admin is not told «saved» with the password unset.
     if (pass && !(await setPasswordFor(user.id, pass))) return;
 
-    await store.adminUpdateUser(user);
+    // A phone, a bank detail, a role, a status: the database takes those
+    // only from an admin's own sign-in. A refusal is said, not swallowed.
+    try {
+      await store.adminUpdateUser(user);
+    } catch (err) {
+      console.warn('save member:', err?.message || err);
+      showToast(t('memberSaveRefused'), 'error');
+      return;
+    }
     if (currentUser && currentUser.id === user.id) {
       store.saveUser(user);
       currentUser = user;
@@ -8256,7 +8301,15 @@ function wireProfileForm(scope, user, afterSave) {
     // refused nothing is saved, so «saved» never covers an unset password.
     if (newPass && !(await setPasswordFor(rec.id, newPass))) return;
 
-    await store.adminUpdateUser(rec);
+    // The bank details and the club code go to the private half of the
+    // record, which takes them only from the member's own sign-in.
+    try {
+      await store.adminUpdateUser(rec);
+    } catch (err) {
+      console.warn('save profile:', err?.message || err);
+      showToast(t('memberSaveRefused'), 'error');
+      return;
+    }
     store.saveUser(rec);
     currentUser = rec;
     showToast('✅ ' + t('saved'), 'success');

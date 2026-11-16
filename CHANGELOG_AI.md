@@ -1,5 +1,79 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Phone numbers and bank details: signed-in members only)
+
+A member's phone number, bank details and MT Bogd club code sat on the
+member record (`users/{id}`), which anyone can read without signing in.
+They are now a private half of the record, `userPrivate/{id}`, that only a
+signed-in member reads. The owner's two choices: members see each other's
+(so settling up after a game still works), and a session that cannot read
+the private half is signed out once.
+
+- **Two halves, one record** (`src/member-record.js`, `src/store.js`): the
+  store merges `users/{id}` and `userPrivate/{id}` when it reads and splits
+  them when it writes, so no screen changed. A visitor's copy has no private
+  fields. A save sends only the private fields that were changed, and
+  `role`/`status` only when they were changed — a stale session or a stale
+  admin list cannot put an old phone or role back, and a browser that may
+  not write the private half is not refused for a save that never touched
+  it.
+- **Rules** (`database.rules.json` — changed, as asked): `userPrivate` is
+  read by a browser whose token names a member who exists and is not on
+  hold; written by that member for their own record or by an admin; a phone
+  number, once there, is an admin's to change. On `users/{id}` the five
+  private fields can no longer be written at all, `role` and `status` only
+  by an admin, and `id` must be the record's own key — without those a
+  member could make themselves an admin, change anyone's phone, and sign in
+  as them.
+- **Sign-in** no longer looks a phone up in the browser (a visitor's member
+  list has no phones): the SMS and the password views ask the server with
+  what was typed, and the member's record is read once they are in. The
+  phone-blur lookup and the old in-browser password check are gone.
+- **Server** (`functions/member-private.js`, `functions/index.js`): the
+  functions read the members merged, so sign-in finds a phone before, during
+  and after the move. The member a token names is the record's key, not the
+  `id` written inside the record. `adminLogin` now also returns a Firebase
+  token (`memberId: admin_uid`), so the system admin reads and writes the
+  private half like any admin. New `migratePrivateFields`, admins only:
+  copies each private field to `userPrivate`, then removes it from the
+  public record; safe to run again; refuses (`FUNCTIONS_OUTDATED`) while
+  `phoneVerifyStart` or `passwordLogin` is still the older version, because
+  moving the phones out from under those would leave no one able to sign in.
+- **Sessions from before** (`store.settleSession`): on the first start, a
+  browser that already carries the member's Firebase identity is marked
+  current and asked nothing; any other is signed out once and told why on
+  the sign-in page.
+- **The move**: Admin → Тоглогчид shows how many records still carry a
+  private field, with «Утас, дансыг нууцлах»; the notice is gone when none
+  do. Refused saves (a phone or a role changed without an admin's identity)
+  now say so instead of failing silently.
+
+**Needs the owner** (`docs/phone-login.md`): after the site deploy, pull
+main and deploy the functions in one command (`phoneVerifyStart`,
+`phoneVerifyCheck`, `passwordLogin`, `setPassword`, `migratePasswords`,
+`migratePrivateFields`, `adminLogin`), then run the move once, signed in by
+SMS as an admin. Until the move the phone numbers and bank details are
+still readable by anyone; the rules only stop new ones being written to
+the public record. Between the site deploy and the functions deploy, a
+member an admin creates, or a phone an admin changes, is not seen by
+sign-in yet.
+
+**Not done**: the rest of the database is still open to any client — food
+orders with the customer's phone among it — and the public half of a member
+record can still be written or deleted by anyone, except role, status, id.
+
+Tests: `scripts/test-member-record.mjs` (15) and
+`scripts/test-member-private.mjs` (14) in `npm run test:mp`. New
+`npm run test:rules` — `scripts/test-rules.mjs` (21) against the Realtime
+Database emulator with the real rules: who reads and writes what, and the
+app's own saves (a member's profile before and after the move, a stale
+copy, an admin's edit, a browser with no identity). Browser, local mode,
+functions stubbed: an old session ended once with the notice, a current one
+kept, a visitor untouched, SMS and password sign-in with each refusal, the
+system admin, the admin's notice and move with each refusal. Not run: the
+real functions; the app against the real database with the new rules; a
+refused save in the admin's edit form.
+
 ## 2026-11-16 (Passwords off the member record)
 
 Every member's password sat in plain text on `users/{id}`, a path any

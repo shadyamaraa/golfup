@@ -3,6 +3,10 @@ import { getDatabase, ref, set, get, update, remove, onValue, push, query, limit
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
 import { samePhone, withoutPassword } from './phone-auth.js';
+import {
+  splitMember, mergeMember, carriesPrivate, baselineOf, memberWrites,
+  SESSION_VERSION, sessionAction,
+} from './member-record.js';
 
 let db = null;
 let auth = null;
@@ -133,19 +137,148 @@ export function getUser() {
 
 export function logoutUser() {
   localStorage.removeItem('golfup_user');
+  localStorage.removeItem(SESSION_MARK);
   signOutPhoneAuth();
 }
 
-// A member record is written field by field (update), never replaced whole,
-// and never with a password: passwords live on the server
-// (functions/passwords.js), so a write from the app must neither carry one
-// nor wipe one that has not been moved there yet. A field is cleared by
-// writing null to it.
+// ---- The session's version ----
+// A session from before members had a Firebase identity cannot read the
+// private half of the member records (below). It is ended once and the
+// member signs in again; a browser that already carries that member's
+// identity is spared the trip. The mark is set at sign-in.
+const SESSION_MARK = 'golfup_session_v';
+
+export function markSession() {
+  try { localStorage.setItem(SESSION_MARK, SESSION_VERSION); } catch (_) { /* storage is off: asked again next time */ }
+}
+
+// The member this browser's Firebase identity speaks for — the `memberId`
+// in its token — or null: signed out, an anonymous device, local mode.
+// Throws when the token cannot be read (it had expired and there is no
+// network to renew it).
+async function memberIdentity() {
+  if (!auth) return null;
+  if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+  const u = auth.currentUser;
+  if (!u || u.isAnonymous) return null;
+  return (await u.getIdTokenResult()).claims.memberId || null;
+}
+
+/**
+ * Bring the session this browser woke up with up to date: 'keep' (current,
+ * or none), 'adopt' (from before, but the browser is already that member —
+ * marked current) or 'end' (from before, with no identity — signed out).
+ */
+export async function settleSession() {
+  const user = getUser();
+  let marker = null;
+  try { marker = localStorage.getItem(SESSION_MARK); } catch (_) { /* as if unmarked */ }
+  if (sessionAction({ user, marker, identity: null }) === 'keep') return 'keep';
+  let identity = null;
+  try {
+    identity = await memberIdentity();
+  } catch (e) {
+    // Could not tell — offline with an expired token. Not a reason to sign
+    // anyone out: it is asked again the next time the app opens.
+    console.warn('session check put off:', e?.code || e);
+    return 'keep';
+  }
+  const action = sessionAction({ user, marker, identity });
+  if (action === 'adopt') markSession();
+  if (action === 'end') logoutUser();
+  return action;
+}
+
+// ---- A member's record, in two places ----
+// users/{id} is the public half — anyone reads it, a visitor included.
+// userPrivate/{id} is the private half — the phone number, the bank details,
+// the club code — and the database rules open it only to a signed-in member
+// (src/member-record.js draws the line). The app works with one record per
+// member: the two halves are merged when read and split when written, so no
+// screen knows there are two. A visitor's copy just has no private fields.
+
+// What this browser last read (or wrote) of each member, in the private and
+// the admin-only fields: a save sends only what differs from it.
+const seen = new Map();
+function remember(user, id = user?.id) {
+  if (user && id) seen.set(id, baselineOf(user));
+  return user;
+}
+
+// How many public records still carry a private field — not yet moved by the
+// admin's one-off step. Counted whenever the members are loaded.
+let unmovedPrivate = 0;
+export function unmovedPrivateCount() { return unmovedPrivate; }
+
+// Whether this browser carries a member's Firebase identity, which is what
+// the rules ask for before the private half may be read.
+async function hasMemberIdentity() {
+  if (!auth) return false;
+  try {
+    if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+  } catch (_) { /* read whatever identity there is */ }
+  return !!auth.currentUser && !auth.currentUser.isAnonymous;
+}
+
+// The identity the rules last refused the private half to. It is not asked
+// again for that identity — a member on hold, or rules that have not been
+// deployed yet, would otherwise cost every member list a wasted wait.
+let privateRefusedFor = null;
+
+// The private half at `path` ('userPrivate' or 'userPrivate/{id}'): its
+// value, null when there is nothing there, or undefined when this browser
+// may not read it. Never throws — a member list without phone numbers is
+// still a member list.
+async function readPrivate(path) {
+  if (!(await hasMemberIdentity())) return undefined;
+  const uid = auth.currentUser.uid;
+  if (privateRefusedFor === uid) return undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const snap = await get(ref(db, path));
+      privateRefusedFor = null;
+      return snap.exists() ? snap.val() : null;
+    } catch (e) {
+      const refused = /permission/i.test(String(e?.message || e));
+      // Right after a sign-in the connection may still be presenting the
+      // identity it had before; one more try a moment later settles it.
+      if (refused && attempt === 0) { await new Promise(r => setTimeout(r, 500)); continue; }
+      if (refused) privateRefusedFor = uid;
+      console.warn('private member data not readable:', e?.message || e);
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+// What the session knows of its own member's private half. It stands in
+// when the private half cannot be read, so a member whose browser has no
+// Firebase identity still has their own phone number and bank details —
+// the ones they signed in with — and loses nothing by opening their profile.
+function ownPrivate(id, me = getUser()) {
+  return me && me.id === id ? splitMember(me).priv : null;
+}
+
+// Write a member: the private half first, then the public one. Only what was
+// changed is sent to the private half, and role and status only when they
+// were changed (memberWrites) — so a copy gone stale cannot put an old phone
+// number or an old role back, and a browser that may not write the private
+// half is not refused for a save that never touched it. A password is never
+// written: passwords live on the server (functions/passwords.js).
+async function writeMember(user) {
+  const { pub, priv } = memberWrites(user, seen.get(user.id) || null);
+  if (Object.keys(priv).length) await update(ref(db, 'userPrivate/' + user.id), priv);
+  await update(ref(db, 'users/' + user.id), pub);
+  if (seen.has(user.id)) remember(user);
+}
+
+// The session, and the member's own record. The session keeps the whole
+// record — it is the member's own data in the member's own browser.
 export function saveUser(user) {
   const clean = withoutPassword(user);
   localStorage.setItem('golfup_user', JSON.stringify(clean));
   if (useFirebase && clean.id && db) {
-    update(ref(db, 'users/' + clean.id), clean).catch(console.warn);
+    writeMember(clean).catch(console.warn);
   }
 }
 
@@ -160,27 +293,39 @@ export async function adminCreateUser(name, phone, role = 'user', communities = 
     ...extra
   };
   if (useFirebase && db) {
-    await set(ref(db, 'users/' + id), user);
+    const { pub, priv } = splitMember(user);
+    const filled = Object.fromEntries(Object.entries(priv).filter(([, v]) => v !== '' && v !== null));
+    // The phone first: a member no one can reach by phone cannot sign in, so
+    // if it cannot be written (only an admin's identity may) nothing is.
+    if (Object.keys(filled).length) await update(ref(db, 'userPrivate/' + id), filled);
+    await set(ref(db, 'users/' + id), pub);
   }
-  return user;
+  return remember(user);
 }
 
+// Save a member an admin edited (or a member, their own profile). What
+// differs from the record as it was read is what the save changes; a record
+// this browser has not read yet is read first.
 export async function adminUpdateUser(user) {
   if (useFirebase && db && user.id) {
-    await update(ref(db, 'users/' + user.id), withoutPassword(user));
+    if (!seen.has(user.id)) await loadUserById(user.id);
+    await writeMember(withoutPassword(user));
   }
 }
 
 export async function loadAllUsers() {
   if (useFirebase && db) {
     try {
-      const snap = await get(ref(db, 'users'));
-      if (!snap.exists()) return [];
+      const [snap, privates] = await Promise.all([get(ref(db, 'users')), readPrivate('userPrivate')]);
+      if (!snap.exists()) { unmovedPrivate = 0; return []; }
       const data = snap.val();
-      return Object.entries(data).map(([id, val]) => ({
-        id: val.id || id,
-        ...val
-      })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      unmovedPrivate = Object.values(data).filter(carriesPrivate).length;
+      const me = privates === undefined ? getUser() : null;
+      return Object.entries(data).map(([key, val]) => {
+        const id = val.id || key;
+        const priv = privates === undefined ? ownPrivate(id, me) : privates?.[id];
+        return remember(mergeMember({ id, ...val }, priv));
+      }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch (error) {
       console.error('Failed to load users:', error);
       return [];
@@ -189,7 +334,7 @@ export async function loadAllUsers() {
   // Local mode: the members a developer seeded, if any.
   try {
     const local = JSON.parse(localStorage.getItem('golfup_users') || '[]');
-    return Array.isArray(local) ? local : Object.values(local || {});
+    return (Array.isArray(local) ? local : Object.values(local || {})).map(u => remember(u));
   } catch (_) {
     return [];
   }
@@ -199,15 +344,33 @@ export async function loadUserById(id) {
   if (!id) return null;
   if (useFirebase && db) {
     try {
-      const snap = await get(ref(db, 'users/' + id));
-      return snap.exists() ? snap.val() : null;
+      const [snap, priv] = await Promise.all([get(ref(db, 'users/' + id)), readPrivate('userPrivate/' + id)]);
+      return snap.exists() ? remember(mergeMember(snap.val(), priv === undefined ? ownPrivate(id) : priv), id) : null;
     } catch (error) {
       console.error('Failed to load user:', error);
       return null;
     }
   }
+  // Local mode: the session's own record, or a member a developer seeded.
   const me = getUser();
-  return me && me.id === id ? me : null;
+  if (me && me.id === id) return me;
+  return (await loadAllUsers()).find(u => u.id === id) || null;
+}
+
+/**
+ * The member who has just signed in, as the app will hold them. `phone` is
+ * the number they signed in with: it stands in when the private half could
+ * not be read (the server could not give this browser the member's
+ * identity), so the session still knows whose phone it is.
+ */
+export async function loadSignedInMember(memberId, phone) {
+  const user = await loadUserById(memberId);
+  if (!user) return null;
+  if (!user.phone && phone) {
+    user.phone = phone;
+    remember(user, memberId);
+  }
+  return user;
 }
 
 export async function findUserByName(name) {
@@ -331,6 +494,43 @@ export function migratePasswords() {
   return callAsMember('migratePasswords', {});
 }
 
+/**
+ * Admin, once: move every phone number, bank detail and club code off the
+ * public member records into the private half. → { moved, kept, cleared }
+ */
+export function migratePrivateFields() {
+  return callAsMember('migratePrivateFields', {});
+}
+
+/**
+ * The system admin's sign-in: true when the password was right. The server
+ * sends a token that makes this browser the system admin for the database
+ * rules; a server from before that sends none, and the admin is then signed
+ * in without the private half of the member records.
+ */
+export async function adminPasswordSignIn(password) {
+  const res = await fetch('/api/admin-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) return false;
+  let token = null;
+  try { token = (await res.json())?.token || null; } catch (_) { /* an older answer: no token */ }
+  let taken = false;
+  if (token && auth) {
+    try {
+      await signInWithCustomToken(auth, token);
+      taken = true;
+    } catch (e) {
+      console.warn('custom token sign-in:', e?.code || e);
+    }
+  }
+  // No identity of the admin's: one left by a member must not stay.
+  if (!taken) signOutPhoneAuth();
+  return true;
+}
+
 // Signing out of the app also signs out the member's Firebase identity; the
 // auth observer then puts the browser back on an anonymous one, which is all
 // a signed-out browser needs. An anonymous identity is left as it is.
@@ -341,7 +541,12 @@ export function signOutPhoneAuth() {
 export async function deleteUserFromDB(uid) {
   if (useFirebase && db) {
     await remove(ref(db, 'users/' + uid));
+    // The private half goes with the record. A browser that may not write
+    // it leaves it behind — closed to the public, and ignored by sign-in,
+    // which only knows the members that have a record.
+    await remove(ref(db, 'userPrivate/' + uid)).catch(e => console.warn('private half not removed:', e?.message || e));
   }
+  seen.delete(uid);
 }
 
 // ---- Game Storage ----

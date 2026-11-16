@@ -50,12 +50,14 @@ function verifyPassword(password, stored) {
 
 const fail = (status, code, message, extra) => ({ status, body: { error: { code, message: message || code, ...extra } } });
 
-// The member whose phone this is: [record key, member id, user] or null.
+// The member whose phone this is: { key, memberId, user, e164 } or null. The
+// member's id is the record's key — never the `id` written inside the
+// record, which the app writes and anyone could have changed.
 function findByPhone(users, phone) {
   const want = toE164(phone);
   if (!want) return null;
   const hit = Object.entries(users || {}).find(([, u]) => u && typeof u === 'object' && toE164(u.phone) === want);
-  return hit ? { key: hit[0], memberId: String(hit[1].id || hit[0]), user: hit[1], e164: want } : null;
+  return hit ? { key: hit[0], memberId: String(hit[0]), user: hit[1], e164: want } : null;
 }
 
 /**
@@ -150,7 +152,7 @@ async function migratePasswords(deps, body) {
   let hashed = 0; let kept = 0; let removed = 0;
   for (const [key, u] of Object.entries(users)) {
     if (!u || typeof u !== 'object' || !('password' in u)) continue;
-    const memberId = String(u.id || key);
+    const memberId = String(key);
     if (typeof u.password === 'string' && u.password !== '') {
       const secret = await deps.getSecret(memberId);
       // The hash is written before the plain text goes: a failure between
@@ -166,5 +168,5 @@ async function migratePasswords(deps, body) {
 
 module.exports = {
   SCRYPT, MIN_LENGTH, MAX_LENGTH, MAX_FAILS, LOCK_MS,
-  hashPassword, verifyPassword, passwordLogin, setPassword, migratePasswords,
+  hashPassword, verifyPassword, passwordLogin, setPassword, migratePasswords, callerOf,
 };

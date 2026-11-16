@@ -8,8 +8,10 @@ up, and how it is switched on.
 The provider is [verify.mn](https://verify.mn/), and it works the other way
 round from a code sent to the phone: **the member sends one SMS**.
 
-1. The member types their phone number. It must already be a member's
-   (`users/*/phone`) and a Mongolian number.
+1. The member types their phone number. It must already be a member's and
+   a Mongolian number — the server is the one that looks it up: the member
+   list a visitor can read carries no phone numbers (see «The private half
+   of a member's record»).
 2. The app shows a six-digit text and the short code **144773**, with a
    «SMS илгээх» button that opens the phone's SMS app with both filled in.
 3. The member sends it from that phone. verify.mn sees which number sent
@@ -19,8 +21,9 @@ round from a code sent to the phone: **the member sends one SMS**.
    signed in.
 
 A code lives five minutes. The member record stays the app's own
-(`users/{id}`); on success it gets `phoneVerifiedAt`, and `authUid` when the
-server could mint a Firebase token (see below).
+(`users/{id}`); it is read once the member is in, and on success it gets
+`phoneVerifiedAt`, and `authUid` when the server could mint a Firebase token
+(see below).
 
 The password stays as the fallback: «Нууц үгээр нэвтрэх» on the SMS
 screens.
@@ -149,8 +152,8 @@ checked, changed and stored by the server only.
 - **Changing it** — `setPassword { idToken, memberId, password }`, 4 to 128
   characters. The caller proves who they are with their Firebase ID token:
   a member changes their own, an admin anyone's. A browser with no member
-  identity (a session from before these functions, the system admin) is
-  told to sign in again.
+  identity (the server could not mint a token at sign-in) is told to sign
+  in again.
 - **A new member has none.** The admin's form takes a password only as an
   option.
 - **The app never writes one.** Member records are written field by field
@@ -175,13 +178,100 @@ every client can read. To move them:
    hashes each into `userSecrets` and removes it from the record. Members
    keep the same password. When none are left the notice is gone.
 
-It is safe to run again. Until a member's password is moved, the app
-checks it the old way, so nothing depends on the order of these steps and
-the site's own deploy.
+It is safe to run again. Done on 2026-11-16: no record carries a password
+any more, and the app no longer checks one itself — the password view asks
+the server, always.
+
+## The private half of a member's record
+
+A member's phone number, bank details and MT Bogd club code used to sit on
+the member record, which anyone can read without signing in. The record is
+now in two places:
+
+| Path | What | Who reads it |
+|---|---|---|
+| `users/{id}` | the public half: name, avatar, handicap, role, status, circles, push token | anyone, a visitor included |
+| `userPrivate/{id}` | `phone`, `bankName`, `bankAccount`, `bankIban`, `mtbogdCode` | a signed-in member — their own and the other members' |
+| `userSecrets/{id}` | the password hash | the functions only |
+
+The app still works with one record per member: `src/store.js` merges the
+two halves when it reads and splits them when it writes
+(`src/member-record.js` draws the line), so no screen knows there are two.
+A visitor's copy simply has no private fields.
+
+**What the rules ask** (`database.rules.json`):
+
+- `userPrivate` is read by a browser whose Firebase token carries
+  `memberId` (minted at sign-in), naming a member who exists and is not on
+  hold. It is written by that member for their own record, or by an admin.
+- A phone number, once there, is only an admin's to change.
+- On `users/{id}`: the five private fields and `password` cannot be written
+  at all; `role` and `status` only by an admin (a new record may start as
+  an active `user`); `id` must be the record's own key.
+
+The last two are what keep the first honest: a member who could make
+themselves an admin, or pass their record off as an admin's, could write
+any member's phone — and then sign in as them.
+
+**What a save sends.** Only the private fields that were changed, and
+`role`/`status` only when they were changed (`memberWrites`). A copy gone
+stale — the session, a list an admin opened an hour ago — therefore cannot
+put an old phone number or an old role back, and a browser that may not
+write the private half is not refused for a save that never touched it.
+
+**The server.** Sign-in finds a member by phone, so the functions read the
+members merged (`functions/member-private.js`, `mergeUsers`): the public
+record with the private half over it. A phone still on a public record is
+read too, so sign-in works before, during and after the move. The member a
+token names is the record's key — never the `id` written inside the record.
+
+**The system admin** (`/api/admin-login`) gets a Firebase token too — uid
+`system-admin`, `memberId: admin_uid` — so it reads and writes the private
+half like any admin. Against a server that has not been redeployed it gets
+none: it signs in, but sees no phone numbers and cannot change one.
+
+**Sessions from before.** A session saved before this cannot read the
+private half unless the browser already carries the member's Firebase
+identity. On the first start after the change such a browser is marked
+current and asked nothing; any other is signed out once and told why on the
+sign-in page (`store.settleSession`, the mark is `golfup_session_v`).
+
+### Moving the phone numbers and bank details — once
+
+Until the move the fields are still on the public records and still
+readable by anyone; the rules only stop new ones being written there.
+
+1. Deploy the functions — all of these in one command, so that sign-in
+   reads the private half before anything is moved:
+   ```bash
+   git checkout main && git pull origin main
+   firebase deploy --only functions:phoneVerifyStart,functions:phoneVerifyCheck,functions:passwordLogin,functions:setPassword,functions:migratePasswords,functions:migratePrivateFields,functions:adminLogin --project golfup-app
+   ```
+2. Sign in **by SMS** as an admin, open Admin → Тоглогчид. While any public
+   record still carries a private field a notice says how many; «Утас,
+   дансыг нууцлах» copies each field to `userPrivate` and removes it from
+   the record — the private copy first, then the removal.
+
+The move refuses to start (`FUNCTIONS_OUTDATED`) if `phoneVerifyStart` or
+`passwordLogin` is still the older version: with the phones gone from the
+public records, an old function would find no member and no one could sign
+in. It is safe to run again, and a value already in the private half (a
+phone an admin changed since) is the one that stays.
+
+### Testing the rules
+
+`npm run test:rules` runs `scripts/test-rules.mjs` against the Realtime
+Database emulator with `database.rules.json` (it needs Java; the Firebase
+CLI comes through npx). It is not part of `npm run test:mp`.
 
 ## Not done yet
 
-- Database rules still let any client read and write most paths — phone
-  numbers and bank details on member records included. Sign-in proves who a
-  member is; making the rules depend on it (`auth.token.memberId`) is the
-  next step.
+- The rest of the database is still open to any client: games, rounds,
+  notifications, follows, orders. Food orders carry the customer's phone
+  number (`orders/*/customerPhone`) and can be read without signing in.
+- The public half of a member record can still be written, or deleted, by
+  anyone — everything on it except the role, the status and the id. Tying
+  those writes to the member's own identity is the next step.
+- A member record that is deleted by a browser with no admin identity
+  leaves its private half behind (closed to the public, ignored by
+  sign-in).
