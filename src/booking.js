@@ -6,12 +6,20 @@ const BASE = '/api/mtbogd';
 async function checkOk(r) {
   if (r.ok) return r.json();
   let msg = `${r.status}`;
+  let code = null;
   try {
     const body = await r.json();
     msg = body?.error?.message || body?.message || msg;
+    // MTBogd names its refusals (PLAYER_NOT_FOUND, SEAT_ALREADY_PAID); where
+    // the name sits in the body is not ours to rely on, so every likely
+    // place is read and the first all-caps one wins.
+    code = [body?.error?.code, body?.code, body?.error, body?.error?.message, body?.message]
+      .map(v => (typeof v === 'string' ? /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/.exec(v)?.[0] : null))
+      .find(Boolean) || null;
   } catch (_) {}
   const err = new Error(msg);
   err.status = r.status; // the booking log records the HTTP status alongside the message
+  err.code = code;
   throw err;
 }
 
@@ -40,11 +48,16 @@ export async function confirmBooking(holdId, customer, players, notes = '') {
 }
 
 // QPay invoice for a confirmed booking (MTBogd owns the QPay merchant + lifecycle).
-export async function createQpayInvoice(bookingId) {
+// `seat` picks whose seat it is for — { playerPhone } (preferred), or
+// { playerName } / { playerIndex } / { playerIndexes } — and the invoice is
+// for that seat's amount alone. Without it MTBogd invoices everything still
+// unpaid on the booking. 404 PLAYER_NOT_FOUND: sync the players first;
+// 409 SEAT_ALREADY_PAID: that seat is paid.
+export async function createQpayInvoice(bookingId, seat = null) {
   return checkOk(await fetch(`${BASE}/bookings/${bookingId}/qpay-invoice`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(seat && typeof seat === 'object' ? seat : {}),
   }));
 }
 

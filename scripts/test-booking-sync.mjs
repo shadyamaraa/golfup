@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   bookingState, compareBooking, verifyOutcome, attachable, remoteSummary,
   bookingReason, logEntry, gamePlayerCount,
-  BOOK_MODES, bookModeOf, seatsToBook, bookingRoster, bookingPrice,
+  phoneKey, bookingPlayer, seatsToBook, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote,
 } from '../src/booking-sync.js';
 import { MTBOGD_CONFIG } from '../src/config.js';
 
@@ -116,50 +116,119 @@ test('gamePlayerCount: arrays, objects, duplicates', () => {
   assert.equal(gamePlayerCount(null), null);
 });
 
-// ---- Seats and per-player pricing (MTBogd bills per player since 2026-11) ----
+// ---- Seats: every player pays their own (Sky ONE, 2026-11-16) ----
 
-test('bookModeOf reads a known mode and nothing else', () => {
-  assert.deepEqual(BOOK_MODES, ['flight', 'self']);
-  assert.equal(bookModeOf({ bookingMode: 'flight' }), 'flight');
-  assert.equal(bookModeOf({ bookingMode: 'self' }), 'self');
-  assert.equal(bookModeOf({ bookingMode: 'all' }), null);
-  assert.equal(bookModeOf({}), null);
-  assert.equal(bookModeOf(null), null);
+test('phoneKey keeps the last eight digits', () => {
+  assert.equal(phoneKey('99119007'), '99119007');
+  assert.equal(phoneKey('+976 9911-9007'), '99119007');
+  assert.equal(phoneKey(99119007), '99119007');
+  assert.equal(phoneKey('123'), '123');
+  assert.equal(phoneKey(''), '');
+  assert.equal(phoneKey(null), '');
 });
 
-test('seatsToBook: the whole flight, or the players already in', () => {
-  assert.equal(seatsToBook('flight', 4, 1), 4);
-  assert.equal(seatsToBook('flight', '5', 2), 5);
-  assert.equal(seatsToBook('flight', 0, 2), 1);
-  assert.equal(seatsToBook('self', 4, 1), 1);
-  assert.equal(seatsToBook('self', 4, 3), 3);
-  assert.equal(seatsToBook('self', 4, 0), 1);      // the booker always holds a seat
-  assert.equal(seatsToBook(undefined, 4, 2), 2);
+test('bookingPlayer: a name, and a phone only when there is one', () => {
+  assert.deepEqual(bookingPlayer(' Bat ', ' 99110001 '), { name: 'Bat', phone: '99110001' });
+  assert.deepEqual(bookingPlayer('Bat', ''), { name: 'Bat' });
+  assert.deepEqual(bookingPlayer('Bat'), { name: 'Bat' });
+  assert.deepEqual(bookingPlayer(null, null), { name: '' });
 });
 
-test('bookingRoster pads a flight booking to its seats and leaves others as they are', () => {
-  const a = { name: 'Bat', phone: '99' }, b = { name: 'Bold' };
-  const flight = { bookingMode: 'flight', bookingSeats: 4 };
-  assert.deepEqual(bookingRoster(flight, [a, b], 'Mak'), [a, b, { name: 'Mak' }, { name: 'Mak' }]);
-  // A full (or overfull) flight is sent as it stands.
-  assert.deepEqual(bookingRoster({ bookingMode: 'flight', bookingSeats: 2 }, [a, b, a], 'Mak'), [a, b, a]);
-  // Self and legacy bookings send the roster: the bill follows who joined.
-  assert.deepEqual(bookingRoster({ bookingMode: 'self', bookingSeats: 4 }, [a], 'Mak'), [a]);
-  assert.deepEqual(bookingRoster({}, { x: a, y: b }, 'Mak'), [a, b]);
-  assert.deepEqual(bookingRoster(flight, null, 'Mak'), [{ name: 'Mak' }, { name: 'Mak' }, { name: 'Mak' }, { name: 'Mak' }]);
+test('seatsToBook: the players already in, at least the booker', () => {
+  assert.equal(seatsToBook(1), 1);
+  assert.equal(seatsToBook(3), 3);
+  assert.equal(seatsToBook(0), 1);
+  assert.equal(seatsToBook(null), 1);
+  assert.equal(seatsToBook('2'), 2);
 });
 
 test('bookingPrice reads the per-player record and tolerates the flat one', () => {
-  // Per-player (today): unit × count = total.
-  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 380000, playerCount: 4, greenFeePrice: 1520000 }),
-    { unit: 380000, seats: 4, total: 1520000 });
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 380000, greenFeeMemberUnitPrice: 300000, playerCount: 4, greenFeePrice: 1520000 }),
+    { unit: 380000, memberUnit: 300000, seats: 4, total: 1520000 });
   // Total missing: worked out from unit × count.
-  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 300000, players: [{}, {}] }), { unit: 300000, seats: 2, total: 600000 });
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: 300000, players: [{}, {}] }), { unit: 300000, memberUnit: null, seats: 2, total: 600000 });
   // Flat-price days: no unit, the total stands alone.
-  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: null, playerCount: 3, greenFeePrice: 300000 }), { unit: null, seats: 3, total: 300000 });
-  // qpay-status shape: only an amount.
-  assert.deepEqual(bookingPrice({ amount: 380000 }), { unit: null, seats: null, total: 380000 });
+  assert.deepEqual(bookingPrice({ greenFeeUnitPrice: null, playerCount: 3, greenFeePrice: 300000 }), { unit: null, memberUnit: null, seats: 3, total: 300000 });
+  // qpay-status shape: an amount and a count.
+  assert.deepEqual(bookingPrice({ amount: 380000 }), { unit: null, memberUnit: null, seats: null, total: 380000 });
   assert.equal(bookingPrice({}), null);
   assert.equal(bookingPrice(null), null);
   assert.equal(bookingPrice({ greenFeePrice: 0, amount: 'x' }), null);
+});
+
+// MTBogd's qpay-status answer, as it came back on 2026-11-16.
+const seat = (name, phone, amount, paid = false) => ({ name, phone, amount, paid, paidAt: null, paymentMethod: null });
+const statusOf = (players, over = {}) => ({
+  paymentStatus: 'pending', amount: players.reduce((n, s) => n + s.amount, 0),
+  playerCount: players.length, paidSeats: players.filter(s => s.paid).length,
+  balanceDue: players.filter(s => !s.paid).reduce((n, s) => n + s.amount, 0),
+  players: players.map((s, index) => ({ index, ...s })), customerType: 'guest', ...over,
+});
+
+test('seatsByPlayer matches by phone before name', () => {
+  const st = statusOf([seat('Dorj', '88112233', 380000, true), seat('Bat', '99110001', 300000)]);
+  const by = seatsByPlayer(st, [
+    { id: 'u1', name: 'Bat-Erdene', phone: '+976 99110001' },   // name differs, phone agrees
+    { id: 'u2', name: 'Dorj', phone: '' },
+  ]);
+  assert.deepEqual(by, { u1: { amount: 300000, paid: false }, u2: { amount: 380000, paid: true } });
+});
+
+test('seatsByPlayer: a seat is given out once, and same names take seats in turn', () => {
+  const st = statusOf([seat('Mak', '', 380000, true), seat('Mak', '', 380000)]);
+  assert.deepEqual(seatsByPlayer(st, [{ id: 'a', name: 'mak' }, { id: 'b', name: ' Mak ' }]),
+    { a: { amount: 380000, paid: true }, b: { amount: 380000, paid: false } });
+});
+
+test('seatsByPlayer pairs the rest in order only when the counts agree', () => {
+  // One player, one seat, the name spelt another way: it can only be theirs.
+  assert.deepEqual(seatsByPlayer(statusOf([seat('Amarbayasgalan B', '', 380000)]), [{ id: 'u1', name: 'amara' }]),
+    { u1: { amount: 380000, paid: false } });
+  // One player, four seats under other names: no guess.
+  const four = statusOf([seat('X', '', 380000), seat('X', '', 380000), seat('X', '', 380000), seat('X', '', 380000)]);
+  assert.deepEqual(seatsByPlayer(four, [{ id: 'u1', name: 'amara' }]), {});
+  assert.deepEqual(seatsByPlayer(null, [{ id: 'u1', name: 'a' }]), {});
+  assert.deepEqual(seatsByPlayer(four, null), {});
+  assert.deepEqual(seatsByPlayer({ players: 'junk' }, [{ id: 'u1', name: 'a' }]), {});
+});
+
+test('bookingQuoteOf: the total, the seats paid and each player\'s own seat', () => {
+  const booking = { greenFeeUnitPrice: 380000, greenFeeMemberUnitPrice: 300000, playerCount: 2, greenFeePrice: 680000 };
+  const st = statusOf([seat('Bat', '99110001', 300000, true), seat('Dorj', '88112233', 380000)], { customerType: 'member' });
+  const q = bookingQuoteOf(booking, st, [{ id: 'u1', name: 'Bat', phone: '99110001' }, { id: 'u2', name: 'Dorj', phone: '88112233' }]);
+  assert.deepEqual(q, {
+    amount: 680000, unit: 380000, memberUnit: 300000, seats: 2, customerType: 'member',
+    paidSeats: 1, balanceDue: 380000, allPaid: false,
+    paid: { u1: true }, due: { u1: 300000, u2: 380000 },
+  });
+  assert.equal(JSON.stringify(q).includes('99110001'), false, 'no phone is kept on the game');
+});
+
+test('bookingQuoteOf: paid in full, the status alone, and nothing at all', () => {
+  const st = statusOf([seat('Bat', '', 380000, true)], { paymentStatus: 'paid' });
+  const q = bookingQuoteOf(null, st, [{ id: 'u1', name: 'Bat' }]);
+  assert.equal(q.amount, 380000);
+  assert.equal(q.allPaid, true);
+  assert.equal(q.paidSeats, 1);
+  assert.equal(q.balanceDue, 0);
+  assert.deepEqual(q.paid, { u1: true });
+  // A status from before the per-player fields: a total and nothing else.
+  assert.deepEqual(bookingQuoteOf(null, { amount: 300000, customerType: 'member' }, [{ id: 'u1', name: 'Bat' }]), {
+    amount: 300000, unit: null, memberUnit: null, seats: null, customerType: 'member',
+    paidSeats: null, balanceDue: null, allPaid: false, paid: {}, due: {},
+  });
+  assert.equal(bookingQuoteOf(null, null, []), null);
+  assert.equal(bookingQuoteOf({}, {}, []), null);
+});
+
+test('sameQuote reads past what the database drops', () => {
+  const q = { amount: 380000, unit: 380000, memberUnit: 300000, seats: 1, customerType: 'guest', paidSeats: 0, balanceDue: 380000, allPaid: false, paid: {}, due: { u1: 380000 } };
+  // As it comes back: nulls, false and empty maps gone, a timestamp added.
+  const stored = { amount: 380000, unit: 380000, memberUnit: 300000, seats: 1, customerType: 'guest', paidSeats: 0, balanceDue: 380000, due: { u1: 380000 }, at: 5 };
+  assert.equal(sameQuote(q, stored), true);
+  assert.equal(sameQuote(q, { ...stored, paid: { u1: true } }), false);
+  assert.equal(sameQuote(q, { ...stored, balanceDue: 0 }), false);
+  assert.equal(sameQuote(q, { ...stored, due: { u1: 300000 } }), false);
+  assert.equal(sameQuote(q, null), false);
+  assert.equal(sameQuote(null, undefined), true);
 });

@@ -134,50 +134,133 @@ function clean(obj) {
   return out;
 }
 
-// ---- Seats: what a booking holds, and what it costs ----
-// MTBogd bills a booking per player — greenFeeUnitPrice × playerCount — where
-// until November 2026 it billed one flat price per tee time. So the number of
-// players a booking carries is now money. A game books either the whole
-// flight up front ('flight': every seat held, and billed, from the start) or
-// only the players already in ('self': the creator alone at first, each
-// joiner added to the booking as they join). Games booked before the choice
-// existed carry no mode and keep the old behaviour: the roster as it stands.
-export const BOOK_MODES = ['flight', 'self'];
+// ---- Seats: who is on the booking, what each owes, who has paid ----
+// MTBogd (Sky ONE) bills a booking per player, and since 16 November 2026
+// every player pays their own seat: the booker for themselves, each joiner
+// for theirs. So the players list sent to MTBogd is exactly the players in
+// the game — no seat is held under a repeated name — and each carries a
+// phone when known: MTBogd ties a payment to a seat by phone, then by name,
+// so a paid seat stays paid when the list is sent again or reordered, and a
+// club member's phone gets that seat the member rate.
 
-export function bookModeOf(game) {
-  return BOOK_MODES.includes(game?.bookingMode) ? game.bookingMode : null;
+const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+
+/** A phone as a match key: its last 8 digits ('' when there are none). */
+export function phoneKey(phone) {
+  const d = String(phone ?? '').replace(/\D/g, '');
+  return d.length > 8 ? d.slice(-8) : d;
 }
 
-/** Seats to book: the whole flight, or the players already in (at least one). */
-export function seatsToBook(mode, groupSize, joined) {
-  if (mode === 'flight') return Math.max(1, Math.floor(Number(groupSize)) || 1);
+const nameKey = (name) => String(name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** One player as MTBogd takes them: { name, phone? }. */
+export function bookingPlayer(name, phone) {
+  const ph = String(phone ?? '').trim();
+  return { name: String(name ?? '').trim(), ...(ph && { phone: ph }) };
+}
+
+/** Seats to book: the players already in — at least the booker. */
+export function seatsToBook(joined) {
   return Math.max(1, Math.floor(Number(joined)) || 0);
 }
 
 /**
- * The players list sent to MTBogd. A flight booking keeps every seat it
- * holds: the joined players first, then the booker's name on each seat still
- * open, so a sync never hands seats back (or shrinks the bill) by accident.
- * Any other booking sends the roster as it stands.
- */
-export function bookingRoster(game, players, fillerName) {
-  const list = asList(players).filter(Boolean);
-  if (bookModeOf(game) !== 'flight') return list;
-  const pad = Math.max(0, (Math.floor(Number(game?.bookingSeats)) || 0) - list.length);
-  return [...list, ...Array.from({ length: pad }, () => ({ name: String(fillerName || '') }))];
-}
-
-/**
- * What MTBogd's booking record says it costs: { unit, seats, total }, any of
- * them null when MTBogd did not say. A booking from the flat-price days has
- * no unit price — its total stands alone. Null when there is no price at all.
+ * What MTBogd's booking record says it costs: { unit, memberUnit, seats,
+ * total }, any of them null when MTBogd did not say. `unit` is the guest
+ * price of a seat and `memberUnit` the member's. A booking from the
+ * flat-price days has no unit price — its total stands alone. Null when
+ * there is no price at all.
  */
 export function bookingPrice(remote) {
   if (!remote || typeof remote !== 'object') return null;
-  const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
   const unit = num(remote.greenFeeUnitPrice);
+  const memberUnit = num(remote.greenFeeMemberUnitPrice);
   const seats = num(remote.playerCount) ?? (Array.isArray(remote.players) ? remote.players.length || null : null);
   const total = num(remote.greenFeePrice) ?? num(remote.amount) ?? (unit && seats ? unit * seats : null);
   if (!total && !unit) return null;
-  return { unit, seats, total };
+  return { unit, memberUnit, seats, total };
+}
+
+/**
+ * Which MTBogd seat belongs to which player of the game: { [playerId]:
+ * { amount, paid } }. `status` is MTBogd's qpay-status answer (players[] with
+ * each seat's amount and paid flag); `players` are the game's, as { id, name,
+ * phone }. A seat is matched by phone, then by name, and what is left is
+ * paired in order only when as many seats as players remain — a guess is
+ * worse than no answer where money is shown. Each seat is given out once.
+ */
+export function seatsByPlayer(status, players) {
+  const seats = asList(status?.players).filter(s => s && typeof s === 'object');
+  const list = asList(players).filter(p => p && p.id);
+  const out = {};
+  const free = new Set(seats.keys());
+  const todo = new Set(list.keys());
+  const take = (pi, si) => {
+    out[list[pi].id] = { amount: num(seats[si].amount), paid: seats[si].paid === true };
+    free.delete(si); todo.delete(pi);
+  };
+  const pass = (keyOf) => {
+    for (const pi of [...todo]) {
+      const k = keyOf(list[pi]);
+      if (!k) continue;
+      const si = [...free].find(i => keyOf(seats[i]) === k);
+      if (si !== undefined) take(pi, si);
+    }
+  };
+  pass(x => phoneKey(x.phone));
+  pass(x => nameKey(x.name));
+  if (todo.size && todo.size === free.size) {
+    const rest = [...free];
+    [...todo].forEach((pi, n) => take(pi, rest[n]));
+  }
+  return out;
+}
+
+/**
+ * The money side of a booking as the game keeps it (`bookingQuote`), from
+ * MTBogd's booking record and its qpay-status answer: the total and what it
+ * is made of, how many seats are paid, and per player of the game what they
+ * owe (`due`) and whether they have paid (`paid`). Holds no phone numbers —
+ * the game record is readable by every client. Null when MTBogd gave no
+ * price.
+ */
+export function bookingQuoteOf(booking, status, players) {
+  const p = bookingPrice(booking) || bookingPrice(status);
+  if (!p?.total) return null;
+  const st = status && typeof status === 'object' ? status : {};
+  const seats = asList(st.players).filter(s => s && typeof s === 'object');
+  const paid = {}; const due = {};
+  for (const [id, s] of Object.entries(seatsByPlayer(st, players))) {
+    if (s.paid) paid[id] = true;
+    if (s.amount) due[id] = s.amount;
+  }
+  // Zero is an answer here (no seat paid, nothing left to pay); blank is not.
+  const count = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) || Number(v) < 0
+    ? null : Number(v));
+  return {
+    amount: p.total, unit: p.unit, memberUnit: p.memberUnit, seats: p.seats,
+    customerType: st.customerType || null,
+    paidSeats: count(st.paidSeats) ?? (seats.length ? seats.filter(s => s.paid === true).length : null),
+    balanceDue: count(st.balanceDue),
+    allPaid: String(st.paymentStatus ?? '').toLowerCase() === 'paid',
+    paid, due,
+  };
+}
+
+/**
+ * Whether two quotes say the same thing. The database drops nulls and empty
+ * objects, so a saved quote never looks like the one that was written; the
+ * comparison reads past that (and past `at`, the time it was taken).
+ */
+export function sameQuote(a, b) {
+  const norm = (q) => {
+    const o = q && typeof q === 'object' ? q : {};
+    const map = (m) => JSON.stringify(Object.entries(m && typeof m === 'object' ? m : {})
+      .filter(([, v]) => v).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
+    return JSON.stringify([
+      o.amount ?? null, o.unit ?? null, o.memberUnit ?? null, o.seats ?? null, o.customerType ?? null,
+      o.paidSeats ?? null, o.balanceDue ?? null, !!o.allPaid, map(o.paid), map(o.due),
+    ]);
+  };
+  return norm(a) === norm(b);
 }

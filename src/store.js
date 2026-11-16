@@ -523,8 +523,16 @@ export async function markBookingPaid(id, amount) {
   });
 }
 
-// The real MTBogd price for a booking, cached on the game after the first
-// qpay-status call so later visits render it without re-querying MTBogd.
+// MTBogd puts a booking that was paid in full back to pending when another
+// player joins it — their seat is unpaid. The game's flag follows.
+export async function markBookingUnpaid(id) {
+  if (!useFirebase || !db) return;
+  await update(ref(db, 'games/' + id), { bookingPaid: false, paidAt: null, paidAmount: null });
+}
+
+// What MTBogd says a booking costs and who has paid (see bookingQuoteOf in
+// src/booking-sync.js), kept on the game so every player's page shows it
+// without each of them asking MTBogd.
 export async function saveBookingQuote(id, quote) {
   if (useFirebase && db) {
     await update(ref(db, 'games/' + id), { bookingQuote: quote });
