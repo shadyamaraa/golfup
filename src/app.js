@@ -5192,23 +5192,30 @@ async function renderJoinPay(gameId) {
   main().innerHTML = `
     <div class="detail-container fade-in" style="max-width:480px;">
       <a href="#/game/${gameId}" class="back-link" id="jp-back">${icon('back', { size: 16 })} ${t('back')}</a>
-      <div class="glass-card">
-        <h3 style="margin:0 0 14px;">${t('joinPayTitle')}</h3>
-        <div style="font-size:0.9rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
+      <div class="glass-card" style="padding:22px;">
+        <h3 style="margin:0 0 12px;">${t('joinPayTitle')}</h3>
+        <div style="font-size:0.9rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:6px;">
           <span style="display:flex;align-items:center;gap:6px;">${icon('location', { size: 14 })} ${esc(game.location)}</span>
           <span style="display:flex;align-items:center;gap:6px;">${icon('time', { size: 14 })} ${formatDate(game.date)} ${game.time}</span>
         </div>
         ${price ? `
-        <div style="border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin:10px 0;padding:10px 0;font-size:0.9rem;">
+        <div class="game-description" style="margin-top:16px;">
           ${price.unit ? `
-          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('bookYourSeat')}</span><span>${price.unit.toLocaleString()}₮</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+            <span style="font-weight:700;color:var(--text-primary);">${t('bookYourSeat')}</span>
+            <span style="font-size:1.3rem;font-weight:800;color:var(--text-primary);white-space:nowrap;">${price.unit.toLocaleString()}₮</span>
+          </div>
           ${price.memberUnit && price.memberUnit !== price.unit ? `
-          <div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px;font-size:0.85rem;color:var(--text-secondary);"><span>${t('bookMemberSeat')}</span><span>${price.memberUnit.toLocaleString()}₮</span></div>` : ''}
-          <div style="margin-top:6px;font-size:0.78rem;color:var(--text-secondary);">${t('bookJoinAddsSeat')} ${t('bookEachPaysOwn')}</div>`
-          : `<div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('orderTotal')}</span><span>${price.total.toLocaleString()}₮</span></div>`}
+          <div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-size:0.85rem;color:var(--text-secondary);"><span>${t('bookMemberSeat')}</span><span style="white-space:nowrap;">${price.memberUnit.toLocaleString()}₮</span></div>` : ''}
+          <p style="margin:10px 0 0;font-size:0.8rem;line-height:1.45;color:var(--text-secondary);">${t('bookJoinAddsSeat')} ${t('bookEachPaysOwn')}</p>`
+          : `
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+            <span style="font-weight:700;color:var(--text-primary);">${t('orderTotal')}</span>
+            <span style="font-size:1.3rem;font-weight:800;color:var(--text-primary);white-space:nowrap;">${price.total.toLocaleString()}₮</span>
+          </div>`}
         </div>` : ''}
-        <div style="margin-top:6px;">
-          <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">Төлбөр</label>
+        <div style="margin-top:18px;">
+          <div class="cs-label">${t('joinPayMethod')}</div>
           <div class="chip-row" id="jp-pay-chips">
             <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
             ${TEE_QPAY_ENABLED
@@ -5217,7 +5224,7 @@ async function renderJoinPay(gameId) {
             }
           </div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:18px;">
+        <div style="display:flex;gap:10px;margin-top:22px;">
           <button id="jp-join-btn" class="btn btn-primary" style="flex:1;">${t('join')}</button>
           <button id="jp-cancel-btn" class="btn btn-ghost">${t('cancel')}</button>
         </div>
