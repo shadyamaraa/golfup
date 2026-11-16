@@ -3721,6 +3721,91 @@ function renderPlayerDots(game) {
 }
 
 // ---- Create Game View ----
+// The time picker's window, the same on the create and the edit page and for
+// every course: a title, a line of context, and the body the caller fills.
+function openTimePickerShell(title, hint) {
+  const overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const modal = document.createElement('div');
+  modal.className = 'glass-card fade-in';
+  modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${title}</h3>
+      <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+    </div>
+    <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 12px;">${hint}</p>
+    <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  modal.querySelector('#ttp-close').onclick = () => overlay.remove();
+  return { overlay, slotsEl: modal.querySelector('#ttp-slots') };
+}
+
+// The clock as a picker, in the tee-time picker's layout: the hours of the
+// morning and the afternoon, and under the hour tapped its starts. `hourSel`
+// and `minSel` are the form's own (hidden) selects — their options are the
+// times offered, their values what the form holds and what a pick writes.
+// It opens on the time held; `onPick` runs after a pick, for the caller to
+// repaint what shows the time.
+function openClockPicker({ hourSel, minSel, hint, onPick }) {
+  const { overlay, slotsEl } = openTimePickerShell(t('bookSelectSlot'), hint);
+  const hours = [...hourSel.options].map(o => o.value);
+  const minutes = [...minSel.options].map(o => o.value);
+  const groups = { am: hours.filter(h => +h < 12), pm: hours.filter(h => +h >= 12) };
+  const keyOf = h => (+h < 12 ? 'am' : 'pm');
+  const secOpen = { am: keyOf(hourSel.value) === 'am', pm: keyOf(hourSel.value) === 'pm' };
+  let openHour = hourSel.value;
+
+  function pick(h, m) {
+    hourSel.value = h;
+    minSel.value = m;
+    onPick?.();
+    overlay.remove();
+  }
+
+  function sectionHtml(key, label, arr) {
+    if (arr.length === 0) return '';
+    const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
+      arr.map(h => {
+        const isOpen = openHour === h;
+        const minRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
+          minutes.map(m => {
+            const sel = hourSel.value === h && minSel.value === m;
+            return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-h="${h}" data-m="${m}" style="font-size:0.8rem;padding:5px 12px;">${h}:${m}</button>`;
+          }).join('')
+        }</div>` : '';
+        return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
+          <button type="button" class="ttp-time" data-h="${h}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'var(--bg-card-hover)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+            ${h}:00
+          </button>${minRow}
+        </div>`;
+      }).join('')
+    }</div>` : '';
+    return `<div style="margin-bottom:10px;">
+      <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:var(--bg-card-hover);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+        <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${arr.length})</span></span>
+        <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
+      </button>${body}
+    </div>`;
+  }
+
+  function renderHours() {
+    slotsEl.innerHTML = sectionHtml('am', t('bookAM'), groups.am) + sectionHtml('pm', t('bookPM'), groups.pm);
+    slotsEl.querySelectorAll('.ttp-sec').forEach(b => b.onclick = () => {
+      secOpen[b.dataset.sec] = !secOpen[b.dataset.sec];
+      renderHours();
+    });
+    slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
+      openHour = openHour === b.dataset.h ? null : b.dataset.h;
+      renderHours();
+    });
+    slotsEl.querySelectorAll('.ttp-tee').forEach(b => b.onclick = () => pick(b.dataset.h, b.dataset.m));
+  }
+  renderHours();
+}
+
 async function renderCreateGame() {
   main().innerHTML = `<div class="create-container fade-in"><div class="loading-spinner"></div></div>`;
   const _td = new Date();
@@ -3973,90 +4058,15 @@ async function renderCreateGame() {
     return `${document.getElementById('game-hour')?.value || '08'}:${document.getElementById('game-minute')?.value || '00'}`;
   }
 
-  // The time picker's window, the same for every course: a title, a line of
-  // context, and the body the caller fills.
-  function openTimePickerShell(title, hint) {
-    const overlay = document.createElement('div');
-    overlay.className = 'popup-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
-    const modal = document.createElement('div');
-    modal.className = 'glass-card fade-in';
-    modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
-    modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${title}</h3>
-        <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
-      </div>
-      <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 12px;">${hint}</p>
-      <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    modal.querySelector('#ttp-close').onclick = () => overlay.remove();
-    return { overlay, slotsEl: modal.querySelector('#ttp-slots') };
-  }
-
-  // A course the app cannot book (no tee sheet to ask): the same window as
-  // the MTBogd picker, with the clock in place of the free slots — the hours
-  // of the morning and the afternoon, and under the hour tapped its
-  // ten-minute starts. It opens on the time the form already holds.
+  // A course the app cannot book (no tee sheet to ask): the clock, in the
+  // same window as the MTBogd picker, opening on the time the form holds.
   function openTimePopup() {
-    const { overlay, slotsEl } = openTimePickerShell(t('bookSelectSlot'), t('bookNoSheetHint'));
-    const hourSel = document.getElementById('game-hour');
-    const minSel = document.getElementById('game-minute');
-    const hours = [...hourSel.options].map(o => o.value);
-    const minutes = [...minSel.options].map(o => o.value);
-    const groups = { am: hours.filter(h => +h < 12), pm: hours.filter(h => +h >= 12) };
-    const keyOf = h => (+h < 12 ? 'am' : 'pm');
-    const secOpen = { am: keyOf(hourSel.value) === 'am', pm: keyOf(hourSel.value) === 'pm' };
-    let openHour = hourSel.value;
-
-    function pick(h, m) {
-      hourSel.value = h;
-      minSel.value = m;
-      updateValue9Visibility();
-      updateSelectedSlotDisplay();
-      overlay.remove();
-    }
-
-    function sectionHtml(key, label, arr) {
-      if (arr.length === 0) return '';
-      const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
-        arr.map(h => {
-          const isOpen = openHour === h;
-          const minRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
-            minutes.map(m => {
-              const sel = hourSel.value === h && minSel.value === m;
-              return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-h="${h}" data-m="${m}" style="font-size:0.8rem;padding:5px 12px;">${h}:${m}</button>`;
-            }).join('')
-          }</div>` : '';
-          return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
-            <button type="button" class="ttp-time" data-h="${h}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'var(--bg-card-hover)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
-              ${h}:00
-            </button>${minRow}
-          </div>`;
-        }).join('')
-      }</div>` : '';
-      return `<div style="margin-bottom:10px;">
-        <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:var(--bg-card-hover);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
-          <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${arr.length})</span></span>
-          <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
-        </button>${body}
-      </div>`;
-    }
-
-    function renderHours() {
-      slotsEl.innerHTML = sectionHtml('am', t('bookAM'), groups.am) + sectionHtml('pm', t('bookPM'), groups.pm);
-      slotsEl.querySelectorAll('.ttp-sec').forEach(b => b.onclick = () => {
-        secOpen[b.dataset.sec] = !secOpen[b.dataset.sec];
-        renderHours();
-      });
-      slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
-        openHour = openHour === b.dataset.h ? null : b.dataset.h;
-        renderHours();
-      });
-      slotsEl.querySelectorAll('.ttp-tee').forEach(b => b.onclick = () => pick(b.dataset.h, b.dataset.m));
-    }
-    renderHours();
+    openClockPicker({
+      hourSel: document.getElementById('game-hour'),
+      minSel: document.getElementById('game-minute'),
+      hint: t('bookNoSheetHint'),
+      onPick: () => { updateValue9Visibility(); updateSelectedSlotDisplay(); },
+    });
   }
 
   async function openTeeTimePopup() {
@@ -6570,7 +6580,13 @@ async function renderEditGame(gameId) {
     return;
   }
 
-  const [hour, min] = game.time ? game.time.split(':') : ['08', '00'];
+  const [hour, min] = (game.time ? game.time.split(':') : ['08', '00']).map(v => String(v).padStart(2, '0'));
+  // The times the picker offers: the usual hours and ten-minute starts, plus
+  // the game's own when it sits outside them (a tee time at :08, an early
+  // start) — so opening the form never moves a time nobody touched.
+  const withOwn = (list, v) => (list.includes(v) ? list : [...list, v].sort());
+  const editHours = withOwn([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => String(i).padStart(2, '0')), hour);
+  const editMinutes = withOwn([0, 10, 20, 30, 40, 50].map(i => String(i).padStart(2, '0')), min);
   const isPast = !isNaN(gDate) && gDate < Date.now();
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
@@ -6588,19 +6604,30 @@ async function renderEditGame(gameId) {
       <div class="create-card glass-card">
         <h2 class="card-title" style="display:flex;align-items:center;gap:8px;">${icon('edit', { size: 20 })} Edit Game</h2>
         <form id="edit-form" class="create-form">
-          <div class="input-group">
-            <label for="edit-date">${t('date')}</label>
-            <input type="date" id="edit-date" required value="${game.date}" />
-          </div>
-          <div class="input-group">
-            <label for="game-time">${t('time')}</label>
-            <div style="display: flex; gap: 10px;">
-              <select id="edit-hour" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(i => `<option value="${i.toString().padStart(2, '0')}" ${i.toString().padStart(2, '0') === hour ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
-              <select id="edit-minute" required style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-size: 1rem;">
-                ${[0, 10, 20, 30, 40, 50].map(m => `<option value="${m.toString().padStart(2, '0')}" ${m.toString().padStart(2, '0') === min ? 'selected' : ''}>${m.toString().padStart(2, '0')}</option>`).join('')}
-              </select>
+          <div class="create-section">
+            <div class="cs-label">${t('dateTime')}</div>
+            <div class="dt-row">
+              <label class="dt-card" for="edit-date">
+                <span class="dt-ic">${icon('bookings', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('date')}</span>
+                  <input type="date" id="edit-date" required value="${game.date}" class="dt-input" />
+                </span>
+              </label>
+              <div class="dt-card tappable" id="edit-time-card">
+                <span class="dt-ic">${icon('time', { size: 19 })}</span>
+                <span class="dt-body"><span class="dt-cap">${t('time')}</span>
+                  <span class="dt-time" style="display:none;">
+                    <select id="edit-hour" required>
+                      ${editHours.map(h => `<option value="${h}" ${h === hour ? 'selected' : ''}>${h}</option>`).join('')}
+                    </select>
+                    <select id="edit-minute" required>
+                      ${editMinutes.map(m => `<option value="${m}" ${m === min ? 'selected' : ''}>${m}</option>`).join('')}
+                    </select>
+                  </span>
+                  <span class="dt-time"><span id="edit-time-val">${hour}:${min}</span></span>
+                </span>
+                <span class="dt-hint">${icon('next', { size: 15 })}</span>
+              </div>
             </div>
           </div>
           <div class="input-group">
@@ -6699,6 +6726,20 @@ async function renderEditGame(gameId) {
     'edit-course-rating', 'edit-course-slope', 'edit-course-par', game.course?.tee);
   renderEditTeeChips();
   document.getElementById('edit-location').addEventListener('change', renderEditTeeChips);
+
+  // The Time card opens the same picker as the create page. Editing never
+  // books or moves a booking, so it is the clock for every course; the line
+  // in the window says what a new time does and does not change.
+  const editHourSel = document.getElementById('edit-hour');
+  const editMinSel = document.getElementById('edit-minute');
+  document.getElementById('edit-time-card').addEventListener('click', () => {
+    const isMt = document.getElementById('edit-location').value === MTBOGD_CONFIG.locationName;
+    openClockPicker({
+      hourSel: editHourSel, minSel: editMinSel,
+      hint: isMt ? t('editTimeMtHint') : t('bookNoSheetHint'),
+      onPick: () => { document.getElementById('edit-time-val').textContent = `${editHourSel.value}:${editMinSel.value}`; },
+    });
+  });
 
   document.querySelectorAll('#edit-mode-chips .seg-chip').forEach(chip => {
     chip.addEventListener('click', () => {
