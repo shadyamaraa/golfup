@@ -122,6 +122,19 @@ Users:
 }
 ```
 
+GHIN (`ghin/{memberId}`, written by the server only — `docs/ghin.md`):
+
+```js
+{
+  number, found, // found: false when GHIN has no golfer under the number
+  name, club, association, status,
+  hi, hiValue, // '12.3' as GHIN displays it, and the number behind it
+  lowHi, revDate, withdrawn,
+  env, // staging | production
+  syncedAt
+}
+```
+
 Games:
 
 ```js

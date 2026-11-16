@@ -502,6 +502,77 @@ export function migratePrivateFields() {
   return callAsMember('migratePrivateFields', {});
 }
 
+// ---- GHIN: the official Handicap Index ----
+// GHIN is read by the server (functions/ghin.js) with the association's
+// login, which never reaches the browser; only a signed-in member may ask.
+// What the server reads it stores under ghin/{memberId} — a path no client
+// can write, so what it holds is what GHIN said — and members read it there.
+
+// Local mode has no server-written path: what the functions answered is
+// kept in this browser, so a developer sees the same screens.
+function localGhin() {
+  try { return JSON.parse(localStorage.getItem('golfup_ghin') || '{}') || {}; } catch (_) { return {}; }
+}
+function keepLocalGhin(patch) {
+  if (useFirebase) return;
+  try { localStorage.setItem('golfup_ghin', JSON.stringify({ ...localGhin(), ...patch })); } catch (_) { /* storage is off */ }
+}
+
+/**
+ * Who GHIN has under a number: { number, name, club, association, status,
+ * hi, hiValue, lowHi, revDate, withdrawn, env }. Nothing is stored. Rejects
+ * with an error whose `code` ghinErrorKey reads (NOT_FOUND among them).
+ */
+export async function ghinCheck(number) {
+  const out = await callAsMember('ghinGolfer', { ghin: number });
+  return { ...out.golfer, env: out.env };
+}
+
+/**
+ * Read a member's Handicap Index from GHIN and store it: one's own, or any
+ * member's for an admin. Resolves to the stored record.
+ */
+export async function ghinSync(memberId) {
+  const out = await callAsMember('ghinSync', memberId ? { memberId } : {});
+  const id = memberId || getUser()?.id;
+  if (id && out.ghin) keepLocalGhin({ [id]: out.ghin });
+  return out.ghin;
+}
+
+/** Admin: read every member's Handicap Index from GHIN. → { members, found, notFound, env } */
+export function ghinSyncAll() {
+  return callAsMember('ghinSyncAll', {});
+}
+
+/** What GHIN said of one member, or null: never read, or not this browser's to read. */
+export async function loadGhin(memberId) {
+  if (!memberId) return null;
+  if (useFirebase && db) {
+    try {
+      const snap = await get(ref(db, 'ghin/' + memberId));
+      return snap.exists() ? snap.val() : null;
+    } catch (e) {
+      console.warn('GHIN record not readable:', e?.message || e);
+      return null;
+    }
+  }
+  return localGhin()[memberId] || null;
+}
+
+/** What GHIN said of every member: { memberId: record }. Empty when it cannot be read. */
+export async function loadAllGhin() {
+  if (useFirebase && db) {
+    try {
+      const snap = await get(ref(db, 'ghin'));
+      return snap.exists() ? snap.val() : {};
+    } catch (e) {
+      console.warn('GHIN records not readable:', e?.message || e);
+      return {};
+    }
+  }
+  return localGhin();
+}
+
 /**
  * The system admin's sign-in: true when the password was right. The server
  * sends a token that makes this browser the system admin for the database

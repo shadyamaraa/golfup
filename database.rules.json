@@ -32,6 +32,10 @@
         "$other": { ".validate": false }
       }
     },
+    "ghin": {
+      ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+      ".write": false
+    },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },
