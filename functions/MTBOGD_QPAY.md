@@ -45,3 +45,24 @@ https://ubgolf.club/api/mtbogd-webhook
 ```
 
 Тоглолт нь төлбөрөөс үл хамаарч **үргэлж үүснэ** (booking эхлээд confirm хийгдсэн).
+
+## Тоглогч бүр өөрийн суудлаа төлнө (2026-11-16)
+
+Sky ONE-ийн шинэ журам: захиалагч зөвхөн өөрийн суудлаа, нэгдсэн хүн бүр өөрийнхөө
+суудлыг төлнө. UBGolf тал:
+
+- **Захиалга үүсгэх** — `players`-д зөвхөн бодит тоглогчид (үүсгэгч ганцаараа бол 1),
+  тус бүр `{ name, phone }`. Нэрийг давтаж суудал дүүргэхгүй.
+- **Нэгдэх / гарах** — `syncBookingPlayers` тоглолтын жагсаалтыг (нэр + утас) илгээнэ.
+- **Нэхэмжлэх** — `POST /bookings/:id/qpay-invoice { playerPhone }` (утасгүй бол
+  `playerName`). `404 PLAYER_NOT_FOUND` → sync хийгээд дахин; `409 SEAT_ALREADY_PAID`
+  → төлөгдсөн гэж үзнэ.
+- **Төлөв** — `qpay-status`-ийн `players[]`, `paidSeats`, `balanceDue`-г уншиж,
+  тоглолт дээр `bookingQuote { amount, unit, memberUnit, seats, paidSeats, balanceDue,
+  allPaid, paid: { userId: true }, due: { userId: amount } }` хадгална (утас хадгалахгүй).
+  `bookingPaid` нь бүх суудал төлөгдсөн үед л `true`; хүн нэмэгдвэл буцаж `false` болно.
+- **Webhook** — `paid` / `cancelled` хэвээр; `payment_updated` зэрэг бусад event-ийг
+  `mtbogdWebhook` алгасаад `200` буцаана (хэсэгчилсэн төлбөрийг client `qpay-status`-аас уншина).
+
+QPay товч одоогоор хаалттай: `src/app.js` → `TEE_QPAY_ENABLED = false`. Бодит төлбөрөөр
+туршсаны дараа `true` болгоно (рестораны `QPAY_ENABLED`-ээс тусдаа).

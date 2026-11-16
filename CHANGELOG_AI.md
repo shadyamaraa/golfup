@@ -1,5 +1,48 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Sky ONE: every player pays their own seat)
+
+Sky ONE (MTBogd) changed the rule the same day the two booking modes
+shipped: a booker pays only their own seat, each player who joins pays
+theirs, and nobody buys a flight whole. The API follows — `players[]` with
+each seat's `amount` and `paid` on qpay-status, an invoice per player
+(`qpay-invoice { playerPhone }`), a `payment_updated` webhook event.
+
+- **One way to book.** The «Бүтэн flight / Зөвхөн өөрийгөө» choice is gone.
+  A new game holds one seat, the booker's, sent as `{ name, phone }`;
+  booking a tee time for a game that already has players holds one seat
+  each. No name is repeated to fill seats, and the player sync sends the
+  roster as it stands (`bookingMode` / `bookingSeats` are no longer written
+  or read). Names and phones go out the same way at creation and in every
+  sync, so a seat — and a payment on it — stays its player's.
+- **Whose seat is whose.** `seatsByPlayer` (`src/booking-sync.js`) matches
+  MTBogd's seats to the game's players by phone, then name, and pairs the
+  rest in order only when the counts agree. `bookingQuoteOf` turns the
+  booking and its status into the game's `bookingQuote`: total, unit and
+  member unit, seats, seats paid, balance, and per player what they owe and
+  whether they paid — no phone numbers, the record is world-readable.
+- **What members see.** Every player in the game sees «Таны суудал:
+  380,000₮ · Төлөгдөөгүй — clubhouse дээр төлнө» or «✓ Төлсөн». The
+  organiser's line reads «680,000₮ (2 суудал) · төлсөн 1/2» (the «N × unit»
+  sum only when every seat costs the same). The join sheet shows the seat
+  price and the member's. Any player's visit refreshes the quote (throttled,
+  written only when changed); `bookingPaid` now follows MTBogd both ways —
+  a booking paid in full goes back to unpaid when someone joins
+  (`store.markBookingUnpaid`).
+- **Paying by QPay — built, switched off.** `TEE_QPAY_ENABLED = false` in
+  `src/app.js` keeps the QPay chip on «Удахгүй». Behind it: a «QPay-ээр
+  төлөх» button on the player's seat, and QPay as a choice when creating or
+  joining; the invoice is for that player's seat (`playerPhone`, else
+  `playerName`), `PLAYER_NOT_FOUND` syncs the roster and asks again,
+  `SEAT_ALREADY_PAID` counts as paid, and the wait ends when that seat is
+  paid rather than the whole booking. The restaurant's `QPAY_ENABLED` is a
+  separate flag and unchanged.
+
+No Cloud Function changed: the proxy forwards the invoice body as it is, and
+the webhook already acknowledges events it does not know. Verified in a
+browser against stubbed MTBogd endpoints, with the QPay switch off and (for
+the payment paths only, locally) on; not yet against a real payment.
+
 ## 2026-11-16 (MTBogd per-player billing: book the flight, or just yourself)
 
 MTBogd now bills a booking per player: tee-times quote `price` per person

@@ -2,7 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
-import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingRoster, bookingPrice } from './booking-sync.js';
+import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
 import { mountMpAdmin, discardMpDraft, mountDeviceAdmin, devRoleLabel } from './matchplay-admin.js';
@@ -57,6 +57,11 @@ const isKiosk = !!window.__TAURI__;
 // checkout) — the QPay option shows as "coming soon" and only Clubhouse
 // payment is selectable. To re-enable, set this back to true.
 const QPAY_ENABLED = false;
+// Paying one's own tee-time seat by QPay through MTBogd (Sky ONE issues an
+// invoice per player). The flow is built and waits behind this switch until
+// it has been tried with a real payment; the restaurant's QPay is the flag
+// above and stays apart.
+const TEE_QPAY_ENABLED = false;
 
 let currentUser = null;
 let allUsersMap = {};
@@ -3867,11 +3872,6 @@ async function renderCreateGame() {
     </div>`;
 
   let selectedTeeSlot = null;
-  // What the booking holds — MTBogd bills per player, so this is money: the
-  // whole flight's seats up front, or only the booker's (each joiner is added
-  // to the booking when they join). Chosen in the tee-time picker, since it
-  // also decides which tee times have room.
-  let bookMode = 'flight';
   // Set the first time a slot is picked in this form; tells the no-slot guard
   // whether the member lost a choice (date change, clear) or never made one.
   let slotEverSelected = false;
@@ -3883,22 +3883,23 @@ async function renderCreateGame() {
     if (ttVal && !selectedTeeSlot) ttVal.textContent = t('bookSelectSlot');
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
-    // MTBogd's slot price is per player; the line spells out what this
-    // booking will be billed: the seats it holds × that price.
-    const seats = seatsToBook(bookMode, +document.getElementById('game-group-size').value, 1);
+    // The booker takes one seat and pays for it; everyone who joins is added
+    // to the booking and pays their own. So the slot's per-player price is
+    // the booker's whole bill. (The flight size already follows the slot's
+    // free seats — selectSlot caps it.)
     const unit = Number(selectedTeeSlot.price) || 0;
     el.innerHTML = `<div style="margin-top:8px; padding:8px 12px; border-radius:8px; background:rgba(var(--primary-rgb),0.12); border:1px solid var(--gold); font-size:0.9rem;">
       ✅ ${t('bookSlotSelected')}: <strong>${selectedTeeSlot.time}</strong> · ${selectedTeeSlot.teeLabel || ('T'+selectedTeeSlot.startTee)}
       <button type="button" id="clear-slot-btn" style="margin-left:10px; background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:0.8rem; text-decoration:underline;">${t('bookClearSlot')}</button>
       <div style="margin-top:4px; font-size:0.82rem; color:var(--text-secondary);">
-        ${bookMode === 'flight' ? t('bookModeFlight') : t('bookModeSelf')} · ${seats} ${t('bookSeats')}${unit ? ` · <strong style="color:var(--text-primary);">${(unit * seats).toLocaleString()}₮</strong> (${seats} × ${unit.toLocaleString()}₮)` : ''}
+        ${unit ? `${t('bookYourSeat')}: <strong style="color:var(--text-primary);">${unit.toLocaleString()}₮</strong> · ` : ''}${t('bookEachPaysOwn')}
       </div>
     </div>
     <div style="margin-top:8px;">
       <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Төлбөрийн арга</div>
       <div class="chip-row" id="create-payment-chips">
         <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
-        ${QPAY_ENABLED
+        ${TEE_QPAY_ENABLED
           ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
           : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem; opacity:0.85;">(${t('payComingSoon')})</span></button>`
         }
@@ -3922,13 +3923,12 @@ async function renderCreateGame() {
   const SLOTS_TTL = 60 * 1000;
   function fetchTeeTimes() {
     const date = document.getElementById('game-date').value;
-    // Booking only yourself needs one free seat, so tee times another party
-    // has half-filled are open to it too; a whole flight needs them all.
-    const seats = seatsToBook(bookMode, +document.getElementById('game-group-size').value, 1);
-    const key = `${date}|${seats}|${teeHoles}`;
+    // The booker holds one seat, so any tee time with a free seat is open —
+    // one another party has half-filled too. Each slot shows its seats left.
+    const key = `${date}|${teeHoles}`;
     const hit = slotsCache[key];
     if (hit && Date.now() - hit.ts < SLOTS_TTL) return hit.promise;
-    const promise = mtbogd.getTeeTimes(date, seats, teeHoles)
+    const promise = mtbogd.getTeeTimes(date, 1, teeHoles)
       .catch(err => { delete slotsCache[key]; throw err; });
     slotsCache[key] = { ts: Date.now(), promise };
     return promise;
@@ -3975,27 +3975,13 @@ async function renderCreateGame() {
         <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookViewSlots')}</h3>
         <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
-      ${bookModeChipsHTML('ttp-mode', bookMode, +document.getElementById('game-group-size').value, 1, t('bookModeSelf'))}
+      <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 12px;">${t('bookOwnSeatHint')}</p>
       <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     modal.querySelector('#ttp-close').onclick = () => overlay.remove();
 
     const slotsEl = modal.querySelector('#ttp-slots');
-    // A change of mode changes which tee times have room: the list is fetched
-    // again, and a slot picked for the other mode is let go.
-    modal.querySelectorAll('#ttp-mode .seg-chip').forEach(chip => chip.onclick = () => {
-      if (chip.dataset.mode === bookMode) return;
-      bookMode = chip.dataset.mode;
-      modal.querySelectorAll('#ttp-mode .seg-chip').forEach(c => c.classList.toggle('active', c === chip));
-      modal.querySelector('#ttp-mode-hint').textContent = bookMode === 'flight' ? t('bookModeFlightHint') : t('bookModeSelfHint');
-      selectedTeeSlot = null;
-      updateSelectedSlotDisplay();
-      slotsEl.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
-      loadSlots();
-    });
-    loadSlots();
-    async function loadSlots() {
     try {
       const data = await fetchTeeTimes();
       const slots = (data.times || []).filter(s => s.status === 'available');
@@ -4082,7 +4068,6 @@ async function renderCreateGame() {
       renderGroups();
     } catch (err) {
       slotsEl.innerHTML = `<p style="font-size:0.85rem; color:var(--danger-color); margin:8px 0;">${t('bookFailed')}: ${err.message}</p>`;
-    }
     }
   }
 
@@ -4215,8 +4200,6 @@ async function renderCreateGame() {
         chipsEl.querySelectorAll('.seg-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         sizeInput.value = chip.dataset.size;
-        // A flight books every seat, so the size is the bill: refresh the sum.
-        updateSelectedSlotDisplay();
         prefetchTeeTimes();
       });
     });
@@ -4298,12 +4281,11 @@ async function renderCreateGame() {
 
     // Payment method (only meaningful when a tee slot is selected).
     const teePayMethod = document.querySelector('#create-payment-chips .seg-chip.active')?.dataset.pay || 'clubhouse';
-    const useQpayTee = QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
+    const useQpayTee = TEE_QPAY_ENABLED && teePayMethod === 'qpay' && !!(selectedTeeSlot && selectedTeeSlot.price);
 
     let bookingCode = null;
     let bookingId = null;
     let bookingSlotId = null;
-    let bookedSeats = null;
     // How this booking came to be — saved on the game, logged step by step.
     let booking = null;
     const bookingLog = [];
@@ -4331,13 +4313,14 @@ async function renderCreateGame() {
       try {
         const playerName = store.memberName(currentUser) || displayUsername(currentUser);
         const playerPhone = currentUser.phone || '';
-        bookedSeats = seatsToBook(bookMode, groupSize, 1);
-        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, bookedSeats, teeHoles);
+        // One seat: the booker's own. Whoever joins is added to the booking
+        // by the player sync and pays their own seat.
+        const hold = await mtbogd.createHold(selectedTeeSlot.slotId, 1, teeHoles);
         bookingLog.push(logEntry('hold_ok', { by: currentUser.id, detail: hold?.holdId ?? null }));
         step = 'confirm';
-        // One entry per seat held: a flight carries the booker's name on the
-        // seats still open (syncBookingPlayers keeps them held as people join).
-        const playerList = Array.from({ length: bookedSeats }, () => ({ name: playerName }));
+        // Named and phoned exactly as the player sync will send them later,
+        // so the seat — and a payment made on it — stays this player's.
+        const playerList = [bookingPlayerOf(currentUser)];
         // Always confirm the booking now (MTBogd: status confirmed, paymentStatus
         // pending). QPay is an optional payment step after, handled by MTBogd.
         // Club code (profile) lets MTBogd resolve member/senior rates directly
@@ -4392,7 +4375,7 @@ async function renderCreateGame() {
       isPrivate,
       targetCommunities,
       invitedIds,
-      ...(bookingCode && { bookingCode, bookingId, bookingSlotId, bookingMode: bookMode, bookingSeats: bookedSeats }),
+      ...(bookingCode && { bookingCode, bookingId, bookingSlotId }),
       ...(booking && { booking })
     };
 
@@ -4432,7 +4415,7 @@ async function renderCreateGame() {
     // QR and let MTBogd own the payment lifecycle. The game exists regardless of
     // whether the user completes payment.
     if (useQpayTee && bookingId) {
-      await showMtbogdQpayModal(bookingId, game.id);
+      await showMtbogdQpayModal(game);
       return;
     }
 
@@ -4528,25 +4511,78 @@ function wireTeeChips(containerId, getLocation, ratingId, slopeId, parId, initia
   return render;
 }
 
-// The booking-mode choice: the whole flight's seats, or only the players
-// already in, each with the seat count it books. `selfLabel` names the second
-// option for where it is shown — «Зөвхөн өөрийгөө» on a new game, «Нэгдсэн
-// хүмүүс» on one that already has players.
-function bookModeChipsHTML(id, mode, groupSize, joined, selfLabel) {
-  const chip = (m, label) => `<button type="button" class="seg-chip ${mode === m ? 'active' : ''}" data-mode="${m}">${label} · ${seatsToBook(m, groupSize, joined)}</button>`;
-  return `
-    <div style="margin-bottom:12px;">
-      <div class="chip-row" id="${id}">${chip('flight', t('bookModeFlight'))}${chip('self', selfLabel)}</div>
-      <div id="${id}-hint" style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;">${mode === 'flight' ? t('bookModeFlightHint') : t('bookModeSelfHint')}</div>
-    </div>`;
-}
-
-// "1,520,000₮ (4 × 380,000₮)" — MTBogd's total with the per-player sum behind
-// it; a booking from the flat-price days (no unit price) shows its total alone.
+// "760,000₮ (2 × 380,000₮)" — MTBogd's total with the per-player sum behind
+// it when every seat costs the same (all guests, or all members). Members and
+// guests on one booking pay different seats, so then it says only how many
+// there are; a booking from the flat-price days shows its total alone.
 function bookingPriceText(p) {
   if (!p?.total) return '';
-  const total = `<strong style="color:var(--text-primary);">${p.total.toLocaleString()}₮</strong>`;
-  return p.unit && p.seats ? `${total} (${p.seats} × ${p.unit.toLocaleString()}₮)` : total;
+  const total = `<strong style="color:var(--text-primary);">${Number(p.total).toLocaleString()}₮</strong>`;
+  if (!p.seats || !p.unit) return total;
+  const each = [p.unit, p.memberUnit].find(u => u && u * p.seats === p.total);
+  return each ? `${total} (${p.seats} × ${each.toLocaleString()}₮)` : `${total} (${p.seats} ${t('bookSeats')})`;
+}
+
+// The organiser's money line: MTBogd's total, the booker's rate while they
+// are the only seat (after that every seat has its own), and the seats paid.
+function bookingMoneyHTML(game, quote = game.bookingQuote) {
+  if (quote?.amount) {
+    const rate = !quote.unit || !(quote.seats > 1) ? bookingRateLabel(quote.customerType) : '';
+    const paid = quote.paidSeats != null && quote.seats ? ` · ${t('bookPaidSeats')} ${quote.paidSeats}/${quote.seats}` : '';
+    return `${t('bookRealPrice')}: ${bookingPriceText({ total: quote.amount, unit: quote.unit, memberUnit: quote.memberUnit, seats: quote.seats })}${rate}${paid}`;
+  }
+  if (game.bookingPaid && game.paidAmount) {
+    return `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${Number(game.paidAmount).toLocaleString()}₮</strong>`;
+  }
+  return `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`;
+}
+
+// The signed-in player's own seat on the booking, as MTBogd last told it:
+// what they owe and whether it is paid. Empty until MTBogd has said.
+function mySeatHTML(game, canPay, quote = game.bookingQuote) {
+  const uid = currentUser?.id;
+  const amount = uid ? Number(quote?.due?.[uid]) : 0;
+  if (!amount) return '';
+  const paid = !!quote.paid?.[uid];
+  const state = paid
+    ? ` · <span style="color:var(--emerald); font-weight:700;">✓ ${t('bookSeatPaid')}</span>`
+    : canPay
+      ? ` <button type="button" id="pay-seat-btn" class="btn btn-primary btn-sm" style="margin-left:8px;">${t('bookPaySeat')}</button>`
+      : ` · ${t('bookSeatUnpaid')} — ${t('bookPayAtClubhouse')}`;
+  return `${t('bookYourSeat')}: <strong style="color:var(--text-primary);">${amount.toLocaleString()}₮</strong>${state}`;
+}
+
+// Ask MTBogd what the booking costs and who has paid, and keep the answer on
+// the game (`bookingQuote`) so every player's page shows it. Written only
+// when it changed: the game page repaints on every live update, its own
+// included. The game's paid flag follows MTBogd both ways — a booking paid in
+// full goes back to pending when another player joins it.
+async function refreshBookingMoney(game, canPay = false) {
+  const [st, bk] = await Promise.allSettled([mtbogd.getQpayStatus(game.bookingId), mtbogd.getBooking(game.bookingId)]);
+  const s = st.status === 'fulfilled' ? st.value : null;
+  const b = bk.status === 'fulfilled' ? bk.value : null;
+  // Without the payment status there is nothing new to say about who paid;
+  // the booking record alone only fills in a price that is not there yet.
+  if (!s && (!b || game.bookingQuote?.amount)) return null;
+  const quote = bookingQuoteOf(b, s, bookingSeatPlayers(game));
+  if (!quote) return null;
+  if (s) {
+    if (quote.allPaid && !game.bookingPaid) store.markBookingPaid(game.id, s.paidAmount || s.amount).catch(() => {});
+    else if (!quote.allPaid && game.bookingPaid) store.markBookingUnpaid(game.id).catch(() => {});
+  }
+  if (!sameQuote(game.bookingQuote, quote)) store.saveBookingQuote(game.id, { ...quote, at: Date.now() }).catch(() => {});
+  // The answer can land after the member has moved on to another game's
+  // page, which has blocks by the same ids: paint only this game's.
+  if (!(location.hash || '').endsWith('/' + game.id)) return quote;
+  const priceEl = document.getElementById('booking-price-check');
+  if (priceEl) priceEl.innerHTML = bookingMoneyHTML(game, quote);
+  const seatEl = document.getElementById('booking-my-seat');
+  if (seatEl) {
+    const html = mySeatHTML(game, canPay, quote);
+    seatEl.innerHTML = html;
+    seatEl.style.display = html ? '' : 'none';
+  }
+  return quote;
 }
 
 // Whether the game page should ask MTBogd for the booking's price now, and
@@ -4592,6 +4628,8 @@ function renderGameView(game) {
   // for everyone, the creator included.
   const isAdmin = currentUser?.role === 'admin';
   const adminTidy = isAdmin && isPast && gameUntouched(game);
+  // Paying one's seat by QPay: while the round is still ahead or under way.
+  const canPaySeat = TEE_QPAY_ENABLED && !isReadOnly && !game.bookingCancelled;
 
   const groups = ensureGroups(game.groups);
   const waitingList = ensureArray(game.waitingList);
@@ -4660,13 +4698,15 @@ function renderGameView(game) {
             <span style="margin-left:8px; font-family:monospace; font-size:1rem; font-weight:700; letter-spacing:2px; color:var(--emerald);">${game.bookingCode}</span>
             ${game.bookingId ? `<span style="margin-left:8px; font-size:0.72rem; color:var(--text-secondary);">ID:${game.bookingId}</span>` : ''}
             <div id="booking-price-check" style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
-              ${game.bookingPaid && game.paidAmount
-                ? `${t('bookRealPrice')}: <strong style="color:var(--text-primary);">${game.paidAmount.toLocaleString()}₮</strong>`
-                : game.bookingQuote?.amount
-                ? `${t('bookRealPrice')}: ${bookingPriceText({ total: game.bookingQuote.amount, unit: game.bookingQuote.unit, seats: game.bookingQuote.seats })}${bookingRateLabel(game.bookingQuote.customerType)}`
-                : `<span class="loading-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></span>${t('bookPriceChecking')}`}
+              ${bookingMoneyHTML(game)}
             </div>
           </div>` : ''}
+        ${isJoined && game.bookingId && !game.bookingCancelled ? (() => {
+          // Every player pays their own seat: each sees theirs, and the rest
+          // of the booking is the organiser's line above.
+          const html = mySeatHTML(game, canPaySeat);
+          return `<div id="booking-my-seat" class="game-description" style="margin-top:10px; font-size:0.9rem; color:var(--text-secondary);${html ? '' : ' display:none;'}">${html}</div>`;
+        })() : ''}
         ${(() => {
           // MTBogd sync state — creator and admin only. Legacy games read as
           // neutral (never checked) rather than as a problem.
@@ -4734,37 +4774,22 @@ function renderGameView(game) {
   renderGameWeather(game); // async; hides itself for past/far-future games
 
   // Event listeners
-  // Nudge MTBogd to re-verify QPay payment for a booking still pending in our
-  // records. Calling qpay-status makes MTBogd re-check QPay and flip to paid —
-  // covers the case where the user paid after closing the QPay modal (or QPay's
-  // own callback to MTBogd never fired). It is also where the real price comes
-  // from: the tee-time list has no member/guest context, while these calls
-  // come *after* confirmBooking sent the creator's phone and club code.
-  // MTBogd bills per player, so the price moves with every player synced in
-  // or out: it is asked again whenever the roster changes (a moment later, so
-  // the sync lands first) and otherwise at most twice a minute, and the quote
-  // is saved only when it changed — this page repaints on every live update,
-  // the saved quote's included, so an unguarded fetch here would loop.
-  const priceDelay = (game.bookingId && !game.bookingPaid && (isCreator || currentUser?.role === 'admin'))
+  // Ask MTBogd for the booking's price and who has paid. Calling qpay-status
+  // also makes MTBogd re-check QPay — it covers a payment made after the QPay
+  // window was closed, or a QPay callback that never reached MTBogd. Every
+  // player pays their own seat, so the answer moves with the roster: it is
+  // asked again when the roster changes (a moment later, so the player sync
+  // lands first) and otherwise at most twice a minute — this page repaints
+  // on every live update, so an unguarded fetch here would loop. A finished
+  // game is asked only while it has no price at all.
+  const priceDelay = (game.bookingId && !game.bookingCancelled && currentUser && (isCreator || isJoined || isAdmin)
+      && (!isReadOnly || (!game.bookingPaid && !game.bookingQuote?.amount)))
     ? bookingPriceDue(game) : null;
-  if (priceDelay !== null) setTimeout(() => {
-    Promise.allSettled([mtbogd.getQpayStatus(game.bookingId), mtbogd.getBooking(game.bookingId)])
-      .then(([st, bk]) => {
-        const s = st.status === 'fulfilled' ? st.value : null;
-        const b = bk.status === 'fulfilled' ? bk.value : null;
-        if (s?.paymentStatus === 'paid') { store.markBookingPaid(game.id, s.amount); return; }
-        const p = bookingPrice(b) || bookingPrice(s);
-        if (!p?.total) return;
-        const quote = { amount: p.total, unit: p.unit, seats: p.seats, customerType: s?.customerType || null };
-        const q = game.bookingQuote || {};
-        if (q.amount !== quote.amount || (q.unit ?? null) !== quote.unit
-          || (q.seats ?? null) !== quote.seats || (q.customerType ?? null) !== quote.customerType) {
-          store.saveBookingQuote(game.id, { ...quote, at: Date.now() }).catch(() => {});
-        }
-        const priceEl = document.getElementById('booking-price-check');
-        if (priceEl) priceEl.innerHTML = `${t('bookRealPrice')}: ${bookingPriceText(p)}${bookingRateLabel(quote.customerType)}`;
-      });
-  }, priceDelay);
+  if (priceDelay !== null) setTimeout(() => { refreshBookingMoney(game, canPaySeat).catch(() => {}); }, priceDelay);
+  // The button lives in a block the refresh repaints, so the block listens.
+  document.getElementById('booking-my-seat')?.addEventListener('click', (e) => {
+    if (e.target.closest('#pay-seat-btn')) showMtbogdQpayModal(game);
+  });
 
   // Flip normal 18 ↔ competition 9/9 mid-round; the Firebase listener
   // repaints every open screen, localStorage mode repaints from the return.
@@ -5153,11 +5178,10 @@ async function renderJoinPay(gameId) {
   if (!game) { navReplace('#/'); return; }
   if (isPlayerInGame(game, currentUser.id)) { navReplace('#/game/' + gameId); return; }
 
-  // MTBogd bills per player: the joiner's share is the unit price (their own
-  // rate may differ — member or guest), and the booking's total is that × the
-  // players it holds. A flight booking already holds the joiner's seat; any
-  // other takes one more on joining. A booking from the flat-price days has
-  // no unit price, and its total stands alone.
+  // Every player pays their own seat: joining adds the joiner's seat to the
+  // booking, and what they will owe is one seat — the guest price, or the
+  // member's when MTBogd knows them as one (by phone). A booking from the
+  // flat-price days has no unit price, and its total stands alone.
   let price = null;
   if (game.bookingId) {
     const [st, bk] = await Promise.allSettled([mtbogd.getQpayStatus(game.bookingId), mtbogd.getBooking(game.bookingId)]);
@@ -5177,16 +5201,17 @@ async function renderJoinPay(gameId) {
         ${price ? `
         <div style="border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin:10px 0;padding:10px 0;font-size:0.9rem;">
           ${price.unit ? `
-          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('bookPerPerson')}</span><span>${price.unit.toLocaleString()}₮</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px;font-size:0.85rem;color:var(--text-secondary);"><span>${t('bookBookingTotal')}</span><span style="text-align:right;">${bookingPriceText(price)}</span></div>
-          <div style="margin-top:6px;font-size:0.78rem;color:var(--text-secondary);">${game.bookingMode === 'flight' ? t('bookSeatReserved') : t('bookJoinAddsSeat')} ${t('bookRateMayDiffer')}</div>`
+          <div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('bookYourSeat')}</span><span>${price.unit.toLocaleString()}₮</span></div>
+          ${price.memberUnit && price.memberUnit !== price.unit ? `
+          <div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px;font-size:0.85rem;color:var(--text-secondary);"><span>${t('bookMemberSeat')}</span><span>${price.memberUnit.toLocaleString()}₮</span></div>` : ''}
+          <div style="margin-top:6px;font-size:0.78rem;color:var(--text-secondary);">${t('bookJoinAddsSeat')} ${t('bookEachPaysOwn')}</div>`
           : `<div style="display:flex;justify-content:space-between;font-weight:700;"><span>${t('orderTotal')}</span><span>${price.total.toLocaleString()}₮</span></div>`}
         </div>` : ''}
         <div style="margin-top:6px;">
           <label style="font-size:0.85rem;color:var(--text-secondary);display:block;margin-bottom:6px;">Төлбөр</label>
           <div class="chip-row" id="jp-pay-chips">
             <button type="button" class="seg-chip active" data-pay="clubhouse" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('ball-tee', { size: 14 })} ${t('payClubhouse')}</button>
-            ${QPAY_ENABLED
+            ${TEE_QPAY_ENABLED
               ? `<button type="button" class="seg-chip" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')}</button>`
               : `<button type="button" class="seg-chip chip-disabled" data-pay="qpay" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('phone', { size: 14 })} ${t('payQpay')} <span style="font-size:0.7rem;opacity:0.85;">(${t('payComingSoon')})</span></button>`
             }
@@ -5332,6 +5357,11 @@ async function handleJoin(game, paymentMethod = null) {
   }
   renderGameView(game);
   showToast('✅ ' + t('join') + '!', 'success');
+  // Joined and chose QPay: their seat is on the booking now (the sync above),
+  // so MTBogd can invoice it.
+  if (TEE_QPAY_ENABLED && paymentMethod === 'qpay' && game.bookingId && isPlayerInGroup(game, currentUser.id)) {
+    await showMtbogdQpayModal(game);
+  }
 }
 
 async function handleLeave(game) {
@@ -6788,10 +6818,9 @@ async function handleBookTeeTime(game) {
 
   let btHoles = 18;
   let btSlot = null;
-  let btMode = 'flight';
-  const groupSize = game.groupSize || 4;
-  const joined = gamePlayerCount(game) || 0;
-  const btSeats = () => seatsToBook(btMode, groupSize, joined);
+  // The players already in get a seat each (the booker at least); whoever
+  // joins later is added by the player sync. Every player pays their own.
+  const btSeats = seatsToBook(gamePlayerCount(game));
 
   function slotLabel(s) {
     const price = s.price ? ` ₮${(s.price / 1000).toFixed(0)}K/${t('perPersonShort')}` : '';
@@ -6815,12 +6844,12 @@ async function handleBookTeeTime(game) {
         </div>
         <button type="button" id="bt-fetch" class="btn btn-outline" style="flex:1;min-width:130px;">${t('bookViewSlots')}</button>
       </div>
-      ${bookModeChipsHTML('bt-mode', btMode, groupSize, joined, t('bookModeJoined'))}
+      <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 10px;">${btSeats} ${t('bookSeats')} · ${t('bookEachPaysOwn')}</p>
       <div id="bt-slots"></div>
       ${btSlot ? `
         <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(var(--primary-rgb),0.12);border:1px solid var(--gold);font-size:0.9rem;">
           ✅ ${t('bookSlotSelected')}: <strong>${slotLabel(btSlot)}</strong>
-          ${btSlot.price ? `<div style="margin-top:4px;font-size:0.82rem;color:var(--text-secondary);">${btSeats()} ${t('bookSeats')} · ${bookingPriceText({ unit: Number(btSlot.price), seats: btSeats(), total: Number(btSlot.price) * btSeats() })}</div>` : ''}
+          ${btSlot.price ? `<div style="margin-top:4px;font-size:0.82rem;color:var(--text-secondary);">${bookingPriceText({ unit: Number(btSlot.price), seats: btSeats, total: Number(btSlot.price) * btSeats })}</div>` : ''}
         </div>
         <button type="button" id="bt-confirm" class="btn btn-primary" style="width:100%;margin-top:10px;">${t('bookSubmit')}</button>
       ` : ''}
@@ -6831,20 +6860,13 @@ async function handleBookTeeTime(game) {
     document.getElementById('bt-18').onclick = () => { btHoles = 18; renderModal(); };
     document.getElementById('bt-fetch').onclick = fetchSlots;
     document.getElementById('bt-confirm')?.addEventListener('click', confirmBook);
-    // Another mode books another number of seats, so other tee times have room.
-    modal.querySelectorAll('#bt-mode .seg-chip').forEach(chip => chip.onclick = () => {
-      if (chip.dataset.mode === btMode) return;
-      btMode = chip.dataset.mode;
-      btSlot = null;
-      renderModal();
-    });
   }
 
   async function fetchSlots() {
     const slotsEl = document.getElementById('bt-slots');
     slotsEl.innerHTML = `<div class="loading-spinner" style="margin:10px auto;"></div>`;
     try {
-      const data = await mtbogd.getTeeTimes(game.date, btSeats(), btHoles);
+      const data = await mtbogd.getTeeTimes(game.date, btSeats, btHoles);
       const slots = (data.times || []).filter(s => s.status === 'available');
       if (!slots.length) { slotsEl.innerHTML = `<p style="font-size:0.85rem;color:var(--text-secondary);margin:8px 0;">${noSlotsMessage(data.times)}</p>`; return; }
       slotsEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${
@@ -6866,19 +6888,15 @@ async function handleBookTeeTime(game) {
     const errEl = document.getElementById('bt-error');
     try {
       const playerName = store.memberName(currentUser) || displayUsername(currentUser);
-      const seats = btSeats();
-      const hold = await mtbogd.createHold(btSlot.slotId, seats, btHoles);
-      // The players already in by name (and phone, for the member rate); a
-      // flight holds its open seats under the booker's name.
+      const hold = await mtbogd.createHold(btSlot.slotId, btSeats, btHoles);
+      // The players already in, by name and phone — the same list the player
+      // sync sends, so each seat (and a payment on it) stays its player's.
       const roster = bookingPlayersOf(game);
-      const playerList = bookingRoster({ bookingMode: btMode, bookingSeats: seats },
-        roster.length ? roster : [{ name: playerName }], playerName);
+      const playerList = roster.length ? roster : [bookingPlayerOf(currentUser)];
       const confirmed = await mtbogd.confirmBooking(hold.holdId, { firstName: playerName, phone: currentUser.phone || '', ...(currentUser.mtbogdCode ? { clubCode: currentUser.mtbogdCode } : {}) }, playerList);
       game.bookingCode = confirmed.bookingCode;
       game.bookingId = confirmed.bookingId;
       game.bookingSlotId = btSlot.slotId;
-      game.bookingMode = btMode;
-      game.bookingSeats = seats;
       game.booking = { status: 'confirmed', source: 'app' };
       await store.saveGame(game);
       store.appendBookingLog(game.id, logEntry('booked_later', { by: currentUser.id, detail: confirmed.bookingCode || confirmed.bookingId || null })).catch(() => {});
@@ -7271,26 +7289,30 @@ async function handleBookingAttach(game) {
 }
 
 // ---- Utilities ----
-// The game's players as MTBogd takes them. Each carries a phone when known —
-// MTBogd matches players joining after booking creation to their club
-// membership by phone (name-only sync leaves later joiners permanently
-// unmatched as guests).
+// A player as MTBogd takes them: their full name, and their phone when known
+// — MTBogd ties a seat's payment to the phone (then the name) and gives a
+// club member's phone the member rate; a name-only player stays a guest.
+function bookingPlayerOf(u) {
+  return bookingPlayer(store.memberName(u) || '-', u?.phone);
+}
+
+// The game's players with their ids, for telling whose seat is whose. The
+// user map may not be loaded on every path here (it loads with a game page);
+// the signed-in player's own record is always at hand.
+function bookingSeatPlayers(game) {
+  return ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).filter(Boolean)
+    .map(p => ({ id: p.id, ...bookingPlayerOf(allUsersMap[p.id] || (p.id === currentUser?.id ? currentUser : p)) }));
+}
+
+// The list sent to MTBogd: exactly the players in the game, one seat each.
 function bookingPlayersOf(game) {
-  return ensureGroups(game.groups).flatMap(grp => ensureArray(grp)).filter(Boolean).map(p => {
-    const u = allUsersMap[p.id] || p;
-    const phone = u.phone ? String(u.phone).trim() : '';
-    return { name: displayFullName(u), ...(phone && { phone }) };
-  });
+  return bookingSeatPlayers(game).map(({ name, phone }) => bookingPlayer(name, phone));
 }
 
 async function syncBookingPlayers(game) {
   if (!game.bookingId) return;
   try {
-    // MTBogd bills per player, so the list is the bill: a flight booking keeps
-    // its open seats under the booker's name, anything else follows the roster.
-    const creator = allUsersMap[game.createdBy];
-    const filler = creator ? (store.memberName(creator) || displayUsername(creator)) : (game.creatorName || '');
-    const allPlayers = bookingRoster(game, bookingPlayersOf(game), filler);
+    const allPlayers = bookingPlayersOf(game);
     await mtbogd.updateBookingPlayers(game.id, allPlayers);
     store.appendBookingLog(game.id, logEntry('players_sync_ok', { by: currentUser?.id || null, detail: allPlayers.length })).catch(() => {});
   } catch (err) {
@@ -8674,8 +8696,26 @@ async function showQpayModal(orderId, total, opts = {}) {
 
 // Tee-time QPay via MTBogd: the booking is already confirmed; this shows the QR
 // from MTBogd and polls MTBogd's payment status. The game exists regardless.
-async function showMtbogdQpayModal(bookingId, gameId) {
-  const doneHash = '#/game/' + gameId;
+// Every player pays their own seat, so the invoice is for the signed-in
+// player's seat alone — MTBogd finds it by their phone, else by the name the
+// player sync sent — and it is that seat being paid that ends the wait, not
+// the whole booking.
+async function showMtbogdQpayModal(game) {
+  const bookingId = game.bookingId;
+  const doneHash = '#/game/' + game.id;
+  const me = bookingPlayerOf(allUsersMap[currentUser.id] || currentUser);
+  const mySeat = me.phone ? { playerPhone: me.phone } : { playerName: me.name };
+  const seatPaid = (s) => {
+    const mine = seatsByPlayer(s, bookingSeatPlayers(game))[currentUser.id];
+    return mine ? mine.paid : s?.paymentStatus === 'paid';
+  };
+  // Back on the game page with fresh numbers: the page asks MTBogd again at
+  // once rather than waiting out its half-minute.
+  const done = () => {
+    bookingPriceChecks.delete(game.id);
+    if ((location.hash || '#/') === doneHash) refreshBookingMoney(game, TEE_QPAY_ENABLED).catch(() => {});
+    else navReplace(doneHash);
+  };
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.innerHTML = `
@@ -8719,10 +8759,10 @@ async function showMtbogdQpayModal(bookingId, gameId) {
     checkBtn.style.display = 'none';
     statusEl.textContent = '';
     successEl.style.display = 'block';
-    setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); navReplace(doneHash); }, 1500);
+    setTimeout(() => { modal.remove(); showToast('✅ ' + t('qpaySuccess'), 'success'); done(); }, 1500);
   }
 
-  const dismissMq = () => { stop(); modal.remove(); navReplace(doneHash); };
+  const dismissMq = () => { stop(); modal.remove(); done(); };
   closeBtn.onclick = dismissMq;
   // Same as the order modal: a backdrop tap must stop the poll, not just hide it.
   modal.addEventListener('click', (e) => { if (e.target === modal) dismissMq(); });
@@ -8733,14 +8773,23 @@ async function showMtbogdQpayModal(bookingId, gameId) {
     statusEl.textContent = t('verifying');
     try {
       const s = await mtbogd.getQpayStatus(bookingId);
-      if (s.paymentStatus === 'paid') { onPaid(); return; }
+      if (seatPaid(s)) { onPaid(); return; }
       statusEl.textContent = t('qpayWaiting');
     } catch { statusEl.textContent = t('qpayWaiting'); }
     finally { checkBtn.disabled = false; }
   };
 
   try {
-    const inv = await mtbogd.createQpayInvoice(bookingId);
+    let inv;
+    try {
+      inv = await mtbogd.createQpayInvoice(bookingId, mySeat);
+    } catch (err) {
+      // MTBogd does not know this player yet (they joined a moment ago, or a
+      // sync failed): send the roster, then ask once more.
+      if (err.code !== 'PLAYER_NOT_FOUND' && err.status !== 404) throw err;
+      await syncBookingPlayers(game);
+      inv = await mtbogd.createQpayInvoice(bookingId, mySeat);
+    }
     if (inv.alreadyPaid || inv.paymentStatus === 'paid') { onPaid(); return; }
     qrImg.src = `data:image/png;base64,${inv.qrImage}`;
     amountEl.textContent = inv.amount ? `₮${Number(inv.amount).toLocaleString()}` : '';
@@ -8756,9 +8805,11 @@ async function showMtbogdQpayModal(bookingId, gameId) {
       bankLinks.appendChild(a);
     });
     pollTimer = setInterval(async () => {
-      try { const s = await mtbogd.getQpayStatus(bookingId); if (s.paymentStatus === 'paid') onPaid(); } catch { /* ignore */ }
+      try { const s = await mtbogd.getQpayStatus(bookingId); if (seatPaid(s)) onPaid(); } catch { /* ignore */ }
     }, 3000);
   } catch (err) {
+    // The seat was paid already (another device, or the clubhouse).
+    if (err.code === 'SEAT_ALREADY_PAID') { onPaid(); return; }
     statusEl.textContent = '⚠️ ' + err.message;
     checkBtn.style.display = 'inline-block';
   }
