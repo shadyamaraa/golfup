@@ -107,11 +107,15 @@ Users:
 {
   id,
   name, username, fullName,
-  phone, // no password here: it is a hash under userSecrets/{id}, server-only (docs/phone-login.md)
-  role, // admin | marshal | user
+  // no password here: it is a hash under userSecrets/{id}, server-only (docs/phone-login.md)
+  role, // admin | marshal | user — changed by admins only
   status,
   communities,
-  bankName, bankAccount, bankIban,
+  // phone, bankName, bankAccount, bankIban, mtbogdCode are stored under
+  // userPrivate/{id} (signed-in members only), not on users/{id}. The store
+  // merges them in, so a record read through src/store.js has them.
+  phone,
+  bankName, bankAccount, bankIban, mtbogdCode,
   avatar,
   notifyWeb, notifySms,
   fcmToken

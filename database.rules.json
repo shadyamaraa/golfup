@@ -8,10 +8,30 @@
       ".read": true,
       ".write": true,
       "$uid": {
-        "password": { ".validate": false }
+        "id": { ".validate": "newData.val() === $uid" },
+        "password": { ".validate": false },
+        "phone": { ".validate": false },
+        "bankName": { ".validate": false },
+        "bankAccount": { ".validate": false },
+        "bankIban": { ".validate": false },
+        "mtbogdCode": { ".validate": false },
+        "role": { ".validate": "newData.val() === data.val() || (!data.exists() && newData.val() === 'user') || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')" },
+        "status": { ".validate": "newData.val() === data.val() || (!data.exists() && newData.val() === 'active') || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')" }
       }
     },
     "userSecrets": { ".read": false, ".write": false },
+    "userPrivate": {
+      ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+      "$uid": {
+        ".write": "auth != null && auth.token.memberId != null && (auth.token.memberId === $uid || root.child('users').child(auth.token.memberId).child('role').val() === 'admin')",
+        "phone": { ".validate": "newData.val() === data.val() || !data.exists() || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')" },
+        "bankName": { ".validate": true },
+        "bankAccount": { ".validate": true },
+        "bankIban": { ".validate": true },
+        "mtbogdCode": { ".validate": true },
+        "$other": { ".validate": false }
+      }
+    },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },

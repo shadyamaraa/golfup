@@ -32,6 +32,15 @@ UB Golf helps golfers create, join, organize, and manage golf games. It supports
 
 Users have `username`, `fullName`, `phone`, `role`, `status`, bank details, notification preferences, and `communities`.
 
+A member's record is in two places: `users/{id}` is the public half, which
+anyone can read; `userPrivate/{id}` holds `phone`, `bankName`,
+`bankAccount`, `bankIban` and `mtbogdCode`, and the database rules open it
+only to a signed-in member. `src/store.js` merges the halves on read and
+splits them on write (`src/member-record.js`), so views work with one
+record. Never write a private field to `users/{id}` — the rules refuse it.
+`role` and `status` are changed by admins only. `npm run test:rules` runs
+the rules against the database emulator.
+
 Roles:
 
 - `admin`: full admin access
@@ -44,7 +53,9 @@ is the fallback, one link away on the sign-in page; it is a hash under
 `userSecrets/{memberId}` that only the functions read, never a field on the
 member record. `PHONE_LOGIN_DEFAULT` in `src/app.js` decides which is the
 default. Functions: `phoneVerifyStart` / `phoneVerifyCheck` (secret
-`VERIFY_MN_API_KEY`), `passwordLogin`, `setPassword`, `migratePasswords`.
+`VERIFY_MN_API_KEY`), `passwordLogin`, `setPassword`, `migratePasswords`,
+`migratePrivateFields`. The sign-in page does not look a phone up itself —
+the member list a visitor reads has no phone numbers; the server does.
 See `docs/phone-login.md`.
 
 ### Circles
