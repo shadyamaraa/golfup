@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const functions = require('firebase-functions/v1');
 const crypto = require('crypto');
 const qpay = require('./qpay');
+const ghin = require('./ghin');
 
 admin.initializeApp();
 
@@ -84,6 +85,32 @@ exports.mtbogdProxy = functions
     res.status(502).json({ error: err.message });
   }
 });
+
+// Look up one golfer on GHIN by GHIN number — name, club and Handicap Index.
+// Read-only and trimmed (see functions/ghin.js); not a generic GHIN proxy,
+// since the Admin Portal login can read every golfer's personal details.
+// Reachable at /api/ghin/golfer?ghin=1234567 via a hosting rewrite.
+exports.ghinGolfer = functions
+  .runWith({ secrets: ['GHIN_EMAIL', 'GHIN_PASSWORD'] })
+  .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+    const number = String(req.query.ghin || '').replace(/\D/g, '');
+    if (!/^\d{7,8}$/.test(number)) { res.status(400).json({ error: 'Invalid GHIN number' }); return; }
+
+    try {
+      const golfer = await ghin.golferByGhin(number);
+      if (!golfer) { res.status(404).json({ error: 'Golfer not found' }); return; }
+      res.status(200).json({ golfer, env: ghin.baseUrl().includes('-uat.') ? 'staging' : 'production' });
+    } catch (err) {
+      console.error('ghinGolfer failed:', err.message, err.upstream || '');
+      res.status(err.status === 404 ? 404 : 502).json({ error: err.message });
+    }
+  });
 
 // Cancel an MTBogd booking by Firebase gameId.
 // bookingId is read from RTDB server-side — client never supplies it directly.

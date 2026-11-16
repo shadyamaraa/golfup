@@ -40,6 +40,10 @@
         "function": "mtbogdProxy"
       },
       {
+        "source": "/api/ghin/golfer",
+        "function": "ghinGolfer"
+      },
+      {
         "source": "/api/admin-login",
         "function": "adminLogin"
       },
