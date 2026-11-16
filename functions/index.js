@@ -5,6 +5,7 @@ const qpay = require('./qpay');
 const phoneVerify = require('./phone-verify');
 const passwords = require('./passwords');
 const memberPrivate = require('./member-private');
+const ghin = require('./ghin');
 
 admin.initializeApp();
 
@@ -498,6 +499,46 @@ exports.migratePrivateFields = signInEndpoint((body) => memberPrivate.migratePri
     .update(Object.fromEntries(fields.map(k => [k, null]))),
   signInReady: outdatedSignInFunctions,
 }, body), { timeoutSeconds: 300 });
+
+// ---- GHIN: the official Handicap Index ----
+// The Mongolian Golf Association's login to GHIN (Secret Manager:
+// GHIN_EMAIL / GHIN_PASSWORD) reads every golfer's personal details, so it
+// stays here: the logic is in ./ghin.js, what leaves it is a name, a club
+// and a Handicap Index, and only a signed-in member may ask. GHIN's staging
+// environment unless GHIN_BASE_URL says otherwise. Called at their own URL,
+// like the sign-in functions.
+const GHIN = { secrets: ['GHIN_EMAIL', 'GHIN_PASSWORD'] };
+const ghinClient = () => ghin.createClient({
+  fetch,
+  email: process.env.GHIN_EMAIL,
+  password: process.env.GHIN_PASSWORD,
+  baseUrl: process.env.GHIN_BASE_URL,
+});
+
+// Who GHIN has under a number — for checking it before it is saved.
+exports.ghinGolfer = signInEndpoint((body) => ghin.lookup({
+  ...secretStore,
+  client: ghinClient(),
+  verifyIdToken,
+}, body), GHIN);
+
+// One member's Handicap Index, stored under ghin/{memberId} — a path only
+// the server writes, so what it holds is what GHIN said.
+exports.ghinSync = signInEndpoint((body) => ghin.sync({
+  client: ghinClient(),
+  verifyIdToken,
+  loadUser: loadMember,
+  saveGhin: (memberId, record) => admin.database().ref(`ghin/${memberId}`).set(record),
+}, body), GHIN);
+
+// Every member with a GHIN number, by an admin from the app's Users tab.
+exports.ghinSyncAll = signInEndpoint((body) => ghin.syncAll({
+  client: ghinClient(),
+  verifyIdToken,
+  loadUser: loadMember,
+  loadUsers: loadPublicUsers,
+  saveAllGhin: (records) => admin.database().ref('ghin').update(records),
+}, body), { ...GHIN, timeoutSeconds: 300 });
 
 const APP_URL = 'https://ubgolf.club';
 

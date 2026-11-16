@@ -69,6 +69,7 @@ function loadFunctions(db) {
     if (name === './phone-verify') return {};
     if (name === './passwords') return {};
     if (name === './member-private') return {};
+    if (name === './ghin') return {};
     throw new Error('unexpected require: ' + name);
   };
   const src = fs.readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');

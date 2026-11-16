@@ -3,6 +3,7 @@ import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
+import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster } from './ghin.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -70,6 +71,12 @@ const TEE_QPAY_ENABLED = false;
 // not work for (a foreign number, no SMS to spend). `false` puts the
 // password back as the default and leaves the SMS flow at #/login-sms only.
 const PHONE_LOGIN_DEFAULT = true;
+// GHIN — the official Handicap Index, read through the server from GHIN's
+// staging environment (docs/ghin.md). A trial: 'admin' shows it to admins
+// only, until it has been tried against real numbers; 'all' to every member;
+// 'off' to no one. It is shown beside the app's own index and does not feed
+// a playing handicap yet — staging holds a copy of the real data, not today's.
+const GHIN_STAGE = 'admin';
 // The two addresses of the sign-in page.
 const isLoginHash = (h) => h === '#/login' || h === '#/login-sms';
 
@@ -85,6 +92,7 @@ let activeUnsubs = [];
 // itself over whatever page the member is actually looking at.
 let viewEpoch = 0;
 const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
+const ghinOn = () => ghinVisibleTo(GHIN_STAGE, currentUser);
 let homeFilter = 'all';
 let homeGamesCache = [];
 // A game page asked to open on its score board — set by the scorer's 🏁 and
@@ -5855,6 +5863,8 @@ async function renderAdminPanel() {
   main().innerHTML = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
   const users = await store.loadAllUsers();
   const nonAdminUsers = users.filter(u => u.id !== 'admin_uid');
+  // Every member with a GHIN number against what GHIN said of it.
+  const ghin = ghinOn() ? ghinRoster(nonAdminUsers, await store.loadAllGhin()) : null;
 
   const circlesHtml = COMMUNITY_OPTIONS.map(circle => {
     const members = nonAdminUsers.filter(u => userCommunityIds(u).includes(circle.id))
@@ -5944,6 +5954,7 @@ async function renderAdminPanel() {
             <button type="button" id="priv-migrate-btn" class="btn btn-primary btn-sm">${t('privMigrateBtn')}</button>
           </div>` : '';
           })()}
+          ${ghin ? ghinAdminHTML(ghin) : ''}
           <div style="background: var(--bg-card-hover); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
             <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
               <h3 style="margin:0;">${t('createUser')}</h3>
@@ -6307,6 +6318,23 @@ async function renderAdminPanel() {
     }
   });
 
+  // Read every member's Handicap Index from GHIN, in one go.
+  document.getElementById('ghin-sync-all-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const out = await store.ghinSyncAll();
+      showToast(t('ghinAdminDone').replace('{n}', out.members ?? 0).replace('{f}', out.found ?? 0), 'success');
+      renderAdminPanel();
+    } catch (err) {
+      console.warn('GHIN sync:', err?.code || err);
+      showToast(t(ghinErrorKey(err)), 'error');
+      btn.disabled = false;
+      btn.textContent = t('ghinAdminBtn');
+    }
+  });
+
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
   createUserToggle?.addEventListener('click', () => {
@@ -6484,6 +6512,53 @@ async function renderAdminPanel() {
       });
     });
   });
+}
+
+// The admin's GHIN card (Users tab): how many members have a GHIN number,
+// what GHIN said of them, a button that reads them all again, and the list —
+// a number GHIN does not know, or one that is somebody else's (the name GHIN
+// has is beside the member's), is a number typed wrong.
+function ghinAdminHTML(roster) {
+  const staging = roster.rows.some(r => r.record?.env === 'staging');
+  const when = roster.syncedAt ? new Date(roster.syncedAt).toLocaleString('sv-SE').slice(0, 16) : '';
+  const summary = t('ghinAdminSummary').replace('{n}', roster.total).replace('{f}', roster.found)
+    .replace('{m}', roster.missing).replace('{u}', roster.unread);
+  const order = { missing: 0, unread: 1, found: 2 };
+  const rows = [...roster.rows].sort((a, b) => order[a.state] - order[b.state]
+    || displayUsername(a.user).localeCompare(displayUsername(b.user)));
+  const cell = 'padding:5px 8px;border-bottom:1px solid var(--border-card);text-align:left;white-space:nowrap;';
+  return `
+          <div id="ghin-admin" style="background:var(--bg-card-hover);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:200px;">
+                <div style="font-weight:700;color:var(--text-primary);">${t('ghinAdminTitle')}${staging ? ` <span style="font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--bg-card);border:1px solid var(--border-card);color:var(--text-secondary);vertical-align:middle;">${t('ghinStaging')}</span>` : ''}</div>
+                <div id="ghin-admin-summary" style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px;">${summary}${when ? ` · ${when}` : ''}</div>
+              </div>
+              <button type="button" id="ghin-sync-all-btn" class="btn btn-primary btn-sm" ${roster.total ? '' : 'disabled'}>${t('ghinAdminBtn')}</button>
+            </div>
+            ${rows.length ? `
+            <details style="margin-top:10px;">
+              <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-secondary);">${t('ghinAdminList')}</summary>
+              <div style="overflow-x:auto;margin-top:8px;">
+                <table id="ghin-admin-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                  <thead><tr style="color:var(--text-secondary);">
+                    <th style="${cell}">${t('ghinColMember')}</th><th style="${cell}">${t('ghinNumber')}</th>
+                    <th style="${cell}">${t('ghinColName')}</th><th style="${cell}">${t('ghinHi')}</th><th style="${cell}">${t('ghinColRev')}</th>
+                  </tr></thead>
+                  <tbody>
+                    ${rows.map(r => `
+                    <tr data-state="${r.state}">
+                      <td style="${cell}">${esc(displayUsername(r.user))}</td>
+                      <td style="${cell}font-variant-numeric:tabular-nums;">${esc(r.number)}</td>
+                      <td style="${cell}${r.state === 'missing' ? 'color:var(--danger-color);' : ''}">${r.state === 'found' ? esc(r.record.name || '—') : r.state === 'missing' ? t('ghinAdminMissing') : '—'}</td>
+                      <td style="${cell}font-weight:700;">${r.state === 'found' ? esc(ghinHiText(r.record)) : '—'}</td>
+                      <td style="${cell}">${r.state === 'found' ? esc(r.record.revDate || '—') : '—'}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </details>` : ''}
+          </div>`;
 }
 
 function showAdminEditUserModal(user, onSaved) {
@@ -8190,7 +8265,11 @@ function profileFormInner(user) {
         </div>
         <div class="input-group" style="margin-top: 10px;">
           <label>${t('gsGhinNumber')}</label>
-          <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" />
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="profile-ghin-number" value="${user.ghinNumber || ''}" inputmode="numeric" pattern="[0-9]*" placeholder="1234567" style="flex:1; min-width:0;" />
+            ${ghinOn() ? `<button type="button" class="btn btn-outline btn-sm" id="profile-ghin-check" style="white-space:nowrap;">${t('ghinCheck')}</button>` : ''}
+          </div>
+          <div id="profile-ghin-result" style="font-size:0.8rem; line-height:1.4; margin-top:6px;"></div>
           <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px;">${t('gsGhinHint')}</div>
         </div>
       </div>
@@ -8246,6 +8325,30 @@ function wireProfileForm(scope, user, afterSave) {
         showToast(t('avatarUploadFail'), 'error');
       }
       fileInput.value = '';
+    };
+  }
+  // «GHIN шалгах»: who GHIN has under the typed number, and their Handicap
+  // Index — so a member sees it is theirs before saving it. Nothing is stored.
+  const ghinBtn = scope.querySelector('#profile-ghin-check');
+  const ghinOut = scope.querySelector('#profile-ghin-result');
+  if (ghinBtn && ghinOut) {
+    ghinBtn.onclick = async () => {
+      const num = ghinDigits(scope.querySelector('#profile-ghin-number').value);
+      if (!num) { showToast(t('gsGhinInvalid'), 'error'); return; }
+      ghinBtn.disabled = true;
+      ghinOut.style.color = 'var(--text-secondary)';
+      ghinOut.textContent = t('ghinChecking');
+      try {
+        const g = await store.ghinCheck(num);
+        ghinOut.style.color = 'var(--emerald)';
+        ghinOut.textContent = ['✓ ' + (g.name || num), g.club, `${t('ghinHi')} ${ghinHiText(g)}`,
+          g.env === 'staging' ? t('ghinStaging') : ''].filter(Boolean).join(' · ');
+      } catch (err) {
+        console.warn('GHIN check:', err?.code || err);
+        ghinOut.style.color = 'var(--danger-color)';
+        ghinOut.textContent = t(ghinErrorKey(err));
+      }
+      ghinBtn.disabled = false;
     };
   }
   const saveBtn = scope.querySelector('#profile-modal-save');
@@ -8312,6 +8415,9 @@ function wireProfileForm(scope, user, afterSave) {
     }
     store.saveUser(rec);
     currentUser = rec;
+    // The Handicap Index for the number just saved, read in the background;
+    // the profile page shows it when it is there.
+    if (ghinOn() && ghinDigits(rec.ghinNumber)) store.ghinSync().catch(() => {});
     showToast('✅ ' + t('saved'), 'success');
     updateHeader();
     afterSave();
@@ -8396,10 +8502,15 @@ async function renderProfile() {
   // necessarily in the localStorage session copy. One read serves both.
   let hcpIndex = null;
   let gender = isGender(u.gender) ? u.gender : '';
+  // What GHIN said of the member's number, when the server has read it.
+  let ghinMember = u;
+  let ghinRec = null;
   try {
     const rec = await store.loadUserById(u.id);
     hcpIndex = rec?.hcpIndex ?? u.hcpIndex ?? null;
     if (isGender(rec?.gender)) gender = rec.gender;
+    if (rec) ghinMember = rec;
+    if (ghinOn() && ghinDigits(ghinMember.ghinNumber)) ghinRec = ghinFor(ghinMember, await store.loadGhin(u.id));
   } catch (_) {}
   const myGames = games.filter(isMyGame);
   const created = games.filter(g => g.createdBy === u.id).length;
@@ -8437,6 +8548,7 @@ async function renderProfile() {
           <div class="stat-tile navy"><div class="st-label">${t('statGames')}</div><div class="st-value">${myGames.length}</div></div>
           <div class="stat-tile"><div class="st-label">${t('statFollowers')}</div><div class="st-value">${followers}</div></div>
           ${hcpIndex !== null ? `<div class="stat-tile"><div class="st-label">${t('gsHcpIndex')}</div><div class="st-value">${hcpIndex}</div></div>` : ''}
+          <div class="stat-tile" id="ghin-tile" ${ghinRec ? '' : 'hidden'}>${ghinTileInner(ghinRec)}</div>
         </div>
 
         <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>
@@ -8471,6 +8583,33 @@ async function renderProfile() {
   const openEdit = () => { location.hash = '#/profile/edit'; };
   document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
   document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
+
+  // A Handicap Index read more than a day ago, or never, is read again in
+  // the background and the tile filled when it arrives. A failure — GHIN
+  // down, the functions not deployed — leaves the page as it is.
+  if (ghinOn() && ghinDigits(ghinMember.ghinNumber) && ghinStale(ghinRec)) {
+    const alive = viewAlive();
+    store.ghinSync().then((fresh) => {
+      const tile = document.getElementById('ghin-tile');
+      const rec = ghinFor(ghinMember, fresh);
+      if (!alive() || !tile || !rec) return;
+      tile.innerHTML = ghinTileInner(rec);
+      tile.hidden = false;
+    }).catch((err) => console.warn('GHIN sync:', err?.code || err));
+  }
+}
+
+// The profile's GHIN tile: the Handicap Index as GHIN displays it, whose it
+// is there (so a wrong number shows) and when it was last revised. Marked as
+// a trial while it comes from GHIN's staging environment.
+function ghinTileInner(rec) {
+  if (!rec) return '';
+  const found = rec.found !== false;
+  const sub = found ? [rec.name, rec.revDate].filter(Boolean).join(' · ') : t('ghinNotFound');
+  return `
+    <div class="st-label">${t('ghinHi')}${rec.env === 'staging' ? ` · ${t('ghinStagingShort')}` : ''}</div>
+    <div class="st-value">${esc(ghinHiText(rec))}</div>
+    <div class="st-sub" title="${esc(sub)}">${esc(sub)}</div>`;
 }
 
 function showProfileModal(user, options = {}) {

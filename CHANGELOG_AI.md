@@ -1,5 +1,58 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (GHIN: the official Handicap Index, a trial on staging)
+
+The first step of the GHIN connection: reading a member's Handicap Index.
+Read-only, on GHIN's staging environment, and shown to admins only until it
+has been tried against real numbers.
+
+- **Server** (`functions/ghin.js`, wired in `functions/index.js`): the
+  association's login (`GHIN_EMAIL` / `GHIN_PASSWORD` in Secret Manager)
+  never reaches the browser. The client logs in, keeps the twelve-hour
+  token for ten and logs in again on a 401. `ghinGolfer` answers who GHIN
+  has under a number — thirty lookups an hour for each member, nothing
+  stored. `ghinSync` reads the Handicap Index for the number on a member's
+  record and stores it under `ghin/{memberId}`: one's own, or anyone's for
+  an admin. `ghinSyncAll`, admins only, does it for every member with a
+  number, fifty numbers a request. What leaves the server is a name, a
+  club and a Handicap Index — never the email, phone or date of birth GHIN
+  sends with them. All three take the caller's Firebase ID token.
+- **Rules** (`database.rules.json` — changed): a new path `ghin`, read by
+  signed-in members and written by no client, so what it holds is what
+  GHIN said.
+- **App**: «GHIN шалгах» beside the GHIN number on the profile form; a
+  GHIN tile on the profile (the index as GHIN displays it, the name GHIN
+  has, the revision date), read again in the background when it is more
+  than a day old; a card in Admin → Тоглогчид with the totals, «GHIN-ээс
+  татах» and the list — a number GHIN does not know, or one under
+  somebody else's name, is a number typed wrong. Everything from staging
+  is marked «туршилт». `GHIN_STAGE` in `src/app.js` is `'admin'`.
+- **Not changed**: playing handicaps. Games and tournaments still use the
+  app's own index; staging holds a copy of the real data, not today's.
+- `src/ghin.js` no longer has a place for a token in the browser's code
+  (it was never filled in); it now holds the app's side of the reading and
+  the score-posting shape kept for later.
+
+This replaces the unmerged `claude/trusting-wright-dbk8w2` (an earlier
+`ghinGolfer` open to anyone, through a hosting rewrite).
+
+**Needs the owner** (`docs/ghin.md`): set the two secrets, deploy
+`ghinGolfer`, `ghinSync`, `ghinSyncAll`, and try it as an admin.
+`node scripts/ghin-smoke.mjs <GHIN number>` checks the real login from the
+owner's own terminal first — it asks for the password without showing it
+and prints no one's personal details.
+
+**Not done**: a playing handicap from GHIN, a daily refresh
+(`hi_changed_golfers`), course data, posting scores, production.
+
+Tests: `scripts/test-ghin.mjs` (27) — the client and the three functions
+against a fake GHIN; `scripts/test-ghin-app.mjs` (9); one more case in
+`npm run test:rules` (22). Browser, local mode, functions stubbed: the tile
+never read, fresh, stale, not found and for an earlier number; the check
+with each refusal; a non-admin member seeing none of it; the admin's card,
+list and button. **Not run: anything against the real GHIN** — the field
+names are from GHIN's published spec, not from a live answer.
+
 ## 2026-11-16 (Phone numbers and bank details: signed-in members only)
 
 A member's phone number, bank details and MT Bogd club code sat on the

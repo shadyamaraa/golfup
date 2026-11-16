@@ -1,19 +1,106 @@
-// GHIN (USGA) adapter — preparation layer only, no network calls yet.
+// src/ghin.js
+// GHIN on the app's side. Pure — no network, no Firebase, no DOM.
 //
-// GHIN is not a public API: access is granted and audited by the USGA through
-// an association/club-level agreement. Until those credentials exist this
-// module only shapes data. When access is granted, fill in GHIN_CONFIG and add
-// the HTTP call in postRound() — everything upstream already stores rounds
-// keyed by GHIN number (rounds/{ghinNumber}/{gameId}, see src/store.js) in a
-// posting-ready shape, so no data migration will be needed.
+// GHIN (the USGA's handicap service) is read by the server only
+// (functions/ghin.js): the association's login can see every golfer's
+// personal details and never reaches the browser. The app asks the server
+// through src/store.js (ghinCheck, ghinSync, ghinSyncAll) and reads what the
+// server stored under ghin/{memberId}:
+//
+//   { number, found, name, club, association, status,
+//     hi, hiValue, lowHi, revDate, withdrawn, env, syncedAt }
+//
+// `hi` is the Handicap Index as GHIN displays it ('12.3', '+1.2', 'NH');
+// `hiValue` is the number behind it, null when there is none; `env` is
+// 'staging' until the USGA grants production — staging holds a copy of the
+// real data taken at some earlier date, so it is shown marked as a trial.
+//
+// rounds/{ghinNumber}/{gameId} is kept in a shape GHIN's score posting takes
+// (toGhinScorePayload, at the bottom). Posting is a later step, with its own
+// permission, and will also go through the server.
 
-const GHIN_CONFIG = {
-  baseUrl: '',   // e.g. https://api2.ghin.com (set when USGA access is granted)
-  token: '',     // issued credential — never commit a real value
-};
+/** Who sees the GHIN parts of the app: 'off', 'admin' (the trial) or 'all'. */
+export function ghinVisibleTo(stage, user) {
+  if (!user) return false;
+  if (stage === 'all') return true;
+  return stage === 'admin' && user.role === 'admin';
+}
 
-export function isGhinConfigured() {
-  return !!(GHIN_CONFIG.baseUrl && GHIN_CONFIG.token);
+// Two spellings of one GHIN number: digits only, a leading zero not counted
+// (GHIN keeps a number as an integer).
+const numberKey = (v) => String(v ?? '').replace(/\D/g, '').replace(/^0+/, '');
+
+/** A GHIN number as typed → its digits when it is one (7 or 8), else ''. */
+export function ghinDigits(value) {
+  const d = String(value ?? '').replace(/\D/g, '');
+  return /^\d{7,8}$/.test(d) ? d : '';
+}
+
+/**
+ * The stored GHIN record, if it is about the number the member has now. A
+ * record read for an earlier number — the member has since corrected it or
+ * removed it — is not theirs any more.
+ */
+export function ghinFor(user, record) {
+  if (!record || typeof record !== 'object') return null;
+  const mine = numberKey(user?.ghinNumber);
+  return mine && numberKey(record.number) === mine ? record : null;
+}
+
+/** The Handicap Index to show: '12.3', '+1.2', 'NH' — or '—' when GHIN has none for them. */
+export function ghinHiText(record) {
+  if (!record || record.found === false) return '—';
+  const hi = record.hi == null ? '' : String(record.hi).trim();
+  return hi || '—';
+}
+
+/** Whether a stored record is due a fresh read: none yet, or older than a day. */
+export function ghinStale(record, now = Date.now(), maxAgeMs = 24 * 60 * 60 * 1000) {
+  const at = Number(record?.syncedAt);
+  return !Number.isFinite(at) || at <= 0 || now - at > maxAgeMs;
+}
+
+/** The i18n key for a refusal from the GHIN functions. */
+export function ghinErrorKey(err) {
+  switch (String(err?.code ?? '')) {
+    case 'NOT_FOUND': return 'ghinNotFound';
+    case 'BAD_GHIN': return 'gsGhinInvalid';
+    case 'NO_GHIN': return 'ghinErrNoNumber';
+    case 'TOO_MANY': return 'ghinErrTooMany';
+    case 'UNAUTHENTICATED': return 'ghinErrSignIn';
+    case 'FORBIDDEN': return 'pwMigrateAdminOnly';
+    case 'NOT_CONFIGURED':
+    case 'LOGIN_REFUSED': return 'ghinErrNotEnabled';
+    case 'GHIN_UNREACHABLE':
+    case 'GHIN_ERROR': return 'ghinErrUnreachable';
+    default:
+  }
+  if (err?.status === 404) return 'ghinErrNotEnabled';   // the functions are not deployed
+  if (err instanceof TypeError || err?.name === 'TypeError') return 'svErrNetwork';
+  return 'ghinErrUnreachable';
+}
+
+/**
+ * What the admin's table shows: every member with a GHIN number, with what
+ * GHIN said of it — found, not found, or not read yet — and the totals.
+ * `records` is ghin/* keyed by member id.
+ */
+export function ghinRoster(users, records) {
+  const rows = [];
+  for (const u of users || []) {
+    if (!u || !ghinDigits(u.ghinNumber)) continue;
+    const rec = ghinFor(u, (records || {})[u.id]);
+    rows.push({
+      id: u.id,
+      user: u,
+      number: ghinDigits(u.ghinNumber),
+      record: rec,
+      state: !rec ? 'unread' : rec.found === false ? 'missing' : 'found',
+    });
+  }
+  const count = (s) => rows.filter(r => r.state === s).length;
+  const last = rows.reduce((m, r) => Math.max(m, Number(r.record?.syncedAt) || 0), 0);
+  return { rows, total: rows.length, found: count('found'), missing: count('missing'), unread: count('unread'), syncedAt: last || null };
 }
 
 // rounds/{ghinNumber}/{gameId} record → GHIN score-posting payload.
@@ -32,11 +119,4 @@ export function toGhinScorePayload(ghinNumber, round) {
       raw_score: strokes,
     })),
   };
-}
-
-// Future entry point: post one round and flip its ghinPosted flag. Kept as a
-// stub so callers can already be written against it.
-export async function postRound(ghinNumber, round) {
-  if (!isGhinConfigured()) throw new Error('GHIN API is not configured');
-  throw new Error('GHIN posting not implemented yet');
 }

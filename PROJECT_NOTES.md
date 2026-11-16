@@ -58,6 +58,16 @@ default. Functions: `phoneVerifyStart` / `phoneVerifyCheck` (secret
 the member list a visitor reads has no phone numbers; the server does.
 See `docs/phone-login.md`.
 
+GHIN: a member's official Handicap Index is read from GHIN (the USGA's
+handicap service, through the Mongolian Golf Association's login) by the
+server only — `functions/ghin.js`, secrets `GHIN_EMAIL` / `GHIN_PASSWORD`,
+functions `ghinGolfer`, `ghinSync`, `ghinSyncAll` — and stored under
+`ghin/{memberId}`, which members read and no client writes. It is a trial
+on GHIN's staging environment: only admins see it (`GHIN_STAGE` in
+`src/app.js`), and it does not feed a playing handicap — games still use
+the app's own `hcpIndex`. Never call GHIN from the browser or put its login
+in the app. See `docs/ghin.md`.
+
 ### Circles
 
 Circle membership is assigned by admin when creating or editing users.

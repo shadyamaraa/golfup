@@ -44,6 +44,7 @@ const SEED = {
     f2: { phone: '99220002', bankAccount: '222' },
   },
   userSecrets: { m2: { pass: 'scrypt$x' } },
+  ghin: { m2: { number: '12345678', found: true, name: 'Two', hi: '12.3', syncedAt: 1 } },
 };
 
 // The emulator's own back door ("Bearer owner") — how the test lays its data.
@@ -111,6 +112,18 @@ test('a member on hold, and one who has been deleted, do not', async () => {
 test('the passwords stay closed to everyone', async () => {
   await denied(get(ref(admin, 'userSecrets/m2')));
   await denied(set(ref(admin, 'userSecrets/m2/pass'), 'x'));
+});
+
+test('what GHIN said is read by members and written by no one but the server', async () => {
+  assert.equal((await get(ref(m1, 'ghin/m2'))).val().hi, '12.3', 'a member, another member\'s');
+  assert.ok((await get(ref(m2, 'ghin'))).exists(), 'a member, the whole of it');
+  await denied(get(ref(visitor, 'ghin/m2')), 'a visitor');
+  await denied(get(ref(anon, 'ghin')), 'an anonymous device');
+  await denied(get(ref(held, 'ghin/m2')), 'a member on hold');
+  await denied(set(ref(m2, 'ghin/m2/hi'), '2.0'), 'the member, their own');
+  await denied(update(ref(admin, 'ghin/m2'), { hi: '2.0' }), 'an admin');
+  await denied(set(ref(sysAdmin, 'ghin/m1'), { number: '1234567', hi: '0.0' }), 'the system admin');
+  await denied(remove(ref(admin, 'ghin/m2')), 'removing it');
 });
 
 test('no one writes a private field onto the public record', async () => {
