@@ -29,9 +29,10 @@ screens.
 
 - The **member** pays the operator **150₮** for the SMS — every SMS to
   144773, matched or not. The club pays nothing and is credited 40₮ per
-  verification in the verify.mn dashboard. The screen says «SMS-ийн төлбөр
-  150₮», removes the send button the moment the sign-in is through, and
-  tells the member not to send an expired text.
+  verification in the verify.mn dashboard. The sign-in screen does not
+  state the price (the owner's choice, 2026-11-16); it removes the send
+  button the moment the sign-in is through, and tells the member not to
+  send an expired text.
 - **Mongolian numbers only.** One member has a Korean number; they keep the
   password. So do the two accounts with no phone.
 - On a computer the «SMS илгээх» button does nothing: the member reads the

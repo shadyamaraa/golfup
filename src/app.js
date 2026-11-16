@@ -1017,7 +1017,6 @@ function renderAuth(mode) {
           <span class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;border-width:2px;"></span>
           <span>${t('svWaiting')}</span><span id="sv-left" style="font-variant-numeric:tabular-nums;">${leftText(expAt - Date.now())}</span>
         </p>
-        <p style="margin:0;font-size:0.76rem;color:var(--text-secondary);">${t('svCost')}</p>
       </div>
       <div style="margin-top:12px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;">
         <button type="button" id="sv-change" style="${linkStyle}">${t('svChangePhone')}</button>
