@@ -3880,7 +3880,9 @@ async function renderCreateGame() {
   function updateSelectedSlotDisplay() {
     const el = document.getElementById('selected-slot-display');
     const ttVal = document.getElementById('time-teetime-val');
-    if (ttVal && !selectedTeeSlot) ttVal.textContent = t('bookSelectSlot');
+    // No slot picked: MTBogd asks for one; any other course shows the time
+    // the form holds (it always holds one).
+    if (ttVal && !selectedTeeSlot) ttVal.textContent = isMtCourseSelected() ? t('bookSelectSlot') : formTime();
     if (!el) return;
     if (!selectedTeeSlot) { el.innerHTML = ''; return; }
     // The booker takes one seat and pays for it; everyone who joins is added
@@ -3963,7 +3965,17 @@ async function renderCreateGame() {
     });
   }
 
-  async function openTeeTimePopup() {
+  function isMtCourseSelected() {
+    return document.getElementById('game-location')?.value === MTBOGD_CONFIG.locationName;
+  }
+  // The time the form holds, 'HH:MM' — the hidden selects are its source.
+  function formTime() {
+    return `${document.getElementById('game-hour')?.value || '08'}:${document.getElementById('game-minute')?.value || '00'}`;
+  }
+
+  // The time picker's window, the same for every course: a title, a line of
+  // context, and the body the caller fills.
+  function openTimePickerShell(title, hint) {
     const overlay = document.createElement('div');
     overlay.className = 'popup-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -3972,16 +3984,83 @@ async function renderCreateGame() {
     modal.style.cssText = 'width:100%;max-width:420px;padding:20px;max-height:85vh;overflow-y:auto;';
     modal.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${t('bookViewSlots')}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${icon('time', { size: 18 })} ${title}</h3>
         <button type="button" id="ttp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
       </div>
-      <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 12px;">${t('bookOwnSeatHint')}</p>
+      <p style="font-size:0.78rem;color:var(--text-secondary);margin:0 0 12px;">${hint}</p>
       <div id="ttp-slots"><div class="loading-spinner" style="margin:10px auto;"></div></div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     modal.querySelector('#ttp-close').onclick = () => overlay.remove();
+    return { overlay, slotsEl: modal.querySelector('#ttp-slots') };
+  }
 
-    const slotsEl = modal.querySelector('#ttp-slots');
+  // A course the app cannot book (no tee sheet to ask): the same window as
+  // the MTBogd picker, with the clock in place of the free slots — the hours
+  // of the morning and the afternoon, and under the hour tapped its
+  // ten-minute starts. It opens on the time the form already holds.
+  function openTimePopup() {
+    const { overlay, slotsEl } = openTimePickerShell(t('bookSelectSlot'), t('bookNoSheetHint'));
+    const hourSel = document.getElementById('game-hour');
+    const minSel = document.getElementById('game-minute');
+    const hours = [...hourSel.options].map(o => o.value);
+    const minutes = [...minSel.options].map(o => o.value);
+    const groups = { am: hours.filter(h => +h < 12), pm: hours.filter(h => +h >= 12) };
+    const keyOf = h => (+h < 12 ? 'am' : 'pm');
+    const secOpen = { am: keyOf(hourSel.value) === 'am', pm: keyOf(hourSel.value) === 'pm' };
+    let openHour = hourSel.value;
+
+    function pick(h, m) {
+      hourSel.value = h;
+      minSel.value = m;
+      updateValue9Visibility();
+      updateSelectedSlotDisplay();
+      overlay.remove();
+    }
+
+    function sectionHtml(key, label, arr) {
+      if (arr.length === 0) return '';
+      const body = secOpen[key] ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">${
+        arr.map(h => {
+          const isOpen = openHour === h;
+          const minRow = isOpen ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 0;">${
+            minutes.map(m => {
+              const sel = hourSel.value === h && minSel.value === m;
+              return `<button type="button" class="ttp-tee btn btn-sm ${sel ? 'btn-primary' : 'btn-outline'}" data-h="${h}" data-m="${m}" style="font-size:0.8rem;padding:5px 12px;">${h}:${m}</button>`;
+            }).join('')
+          }</div>` : '';
+          return `<div style="${isOpen ? 'grid-column:1/-1;' : ''}">
+            <button type="button" class="ttp-time" data-h="${h}" style="width:100%;padding:9px 4px;border-radius:8px;border:1px solid var(--border-color);background:${isOpen ? 'var(--bg-card-hover)' : 'var(--bg-color)'};color:var(--text-primary);cursor:pointer;font-size:0.9rem;text-align:center;">
+              ${h}:00
+            </button>${minRow}
+          </div>`;
+        }).join('')
+      }</div>` : '';
+      return `<div style="margin-bottom:10px;">
+        <button type="button" class="ttp-sec" data-sec="${key}" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-radius:8px;border:none;background:var(--bg-card-hover);color:var(--text-primary);cursor:pointer;font-size:1rem;font-weight:600;">
+          <span>${label} <span style="color:var(--text-secondary);font-weight:400;font-size:0.85rem;">(${arr.length})</span></span>
+          <span style="color:var(--text-secondary);">${secOpen[key] ? '▲' : '▼'}</span>
+        </button>${body}
+      </div>`;
+    }
+
+    function renderHours() {
+      slotsEl.innerHTML = sectionHtml('am', t('bookAM'), groups.am) + sectionHtml('pm', t('bookPM'), groups.pm);
+      slotsEl.querySelectorAll('.ttp-sec').forEach(b => b.onclick = () => {
+        secOpen[b.dataset.sec] = !secOpen[b.dataset.sec];
+        renderHours();
+      });
+      slotsEl.querySelectorAll('.ttp-time').forEach(b => b.onclick = () => {
+        openHour = openHour === b.dataset.h ? null : b.dataset.h;
+        renderHours();
+      });
+      slotsEl.querySelectorAll('.ttp-tee').forEach(b => b.onclick = () => pick(b.dataset.h, b.dataset.m));
+    }
+    renderHours();
+  }
+
+  async function openTeeTimePopup() {
+    const { overlay, slotsEl } = openTimePickerShell(t('bookViewSlots'), t('bookOwnSeatHint'));
     try {
       const data = await fetchTeeTimes();
       const slots = (data.times || []).filter(s => s.status === 'available');
@@ -4073,20 +4152,23 @@ async function renderCreateGame() {
 
   function updateMtbogdSectionVisibility() {
     const loc = document.getElementById('game-location').value;
-    const isMt = loc === MTBOGD_CONFIG.locationName;
-    // MTBogd course → tapping the Time card opens the tee-time picker (hide the
-    // manual hour:min selects). Other courses → manual time selects.
+    // Every course picks its time the same way: the Time card opens a picker
+    // — MTBogd's free tee times, or the clock for a course the app cannot
+    // book. The hour:minute selects stay in the form, out of sight, as the
+    // value both pickers write and the submit reads.
     const manual = document.getElementById('time-manual');
     const teetime = document.getElementById('time-teetime');
-    if (manual) manual.style.display = isMt ? 'none' : 'flex';
-    if (teetime) teetime.style.display = isMt ? 'flex' : 'none';
+    if (manual) manual.style.display = 'none';
+    if (teetime) teetime.style.display = 'flex';
     const hint = document.getElementById('time-hint');
-    if (hint) hint.style.display = isMt ? 'flex' : 'none';
-    document.getElementById('time-card')?.classList.toggle('tappable', isMt);
+    if (hint) hint.style.display = 'flex';
+    document.getElementById('time-card')?.classList.add('tappable');
     if (loc !== MTBOGD_CONFIG.locationName) {
       selectedTeeSlot = null;
       updateSelectedSlotDisplay();
     } else {
+      // Back from another course with no slot picked: the card asks for one.
+      if (!selectedTeeSlot) updateSelectedSlotDisplay();
       prefetchTeeTimes();
     }
   }
@@ -4175,12 +4257,10 @@ async function renderCreateGame() {
     prefetchTeeTimes();
   });
 
-  // Tapping the Time card opens the tee-time slot picker (only for MTBogd course).
-  document.getElementById('time-card')?.addEventListener('click', (e) => {
-    if (e.target.closest('select')) return; // let the manual time selects work
-    if (document.getElementById('game-location').value === MTBOGD_CONFIG.locationName) {
-      openTeeTimePopup();
-    }
+  // Tapping the Time card opens the picker: MTBogd's tee times, or the clock.
+  document.getElementById('time-card')?.addEventListener('click', () => {
+    if (isMtCourseSelected()) openTeeTimePopup();
+    else openTimePopup();
   });
 
   // Group-size segmented chips → hidden #game-group-size value. When a MTBogd

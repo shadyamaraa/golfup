@@ -1,5 +1,21 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Create game: one time picker for every course)
+
+On «Тоглолт үүсгэх» the time was picked two ways. Sky Resort opened a
+window of tee times to tap; Chinggis Khaan left two small native dropdowns
+(hour, minute) inside the Time card, which read as a different form. The
+Time card now behaves the same for every course (`renderCreateGame`,
+`src/app.js`): it shows the time, carries the chevron, and opens a window.
+For a course the app cannot book the window is the clock in the same
+layout — «Үдээс өмнө / Үдээс хойш», the hours as buttons, and under the
+hour tapped its ten-minute starts — opening on the time the form holds. A
+line says the course's tee time is not booked through the app
+(`bookNoSheetHint`), since the window now looks like the one that does
+book. Both windows share one shell (`openTimePickerShell`); the hour and
+minute selects stay in the form, hidden, as the value both write and the
+submit reads. No booking call is made for such a course, as before.
+
 ## 2026-11-16 (Join sheet: a card with room in it)
 
 The «Төлбөрийн мэдээлэл» sheet a player sees before joining a booked game
