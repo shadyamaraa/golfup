@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { toE164, samePhone, mnLocal, leftText, verifyErrorKey, DEFAULT_COUNTRY } from '../src/phone-auth.js';
+import { toE164, samePhone, mnLocal, leftText, verifyErrorKey, withoutPassword, passwordErrorKey, DEFAULT_COUNTRY } from '../src/phone-auth.js';
 
 test('toE164: a Mongolian number, however it is written', () => {
   assert.equal(DEFAULT_COUNTRY, '976');
@@ -92,4 +92,30 @@ test('verifyErrorKey: every refusal has words', () => {
   assert.equal(verifyErrorKey(new TypeError('Failed to fetch')), 'svErrNetwork');
   assert.equal(verifyErrorKey(new Error('boom')), 'svErrGeneric');
   assert.equal(verifyErrorKey(null), 'svErrGeneric');
+});
+
+test('withoutPassword: the record as the app may keep or write it', () => {
+  const u = { id: 'u1', name: 'Bat', phone: '99119007', password: 'golf1234', communities: ['a'] };
+  assert.deepEqual(withoutPassword(u), { id: 'u1', name: 'Bat', phone: '99119007', communities: ['a'] });
+  assert.equal(u.password, 'golf1234', 'the object given is not changed');
+  assert.deepEqual(withoutPassword({ id: 'u1', password: '' }), { id: 'u1' });
+  assert.deepEqual(withoutPassword({ id: 'u1' }), { id: 'u1' });
+  assert.equal(withoutPassword(null), null);
+  assert.equal(withoutPassword(undefined), undefined);
+});
+
+test('passwordErrorKey: every refusal of the password functions has words', () => {
+  assert.equal(passwordErrorKey({ code: 'WRONG_PASSWORD', status: 401 }), 'pwErrWrong');
+  assert.equal(passwordErrorKey({ code: 'NO_PASSWORD', status: 401 }), 'pwErrNone');
+  assert.equal(passwordErrorKey({ code: 'LOCKED', status: 429, retryAfter: 900 }), 'pwErrLocked');
+  assert.equal(passwordErrorKey({ code: 'USER_NOT_FOUND', status: 404 }), 'userNotFound');
+  assert.equal(passwordErrorKey({ code: 'BAD_PHONE', status: 400 }), 'userNotFound');
+  assert.equal(passwordErrorKey({ code: 'USER_HELD', status: 403 }), 'svErrHeld');
+  assert.equal(passwordErrorKey({ code: 'UNAUTHENTICATED', status: 401 }), 'pwNeedsSignIn');
+  assert.equal(passwordErrorKey({ code: 'FORBIDDEN', status: 403 }), 'pwForbidden');
+  assert.equal(passwordErrorKey({ code: 'WEAK_PASSWORD', status: 400 }), 'pwWeak');
+  assert.equal(passwordErrorKey({ code: null, status: 404 }), 'pwErrUnavailable', 'the function is not deployed');
+  assert.equal(passwordErrorKey(new TypeError('Failed to fetch')), 'svErrNetwork');
+  assert.equal(passwordErrorKey(new Error('boom')), 'svErrGeneric');
+  assert.equal(passwordErrorKey(null), 'svErrGeneric');
 });

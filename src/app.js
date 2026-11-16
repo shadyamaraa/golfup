@@ -2,7 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
-import { mnLocal, leftText, verifyErrorKey } from './phone-auth.js';
+import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -846,6 +846,26 @@ function showOnboarding() {
 }
 
 // ---- Auth View ----
+// What a refusal from the password functions says to the member; a lock
+// names the minutes left.
+function passwordErrorText(err) {
+  const text = t(passwordErrorKey(err));
+  return text.replace('{m}', Math.max(1, Math.ceil((Number(err?.retryAfter) || 0) / 60)));
+}
+
+// Give a member a password through the server. Reports a refusal itself and
+// answers whether it went through.
+async function setPasswordFor(memberId, password) {
+  try {
+    await store.setMemberPassword(memberId, password);
+    return true;
+  } catch (err) {
+    console.warn('set password:', err?.code || err);
+    showToast(passwordErrorText(err), 'error');
+    return false;
+  }
+}
+
 // The sign-in page. Two ways in share one card: an SMS from the member's own
 // phone, and the password. `mode` forces one ('sms' / 'password'); without
 // it PHONE_LOGIN_DEFAULT decides.
@@ -931,12 +951,27 @@ function renderAuth(mode) {
 
         const user = await store.findUserByPhone(phone);
         if (!user) { showToast(t('userNotFound'), 'error'); reset(); return; }
-        if (user.password !== pass) { showToast('Нууц үг буруу байна.', 'error'); reset(); return; }
-        if (user.status === 'hold') { showToast('Таны эрхийг түр хаасан байна.', 'error'); reset(); return; }
-        // A Firebase identity left on this browser by another member's SMS
-        // sign-in must not speak for this one.
-        store.signOutPhoneAuth();
-        completeLogin(user);
+        if (user.status === 'hold') { showToast(t('svErrHeld'), 'error'); reset(); return; }
+        // Passwords are checked by the server. A record that still carries
+        // its own has not been moved there yet (the admin's one-off move):
+        // until then it is checked here, as it always was.
+        let authUid = null;
+        if (typeof user.password === 'string' && user.password !== '') {
+          if (user.password !== pass) { showToast(t('pwErrWrong'), 'error'); reset(); return; }
+          // A Firebase identity left on this browser by another member's
+          // sign-in must not speak for this one.
+          store.signOutPhoneAuth();
+        } else {
+          try {
+            authUid = (await store.passwordSignIn(phone, pass)).uid;
+          } catch (err) {
+            console.warn('sign-in by password:', err?.code || err);
+            showToast(passwordErrorText(err), 'error');
+            reset();
+            return;
+          }
+        }
+        completeLogin({ ...user, ...(authUid && { authUid }) });
       } catch (err) {
         console.error('Auth error:', err);
         showToast('Алдаа гарлаа.', 'error');
@@ -5892,6 +5927,17 @@ async function renderAdminPanel() {
         </div>
 
         <div id="admin-tab-users">
+          ${(() => {
+            // Passwords still sitting in plain text on member records, which
+            // every client can read. An admin moves them to the server once;
+            // when none are left this notice is gone.
+            const n = users.filter(u => u && u.password !== undefined && u.password !== null).length;
+            return n ? `
+          <div id="pw-migrate" style="background:var(--bg-card-hover);border-left:4px solid var(--danger-color);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="flex:1;min-width:200px;font-size:0.9rem;color:var(--text-primary);">${t('pwMigrateNotice').replace('{n}', n)}</span>
+            <button type="button" id="pw-migrate-btn" class="btn btn-primary btn-sm">${t('pwMigrateBtn')}</button>
+          </div>` : '';
+          })()}
           <div style="background: var(--bg-card-hover); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
             <button type="button" id="create-user-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;color:var(--text-primary);padding:0;cursor:pointer;text-align:left;">
               <h3 style="margin:0;">${t('createUser')}</h3>
@@ -5905,7 +5951,7 @@ async function renderAdminPanel() {
               <input type="text" id="new-user-ghin" placeholder="${t('ghinNumber')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="text" id="new-user-memberid" placeholder="${t('ubgolfMemberId')}" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <input type="tel" id="new-user-phone" placeholder="${t('phone')}" required minlength="8" style="flex:1; min-width:160px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
-              <input type="password" id="new-user-pass" placeholder="${t('newPass')}" required minlength="1" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
+              <input type="password" id="new-user-pass" placeholder="${t('password')} (${t('optional')})" minlength="4" autocomplete="new-password" style="flex:1; min-width:140px; padding:10px; border-radius:5px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" />
               <div style="width:100%;background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-top:4px;">
                 <label style="display:block;margin-bottom:6px;color:var(--text-secondary);font-size:0.85rem;">${t('communities')}</label>
                 ${communityCheckboxes('new-user-communities', [])}
@@ -6212,6 +6258,28 @@ async function renderAdminPanel() {
 
   // Users tab: create user toggle
   const createUserToggle = document.getElementById('create-user-toggle');
+  document.getElementById('pw-migrate-btn')?.addEventListener('click', async (e) => {
+    if (!confirm(t('pwMigrateConfirm'))) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const out = await store.migratePasswords();
+      showToast(t('pwMigrateDone').replace('{n}', out.removed ?? 0), 'success');
+      renderAdminPanel();
+    } catch (err) {
+      console.warn('migrate passwords:', err?.code || err);
+      // The move needs an admin's Firebase identity, which only a sign-in
+      // through the functions gives — an SMS sign-in is the sure one.
+      showToast(err?.status === 404 && !err?.code ? t('pwMigrateNotDeployed')
+        : err?.code === 'UNAUTHENTICATED' ? t('pwMigrateNeedsSignIn')
+        : err?.code === 'FORBIDDEN' ? t('pwMigrateAdminOnly')
+        : passwordErrorText(err), 'error');
+      btn.disabled = false;
+      btn.textContent = t('pwMigrateBtn');
+    }
+  });
+
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
   createUserToggle?.addEventListener('click', () => {
@@ -6267,11 +6335,14 @@ async function renderAdminPanel() {
       return;
     }
 
-    await store.adminCreateUser(name, pass, phone, 'user', communities, {
+    const created = await store.adminCreateUser(name, phone, 'user', communities, {
       lastName, firstName,
       fullName: [firstName, lastName].filter(Boolean).join(' '),
       gender, ghinNumber, ubgolfMemberId,
     });
+    // A member signs in by SMS; a password is only given when the admin
+    // typed one, and it goes to the server, not onto the record.
+    if (pass) await setPasswordFor(created.id, pass);
     showToast(t('userCreated'), 'success');
     renderAdminPanel();
   });
@@ -6427,7 +6498,7 @@ function showAdminEditUserModal(user, onSaved) {
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>Шинэ нууц үг (хоосон = өөрчлөхгүй)</label>
-        <input type="password" id="ae-pass" placeholder="..." minlength="1" />
+        <input type="password" id="ae-pass" placeholder="..." minlength="4" autocomplete="new-password" />
       </div>
       <div class="input-group" style="margin-top:10px;">
         <label>Эрх</label>
@@ -6505,7 +6576,7 @@ function showAdminEditUserModal(user, onSaved) {
     const ghinNumber = document.getElementById('ae-ghin').value.replace(/\D/g, '');
     if (ghinNumber && !/^\d{7,8}$/.test(ghinNumber)) { showToast(t('gsGhinInvalid'), 'error'); return; }
     user.ghinNumber = ghinNumber;
-    delete user.ghin; // legacy field, unified on ghinNumber (used to key rounds/{ghinNumber})
+    user.ghin = null; // legacy field, unified on ghinNumber (used to key rounds/{ghinNumber}); null clears it
     user.ubgolfMemberId = document.getElementById('ae-memberid').value.trim();
     user.communities = selectedCommunities('ae-communities');
     user.avatar = selectedAvatar;
@@ -6517,7 +6588,9 @@ function showAdminEditUserModal(user, onSaved) {
     user.bankAccount = document.getElementById('ae-bank-acc').value.replace(/\D/g, '');
     user.bankIban = document.getElementById('ae-bank-iban').value.trim();
     user.mtbogdCode = document.getElementById('ae-mtbogd-code').value.trim();
-    if (pass) user.password = pass;
+    // A new password goes to the server; if it is refused the rest is not
+    // saved either, so the admin is not told «saved» with the password unset.
+    if (pass && !(await setPasswordFor(user.id, pass))) return;
 
     await store.adminUpdateUser(user);
     if (currentUser && currentUser.id === user.id) {
@@ -8045,7 +8118,7 @@ function profileFormInner(user) {
 
       <div class="input-group" style="margin-top: 15px;">
         <label>${t('newPass')}</label>
-        <input type="password" id="profile-pass-input" placeholder="4+" minlength="1" />
+        <input type="password" id="profile-pass-input" placeholder="4+" minlength="4" autocomplete="new-password" />
       </div>
 
       <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-card);">
@@ -8164,7 +8237,6 @@ function wireProfileForm(scope, user, afterSave) {
     rec.name = newUsername;
     rec.avatar = selectedAvatar;
     rec.gender = selectedGender;
-    if (newPass && newPass.length >= 1) rec.password = newPass;
     rec.bankName = document.getElementById('profile-bank-name').value.trim();
     rec.bankAccount = document.getElementById('profile-bank-acc').value.replace(/\D/g, '');
     rec.bankIban = document.getElementById('profile-bank-iban').value.trim();
@@ -8179,6 +8251,10 @@ function wireProfileForm(scope, user, afterSave) {
     rec.notifyWeb = document.getElementById('notify-web-toggle').checked;
     rec.notifySms = document.getElementById('notify-sms-toggle').checked;
     if (rec.notifyWeb) initFCM(rec);
+
+    // A new password goes to the server, last of the checks: if it is
+    // refused nothing is saved, so «saved» never covers an unset password.
+    if (newPass && !(await setPasswordFor(rec.id, newPass))) return;
 
     await store.adminUpdateUser(rec);
     store.saveUser(rec);

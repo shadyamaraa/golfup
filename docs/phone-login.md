@@ -133,10 +133,55 @@ one's place; `ensureDeviceAccess` registers it the same way. Signing out
 returns the browser to an anonymous identity. `ensureAnonAuth` never
 replaces a signed-in member with an anonymous user.
 
+## The password (the fallback)
+
+A password is the way in for a member the SMS does not work for. It is
+checked, changed and stored by the server only.
+
+- **Where it is.** A scrypt hash under `userSecrets/{memberId}` — a path the
+  database rules give to no client; only the functions (Admin SDK) read it.
+  The member record (`users/{id}`) holds no password, and the rules refuse
+  any write that puts one there (`users/$uid/password` → `.validate: false`).
+- **Signing in** — `passwordLogin { phone, password }`. Five wrong passwords
+  in a row lock the member's password sign-in for fifteen minutes; SMS
+  sign-in is not affected. A right password mints the same Firebase token
+  an SMS sign-in does.
+- **Changing it** — `setPassword { idToken, memberId, password }`, 4 to 128
+  characters. The caller proves who they are with their Firebase ID token:
+  a member changes their own, an admin anyone's. A browser with no member
+  identity (a session from before these functions, the system admin) is
+  told to sign in again.
+- **A new member has none.** The admin's form takes a password only as an
+  option.
+- **The app never writes one.** Member records are written field by field
+  (`update`), with the password stripped (`withoutPassword`), and a session
+  saved before this is cleaned the first time it is read.
+
+Code: `functions/passwords.js` (tested in `scripts/test-passwords.mjs`),
+wired in `functions/index.js`; `passwordSignIn`, `setMemberPassword`,
+`migratePasswords` in `src/store.js`.
+
+### Moving the old passwords — once
+
+Until 2026-11-16 the password sat in plain text on the member record, which
+every client can read. To move them:
+
+1. Deploy the three functions (no new secret):
+   ```bash
+   firebase deploy --only functions:passwordLogin,functions:setPassword,functions:migratePasswords --project golfup-app
+   ```
+2. Sign in **by SMS** as an admin, open Admin → Тоглогчид. While any record
+   still carries a password a notice says how many; «Нууц үгсийг нууцлах»
+   hashes each into `userSecrets` and removes it from the record. Members
+   keep the same password. When none are left the notice is gone.
+
+It is safe to run again. Until a member's password is moved, the app
+checks it the old way, so nothing depends on the order of these steps and
+the site's own deploy.
+
 ## Not done yet
 
-- Database rules still let any client read and write most paths. This
-  proves who a member is; making the rules depend on it (`auth.token.memberId`)
-  is the next step, and needs setup step 5.
-- Passwords are still stored in plain text for the fallback.
-- The admin forms still ask for a password when a member is created.
+- Database rules still let any client read and write most paths — phone
+  numbers and bank details on member records included. Sign-in proves who a
+  member is; making the rules depend on it (`auth.token.memberId`) is the
+  next step.

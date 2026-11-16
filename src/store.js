@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue, push, query, limitToLast } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
-import { samePhone } from './phone-auth.js';
+import { samePhone, withoutPassword } from './phone-auth.js';
 
 let db = null;
 let auth = null;
@@ -119,7 +119,16 @@ export function memberName(u) {
 // ---- User Management ----
 export function getUser() {
   const data = localStorage.getItem('golfup_user');
-  return data ? JSON.parse(data) : null;
+  if (!data) return null;
+  const user = JSON.parse(data);
+  // A session saved before passwords moved to the server carries the
+  // member's own password in this browser's storage: drop it on sight.
+  if (user && typeof user === 'object' && 'password' in user) {
+    const clean = withoutPassword(user);
+    localStorage.setItem('golfup_user', JSON.stringify(clean));
+    return clean;
+  }
+  return user;
 }
 
 export function logoutUser() {
@@ -127,17 +136,25 @@ export function logoutUser() {
   signOutPhoneAuth();
 }
 
+// A member record is written field by field (update), never replaced whole,
+// and never with a password: passwords live on the server
+// (functions/passwords.js), so a write from the app must neither carry one
+// nor wipe one that has not been moved there yet. A field is cleared by
+// writing null to it.
 export function saveUser(user) {
-  localStorage.setItem('golfup_user', JSON.stringify(user));
-  if (useFirebase && user.id && db) {
-    set(ref(db, 'users/' + user.id), user).catch(console.warn);
+  const clean = withoutPassword(user);
+  localStorage.setItem('golfup_user', JSON.stringify(clean));
+  if (useFirebase && clean.id && db) {
+    update(ref(db, 'users/' + clean.id), clean).catch(console.warn);
   }
 }
 
-export async function adminCreateUser(name, password, phone, role = 'user', communities = [], extra = {}) {
+// A new member has no password: they sign in by SMS. An admin who wants to
+// give one calls setMemberPassword afterwards.
+export async function adminCreateUser(name, phone, role = 'user', communities = [], extra = {}) {
   const id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   const user = {
-    id, name, username: '', firstName: '', lastName: '', fullName: '', gender: '', communities, password, phone, role, status: 'active',
+    id, name, username: '', firstName: '', lastName: '', fullName: '', gender: '', communities, phone, role, status: 'active',
     bankName: '', bankAccount: '', bankIban: '', avatar: '',
     createdAt: Date.now(),
     ...extra
@@ -150,7 +167,7 @@ export async function adminCreateUser(name, password, phone, role = 'user', comm
 
 export async function adminUpdateUser(user) {
   if (useFirebase && db && user.id) {
-    await set(ref(db, 'users/' + user.id), user);
+    await update(ref(db, 'users/' + user.id), withoutPassword(user));
   }
 }
 
@@ -227,7 +244,7 @@ async function callSignIn(name, body) {
   try { data = await r.json(); } catch (_) { /* not JSON: a missing function answers with a page */ }
   if (!r.ok) {
     throw Object.assign(new Error(data?.error?.message || String(r.status)),
-      { status: r.status, code: data?.error?.code || null });
+      { status: r.status, code: data?.error?.code || null, retryAfter: data?.error?.retryAfter ?? null });
   }
   return data || {};
 }
@@ -262,6 +279,56 @@ export async function checkPhoneVerify(session) {
   }
   if (out.tokenError) console.warn('sign-in token not minted:', out.tokenError);
   return { status: 'VERIFIED', uid };
+}
+
+// ---- Passwords (the fallback sign-in) ----
+// A member's password is checked, changed and stored by the server only
+// (functions/passwords.js). Changing one needs proof of who is asking: the
+// Firebase ID token of a member signed in through the functions.
+
+/**
+ * Sign in with phone + password. Resolves to { memberId, uid }; rejects with
+ * an error whose `code` passwordErrorKey reads (WRONG_PASSWORD, NO_PASSWORD,
+ * LOCKED with `retryAfter` seconds, ...).
+ */
+export async function passwordSignIn(phone, password) {
+  const out = await callSignIn('passwordLogin', { phone, password });
+  let uid = null;
+  if (out.token && auth) {
+    try {
+      uid = (await signInWithCustomToken(auth, out.token)).user.uid;
+    } catch (e) {
+      console.warn('custom token sign-in:', e?.code || e);
+    }
+  }
+  if (out.tokenError) console.warn('sign-in token not minted:', out.tokenError);
+  // No identity of this member's: one left by another member must not stay.
+  if (!uid) signOutPhoneAuth();
+  return { memberId: out.memberId, uid };
+}
+
+// The signed-in member's Firebase ID token, or null when this browser has
+// only an anonymous identity (a session from before, the system admin).
+async function memberIdToken() {
+  const u = auth?.currentUser;
+  if (!u || u.isAnonymous) return null;
+  try { return await u.getIdToken(); } catch (_) { return null; }
+}
+
+async function callAsMember(name, body) {
+  const idToken = await memberIdToken();
+  if (!idToken) throw Object.assign(new Error('no member identity in this browser'), { status: 401, code: 'UNAUTHENTICATED' });
+  return callSignIn(name, { ...body, idToken });
+}
+
+/** Set a member's password: their own, or anyone's for an admin. */
+export function setMemberPassword(memberId, password) {
+  return callAsMember('setPassword', { memberId, password });
+}
+
+/** Admin, once: hash every plain-text password and remove it from the records. → { hashed, kept, removed } */
+export function migratePasswords() {
+  return callAsMember('migratePasswords', {});
 }
 
 // Signing out of the app also signs out the member's Firebase identity; the

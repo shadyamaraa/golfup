@@ -77,3 +77,36 @@ export function verifyErrorKey(err) {
   if (err instanceof TypeError || err?.name === 'TypeError') return 'svErrNetwork';
   return 'svErrGeneric';
 }
+
+/**
+ * A member record without its password. A password belongs to the server
+ * (functions/passwords.js): the app neither keeps one in the browser nor
+ * writes one to the member record.
+ */
+export function withoutPassword(user) {
+  if (!user || typeof user !== 'object') return user;
+  const { password, ...rest } = user;   // eslint-disable-line no-unused-vars
+  return rest;
+}
+
+/**
+ * The i18n key for a refusal from the password functions — signing in with
+ * a password, changing one, moving the stored ones.
+ */
+export function passwordErrorKey(err) {
+  switch (String(err?.code ?? '')) {
+    case 'WRONG_PASSWORD': return 'pwErrWrong';
+    case 'NO_PASSWORD': return 'pwErrNone';
+    case 'LOCKED': return 'pwErrLocked';
+    case 'USER_NOT_FOUND':
+    case 'BAD_PHONE': return 'userNotFound';
+    case 'USER_HELD': return 'svErrHeld';
+    case 'UNAUTHENTICATED': return 'pwNeedsSignIn';
+    case 'FORBIDDEN': return 'pwForbidden';
+    case 'WEAK_PASSWORD': return 'pwWeak';
+    default:
+  }
+  if (err?.status === 404) return 'pwErrUnavailable';
+  if (err instanceof TypeError || err?.name === 'TypeError') return 'svErrNetwork';
+  return 'svErrGeneric';
+}
