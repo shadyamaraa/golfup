@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Sign-in by SMS: no price on the screen)
+
+The send step of the SMS sign-in carried a line «SMS-ийн төлбөр 150₮
+(операторын тариф)». The owner does not want the price shown while signing
+in: the line and its `svCost` strings are gone (`src/app.js`, `src/i18n.js`).
+The rest of the step is unchanged — the send button still goes once the
+sign-in is through, and an expired code still says not to send the old text.
+
 ## 2026-11-16 (Sign-in by SMS is the default)
 
 The owner signed in by SMS on a real phone, end to end: the functions, the
