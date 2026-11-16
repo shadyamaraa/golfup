@@ -1,5 +1,40 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (MTBogd per-player billing: book the flight, or just yourself)
+
+MTBogd now bills a booking per player: tee-times quote `price` per person
+and `totalPrice` for the party, and a booking carries `greenFeeUnitPrice`
+× `playerCount` = `greenFeePrice`. Holding a 4-ball for one organiser used
+to cost one flat fee; now it costs four seats. The booker therefore picks
+how many seats to take:
+
+- **Бүтэн flight** — hold and pay for the whole group size up front
+  (`bookingMode: 'flight'`, `bookingSeats` = group size). Players who join
+  later take a seat that is already paid for; the player sync pads the
+  roster with the organiser's name up to `bookingSeats`, so it never shrinks
+  the booking (and the bill) below what was held.
+- **Зөвхөн өөрийгөө** — hold only the seats of who is in now (`'self'`).
+  Each joiner is added to the booking by the existing sync and pays their
+  own seat.
+
+The chips sit in the create page's tee-time popup and in the game page's
+«book a tee time» sheet (there labelled «Нэгдсэн хүмүүс», the players
+already in); switching mode reloads the tee times for that many players.
+The chosen slot reads «Бүтэн flight · 4 суудал · 1,520,000₮ (4 × 380,000₮)».
+Slots show the per-person price. The join/pay sheet shows the per-person
+price and the booking total, and says whether the joiner's seat is already
+in the booking or will be added. The game page's price line refreshes from
+both qpay-status and the booking (unit × seats) and keeps `bookingQuote`
+`{ amount, unit, seats, customerType }`.
+
+Games booked before this (no `bookingMode`) behave as before — the sync
+sends the roster — and flat-price bookings with no unit price show their
+total alone. The pure parts (`seatsToBook`, `bookingRoster`,
+`bookingPrice`, `bookModeOf`) live in `src/booking-sync.js` with tests in
+`scripts/test-booking-sync.mjs`. Verified in a browser against stubbed
+MTBogd endpoints: flight create → hold/confirm with 4 players, self create →
+1, flight sync → 4 names, self sync → the roster only.
+
 ## 2026-11-11 (Casual scorer: the SI on the small line)
 
 On a phone the casual scorer's hole header «11-р Нүх · Пар 5 · SI 16» did

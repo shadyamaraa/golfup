@@ -133,3 +133,51 @@ function clean(obj) {
   for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v;
   return out;
 }
+
+// ---- Seats: what a booking holds, and what it costs ----
+// MTBogd bills a booking per player — greenFeeUnitPrice × playerCount — where
+// until November 2026 it billed one flat price per tee time. So the number of
+// players a booking carries is now money. A game books either the whole
+// flight up front ('flight': every seat held, and billed, from the start) or
+// only the players already in ('self': the creator alone at first, each
+// joiner added to the booking as they join). Games booked before the choice
+// existed carry no mode and keep the old behaviour: the roster as it stands.
+export const BOOK_MODES = ['flight', 'self'];
+
+export function bookModeOf(game) {
+  return BOOK_MODES.includes(game?.bookingMode) ? game.bookingMode : null;
+}
+
+/** Seats to book: the whole flight, or the players already in (at least one). */
+export function seatsToBook(mode, groupSize, joined) {
+  if (mode === 'flight') return Math.max(1, Math.floor(Number(groupSize)) || 1);
+  return Math.max(1, Math.floor(Number(joined)) || 0);
+}
+
+/**
+ * The players list sent to MTBogd. A flight booking keeps every seat it
+ * holds: the joined players first, then the booker's name on each seat still
+ * open, so a sync never hands seats back (or shrinks the bill) by accident.
+ * Any other booking sends the roster as it stands.
+ */
+export function bookingRoster(game, players, fillerName) {
+  const list = asList(players).filter(Boolean);
+  if (bookModeOf(game) !== 'flight') return list;
+  const pad = Math.max(0, (Math.floor(Number(game?.bookingSeats)) || 0) - list.length);
+  return [...list, ...Array.from({ length: pad }, () => ({ name: String(fillerName || '') }))];
+}
+
+/**
+ * What MTBogd's booking record says it costs: { unit, seats, total }, any of
+ * them null when MTBogd did not say. A booking from the flat-price days has
+ * no unit price — its total stands alone. Null when there is no price at all.
+ */
+export function bookingPrice(remote) {
+  if (!remote || typeof remote !== 'object') return null;
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  const unit = num(remote.greenFeeUnitPrice);
+  const seats = num(remote.playerCount) ?? (Array.isArray(remote.players) ? remote.players.length || null : null);
+  const total = num(remote.greenFeePrice) ?? num(remote.amount) ?? (unit && seats ? unit * seats : null);
+  if (!total && !unit) return null;
+  return { unit, seats, total };
+}
