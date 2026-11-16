@@ -552,6 +552,8 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 [data-theme="dark"] .auth-logo-img { content: url('/logo-v-cream.svg'); }
 .auth-logo-img { width: 116px; height: auto; }
+/* The sign-in code is set wide; its placeholder is words and reads normally. */
+#otp-code::placeholder { letter-spacing: normal; font-weight: 400; }
 .golf-ball {
   background: radial-gradient(circle at 35% 35%, rgba(221,137,16,0.22), transparent 70%);
   border: 1px solid rgba(221,137,16,0.18);

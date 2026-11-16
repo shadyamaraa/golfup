@@ -1,5 +1,48 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Sign-in by SMS code — built, on trial)
+
+Members sign in with a phone number and a password kept in plain text.
+Sign-in by a code sent to the phone (Firebase Phone Auth) is now built,
+and waits behind `PHONE_LOGIN_DEFAULT = false` (`src/app.js`): the sign-in
+page is unchanged for members, and the code flow opens only at
+`#/login-sms`, so it can be tried on real phones first — whether
+Firebase's SMS reaches every Mongolian operator is not known yet. Once it
+is the default, the password stays one link away as the fallback.
+
+- **The flow** (`renderAuth`): the number must be a member's before
+  anything is sent (an SMS costs money); a held member is refused; then
+  the six digits, a minute's wait before another code, «Дугаар солих»,
+  and «Нууц үгээр нэвтрэх». On success the member gets `authUid` and
+  `phoneVerifiedAt`. Both ways in end in one `completeLogin`.
+- **Numbers** (`src/phone-auth.js`, pure): a number as typed or stored
+  becomes E.164 — eight digits are +976, `010…` is a Korean mobile (one
+  member has one). `findUserByPhone` now also finds the same phone written
+  another way.
+- **The provider** (`src/store.js`): `requestPhoneCode` /
+  `confirmPhoneCode` with an invisible reCAPTCHA. They are the only two
+  calls a domestic SMS provider has to replace later: a function sends and
+  checks the code and mints a custom token for the same Firebase Auth
+  user, so uids carry over.
+- **The device identity**: a member signed in by code takes the place of
+  the browser's anonymous Firebase user, and `mpDevices` registers that
+  uid the same way. `ensureAnonAuth` waits for the restored identity and
+  no longer asks for an anonymous one over a signed-in member — it would
+  have signed them out at every start. Signing out returns the browser to
+  an anonymous identity.
+- Local mode reads members from `golfup_users` and takes one fixed dev
+  code, so the screens can be tried without Firebase.
+
+Needs, in the Firebase console, before the trial: the Phone provider
+enabled, `ubgolf.club` added to the authorized domains (it is not there),
+the SMS region policy limited to MN and KR. `docs/phone-login.md` has the
+steps, the trial, the cost ($0.16 per SMS to Mongolia, ten a day free) and
+the provider swap. Database rules and the stored passwords are unchanged.
+
+Verified in a browser in local mode (no SMS): both ways in, an unknown and
+a held number, a wrong code, a Korean number, sign-out. The Firebase path
+itself — reCAPTCHA and a real SMS — cannot be run from here.
+
 ## 2026-11-16 (Edit game: the same time picker)
 
 The edit page still chose its time with two full-width dropdowns. Its date

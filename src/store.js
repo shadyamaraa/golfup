@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue, push, query, limitToLast } from 'firebase/database';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithPhoneNumber, RecaptchaVerifier, signOut } from 'firebase/auth';
 import { isFirebaseConfigured, firebaseConfig } from './config.js';
+import { samePhone } from './phone-auth.js';
 
 let db = null;
 let auth = null;
@@ -68,12 +69,16 @@ export function nextAuthRetryMs(attempt, base = 2000, cap = 60000) {
 // The one place anonymous sign-in is asked for. The SDK hands back the
 // anonymous user it already has without a network call, so asking again
 // never mints a second identity; it signs in only when there is none.
+// A member who signed in by SMS code is a Firebase Auth user of their own:
+// asking for an anonymous one would sign them out, so the identity the
+// browser has restored is waited for first and, when there is one, kept.
 // Resolves to the uid, or null when the attempt failed (a retry is timed).
 export function ensureAnonAuth(reset = false) {
   if (!auth) return Promise.resolve(null);
   if (reset) { anonAttempt = 0; clearTimeout(anonTimer); anonTimer = null; }
   if (anonInFlight) return anonInFlight;
-  anonInFlight = signInAnonymously(auth)
+  anonInFlight = Promise.resolve(typeof auth.authStateReady === 'function' ? auth.authStateReady() : null)
+    .then(() => (auth.currentUser ? { user: auth.currentUser } : signInAnonymously(auth)))
     .then((cred) => { anonAttempt = 0; setDeviceUid(cred.user.uid); return cred.user.uid; })
     .catch((e) => {
       console.warn('anon auth unavailable:', e?.code || e);
@@ -119,6 +124,7 @@ export function getUser() {
 
 export function logoutUser() {
   localStorage.removeItem('golfup_user');
+  signOutPhoneAuth();
 }
 
 export function saveUser(user) {
@@ -163,7 +169,13 @@ export async function loadAllUsers() {
       return [];
     }
   }
-  return [];
+  // Local mode: the members a developer seeded, if any.
+  try {
+    const local = JSON.parse(localStorage.getItem('golfup_users') || '[]');
+    return Array.isArray(local) ? local : Object.values(local || {});
+  } catch (_) {
+    return [];
+  }
 }
 
 export async function loadUserById(id) {
@@ -186,9 +198,64 @@ export async function findUserByName(name) {
   return users.find(u => u.name && u.name.toLowerCase() === name.toLowerCase());
 }
 
+// The member whose phone this is: as stored first, then as the same phone
+// written another way ('+976 9911 9007' finds '99119007').
 export async function findUserByPhone(phone) {
   const users = await loadAllUsers();
-  return users.find(u => u.phone === phone);
+  return users.find(u => u.phone === phone) || users.find(u => samePhone(u.phone, phone));
+}
+
+// ---- Sign-in by SMS code ----
+// Two calls, and the provider behind them is replaceable (src/phone-auth.js):
+// today Firebase Phone Auth sends the code and checks it. The member record
+// stays the app's own (users/{id}); the Firebase Auth user is the proof that
+// this browser holds that member's phone, and its uid is written on the
+// member as `authUid`.
+
+let recaptcha = null;
+// Local mode has no SMS to send: the code is this one. Reachable only when
+// Firebase is not configured, where there is no database either.
+export const LOCAL_DEV_CODE = '123456';
+
+/**
+ * Send a sign-in code to `e164`. `anchor` is an element that stays on the
+ * page for the invisible reCAPTCHA Firebase requires on the web. Resolves to
+ * a handle for confirmPhoneCode; rejects with the provider's error (its
+ * `code` is what otpErrorKey reads).
+ */
+export async function requestPhoneCode(e164, anchor) {
+  if (!useFirebase || !auth) return { local: true, phone: e164 };
+  // A verifier is good for one request: a used or failed one is cleared
+  // and a fresh one made, or the next request is refused.
+  try { recaptcha?.clear(); } catch (_) { /* already gone with its element */ }
+  recaptcha = new RecaptchaVerifier(auth, anchor, { size: 'invisible' });
+  try {
+    const confirmation = await signInWithPhoneNumber(auth, e164, recaptcha);
+    return { confirmation, phone: e164 };
+  } catch (e) {
+    try { recaptcha.clear(); } catch (_) { /* nothing to clear */ }
+    recaptcha = null;
+    throw e;
+  }
+}
+
+/** Check the code the member typed. Resolves to { uid, phone } (E.164). */
+export async function confirmPhoneCode(handle, code) {
+  const typed = String(code ?? '').trim();
+  if (handle?.local) {
+    if (typed !== LOCAL_DEV_CODE) throw Object.assign(new Error('wrong code'), { code: 'auth/invalid-verification-code' });
+    return { uid: 'local_' + String(handle.phone).replace(/\D/g, ''), phone: handle.phone };
+  }
+  if (!handle?.confirmation) throw Object.assign(new Error('no code was sent'), { code: 'auth/session-expired' });
+  const cred = await handle.confirmation.confirm(typed);
+  return { uid: cred.user.uid, phone: cred.user.phoneNumber };
+}
+
+// Signing out of the app also signs out the SMS-code identity; the auth
+// observer then puts the browser back on an anonymous one, which is all a
+// signed-out browser needs. An anonymous identity is left as it is.
+export function signOutPhoneAuth() {
+  if (auth?.currentUser && !auth.currentUser.isAnonymous) signOut(auth).catch(() => {});
 }
 
 export async function deleteUserFromDB(uid) {
