@@ -79,8 +79,8 @@ do, the SMS screen answers «SMS-ээр нэвтрэх одоогоор идэв
    curl -X POST https://us-central1-golfup-app.cloudfunctions.net/phoneVerifyStart \
      -H "Content-Type: application/json" -d '{"phone":"99000000"}'
    ```
-5. **Optional now, needed before the database rules are tightened — the
-   Firebase identity.** For the server to mint a custom token, the
+5. **The Firebase identity** (already working on this project — see
+   Rollout). For the server to mint a custom token, the
    functions' service account (`golfup-app@appspot.gserviceaccount.com`)
    needs the role **Service Account Token Creator** (Google Cloud console →
    IAM), and the *IAM Service Account Credentials API* must be enabled.
@@ -94,12 +94,18 @@ be switched off.
 
 | Stage | `PHONE_LOGIN_DEFAULT` | `#/login` | `#/login-sms` |
 |---|---|---|---|
-| 1. Trial (now) | `false` | password only | the SMS flow, for testing |
-| 2. Switched | `true` | the SMS, password one link away | same as `#/login` |
+| 1. Trial | `false` | password only | the SMS flow, for testing |
+| 2. Switched (now, since 2026-11-16) | `true` | the SMS, password one link away | same as `#/login` |
 | 3. Password removed | — | the SMS only | — |
 
-Stage 1 → 2 is one line in `src/app.js`. Members already signed in stay
-signed in.
+The stage is one line in `src/app.js`; setting it back to `false` returns
+the sign-in page to the password at once. Members already signed in stay
+signed in — they meet the SMS the next time they sign in.
+
+The first real sign-in (2026-11-16) went through end to end, Firebase
+token included: the member got both `phoneVerifiedAt` and `authUid`, so the
+functions' service account can already sign tokens and setup step 5 needs
+nothing more.
 
 ## Trial
 

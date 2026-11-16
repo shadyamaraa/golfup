@@ -38,13 +38,12 @@ Roles:
 - `marshal`: operational access, can see all games
 - `user`: normal player
 
-Sign-in: a member is found by `phone`. Today the password (stored on the
-member) signs them in. Sign-in by SMS through verify.mn — the member sends
-one SMS from their own phone to 144773 — is built and on trial at
-`#/login-sms`; `PHONE_LOGIN_DEFAULT` in `src/app.js` makes it the default,
-with the password as the fallback. It needs the `phoneVerifyStart` /
-`phoneVerifyCheck` functions and the `VERIFY_MN_API_KEY` secret. See
-`docs/phone-login.md`.
+Sign-in: a member is found by `phone` and signs in by SMS through
+verify.mn — they send one SMS from their own phone to 144773. The password
+(stored on the member) is the fallback, one link away on the sign-in page.
+`PHONE_LOGIN_DEFAULT` in `src/app.js` decides which is the default. The SMS
+flow needs the `phoneVerifyStart` / `phoneVerifyCheck` functions and the
+`VERIFY_MN_API_KEY` secret. See `docs/phone-login.md`.
 
 ### Circles
 
