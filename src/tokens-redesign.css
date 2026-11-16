@@ -273,7 +273,10 @@ body { background: var(--bg-primary); color: var(--text-primary); }
 }
 .cs-label .cs-opt { text-transform: none; letter-spacing: 0; color: var(--text-muted); font-weight: 600; margin-left: 4px; }
 
-.dt-row { display: flex; gap: 10px; }
+/* Date and Time sit side by side where both fit; a browser whose date field
+   is wide (Android Chrome) drops Time to its own line instead of pushing it
+   out of the card. */
+.dt-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .dt-card {
   flex: 1; display: flex; align-items: center; gap: 11px; cursor: pointer;
   padding: 12px 13px; border-radius: 14px;

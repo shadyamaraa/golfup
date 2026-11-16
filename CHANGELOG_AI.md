@@ -1,5 +1,28 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Edit game: the same time picker)
+
+The edit page still chose its time with two full-width dropdowns. Its date
+and time are now the create page's «Огноо ба цаг» row (`renderEditGame`,
+`src/app.js`): a Date card and a Time card that opens the clock window —
+morning / afternoon, the hours, the ten-minute starts under the hour
+tapped, opening on the game's time. Editing never books or moves a booking,
+so it is the clock for every course; for Sky Resort the window says so
+(`editTimeMtHint`), and the existing warning before saving a booked game is
+unchanged. The window's shell and the clock (`openTimePickerShell`,
+`openClockPicker`) moved to module level and serve both pages.
+
+A game whose time sits outside the usual grid (an hour before 06, a start
+at :08) used to be shown as 06:00 / :00 by the dropdowns and saved that way
+on the next edit; its own hour and minute are now offered, so opening the
+form no longer moves a time nobody touched.
+
+The Date/Time row could not shrink: where the browser's date field is wide
+(Android Chrome), the Time card ran 23–75 px past the card on the create
+page at 360–412 px. `.dt-row` now wraps (`src/tokens-redesign.css`), so
+Time drops to its own line where the two do not fit and stays beside Date
+where they do.
+
 ## 2026-11-16 (Create game: one time picker for every course)
 
 On «Тоглолт үүсгэх» the time was picked two ways. Sky Resort opened a
