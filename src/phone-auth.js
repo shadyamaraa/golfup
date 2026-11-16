@@ -1,21 +1,17 @@
 // src/phone-auth.js
-// Signing in by a code sent to the member's phone — the pure half: how a
-// number as typed or stored becomes the E.164 form an SMS provider takes,
-// when two numbers are the same phone, and what a provider's refusal means
-// in words a member can act on. No DOM, no Firebase.
+// Signing in by SMS — the pure half: phone numbers into the forms the app
+// and the provider need, when two numbers are the same phone, the time left
+// on a code, and what a refusal means in words a member can act on. No DOM,
+// no Firebase.
 //
-// The provider is replaceable. Today it is Firebase Phone Auth, behind two
-// calls in store.js (requestPhoneCode / confirmPhoneCode). A domestic SMS
-// provider later takes its place behind the same two calls: a Cloud Function
-// sends and checks the code, then mints a custom token for the SAME Firebase
-// Auth user (found by its phone number), so the uid — and everything that
-// comes to be keyed on it — carries over. See docs/phone-login.md.
+// The provider is verify.mn, and it is mobile-ORIGINATED: nothing is sent to
+// the member. They send one SMS — a six-digit text — from their own phone to
+// the short code 144773, and verify.mn tells the server that phone sent it.
+// The server half is functions/phone-verify.js; the browser's two calls are
+// in store.js (startPhoneVerify / checkPhoneVerify). See docs/phone-login.md.
 
 /** The club's members are in Mongolia: a bare 8-digit number is +976. */
 export const DEFAULT_COUNTRY = '976';
-
-/** Seconds before another code may be asked for. */
-export const RESEND_SECONDS = 60;
 
 /**
  * E.164 ('+97699119007') for a number as a member types it or as the
@@ -46,43 +42,38 @@ export function samePhone(a, b) {
   return !!x && x === toE164(b);
 }
 
-/** A sign-in code as the provider sends it: six digits. */
-export function codeOk(code) {
-  return /^\d{6}$/.test(String(code ?? '').trim());
+/**
+ * The 8-digit Mongolian number in `phone`, or null. verify.mn works with
+ * Mongolian operators only, so a member with a foreign number signs in with
+ * the password.
+ */
+export function mnLocal(phone) {
+  const e = toE164(phone);
+  return e && e.startsWith('+' + DEFAULT_COUNTRY) && e.length === 1 + DEFAULT_COUNTRY.length + 8
+    ? e.slice(1 + DEFAULT_COUNTRY.length) : null;
+}
+
+/** Time left as 'm:ss' — '0:00' once it has run out. */
+export function leftText(ms) {
+  const s = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /**
- * The i18n key for what went wrong, from the provider's error. Firebase
- * names its refusals `auth/...`; a provider that replaces it should throw
- * errors carrying the same codes, so the words do not change with it.
+ * The i18n key for what went wrong, from the error a store call threw: the
+ * sign-in functions name their refusals in `code`; a missing function is a
+ * 404, and a request that never left is a TypeError from fetch.
  */
-export function otpErrorKey(err) {
-  const code = String(err?.code ?? '');
-  switch (code) {
-    case 'auth/invalid-phone-number':
-    case 'auth/missing-phone-number':
-      return 'otpErrInvalidPhone';
-    case 'auth/too-many-requests':
-    case 'auth/quota-exceeded':
-      return 'otpErrTooMany';
-    case 'auth/invalid-verification-code':
-    case 'auth/missing-verification-code':
-      return 'otpErrBadCode';
-    case 'auth/code-expired':
-    case 'auth/session-expired':
-      return 'otpErrExpired';
-    case 'auth/captcha-check-failed':
-    case 'auth/invalid-app-credential':
-    case 'auth/missing-app-credential':
-    case 'auth/unauthorized-domain':
-      return 'otpErrCaptcha';
-    case 'auth/operation-not-allowed':
-    case 'auth/billing-not-enabled':
-    case 'auth/admin-restricted-operation':
-      return 'otpErrNotEnabled';
-    case 'auth/network-request-failed':
-      return 'otpErrNetwork';
+export function verifyErrorKey(err) {
+  switch (String(err?.code ?? '')) {
+    case 'USER_NOT_FOUND': return 'userNotFound';
+    case 'USER_HELD': return 'svErrHeld';
+    case 'UNSUPPORTED_PHONE': return 'svErrForeign';
+    case 'NOT_CONFIGURED': return 'svErrNotEnabled';
+    case 'BAD_TICKET': return 'svErrGeneric';
     default:
-      return 'otpErrGeneric';
   }
+  if (err?.status === 404) return 'svErrNotEnabled';
+  if (err instanceof TypeError || err?.name === 'TypeError') return 'svErrNetwork';
+  return 'svErrGeneric';
 }

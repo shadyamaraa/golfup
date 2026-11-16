@@ -39,10 +39,12 @@ Roles:
 - `user`: normal player
 
 Sign-in: a member is found by `phone`. Today the password (stored on the
-member) signs them in. Sign-in by SMS code (Firebase Phone Auth) is built
-and on trial at `#/login-sms`; `PHONE_LOGIN_DEFAULT` in `src/app.js` makes
-it the default, with the password as the fallback. The SMS provider is
-meant to be replaced by a domestic one. See `docs/phone-login.md`.
+member) signs them in. Sign-in by SMS through verify.mn — the member sends
+one SMS from their own phone to 144773 — is built and on trial at
+`#/login-sms`; `PHONE_LOGIN_DEFAULT` in `src/app.js` makes it the default,
+with the password as the fallback. It needs the `phoneVerifyStart` /
+`phoneVerifyCheck` functions and the `VERIFY_MN_API_KEY` secret. See
+`docs/phone-login.md`.
 
 ### Circles
 

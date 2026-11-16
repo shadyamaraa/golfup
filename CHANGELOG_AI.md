@@ -1,5 +1,53 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Sign-in by SMS: verify.mn in place of Firebase Phone)
+
+The SMS sign-in built earlier today used Firebase Phone Auth as a stand-in
+for a domestic provider. The provider is now verify.mn, and it works the
+other way round: nothing is sent to the member — **the member sends one
+SMS**, a six-digit text, from their own phone to 144773, and verify.mn
+tells the server that phone sent it. The member pays the operator 150₮;
+the club pays nothing.
+
+- **Server** (`functions/phone-verify.js`, wired in `functions/index.js` as
+  `phoneVerifyStart` / `phoneVerifyCheck`): `start` takes a phone that must
+  be a member's and Mongolian, opens a session at verify.mn with a fresh
+  code, and hands the browser what to show plus a ticket (an HMAC over the
+  session, member and phone — nothing is stored between calls). `check`
+  refuses any ticket it did not sign, asks verify.mn's own record, and on
+  VERIFIED mints a Firebase custom token for the Firebase Auth user of
+  that phone number, with `memberId` as a claim. Minting needs an IAM role
+  the project may not have; without it the sign-in still goes through and
+  the response says what was missing. The API key is the
+  `VERIFY_MN_API_KEY` secret and never reaches the browser.
+- **Screens** (`renderAuth`): step 2 is no longer «type the code» but
+  «send the SMS» — verify.mn's own instruction, the short code and the
+  text, a button that opens the SMS app filled in, the time left, and the
+  150₮ note. The page asks the server every three seconds and at once when
+  the member returns to it. The send button goes the moment the sign-in is
+  through, and an expired code says not to send the old text, since every
+  SMS to the short code is charged. A foreign number is told to use the
+  password before anything is asked of the server.
+- **Removed**: the Firebase Phone calls, the invisible reCAPTCHA, the
+  code-entry strings and the local dev code. `ensureAnonAuth` keeping a
+  signed-in member, sign-out returning to an anonymous identity, and local
+  mode's `golfup_users` stay.
+- The functions are called at their own address, not through a hosting
+  rewrite, so `firebase.json` is unchanged and the site deploys whether or
+  not they exist; until they do the SMS screen says it is not switched on.
+
+Still behind `PHONE_LOGIN_DEFAULT = false`: `#/login` asks for the password
+as before, and the SMS flow opens only at `#/login-sms`.
+
+**Needs the owner**: a verify.mn API key set as the secret, and the two
+functions deployed (`docs/phone-login.md`, Setup). Tests: the server logic
+against a fake verify.mn — who may start, the ticket and its tampering, each
+state of a check (`scripts/test-phone-verify.mjs`, 13); the pure helpers
+(`scripts/test-phone-auth.mjs`). Verified in a browser with the two
+functions stubbed: refusals before any call, the wait, a dropped request,
+VERIFIED, both kinds of expiry and a new code, functions not deployed. Not
+run: the real functions, verify.mn itself, a real SMS.
+
 ## 2026-11-16 (Sign-in by SMS code — built, on trial)
 
 Members sign in with a phone number and a password kept in plain text.

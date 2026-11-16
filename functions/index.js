@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const functions = require('firebase-functions/v1');
 const crypto = require('crypto');
 const qpay = require('./qpay');
+const phoneVerify = require('./phone-verify');
 
 admin.initializeApp();
 
@@ -327,6 +328,61 @@ exports.mtbogdWebhook = functions
       res.status(500).send(err.message);
     }
   });
+
+// ---- Sign-in by SMS (verify.mn) ----
+// The member sends one SMS from their own phone to 144773; verify.mn tells
+// us that phone sent that text. The logic is in ./phone-verify.js; these
+// two functions give it the API key (Secret Manager: VERIFY_MN_API_KEY), the
+// members, and a way to mint a Firebase custom token. They are called at
+// their own URL (https://us-central1-golfup-app.cloudfunctions.net/...), not
+// through a hosting rewrite, so the site deploys whether or not they exist.
+
+// The Firebase Auth user that owns this phone number — made the first time —
+// and a custom token for it. The token carries the member's id, which is
+// what database rules will read once they are tightened. Signing a token
+// needs the "Service Account Token Creator" role on the functions' service
+// account; without it this throws and the sign-in goes on without a token.
+async function mintPhoneToken(e164, memberId) {
+  let user;
+  try {
+    user = await admin.auth().getUserByPhoneNumber(e164);
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') throw e;
+    user = await admin.auth().createUser({ phoneNumber: e164 });
+  }
+  const token = await admin.auth().createCustomToken(user.uid, { memberId });
+  return { token, uid: user.uid };
+}
+
+function phoneVerifyEndpoint(run) {
+  return functions
+    .runWith({ secrets: ['VERIFY_MN_API_KEY'] })
+    .https.onRequest(async (req, res) => {
+      res.set(CORS_HEADERS);
+      if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+      if (req.method !== 'POST') { res.status(405).json({ error: { code: 'METHOD', message: 'POST only' } }); return; }
+      try {
+        const out = await run(req.body || {});
+        if (out.body && out.body.tokenError) console.warn('phone verify: custom token not minted:', out.body.tokenError);
+        res.status(out.status).json(out.body);
+      } catch (err) {
+        console.error('phone verify error', err);
+        res.status(500).json({ error: { code: 'SERVER', message: 'Server error' } });
+      }
+    });
+}
+
+exports.phoneVerifyStart = phoneVerifyEndpoint((body) => phoneVerify.startVerify({
+  apiKey: process.env.VERIFY_MN_API_KEY,
+  fetch,
+  loadUsers: async () => (await admin.database().ref('users').once('value')).val(),
+}, body));
+
+exports.phoneVerifyCheck = phoneVerifyEndpoint((body) => phoneVerify.checkVerify({
+  apiKey: process.env.VERIFY_MN_API_KEY,
+  fetch,
+  mintToken: mintPhoneToken,
+}, body));
 
 const APP_URL = 'https://ubgolf.club';
 

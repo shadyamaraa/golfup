@@ -2,7 +2,7 @@ import { t, getLang, toggleLang, setLang } from './i18n.js';
 import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
-import { toE164, samePhone, codeOk, otpErrorKey, RESEND_SECONDS } from './phone-auth.js';
+import { mnLocal, leftText, verifyErrorKey } from './phone-auth.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -63,12 +63,13 @@ const QPAY_ENABLED = false;
 // it has been tried with a real payment; the restaurant's QPay is the flag
 // above and stays apart.
 const TEE_QPAY_ENABLED = false;
-// Signing in by a code sent to the member's phone (docs/phone-login.md). It
-// is built and waits here: until the SMS has been seen to arrive on real
-// phones, the sign-in page asks for the password as before and the code flow
-// opens only at #/login-sms. `true` makes the code the sign-in page's
-// default, with the password one link away — kept as the way in for a
-// member the SMS does not reach.
+// Signing in by SMS (docs/phone-login.md): the member sends one SMS from
+// their own phone to 144773 and is signed in, with no password. It is built
+// and waits here: until it has been tried on real phones, the sign-in page
+// asks for the password as before and the SMS flow opens only at
+// #/login-sms. `true` makes it the sign-in page's default, with the password
+// one link away — kept as the way in for a member it does not work for (a
+// foreign number, no SMS to spend).
 const PHONE_LOGIN_DEFAULT = false;
 // The two addresses of the sign-in page.
 const isLoginHash = (h) => h === '#/login' || h === '#/login-sms';
@@ -517,7 +518,7 @@ export async function router() {
 
     if (isLoginHash(hash)) {
       if (currentUser) { navReplace('#/'); return; }
-      renderAuth(hash === '#/login-sms' ? 'otp' : null);
+      renderAuth(hash === '#/login-sms' ? 'sms' : null);
     }
     else if (hash === '#/' || hash === '#/home') {
       if (currentUser) await renderHome();
@@ -846,22 +847,21 @@ function showOnboarding() {
 }
 
 // ---- Auth View ----
-// The sign-in page. Two ways in share one card: the code sent to the
-// member's phone, and the password. `mode` forces one ('otp' / 'password');
-// without it PHONE_LOGIN_DEFAULT decides.
+// The sign-in page. Two ways in share one card: an SMS from the member's own
+// phone, and the password. `mode` forces one ('sms' / 'password'); without
+// it PHONE_LOGIN_DEFAULT decides.
 function renderAuth(mode) {
-  const startOtp = mode ? mode === 'otp' : PHONE_LOGIN_DEFAULT;
-  // The link to the other way in: always from the code to the password (the
-  // fallback), and from the password to the code only once the code is the
-  // default or this page was opened as the code's.
-  const offerOtp = PHONE_LOGIN_DEFAULT || mode === 'otp';
+  const startSms = mode ? mode === 'sms' : PHONE_LOGIN_DEFAULT;
+  // The link to the other way in: always from the SMS to the password (the
+  // fallback), and from the password to the SMS only once the SMS is the
+  // default or this page was opened as its own.
+  const offerSms = PHONE_LOGIN_DEFAULT || mode === 'sms';
 
   main().innerHTML = `
     <div class="auth-container fade-in">
       <div class="auth-card glass-card">
         <img src="/logo-v-navy.svg" alt="UB Golf" class="auth-logo-img" id="admin-login-link" />
         <div id="auth-body"></div>
-        <div id="otp-recaptcha"></div>
       </div>
       <div class="auth-bg-decoration">
         <div class="golf-ball"></div>
@@ -872,14 +872,16 @@ function renderAuth(mode) {
 
   const body = document.getElementById('auth-body');
   const linkStyle = 'background:none;border:none;padding:6px 4px;cursor:pointer;font-family:var(--font);font-size:0.85rem;color:var(--text-secondary);text-decoration:underline;';
-  let resendTimer = null;
-  const stopResend = () => { if (resendTimer) { clearInterval(resendTimer); resendTimer = null; } };
-  activeUnsubs.push(stopResend);
+  // What the SMS step keeps running while it waits — the poll, the clock,
+  // the return-to-the-page listener — stopped whenever the card moves on.
+  let stopWaiting = () => {};
+  const stopWait = () => { stopWaiting(); stopWaiting = () => {}; };
+  activeUnsubs.push(stopWait);
 
   // Signed in, by either way: the session, the device's access, push, and
   // back to where the member was headed.
   function completeLogin(user) {
-    stopResend();
+    stopWait();
     currentUser = user;
     store.saveUser(user);
     store.ensureDeviceAccess(user);
@@ -895,7 +897,7 @@ function renderAuth(mode) {
 
   // ---- The password ----
   function showPassword() {
-    stopResend();
+    stopWait();
     body.innerHTML = `
       <form id="auth-form" class="auth-form">
         <div class="input-group">
@@ -906,7 +908,7 @@ function renderAuth(mode) {
         </div>
         <button type="submit" class="btn btn-primary btn-lg" id="auth-submit-btn">${t('start')}</button>
       </form>
-      ${offerOtp ? `<div style="margin-top:14px;"><button type="button" id="auth-use-otp" style="${linkStyle}">${t('otpUseSms')}</button></div>` : ''}`;
+      ${offerSms ? `<div style="margin-top:14px;"><button type="button" id="auth-use-sms" style="${linkStyle}">${t('svUseSms')}</button></div>` : ''}`;
 
     const phoneInput = document.getElementById('auth-phone');
     phoneInput.addEventListener('blur', async () => {
@@ -916,7 +918,7 @@ function renderAuth(mode) {
         if (!user) showToast(t('userNotFound'), 'error');
       }
     });
-    document.getElementById('auth-use-otp')?.addEventListener('click', () => showOtpPhone(phoneInput.value.trim()));
+    document.getElementById('auth-use-sms')?.addEventListener('click', () => showSmsPhone(phoneInput.value.trim()));
 
     document.getElementById('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -932,8 +934,8 @@ function renderAuth(mode) {
         if (!user) { showToast(t('userNotFound'), 'error'); reset(); return; }
         if (user.password !== pass) { showToast('Нууц үг буруу байна.', 'error'); reset(); return; }
         if (user.status === 'hold') { showToast('Таны эрхийг түр хаасан байна.', 'error'); reset(); return; }
-        // A code identity left on this browser by another member's sign-in
-        // must not speak for this one.
+        // A Firebase identity left on this browser by another member's SMS
+        // sign-in must not speak for this one.
         store.signOutPhoneAuth();
         completeLogin(user);
       } catch (err) {
@@ -944,124 +946,167 @@ function renderAuth(mode) {
     });
   }
 
-  // ---- The code, step 1: whose phone ----
-  // The number must be a member's before anything is sent: an SMS costs
-  // money, and a stranger's number has no account to sign in to.
-  function showOtpPhone(prefill = '') {
-    stopResend();
+  // ---- The SMS, step 1: whose phone ----
+  // The number must be a member's, and a Mongolian one: the provider works
+  // with Mongolian operators only, so a foreign number keeps the password.
+  function showSmsPhone(prefill = '') {
+    stopWait();
     body.innerHTML = `
-      <form id="otp-phone-form" class="auth-form">
+      <form id="sv-phone-form" class="auth-form">
         <div class="input-group">
-          <input type="tel" id="otp-phone" placeholder="${t('phone')}" required minlength="8" maxlength="16" autocomplete="tel" value="${esc(prefill)}" />
+          <input type="tel" id="sv-phone" placeholder="${t('phone')}" required minlength="8" maxlength="16" autocomplete="tel" value="${esc(prefill)}" />
         </div>
-        <button type="submit" class="btn btn-primary btn-lg" id="otp-send-btn">${t('otpSend')}</button>
+        <button type="submit" class="btn btn-primary btn-lg" id="sv-start-btn">${t('svContinue')}</button>
       </form>
-      <p style="margin:12px 0 0;font-size:0.8rem;line-height:1.45;color:var(--text-secondary);">${t('otpHint')}</p>
-      <div style="margin-top:8px;"><button type="button" id="auth-use-password" style="${linkStyle}">${t('otpUsePassword')}</button></div>`;
+      <p style="margin:12px 0 0;font-size:0.8rem;line-height:1.45;color:var(--text-secondary);">${t('svHint')}</p>
+      <div style="margin-top:8px;"><button type="button" id="auth-use-password" style="${linkStyle}">${t('svUsePassword')}</button></div>`;
 
-    const phoneInput = document.getElementById('otp-phone');
-    document.getElementById('auth-use-password').addEventListener('click', () => { showPassword(); document.getElementById('auth-phone').value = phoneInput.value.trim(); });
-    document.getElementById('otp-phone-form').addEventListener('submit', async (e) => {
+    const phoneInput = document.getElementById('sv-phone');
+    document.getElementById('auth-use-password').addEventListener('click', () => {
+      const typed = phoneInput.value.trim();
+      showPassword();
+      document.getElementById('auth-phone').value = typed;
+    });
+    document.getElementById('sv-phone-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const btn = document.getElementById('otp-send-btn');
-      const reset = () => { btn.disabled = false; btn.textContent = t('otpSend'); };
+      const btn = document.getElementById('sv-start-btn');
+      const reset = () => { btn.disabled = false; btn.textContent = t('svContinue'); };
       btn.disabled = true;
       btn.textContent = '...';
       try {
         const typed = phoneInput.value.trim();
         const member = await store.findUserByPhone(typed);
         if (!member) { showToast(t('userNotFound'), 'error'); reset(); return; }
-        if (member.status === 'hold') { showToast('Таны эрхийг түр хаасан байна.', 'error'); reset(); return; }
-        const e164 = toE164(member.phone);
-        if (!e164) { showToast(t('otpErrInvalidPhone'), 'error'); reset(); return; }
-        const handle = await store.requestPhoneCode(e164, document.getElementById('otp-recaptcha'));
-        showOtpCode(member, e164, handle, typed);
+        if (member.status === 'hold') { showToast(t('svErrHeld'), 'error'); reset(); return; }
+        if (!mnLocal(member.phone)) { showToast(t('svErrForeign'), 'error'); reset(); return; }
+        const session = await store.startPhoneVerify(member.phone);
+        showSmsSend(member, session, typed);
       } catch (err) {
-        console.warn('phone code request:', err?.code || err);
-        showToast(t(otpErrorKey(err)), 'error');
+        console.warn('sign-in by SMS, start:', err?.code || err);
+        showToast(t(verifyErrorKey(err)), 'error');
         reset();
       }
     });
   }
 
-  // ---- The code, step 2: the six digits ----
-  function showOtpCode(member, e164, handle, typed) {
+  // ---- The SMS, step 2: send it, and wait for it ----
+  // The member sends the text from their own phone; the page asks the server
+  // every three seconds whether it has arrived (and at once when the member
+  // comes back from the SMS app). Each SMS to the short code is charged to
+  // the member whether it matches or not, so the send button goes the moment
+  // the sign-in is through, and an expired code says not to send it.
+  function showSmsSend(member, session, typed) {
+    stopWait();
+    const expAt = Date.parse(session.expiresAt) || (Date.now() + 5 * 60 * 1000);
+    const shortcode = esc(session.shortcode || '144773');
+    const text = esc(session.text || '');
     body.innerHTML = `
-      <form id="otp-code-form" class="auth-form">
-        <p style="margin:0;font-size:0.88rem;line-height:1.45;color:var(--text-secondary);">${t('otpSentTo').replace('{phone}', `<strong style="color:var(--text-primary);white-space:nowrap;">${esc(e164)}</strong>`)}</p>
-        <div class="input-group">
-          <input type="text" id="otp-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="${t('otpCode')}" required style="text-align:center;letter-spacing:0.35em;font-weight:700;" />
+      <div class="auth-form" id="sv-send-step">
+        <p style="margin:0;font-size:0.88rem;line-height:1.5;color:var(--text-secondary);">${esc(session.displayInstruction || t('svInstruction'))}</p>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;padding:10px 8px;border-radius:12px;background:var(--bg-card-hover);">
+            <div style="font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);font-weight:700;">${t('svTo')}</div>
+            <div style="font-size:1.25rem;font-weight:800;color:var(--text-primary);">${shortcode}</div>
+          </div>
+          <div style="flex:1;padding:10px 8px;border-radius:12px;background:var(--bg-card-hover);">
+            <div style="font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);font-weight:700;">${t('svText')}</div>
+            <div style="font-size:1.25rem;font-weight:800;color:var(--text-primary);letter-spacing:0.08em;">${text}</div>
+          </div>
         </div>
-        <button type="submit" class="btn btn-primary btn-lg" id="otp-verify-btn">${t('otpVerify')}</button>
-      </form>
+        <a class="btn btn-primary btn-lg" id="sv-send" href="${esc(session.smsUri || `sms:${session.shortcode || '144773'}?body=${encodeURIComponent(session.text || '')}`)}" style="text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;">${icon('phone', { size: 18 })} ${t('svSendSms')}</a>
+        <p id="sv-status" style="margin:0;font-size:0.85rem;color:var(--text-secondary);display:flex;align-items:center;justify-content:center;gap:8px;">
+          <span class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;border-width:2px;"></span>
+          <span>${t('svWaiting')}</span><span id="sv-left" style="font-variant-numeric:tabular-nums;">${leftText(expAt - Date.now())}</span>
+        </p>
+        <p style="margin:0;font-size:0.76rem;color:var(--text-secondary);">${t('svCost')}</p>
+      </div>
       <div style="margin-top:12px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;">
-        <button type="button" id="otp-resend" style="${linkStyle}" disabled></button>
-        <button type="button" id="otp-change" style="${linkStyle}">${t('otpChangePhone')}</button>
+        <button type="button" id="sv-change" style="${linkStyle}">${t('svChangePhone')}</button>
+        <button type="button" id="sv-use-password" style="${linkStyle}">${t('svUsePassword')}</button>
       </div>`;
 
-    const codeInput = document.getElementById('otp-code');
-    const resendBtn = document.getElementById('otp-resend');
-    codeInput.focus();
+    let over = false;
+    let busy = false;
+    let pollTimer = null;
+    let clockTimer = null;
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    stopWaiting = () => {
+      over = true;
+      clearInterval(pollTimer);
+      clearInterval(clockTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
 
-    // Another code only after a minute: each one is an SMS, and the provider
-    // refuses a number that is asked for too often.
-    function startResendWait() {
-      stopResend();
-      let left = RESEND_SECONDS;
-      const paint = () => {
-        resendBtn.disabled = left > 0;
-        resendBtn.style.opacity = left > 0 ? '0.55' : '1';
-        resendBtn.style.cursor = left > 0 ? 'default' : 'pointer';
-        resendBtn.textContent = left > 0 ? t('otpResendIn').replace('{s}', left) : t('otpResend');
-      };
-      paint();
-      resendTimer = setInterval(() => { left -= 1; paint(); if (left <= 0) stopResend(); }, 1000);
-    }
-    startResendWait();
-
-    resendBtn.addEventListener('click', async () => {
-      if (resendBtn.disabled) return;
-      resendBtn.disabled = true;
-      try {
-        handle = await store.requestPhoneCode(e164, document.getElementById('otp-recaptcha'));
-        showToast(t('otpResent'), 'success');
-        startResendWait();
-      } catch (err) {
-        console.warn('phone code resend:', err?.code || err);
-        showToast(t(otpErrorKey(err)), 'error');
-        resendBtn.disabled = false;
-      }
-    });
-    document.getElementById('otp-change').addEventListener('click', () => showOtpPhone(typed));
-
-    document.getElementById('otp-code-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('otp-verify-btn');
-      const reset = () => { btn.disabled = false; btn.textContent = t('otpVerify'); };
-      const code = codeInput.value.trim();
-      if (!codeOk(code)) { showToast(t('otpErrBadCode'), 'error'); return; }
-      btn.disabled = true;
-      btn.textContent = '...';
-      try {
-        const proof = await store.confirmPhoneCode(handle, code);
-        // The provider vouches for a phone; it must be this member's.
-        if (!samePhone(proof.phone, member.phone)) {
-          store.signOutPhoneAuth();
-          showToast(t('otpErrGeneric'), 'error');
-          reset();
-          return;
+    // The code is dead: say so in place of the send button, and offer a new
+    // one — sending the old text now would only cost the member an SMS.
+    function expire() {
+      if (over) return;
+      stopWait();
+      const step = document.getElementById('sv-send-step');
+      if (!step) return;
+      step.innerHTML = `
+        <p style="margin:0;font-size:0.9rem;line-height:1.5;color:var(--text-primary);">${t('svExpired')}</p>
+        <button type="button" class="btn btn-primary btn-lg" id="sv-new">${t('svNewCode')}</button>`;
+      document.getElementById('sv-new').addEventListener('click', async () => {
+        const btn = document.getElementById('sv-new');
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+          showSmsSend(member, await store.startPhoneVerify(member.phone), typed);
+        } catch (err) {
+          console.warn('sign-in by SMS, new code:', err?.code || err);
+          showToast(t(verifyErrorKey(err)), 'error');
+          btn.disabled = false;
+          btn.textContent = t('svNewCode');
         }
-        completeLogin({ ...member, authUid: proof.uid, phoneVerifiedAt: Date.now() });
+      });
+    }
+
+    async function check() {
+      if (over || busy) return;
+      if (Date.now() > expAt) { expire(); return; }
+      busy = true;
+      try {
+        const out = await store.checkPhoneVerify(session);
+        if (over) return;
+        if (out.status === 'VERIFIED') {
+          // Through: nothing more to send.
+          stopWait();
+          document.getElementById('sv-send')?.remove();
+          completeLogin({ ...member, ...(out.uid && { authUid: out.uid }), phoneVerifiedAt: Date.now() });
+        } else if (out.status === 'EXPIRED') {
+          expire();
+        }
       } catch (err) {
-        console.warn('phone code confirm:', err?.code || err);
-        showToast(t(otpErrorKey(err)), 'error');
-        codeInput.select();
-        reset();
+        // A dropped request is not an answer: keep waiting. A refusal that
+        // will not change (the ticket, the configuration) ends the wait.
+        console.warn('sign-in by SMS, check:', err?.code || err);
+        if (err?.code === 'BAD_TICKET' || err?.code === 'NOT_CONFIGURED') {
+          stopWait();
+          showToast(t(verifyErrorKey(err)), 'error');
+          showSmsPhone(typed);
+        }
+      } finally {
+        busy = false;
       }
+    }
+
+    pollTimer = setInterval(check, 3000);
+    clockTimer = setInterval(() => {
+      const el = document.getElementById('sv-left');
+      if (el) el.textContent = leftText(expAt - Date.now());
+      if (Date.now() > expAt) expire();
+    }, 1000);
+    document.addEventListener('visibilitychange', onVisible);
+
+    document.getElementById('sv-change').addEventListener('click', () => showSmsPhone(typed));
+    document.getElementById('sv-use-password').addEventListener('click', () => {
+      showPassword();
+      document.getElementById('auth-phone').value = typed;
     });
   }
 
-  if (startOtp) showOtpPhone(); else showPassword();
+  if (startSms) showSmsPhone(); else showPassword();
 
   document.getElementById('admin-login-link').addEventListener('click', async (e) => {
     e.preventDefault();

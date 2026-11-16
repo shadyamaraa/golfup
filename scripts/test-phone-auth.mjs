@@ -1,11 +1,13 @@
 // scripts/test-phone-auth.mjs
-// The pure half of signing in by SMS code: phone numbers into E.164, when
-// two numbers are the same phone, and the words for a provider's refusal.
+// The pure half of signing in by SMS: phone numbers into E.164 and into the
+// 8-digit form the provider takes, when two numbers are the same phone, the
+// time left on a code, and the words for a refusal.
 // Run with: npm run test:mp
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toE164, samePhone, codeOk, otpErrorKey, DEFAULT_COUNTRY, RESEND_SECONDS } from '../src/phone-auth.js';
+import { createRequire } from 'node:module';
+import { toE164, samePhone, mnLocal, leftText, verifyErrorKey, DEFAULT_COUNTRY } from '../src/phone-auth.js';
 
 test('toE164: a Mongolian number, however it is written', () => {
   assert.equal(DEFAULT_COUNTRY, '976');
@@ -50,33 +52,44 @@ test('samePhone: the stored number against the one the provider verified', () =>
   assert.equal(samePhone('junk', 'junk'), false);
 });
 
-test('codeOk: six digits', () => {
-  assert.equal(codeOk('123456'), true);
-  assert.equal(codeOk(' 123456 '), true);
-  assert.equal(codeOk(123456), true);
-  assert.equal(codeOk('12345'), false);
-  assert.equal(codeOk('1234567'), false);
-  assert.equal(codeOk('12a456'), false);
-  assert.equal(codeOk(''), false);
-  assert.equal(codeOk(null), false);
+test('mnLocal: the 8 digits of a Mongolian number, and null for any other', () => {
+  assert.equal(mnLocal('99119007'), '99119007');
+  assert.equal(mnLocal('+976 9911-9007'), '99119007');
+  assert.equal(mnLocal('97699119007'), '99119007');
+  assert.equal(mnLocal('01012345678'), null, 'a Korean mobile keeps the password');
+  assert.equal(mnLocal('+821012345678'), null);
+  assert.equal(mnLocal(''), null);
+  assert.equal(mnLocal(null), null);
 });
 
-test('otpErrorKey: every refusal has words, and an unknown one the general ones', () => {
-  assert.equal(otpErrorKey({ code: 'auth/invalid-phone-number' }), 'otpErrInvalidPhone');
-  assert.equal(otpErrorKey({ code: 'auth/too-many-requests' }), 'otpErrTooMany');
-  assert.equal(otpErrorKey({ code: 'auth/quota-exceeded' }), 'otpErrTooMany');
-  assert.equal(otpErrorKey({ code: 'auth/invalid-verification-code' }), 'otpErrBadCode');
-  assert.equal(otpErrorKey({ code: 'auth/code-expired' }), 'otpErrExpired');
-  assert.equal(otpErrorKey({ code: 'auth/captcha-check-failed' }), 'otpErrCaptcha');
-  assert.equal(otpErrorKey({ code: 'auth/unauthorized-domain' }), 'otpErrCaptcha');
-  assert.equal(otpErrorKey({ code: 'auth/operation-not-allowed' }), 'otpErrNotEnabled');
-  assert.equal(otpErrorKey({ code: 'auth/billing-not-enabled' }), 'otpErrNotEnabled');
-  assert.equal(otpErrorKey({ code: 'auth/network-request-failed' }), 'otpErrNetwork');
-  assert.equal(otpErrorKey({ code: 'auth/something-new' }), 'otpErrGeneric');
-  assert.equal(otpErrorKey(new Error('boom')), 'otpErrGeneric');
-  assert.equal(otpErrorKey(null), 'otpErrGeneric');
+test('mnLocal agrees with the server\'s own reading of a number', () => {
+  const server = createRequire(import.meta.url)('../functions/phone-verify.js');
+  for (const n of ['99119007', ' 9911-9007 ', '97699119007', '+976 9911 9007', '0097699119007', 88112233,
+    '01012345678', '+821012345678', '+97612345', '1234567', '123456789', '', null, 'abc']) {
+    assert.equal(mnLocal(n), server.mnLocal(n), String(n));
+  }
 });
 
-test('the wait before another code', () => {
-  assert.equal(RESEND_SECONDS, 60);
+test('leftText: minutes and seconds, never below zero', () => {
+  assert.equal(leftText(5 * 60 * 1000), '5:00');
+  assert.equal(leftText(299001), '5:00');
+  assert.equal(leftText(61000), '1:01');
+  assert.equal(leftText(9000), '0:09');
+  assert.equal(leftText(1), '0:01');
+  assert.equal(leftText(0), '0:00');
+  assert.equal(leftText(-5000), '0:00');
+  assert.equal(leftText(NaN), '0:00');
+});
+
+test('verifyErrorKey: every refusal has words', () => {
+  assert.equal(verifyErrorKey({ code: 'USER_NOT_FOUND', status: 404 }), 'userNotFound');
+  assert.equal(verifyErrorKey({ code: 'USER_HELD', status: 403 }), 'svErrHeld');
+  assert.equal(verifyErrorKey({ code: 'UNSUPPORTED_PHONE', status: 400 }), 'svErrForeign');
+  assert.equal(verifyErrorKey({ code: 'NOT_CONFIGURED', status: 500 }), 'svErrNotEnabled');
+  assert.equal(verifyErrorKey({ code: 'BAD_TICKET', status: 400 }), 'svErrGeneric');
+  assert.equal(verifyErrorKey({ code: 'PROVIDER_ERROR', status: 502 }), 'svErrGeneric');
+  assert.equal(verifyErrorKey({ code: null, status: 404 }), 'svErrNotEnabled', 'the function is not deployed');
+  assert.equal(verifyErrorKey(new TypeError('Failed to fetch')), 'svErrNetwork');
+  assert.equal(verifyErrorKey(new Error('boom')), 'svErrGeneric');
+  assert.equal(verifyErrorKey(null), 'svErrGeneric');
 });
