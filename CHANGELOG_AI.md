@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Join sheet: a card with room in it)
+
+The «Төлбөрийн мэдээлэл» sheet a player sees before joining a booked game
+sat in a card with no padding: the title, the price and the buttons ran to
+the card's edge. `renderJoinPay` (`src/app.js`) now pads the card, puts the
+price in the same tinted panel the game page uses for its booking block —
+«Таны суудал» with the amount set large, the member's price and the note
+under it — and labels the payment chips «Төлбөрийн арга» in the form's
+label style (new key `joinPayMethod`). Checked at 360, 390 and 620 px, in
+light and dark, and for a flat-price booking (total alone).
+
 ## 2026-11-16 (Sky ONE: every player pays their own seat)
 
 Sky ONE (MTBogd) changed the rule the same day the two booking modes
