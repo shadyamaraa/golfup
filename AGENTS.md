@@ -107,7 +107,7 @@ Users:
 {
   id,
   name, username, fullName,
-  phone, password,
+  phone, // no password here: it is a hash under userSecrets/{id}, server-only (docs/phone-login.md)
   role, // admin | marshal | user
   status,
   communities,

@@ -3,6 +3,7 @@ const functions = require('firebase-functions/v1');
 const crypto = require('crypto');
 const qpay = require('./qpay');
 const phoneVerify = require('./phone-verify');
+const passwords = require('./passwords');
 
 admin.initializeApp();
 
@@ -354,35 +355,81 @@ async function mintPhoneToken(e164, memberId) {
   return { token, uid: user.uid };
 }
 
-function phoneVerifyEndpoint(run) {
+function signInEndpoint(run, options = {}) {
   return functions
-    .runWith({ secrets: ['VERIFY_MN_API_KEY'] })
+    .runWith(options)
     .https.onRequest(async (req, res) => {
       res.set(CORS_HEADERS);
       if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
       if (req.method !== 'POST') { res.status(405).json({ error: { code: 'METHOD', message: 'POST only' } }); return; }
       try {
         const out = await run(req.body || {});
-        if (out.body && out.body.tokenError) console.warn('phone verify: custom token not minted:', out.body.tokenError);
+        if (out.body && out.body.tokenError) console.warn('sign-in: custom token not minted:', out.body.tokenError);
         res.status(out.status).json(out.body);
       } catch (err) {
-        console.error('phone verify error', err);
+        console.error('sign-in function error', err);
         res.status(500).json({ error: { code: 'SERVER', message: 'Server error' } });
       }
     });
 }
 
-exports.phoneVerifyStart = phoneVerifyEndpoint((body) => phoneVerify.startVerify({
+const VERIFY_MN = { secrets: ['VERIFY_MN_API_KEY'] };
+const loadAllUsers = async () => (await admin.database().ref('users').once('value')).val();
+
+exports.phoneVerifyStart = signInEndpoint((body) => phoneVerify.startVerify({
   apiKey: process.env.VERIFY_MN_API_KEY,
   fetch,
-  loadUsers: async () => (await admin.database().ref('users').once('value')).val(),
-}, body));
+  loadUsers: loadAllUsers,
+}, body), VERIFY_MN);
 
-exports.phoneVerifyCheck = phoneVerifyEndpoint((body) => phoneVerify.checkVerify({
+exports.phoneVerifyCheck = signInEndpoint((body) => phoneVerify.checkVerify({
   apiKey: process.env.VERIFY_MN_API_KEY,
   fetch,
   mintToken: mintPhoneToken,
+}, body), VERIFY_MN);
+
+// ---- Passwords, where only the server reads them ----
+// The fallback sign-in. A member's password is a scrypt hash under
+// userSecrets/{memberId} — a path the database rules give to no client; the
+// Admin SDK here is the only reader. The logic is in ./passwords.js. Called
+// at their own URL, like the two functions above.
+
+// A member by id: the record under that key, or the one whose `id` says so.
+async function loadMember(memberId) {
+  const direct = (await admin.database().ref(`users/${memberId}`).once('value')).val();
+  if (direct) return direct;
+  const all = (await loadAllUsers()) || {};
+  return Object.values(all).find(u => u && typeof u === 'object' && String(u.id) === String(memberId)) || null;
+}
+const secretRef = (memberId) => admin.database().ref(`userSecrets/${memberId}`);
+const secretStore = {
+  getSecret: async (memberId) => (await secretRef(memberId).once('value')).val(),
+  patchSecret: (memberId, patch) => secretRef(memberId).update(patch),
+};
+const verifyIdToken = (idToken) => admin.auth().verifyIdToken(idToken);
+
+exports.passwordLogin = signInEndpoint((body) => passwords.passwordLogin({
+  ...secretStore,
+  loadUsers: loadAllUsers,
+  mintToken: mintPhoneToken,
 }, body));
+
+exports.setPassword = signInEndpoint((body) => passwords.setPassword({
+  ...secretStore,
+  verifyIdToken,
+  loadUser: loadMember,
+}, body));
+
+// Run once by an admin, from the app's Users tab. Hashing a hundred and
+// fifty passwords takes several seconds, so it gets more than the default
+// minute in case the list grows.
+exports.migratePasswords = signInEndpoint((body) => passwords.migratePasswords({
+  ...secretStore,
+  verifyIdToken,
+  loadUser: loadMember,
+  loadUsers: loadAllUsers,
+  removePlain: (key) => admin.database().ref(`users/${key}/password`).remove(),
+}, body), { timeoutSeconds: 300 });
 
 const APP_URL = 'https://ubgolf.club';
 

@@ -4,7 +4,14 @@
     "bookingAttempts": { ".read": true, ".write": true },
     "rounds": { ".read": true, ".write": true },
     "mtbogdDeliveries": { ".read": false, ".write": false },
-    "users": { ".read": true, ".write": true },
+    "users": {
+      ".read": true,
+      ".write": true,
+      "$uid": {
+        "password": { ".validate": false }
+      }
+    },
+    "userSecrets": { ".read": false, ".write": false },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },

@@ -1,5 +1,49 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Passwords off the member record)
+
+Every member's password sat in plain text on `users/{id}`, a path any
+client — anyone with the database URL — can read. The password stays as
+the fallback sign-in, but it is now the server's alone.
+
+- **Server** (`functions/passwords.js`, wired in `functions/index.js`): a
+  password is a scrypt hash under `userSecrets/{memberId}`.
+  `passwordLogin` checks phone + password, locks after five wrong in a row
+  for fifteen minutes, and mints the same Firebase token an SMS sign-in
+  does. `setPassword` takes the caller's Firebase ID token — a member
+  changes their own, an admin anyone's — and 4 to 128 characters.
+  `migratePasswords`, admins only, hashes every plain-text password into
+  `userSecrets` and removes it from the record: hash first, then removal,
+  safe to run again.
+- **Rules** (`database.rules.json`): `userSecrets` is closed to every
+  client, and `users/$uid/password` is `.validate: false` — no client, an
+  old open tab included, can put a password on a member record again.
+- **App**: the password view asks the server; a record that still carries
+  its password (not moved yet) is checked the old way, so the order of the
+  site's deploy, the functions' deploy and the move does not matter. The
+  profile, the admin's edit and the admin's new-member form send a new
+  password to `setPassword` and never store it; a new member needs none.
+  Member records are now written with `update` instead of `set`, password
+  stripped — a write neither carries one nor wipes one that is not moved
+  yet (`ghin`, the one field that was cleared by leaving it out, is cleared
+  with null). A session saved earlier, which held the member's own password
+  in the browser's storage, is cleaned the first time it is read.
+- **The move**: Admin → Тоглогчид shows how many records still carry a
+  password, with «Нууц үгсийг нууцлах»; the notice is gone when none do.
+
+**Needs the owner**: deploy `passwordLogin`, `setPassword`,
+`migratePasswords`, then run the move once, signed in by SMS as an admin
+(`docs/phone-login.md`). Until then nothing changes for members and the
+passwords are still readable.
+
+Tests: `scripts/test-passwords.mjs` (15) — the hash, sign-in and its lock,
+who may set whose, the move and its re-run, against a fake database; the
+server and the app read a phone number alike. Browser, local mode,
+functions stubbed: both kinds of record at the password view and each
+refusal, the stored session cleaned, the profile, the admin's notice and
+move, creating a member with and without a password, the admin's edit. Not
+run: the real functions, the rules against a real database.
+
 ## 2026-11-16 (Sign-in by SMS: no price on the screen)
 
 The send step of the SMS sign-in carried a line «SMS-ийн төлбөр 150₮

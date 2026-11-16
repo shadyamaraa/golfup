@@ -39,11 +39,13 @@ Roles:
 - `user`: normal player
 
 Sign-in: a member is found by `phone` and signs in by SMS through
-verify.mn — they send one SMS from their own phone to 144773. The password
-(stored on the member) is the fallback, one link away on the sign-in page.
-`PHONE_LOGIN_DEFAULT` in `src/app.js` decides which is the default. The SMS
-flow needs the `phoneVerifyStart` / `phoneVerifyCheck` functions and the
-`VERIFY_MN_API_KEY` secret. See `docs/phone-login.md`.
+verify.mn — they send one SMS from their own phone to 144773. A password
+is the fallback, one link away on the sign-in page; it is a hash under
+`userSecrets/{memberId}` that only the functions read, never a field on the
+member record. `PHONE_LOGIN_DEFAULT` in `src/app.js` decides which is the
+default. Functions: `phoneVerifyStart` / `phoneVerifyCheck` (secret
+`VERIFY_MN_API_KEY`), `passwordLogin`, `setPassword`, `migratePasswords`.
+See `docs/phone-login.md`.
 
 ### Circles
 

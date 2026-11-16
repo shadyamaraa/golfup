@@ -39,6 +39,24 @@ function mnLocal(phone) {
   return /^\d{8}$/.test(d) ? d : null;
 }
 
+/**
+ * E.164 ('+97699119007') for a number as typed or stored, or null — the same
+ * reading as the app's own (src/phone-auth.js); a test keeps the two in step.
+ */
+function toE164(input) {
+  const raw = String(input == null ? '' : input).trim();
+  if (!raw) return null;
+  let d = raw.replace(/\D/g, '');
+  if (raw.startsWith('+') || raw.startsWith('00')) {
+    if (raw.startsWith('00')) d = d.slice(2);
+    return /^[1-9]\d{7,14}$/.test(d) ? '+' + d : null;
+  }
+  if (/^\d{8}$/.test(d)) return '+976' + d;
+  if (d.length === 11 && d.startsWith('976')) return '+' + d;
+  if (/^01[016789]\d{7,8}$/.test(d)) return '+82' + d.slice(1);
+  return null;
+}
+
 /** A fresh six-digit code. */
 function newCode() {
   return String(crypto.randomInt(100000, 1000000));
@@ -189,5 +207,5 @@ async function checkVerify(deps, body) {
 
 module.exports = {
   VERIFY_MN_BASE, TICKET_GRACE_MS, REPLY_SMS,
-  mnLocal, newCode, signTicket, ticketOk, startVerify, checkVerify,
+  mnLocal, toE164, newCode, signTicket, ticketOk, startVerify, checkVerify,
 };
