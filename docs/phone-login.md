@@ -1,111 +1,135 @@
-# Sign-in by SMS code
+# Sign-in by SMS (verify.mn)
 
-How a member signs in with a code sent to their phone, how it is switched
-on, and how the SMS provider is replaced later.
+How a member signs in with their phone and no password, what has to be set
+up, and how it is switched on.
 
 ## What it is
 
-- The member types their phone number. It must already be a member's
-  (`users/*/phone`): nothing is sent to a number the club does not know.
-- A six-digit code arrives by SMS. Typing it signs the member in.
-- The member record stays the app's own (`users/{id}`). The provider only
-  proves that this browser holds that phone. On success the member gets
-  `authUid` (the Firebase Auth uid) and `phoneVerifiedAt`.
-- The password stays as the fallback: «Нууц үгээр нэвтрэх» on the code
-  screen. It goes away only once the SMS has proven reliable.
+The provider is [verify.mn](https://verify.mn/), and it works the other way
+round from a code sent to the phone: **the member sends one SMS**.
 
-Code: `src/phone-auth.js` (numbers to E.164, error words — pure, tested in
-`scripts/test-phone-auth.mjs`), `src/store.js` (`requestPhoneCode`,
-`confirmPhoneCode`, `signOutPhoneAuth`), `src/app.js` (`renderAuth`).
+1. The member types their phone number. It must already be a member's
+   (`users/*/phone`) and a Mongolian number.
+2. The app shows a six-digit text and the short code **144773**, with a
+   «SMS илгээх» button that opens the phone's SMS app with both filled in.
+3. The member sends it from that phone. verify.mn sees which number sent
+   which text.
+4. The app asks the server every three seconds (and at once when the member
+   comes back from the SMS app). When the SMS has arrived, the member is
+   signed in.
+
+A code lives five minutes. The member record stays the app's own
+(`users/{id}`); on success it gets `phoneVerifiedAt`, and `authUid` when the
+server could mint a Firebase token (see below).
+
+The password stays as the fallback: «Нууц үгээр нэвтрэх» on the SMS
+screens.
+
+## What it costs, and who it does not work for
+
+- The **member** pays the operator **150₮** for the SMS — every SMS to
+  144773, matched or not. The club pays nothing and is credited 40₮ per
+  verification in the verify.mn dashboard. The screen says «SMS-ийн төлбөр
+  150₮», removes the send button the moment the sign-in is through, and
+  tells the member not to send an expired text.
+- **Mongolian numbers only.** One member has a Korean number; they keep the
+  password. So do the two accounts with no phone.
+- On a computer the «SMS илгээх» button does nothing: the member reads the
+  short code and the text off the screen and sends it from their phone.
+- The reply SMS the member gets back depends on the operator (Unitel sends
+  its own default text, Lime none). The app's screen is what confirms it.
+
+## Where the code is
+
+| Part | File |
+|---|---|
+| Server logic — who may start, the session at verify.mn, the ticket, the check | `functions/phone-verify.js` |
+| The two HTTP functions and the Firebase token | `functions/index.js` (`phoneVerifyStart`, `phoneVerifyCheck`) |
+| Numbers, time left, error words (pure) | `src/phone-auth.js` |
+| The browser's two calls | `src/store.js` (`startPhoneVerify`, `checkPhoneVerify`) |
+| The screens | `src/app.js` (`renderAuth`) |
+| Tests | `scripts/test-phone-verify.mjs`, `scripts/test-phone-auth.mjs` |
+
+The verify.mn API key never reaches the browser. Nothing is stored between
+`start` and `check`: `start` hands the browser a ticket — an HMAC over the
+session, the member and the phone — and `check` refuses anything it did not
+sign. verify.mn's own record (`GET /sessions/{id}`) is the truth; its
+callback is not used.
+
+The functions are called at their own address
+(`https://us-central1-golfup-app.cloudfunctions.net/...`), not through a
+hosting rewrite, so the site deploys whether or not they exist. Until they
+do, the SMS screen answers «SMS-ээр нэвтрэх одоогоор идэвхжээгүй байна».
+
+## Setup — once
+
+1. **verify.mn**: sign up, create an API key (`vrf_…`).
+2. **The key, as a secret** (it is typed into the terminal, never into a
+   file or a chat):
+   ```bash
+   firebase functions:secrets:set VERIFY_MN_API_KEY --project golfup-app
+   ```
+3. **Deploy the two functions**:
+   ```bash
+   firebase deploy --only functions:phoneVerifyStart,functions:phoneVerifyCheck --project golfup-app
+   ```
+4. **Check them** — a number that is not a member's should answer
+   `USER_NOT_FOUND`, a member's a session:
+   ```bash
+   curl -X POST https://us-central1-golfup-app.cloudfunctions.net/phoneVerifyStart \
+     -H "Content-Type: application/json" -d '{"phone":"99000000"}'
+   ```
+5. **Optional now, needed before the database rules are tightened — the
+   Firebase identity.** For the server to mint a custom token, the
+   functions' service account (`golfup-app@appspot.gserviceaccount.com`)
+   needs the role **Service Account Token Creator** (Google Cloud console →
+   IAM), and the *IAM Service Account Credentials API* must be enabled.
+   Without it sign-in still works; the member just gets no `authUid`, and
+   the function log says `custom token not minted`.
+
+The Phone provider in Firebase Authentication is not used any more and can
+be switched off.
 
 ## Rollout
 
 | Stage | `PHONE_LOGIN_DEFAULT` | `#/login` | `#/login-sms` |
 |---|---|---|---|
-| 1. Trial (now) | `false` | password only | the code flow, for testing |
-| 2. Switched | `true` | the code, password one link away | same as `#/login` |
-| 3. Password removed | — | the code only | — |
+| 1. Trial (now) | `false` | password only | the SMS flow, for testing |
+| 2. Switched | `true` | the SMS, password one link away | same as `#/login` |
+| 3. Password removed | — | the SMS only | — |
 
 Stage 1 → 2 is one line in `src/app.js`. Members already signed in stay
-signed in; they meet the code the next time they sign in.
-
-## Firebase console — once, before the trial
-
-Project `golfup-app`:
-
-1. **Authentication → Sign-in method → Phone → Enable.**
-2. **Authentication → Settings → Authorized domains → Add `ubgolf.club`.**
-   Without it the security check fails on the main domain. (On 2026-11-16
-   the list held `localhost`, `golfup-app.firebaseapp.com`,
-   `golfup-app.web.app` and one preview channel.)
-3. **Authentication → Settings → SMS region policy → Allow** only Mongolia
-   (MN) and South Korea (KR). One member has a Korean number. This keeps
-   strangers from spending the SMS budget on other countries.
-4. **Project settings → General → Public-facing name → `UB Golf`.** The SMS
-   names it.
-5. Optional: **Sign-in method → Phone → Phone numbers for testing** — a
-   number with a fixed code signs in with no SMS sent. It must also be a
-   member's phone in the app (a test member), or the app stops before
-   asking Firebase.
-
-Cost: Google bills each SMS by country — Mongolia $0.16, South Korea $0.01;
-the first ten a day are free
-([Identity Platform pricing](https://cloud.google.com/identity-platform/pricing),
-read 2026-11-16). A member needs one SMS per device, not per visit.
+signed in.
 
 ## Trial
 
-1. Sign out. Open `https://ubgolf.club/#/login-sms`.
-2. Type your number, «Код авах». The SMS should arrive within a minute.
-3. Type the code. You are signed in as before.
-4. Repeat on a number of each operator (Mobicom, Unitel, Skytel, G-Mobile):
-   whether Firebase's SMS reaches all four is the thing being tried.
+1. Sign out. Open `https://ubgolf.club/#/login-sms` on the phone.
+2. Type your number, «Үргэлжлүүлэх», then «SMS илгээх» and send.
+3. Come back to the page: it signs you in within a few seconds.
+4. Repeat on a number of each operator.
 
-What a failure says:
-
-| Message | Meaning |
+| What you see | Meaning |
 |---|---|
-| «SMS кодоор нэвтрэх одоогоор идэвхжээгүй…» | Phone provider not enabled, or the country is blocked by the region policy |
-| «Хамгаалалтын шалгалт амжилтгүй…» | The domain is not authorized, or reCAPTCHA refused the browser |
-| «Хэт олон удаа оролдлоо…» | Firebase's per-number or per-device limit; wait |
-| No SMS, no error | The operator did not deliver it — the reason to move to a domestic provider |
+| «SMS-ээр нэвтрэх одоогоор идэвхжээгүй…» | The functions are not deployed, or the API key is missing or refused |
+| «Хэрэглэгч олдсонгүй…» | The number is not a member's |
+| «Энэ дугаараар SMS-ээр нэвтрэх боломжгүй…» | Not a Mongolian number |
+| Stays on «SMS-ийг хүлээж байна…» | The SMS was sent from another number or SIM, or with another text |
+| «Кодын хугацаа дууслаа…» | Five minutes passed; take a new code |
 
 ## The device identity
 
-The app already signs every browser in anonymously; the database rules for
-tournaments look that uid up in `mpDevices`. A member who signs in by code
-becomes a Firebase Auth user of their own, and that uid takes the anonymous
-one's place: `ensureDeviceAccess` registers it the same way. Signing out
+The app signs every browser in anonymously; the database rules for
+tournaments look that uid up in `mpDevices`. When the server mints a token,
+the member becomes a Firebase Auth user of their own — one per phone
+number, carrying `memberId` as a claim — and that uid takes the anonymous
+one's place; `ensureDeviceAccess` registers it the same way. Signing out
 returns the browser to an anonymous identity. `ensureAnonAuth` never
 replaces a signed-in member with an anonymous user.
 
-## Replacing the provider (a domestic SMS provider)
-
-Only the two store calls change; the screens, the member lookup and the
-session do not.
-
-1. Two Cloud Functions:
-   - `otpSend { phone }` — check the phone is a member's, rate-limit it,
-     store a hashed code with an expiry, send it through the provider.
-   - `otpVerify { phone, code }` — check the code, then
-     `admin.auth().getUserByPhoneNumber(phone)` (create the user if there is
-     none) and return `admin.auth().createCustomToken(uid)`.
-2. In `src/store.js`: `requestPhoneCode` calls `otpSend` and returns
-   `{ phone }`; `confirmPhoneCode` calls `otpVerify`, then
-   `signInWithCustomToken(auth, token)`, and returns `{ uid, phone }`.
-   Errors should carry the same `auth/...` codes so `otpErrorKey` keeps its
-   words.
-
-Because the custom token is minted for the Firebase Auth user that owns the
-phone number, a member keeps the uid they got from Firebase's own SMS.
-The invisible reCAPTCHA is no longer needed then; the function's own rate
-limit takes its place.
-
 ## Not done yet
 
-- Database rules still let any client read and write most paths. Sign-in by
-  code proves who a member is; making the rules depend on it is the next
-  step (a trusted link from `authUid` to the member, private fields moved
-  out of `users/`).
+- Database rules still let any client read and write most paths. This
+  proves who a member is; making the rules depend on it (`auth.token.memberId`)
+  is the next step, and needs setup step 5.
 - Passwords are still stored in plain text for the fallback.
 - The admin forms still ask for a password when a member is created.
