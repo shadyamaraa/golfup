@@ -1,5 +1,16 @@
 # CHANGELOG_AI.md
 
+## 2026-11-16 (Sign-in by SMS is the default)
+
+The owner signed in by SMS on a real phone, end to end: the functions, the
+verify.mn key, the SMS, and the Firebase token (the member got both
+`phoneVerifiedAt` and `authUid`). `PHONE_LOGIN_DEFAULT` is now `true`
+(`src/app.js`): the sign-in page opens on the SMS flow for every member,
+with «Нууц үгээр нэвтрэх» one link away as the fallback — for a foreign
+number, or a member with no SMS to spend. Members already signed in are
+not signed out. Setting the flag back to `false` returns the page to the
+password.
+
 ## 2026-11-16 (Sign-in by SMS: verify.mn in place of Firebase Phone)
 
 The SMS sign-in built earlier today used Firebase Phone Auth as a stand-in

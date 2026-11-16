@@ -64,13 +64,12 @@ const QPAY_ENABLED = false;
 // above and stays apart.
 const TEE_QPAY_ENABLED = false;
 // Signing in by SMS (docs/phone-login.md): the member sends one SMS from
-// their own phone to 144773 and is signed in, with no password. It is built
-// and waits here: until it has been tried on real phones, the sign-in page
-// asks for the password as before and the SMS flow opens only at
-// #/login-sms. `true` makes it the sign-in page's default, with the password
-// one link away — kept as the way in for a member it does not work for (a
-// foreign number, no SMS to spend).
-const PHONE_LOGIN_DEFAULT = false;
+// their own phone to 144773 and is signed in, with no password. It is the
+// sign-in page's default since it was tried on a real phone (2026-11-16);
+// the password is one link away — kept as the way in for a member it does
+// not work for (a foreign number, no SMS to spend). `false` puts the
+// password back as the default and leaves the SMS flow at #/login-sms only.
+const PHONE_LOGIN_DEFAULT = true;
 // The two addresses of the sign-in page.
 const isLoginHash = (h) => h === '#/login' || h === '#/login-sms';
 
