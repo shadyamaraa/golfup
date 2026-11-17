@@ -70,6 +70,14 @@ on GHIN's staging environment: only admins see it (`GHIN_STAGE` in
 the app's own `hcpIndex`. Never call GHIN from the browser or put its login
 in the app. See `docs/ghin.md`.
 
+The members hub: MT Bogd membership (a member's club code,
+`userPrivate/{id}/mtbogdCode`) is filled in by a separate project,
+`golf-members-hub`, which ties UB Golf's members to MT Bogd's and — once its
+admin turns that on — writes the code here through a service account. It
+reads and writes both halves of a member record and keeps its own mark
+under `hubSync/{id}`, which no rule opens and no browser may read (the mark
+is made from the phone). See `docs/members-hub.md`.
+
 ### Circles
 
 Circle membership is assigned by admin when creating or editing users.

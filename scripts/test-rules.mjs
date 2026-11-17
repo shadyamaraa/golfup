@@ -46,6 +46,8 @@ const SEED = {
   userSecrets: { m2: { pass: 'scrypt$x' } },
   ghin: { m2: { number: '12345678', found: true, name: 'Two', hi: '12.3', syncedAt: 1 } },
   ghinLink: { m2: { number: '12345678', by: 'phone', at: 1, admin: 'admin1' } },
+  // What the members hub leaves when it writes to a member (docs/members-hub.md).
+  hubSync: { m2: { memberId: 'MB-0002', hash: 'a1b2c3', at: '2026-11-17T00:00:00.000Z' } },
 };
 
 // The emulator's own back door ("Bearer owner") — how the test lays its data.
@@ -134,6 +136,22 @@ test('how a member was tied to their golfer is the server\'s to write', async ()
   await denied(set(ref(m2, 'ghinLink/m2'), { number: '99999999', by: 'phone', at: 2 }), 'the member, their own');
   await denied(update(ref(admin, 'ghinLink/m1'), { number: '12345678', by: 'admin' }), 'an admin');
   await denied(remove(ref(sysAdmin, 'ghinLink/m2')), 'removing it');
+});
+
+// The hub's mark carries a hash made from the member's phone and bank account:
+// readable, it would give the phone back to anyone who knows the name. No rule
+// names hubSync, and that is what keeps it shut — this pins it.
+test('the members hub\'s mark is closed to everyone but the server', async () => {
+  await denied(get(ref(visitor, 'hubSync')), 'a visitor, the whole of it');
+  await denied(get(ref(visitor, 'hubSync/m2/hash')), 'a visitor, one hash');
+  await denied(get(ref(anon, 'hubSync/m2')), 'an anonymous device');
+  await denied(get(ref(m2, 'hubSync/m2')), 'the member, their own');
+  await denied(get(ref(m1, 'hubSync')), 'another member');
+  await denied(get(ref(admin, 'hubSync/m2')), 'an admin');
+  await denied(get(ref(sysAdmin, 'hubSync')), 'the system admin');
+  await denied(set(ref(m2, 'hubSync/m2/hash'), 'x'), 'the member writes');
+  await denied(update(ref(admin, 'hubSync/m1'), { memberId: 'MB-0001', hash: 'x' }), 'an admin writes');
+  await denied(remove(ref(sysAdmin, 'hubSync/m2')), 'removing it');
 });
 
 test('no one writes a private field onto the public record', async () => {

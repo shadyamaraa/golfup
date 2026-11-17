@@ -1,5 +1,36 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (MT Bogd membership: through the members hub — the hub side, and what it may write here)
+
+A member who is in UB Golf and at MT Bogd showed as «GHIN» only: UB Golf
+knows MT Bogd membership by the club code a member typed on their profile,
+and theirs was empty. The question was where that should come from — the
+members hub, or a new API from MT Bogd. The hub: it already holds both
+member lists and ties them by phone with a person deciding the doubtful
+ones; an API would wait on someone else and repeat the matching.
+
+The work is in the hub's repository (`shadyamaraa/golf-members-hub`, branch
+`ai/claude-ubgolf-two-halves`), which was still written for the member
+record as it was before phones moved to the private half: its Rebuild read
+`users` only (every UB Golf member looked phoneless, so none was tied by
+phone), and its writer would have put phones, bank details and club codes
+back onto the public record. There: both halves are read; each field is
+written to its own half; a phone already here is never replaced; the club
+code goes only to members tied by phone or by a person's decision; a new
+setting writes the club code and nothing else.
+
+In this repository — no app change, no rules change:
+
+- `scripts/test-rules.mjs` (24, was 23): `hubSync/{id}`, the hub's mark, is
+  closed to every browser — visitor, member, admin. The mark holds a hash
+  made from the member's phone; no rule names the path, and the test pins
+  that it stays shut.
+- `docs/members-hub.md`: what the hub reads here, what it writes under each
+  of its settings, the rules it keeps, why the mark is not on the public
+  record. `PROJECT_NOTES.md` points to it.
+
+Nothing is written to UB Golf until the hub's admin turns the push on.
+
 ## 2026-11-17 (Admin's member list: by system — GHIN, MT Bogd, all three, UB Golf only)
 
 After tying the members found by phone, 130 of 150 members have a GHIN
