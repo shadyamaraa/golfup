@@ -9,7 +9,11 @@
 // store.js, who may write what in database.rules.json. docs/coaching.md.
 //
 // ctx (from app.js): { main, user, alive, showToast, formatDate, avatarInner,
-//                      notify(memberId, title, body) }
+//                      displayUsername, notify(memberId, title, body) }
+//
+// Names: a list row shows the username (ctx.displayUsername, as every member
+// list does); the full name is for a detail — the coach's own page, the
+// booking, the coach's desk and the notice to the other of the two.
 
 import * as store from './store.js';
 import { t } from './i18n.js';
@@ -23,8 +27,8 @@ const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const money = (n) => (Number(n) > 0 ? `${Number(n).toLocaleString()}₮` : '');
 const spinner = `<div class="detail-container fade-in"><div class="loading-spinner"></div></div>`;
-// A coach is someone members come to by name.
 const nameOf = (u) => store.memberName(u) || u?.username || u?.name || '—';
+const listKey = (u) => String(u?.username || u?.name || '').toLowerCase();
 const whenText = (ctx, start) => `${ctx.formatDate(dayKey(start))} ${timeText(start)}`;
 const minText = (m) => `${m} ${t('coMin')}`;
 const pricesText = (profile) => SLOT_MINUTES
@@ -67,7 +71,7 @@ async function renderHome(ctx) {
         <div class="list-row co-lesson">
           ${avatar(ctx, coach)}
           <div class="lr-body">
-            <div class="lr-title">${esc(nameOf(coach))}</div>
+            <div class="lr-title">${ctx.displayUsername(coach)}</div>
             <div class="lr-sub">${what}</div>
             <div class="co-actions">${action}</div>
           </div>
@@ -80,13 +84,13 @@ async function renderHome(ctx) {
       return { id, user: byId.get(id), profile: coaches[id], next: open[0] || null, open: open.length };
     })
     .sort((a, b) => (a.next ? a.next.start : Infinity) - (b.next ? b.next.start : Infinity)
-      || nameOf(a.user).localeCompare(nameOf(b.user)));
+      || listKey(a.user).localeCompare(listKey(b.user)));
 
   const coachesHTML = active.length ? active.map(c => `
     <a href="#/coaching/c/${encodeURIComponent(c.id)}" class="list-row co-coach">
       ${avatar(ctx, c.user)}
       <div class="lr-body">
-        <div class="lr-title">${esc(nameOf(c.user))}</div>
+        <div class="lr-title">${ctx.displayUsername(c.user)}</div>
         <div class="lr-sub">${esc([c.profile.place, pricesText(c.profile)].filter(Boolean).join(' · ') || t('coPriceAsk'))}</div>
         <div class="co-next ${c.next ? '' : 'none'}">${c.next
           ? `${t('coNextFree')}: ${esc(whenText(ctx, c.next.start))}${c.open > 1 ? ` <span class="co-more">+${c.open - 1}</span>` : ''}`

@@ -26,6 +26,11 @@ Booking: tap a time → the dialog shows the coach, the time, the length and
 the price, takes an optional note for the coach → «Захиалах». No approval
 step: the time was the coach's own offer.
 
+Names: the list rows on `#/coaching` (the coaches, my lessons) show the
+username, as every member list does. The full name is on the coach's own
+page, in the booking dialog, on the coach's desk (who booked) and in the
+notice to the other of the two.
+
 ## The rules of the thing
 
 - **Lessons are 30 or 60 minutes.** The coach opens a range («10:00–16:00,
@@ -97,20 +102,35 @@ another. `bookingWrites` / `cancelWrites` in `src/coaching.js` build them;
 - `coaches/{id}`: an admin writes it; the coach writes only `bio`, `place`,
   `price30`, `price60`, `updatedAt`, and only while `active`. Nobody makes
   themselves a coach.
+The three records of a lesson stand or fall together — no browser can
+leave one without the others:
+
+    slot is `booked`  ⇔  it has a booking  ⇔  the lesson is on that player's list
+
 - `coachSlots/{coach}/{slot}`: the active coach (or an admin) opens and
   removes slots — keyed by their start, in the future, 30 or 60 minutes,
-  never moved. A slot is not removed, or set `open`, while its booking is
-  still there.
+  never moved. A slot is `booked` exactly when it has a booking: it is not
+  born taken, not removed or set `open` while its booking is still there.
 - A member (not the coach, not on hold) may change only `status`:
   `open → booked` when the same write creates their booking, `booked → open`
   when the same write removes their own booking.
 - `coachBookings/{coach}/{slot}`: created by the player for themselves, on
-  an open slot still to come, in the write that takes the slot. Removed by
-  the player (12 hours or more before, slot reopened in the same write), by
-  the coach, or by an admin. Never changed.
+  an open slot still to come, in the write that takes the slot **and** puts
+  the lesson on their list. Removed by the player (12 hours or more before,
+  slot reopened), by the coach, or by an admin (slot reopened or removed) —
+  always in a write that also takes the lesson off the player's list. Never
+  changed.
 - `playerLessons/{player}/{key}`: the player adds it only with a booking of
-  theirs behind it; the player, that lesson's coach or an admin removes it.
+  theirs behind it. The player, that lesson's coach or an admin removes it
+  only when the booking is no longer that player's — in the cancelling
+  write, or afterwards for an entry left behind.
 - `coachReminded`: no rule — server only.
+
+A record edited in the Firebase console can still break the chain (the
+console is not bound by rules). The pages cope: a lesson whose slot is gone
+shows «Дасгалжуулагч энэ цагийг хаасан» with «Жагсаалтаас хасах», and a
+booked slot with no booking can be cancelled back to open on the coach's
+desk.
 
 `npm run test:rules` runs these against the emulator (the coaching tests in
 `scripts/test-rules.mjs`), with the same write builders the app uses.

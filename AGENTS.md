@@ -202,7 +202,8 @@ coachReminded/...                 // server only (functions/coaching.js)
 
 Booking and cancelling are each ONE multi-path write (`bookingWrites`,
 `cancelWrites` in `src/coaching.js`); the database rules refuse a partial
-one. Do not split them into separate writes, and do not put the player's
+one from anyone — player, coach or admin (slot `booked` ⇔ a booking ⇔ the
+lesson on that player's list). Do not split them into separate writes, and do not put the player's
 id on the slot — members read slots, not who booked them.
 
 ## Product Rules

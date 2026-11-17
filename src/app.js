@@ -566,7 +566,7 @@ export async function router() {
     else if (hash === '#/services') await renderServices();
     else if (hash === '#/coaching' || hash.startsWith('#/coaching/')) {
       await renderCoachingPage(hash.slice('#/coaching'.length).replace(/^\//, ''), {
-        main, user: currentUser, showToast, alive: viewAlive(), formatDate, avatarInner, notify: coachNotify
+        main, user: currentUser, showToast, alive: viewAlive(), formatDate, avatarInner, displayUsername, notify: coachNotify
       });
     }
     else if (hash === '#/create') await renderCreateGame();

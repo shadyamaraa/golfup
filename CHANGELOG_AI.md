@@ -12,8 +12,9 @@ independent and are paid directly for now.
   begun or overlapping are left out and counted); who booked — name, phone,
   note — with cancel.
 - **Members**: `#/coaching` lists «Миний хичээлүүд» and the coaches with
-  their next open time; `#/coaching/c/{id}` shows a coach's times by day —
-  taken ones without the name of who took them. Tap, optional note,
+  their next open time (by username, as every member list; the full name
+  is on the coach's own page); `#/coaching/c/{id}` shows a coach's times by
+  day — taken ones without the name of who took them. Tap, optional note,
   «Захиалах»: booked at once. Cancel until 12 hours before; after that the
   coach's phone is shown instead.
 - **Notices**: the coach is told of a booking and of a cancellation, the
@@ -29,8 +30,10 @@ independent and are paid directly for now.
   three places and is refused unless whole and from the right person: only
   an open slot still to come, only for oneself, never the coach's own; of
   two people after one slot the first wins; only the player (12 hours
-  before), the coach or an admin undoes it; nobody makes themselves a
-  coach. Nothing existing is changed.
+  before), the coach or an admin undoes it — and the undoing is whole too,
+  whoever does it: a slot is `booked` exactly when it has a booking, and a
+  booking stands exactly when the lesson is on that player's list. Nobody
+  makes themselves a coach. Nothing existing is changed.
 - **`functions/` — needs a manual deploy**: `functions/coaching.js` (new)
   and `coachReminders` in `functions/index.js`, every 30 minutes; and a
   push now opens the page a notice names. Until deployed, only the
