@@ -540,6 +540,16 @@ exports.ghinSyncAll = signInEndpoint((body) => ghin.syncAll({
   saveAllGhin: (records) => admin.database().ref('ghin').update(records),
 }, body), { ...GHIN, timeoutSeconds: 300 });
 
+// A trial, by an admin: can members be found on GHIN by the phone number
+// they sign in with? Reads only; the members come with their private half,
+// since that is where the phone numbers are.
+exports.ghinPhoneReport = signInEndpoint((body) => ghin.phoneReport({
+  client: ghinClient(),
+  verifyIdToken,
+  loadUser: loadMember,
+  loadUsers: loadAllUsers,
+}, body), { ...GHIN, timeoutSeconds: 300 });
+
 const APP_URL = 'https://ubgolf.club';
 
 // A data-only web push: the service worker (public/firebase-messaging-sw.js)

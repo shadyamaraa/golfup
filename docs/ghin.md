@@ -55,6 +55,7 @@ hosting rewrite.
 | `ghinGolfer { idToken, ghin }` | any member | Who GHIN has under a number. Nothing is stored. Thirty an hour for each member. |
 | `ghinSync { idToken, memberId? }` | a member for themselves, an admin for anyone | Reads the Handicap Index for the GHIN number **on the member's record** and stores it under `ghin/{memberId}`. |
 | `ghinSyncAll { idToken }` | admins | The same for every member with a GHIN number — `golfers/search` takes fifty numbers a request. |
+| `ghinPhoneReport { idToken }` | admins | A trial (below): can members be found on GHIN by the phone they sign in with? Counts and candidates; nothing stored. |
 
 `ghin/{memberId}`:
 
@@ -90,6 +91,61 @@ GHIN side, from the spec
   has its number masked (`7*****4`): among several numbers it cannot be
   told whose it is, so those are asked for again one at a time.
 
+## Tying a member to their golfer — the phone trial
+
+Today a member is tied to GHIN by a GHIN number typed on their record, by
+them or by an admin. That is fine for showing an index and not good enough
+for posting scores: a mistyped or borrowed number would send a member's
+scores to somebody else's record.
+
+The app has one thing that is proven: the phone number a member signs in
+with (the SMS). GHIN holds a phone for a golfer too, and `golfers/search`
+takes `phone_number`. «Утсаар хайх» in the admin's GHIN card
+(`ghinPhoneReport`) measures whether that is enough to tie the two:
+
+- For members who **have** a GHIN number: is the phone GHIN holds for that
+  golfer the member's own — the same, another, none, or the golfer not
+  found.
+- For members who have **none**: GHIN is searched by their phone. Exactly
+  one golfer is a candidate (shown with the name GHIN has); several are
+  listed apart; a candidate whose number another member already has is
+  marked.
+
+Only a row whose own phone is the very number counts (GHIN's search may
+match loosely), and both spellings — eight digits, and with 976 — are
+asked. It only reads; no phone number is in the answer.
+
+What it decides: if most members are found by phone, tying becomes
+automatic — «GHIN-д таны бүртгэл олдлоо … Холбох уу?» at sign-in, written
+by the server. If few are (the association did not enter phones), the
+number stays typed and an admin approves each tie.
+
+## Where this is going
+
+The aim is for a member to do in UB Golf what they would do in GHIN: see
+their Handicap Index, play off it, and have the round posted when it is
+finished. What that takes, in order:
+
+1. **A tie that is proven** (above), written by the server — the GHIN
+   number is on the public half of the member record today, which any
+   client can write.
+2. **Production.** Staging is a copy; nobody should play off it.
+3. **Play off the index.** WHS revises a Handicap Index once a day, after
+   the day's scores — not when a score is posted and not on a refresh — so
+   the app reads it daily (`hi_changed_golfers`) and a round uses the index
+   of the day it is played. A course handicap needs the tee's rating and
+   slope, which should come from GHIN's own course record.
+4. **Post the score.** `scores/hbh` wants GHIN's course and tee-set ids,
+   not a course name: every course the club plays must be on GHIN with its
+   tee sets (Chinggis Khaan is, without a women's set). Only formats
+   acceptable for handicapping post — the app already keeps scramble and
+   foursomes out — a round is posted once (`ghinPosted`), and the player
+   confirms it. It needs its own permission from the USGA: the agreement's
+   first phase is reading only.
+
+Adding golfers to GHIN, merging them, and a handicap committee's
+adjustments stay with the association, in GHIN's own Admin Portal.
+
 ## Where the code is
 
 | Part | File |
@@ -121,7 +177,7 @@ GHIN side, from the spec
    ```
 3. **Deploy the three functions**:
    ```bash
-   firebase deploy --only functions:ghinGolfer,functions:ghinSync,functions:ghinSyncAll --project golfup-app
+   firebase deploy --only functions:ghinGolfer,functions:ghinSync,functions:ghinSyncAll,functions:ghinPhoneReport --project golfup-app
    ```
 4. **Try it**, signed in as an admin: Profile → edit → «GHIN шалгах»; the
    profile's GHIN tile; Admin → Тоглогчид → «GHIN-ээс татах» and the list.

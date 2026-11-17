@@ -6335,6 +6335,24 @@ async function renderAdminPanel() {
     }
   });
 
+  // The phone trial: who can be found on GHIN by the phone they sign in
+  // with. It only reads; what it finds is shown under the card's summary.
+  document.getElementById('ghin-phone-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const out = document.getElementById('ghin-phone-result');
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const report = await store.ghinPhoneReport();
+      if (out) out.innerHTML = ghinPhoneHTML(report, nonAdminUsers);
+    } catch (err) {
+      console.warn('GHIN phone trial:', err?.code || err);
+      showToast(t(ghinErrorKey(err)), 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = t('ghinPhoneBtn');
+  });
+
   const createUserForm = document.getElementById('create-user-form');
   const createUserChevron = document.getElementById('create-user-chevron');
   createUserToggle?.addEventListener('click', () => {
@@ -6534,8 +6552,12 @@ function ghinAdminHTML(roster) {
                 <div style="font-weight:700;color:var(--text-primary);">${t('ghinAdminTitle')}${staging ? ` <span style="font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--bg-card);border:1px solid var(--border-card);color:var(--text-secondary);vertical-align:middle;">${t('ghinStaging')}</span>` : ''}</div>
                 <div id="ghin-admin-summary" style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px;">${summary}${when ? ` · ${when}` : ''}</div>
               </div>
-              <button type="button" id="ghin-sync-all-btn" class="btn btn-primary btn-sm" ${roster.total ? '' : 'disabled'}>${t('ghinAdminBtn')}</button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" id="ghin-phone-btn" class="btn btn-outline btn-sm">${t('ghinPhoneBtn')}</button>
+                <button type="button" id="ghin-sync-all-btn" class="btn btn-primary btn-sm" ${roster.total ? '' : 'disabled'}>${t('ghinAdminBtn')}</button>
+              </div>
             </div>
+            <div id="ghin-phone-result"></div>
             ${rows.length ? `
             <details style="margin-top:10px;">
               <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-secondary);">${t('ghinAdminList')}</summary>
@@ -6559,6 +6581,46 @@ function ghinAdminHTML(roster) {
               </div>
             </details>` : ''}
           </div>`;
+}
+
+// What the phone trial found (store.ghinPhoneReport): for the members who
+// have a GHIN number, whether the phone GHIN holds is their own; for those
+// who have none, who was found on GHIN by their phone. Nothing was changed.
+function ghinPhoneHTML(report, users) {
+  const fill = (key, values) => Object.entries(values).reduce((text, [k, v]) => text.replace(`{${k}}`, v ?? 0), t(key));
+  const byId = new Map(users.map(u => [u.id, u]));
+  const nameOf = (id) => esc(byId.has(id) ? displayUsername(byId.get(id)) : id);
+  const l = report.linked || {};
+  const n = report.unlinked || {};
+  const cell = 'padding:5px 8px;border-bottom:1px solid var(--border-card);text-align:left;white-space:nowrap;';
+  const rows = report.candidates || [];
+  const many = report.ambiguous || [];
+  return `
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card);font-size:0.82rem;line-height:1.5;color:var(--text-secondary);">
+              <div id="ghin-phone-linked">${fill('ghinPhoneLinked', { n: l.withPhone, s: l.same, d: l.different, e: l.ghinNoPhone, g: l.notOnGhin })}</div>
+              <div id="ghin-phone-unlinked">${fill('ghinPhoneUnlinked', { n: n.withPhone, o: n.one, m: n.many, z: n.none })}</div>
+              ${rows.length ? `
+              <div style="overflow-x:auto;margin-top:8px;">
+                <table id="ghin-phone-table" style="width:100%;border-collapse:collapse;color:var(--text-primary);">
+                  <thead><tr style="color:var(--text-secondary);">
+                    <th style="${cell}">${t('ghinColMember')}</th><th style="${cell}">${t('ghinColName')}</th>
+                    <th style="${cell}">${t('ghinNumber')}</th><th style="${cell}">${t('ghinHi')}</th><th style="${cell}"></th>
+                  </tr></thead>
+                  <tbody>
+                    ${rows.map(c => `
+                    <tr>
+                      <td style="${cell}">${nameOf(c.memberId)}</td>
+                      <td style="${cell}">${esc(c.golfer?.name || '—')}</td>
+                      <td style="${cell}font-variant-numeric:tabular-nums;">${esc(c.golfer?.number || '')}</td>
+                      <td style="${cell}font-weight:700;">${esc(ghinHiText(c.golfer))}</td>
+                      <td style="${cell}color:var(--danger-color);">${c.linkedTo ? fill('ghinPhoneTaken', { name: nameOf(c.linkedTo) }) : ''}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>` : ''}
+              ${many.length ? `<div id="ghin-phone-many" style="margin-top:6px;">${t('ghinPhoneMany')} ${many.map(a => `${nameOf(a.memberId)} (${Number(a.count) || 0})`).join(', ')}</div>` : ''}
+              <div style="margin-top:6px;font-size:0.75rem;">${t('ghinPhoneNote')}</div>
+            </div>`;
 }
 
 function showAdminEditUserModal(user, onSaved) {
