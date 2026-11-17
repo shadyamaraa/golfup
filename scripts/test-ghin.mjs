@@ -738,3 +738,134 @@ test('linkByPhone: nothing to ask GHIN when every tie is refused beforehand', as
   assert.equal(out.status, 200);
   assert.equal(w.fake.state.asked.length, 0);
 });
+
+// ---- Names, and the night's round ----
+
+test('nameWords: Cyrillic and its Latin spellings fold to the same words', () => {
+  assert.deepEqual(ghin.nameWords('Мөнхбат'), ghin.nameWords('Munkhbat'));
+  assert.deepEqual(ghin.nameWords('Munkhbat'), ghin.nameWords('Monhbat'));
+  assert.deepEqual(ghin.nameWords('Энхтуяа'), ghin.nameWords('Enkhtuya'));
+  assert.deepEqual(ghin.nameWords('Бямбажав', 'Маргад'), ghin.nameWords('Byambajav Margad'));
+  assert.deepEqual(ghin.nameWords('Жаргал'), ghin.nameWords('Zargal'));
+  // Initials and short words say nothing: Б., Od, Bat.
+  assert.deepEqual(ghin.nameWords('Б.', 'Od', 'Bat'), []);
+  assert.deepEqual(ghin.nameWords(undefined, null, ''), []);
+});
+
+test('nameAgrees: one shared word, however the two names are written', () => {
+  const yes = (member, golfer) => assert.equal(ghin.nameAgrees(member, golfer), true, `${JSON.stringify(member)} ~ ${golfer}`);
+  const no = (member, golfer) => assert.equal(ghin.nameAgrees(member, golfer), false, `${JSON.stringify(member)} !~ ${golfer}`);
+  yes({ firstName: 'Маргад', lastName: 'Бямбажав' }, 'Margad Byambajav');
+  yes({ firstName: 'Margad', lastName: 'B' }, 'Byambajav Margad');          // either order, an initial
+  yes({ name: 'Мөнхбат' }, 'Monkhbat Dorj');                               // only a display name
+  yes({ firstName: 'Bat-Erdene' }, 'Baterdene Ganbold');                   // written as one word
+  yes({ lastName: 'Tsetsegmaa' }, 'Tsetsegma Bold');                       // a letter apart
+  no({ firstName: 'Skyresort', lastName: 'Marshal' }, 'Mtbogd Mtbogd');    // a placeholder golfer
+  no({ firstName: 'Temuulen', lastName: 'Sukhbaatar' }, 'Dorjpalam Tsetsegmaa');
+  no({ firstName: 'Bat', lastName: 'Od' }, 'Bat Od');                      // too short to mean anything
+  no({ username: 'Margad' }, 'Margad Byambajav');                          // a nickname is not a name
+  no({}, 'Margad Byambajav');
+  no(null, 'Margad Byambajav');
+  no({ firstName: 'Margad' }, '');
+});
+
+// A world for the night's round: saving a tie puts the number on the member,
+// as the real one does, so the reading that follows sees it.
+function nightWorld(golfers, over = {}) {
+  const w = phoneWorld(golfers, over);
+  w.deps.saveLink = async (id, tie) => { w.links[id] = tie; w.users[id] = { ...w.users[id], ghinNumber: tie.number }; };
+  // The night's round has no caller: nothing in it may ask who is signed in.
+  w.deps.verifyIdToken = async () => { throw new Error('the night\'s round asked for a caller'); };
+  w.deps.loadUser = async () => { throw new Error('the night\'s round asked for a caller'); };
+  return w;
+}
+
+test('nightly: a member found by phone, whose name GHIN bears out, is tied — and marked as tied by the server', async () => {
+  const w = nightWorld(PHONE_GOLFERS);
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, true);
+  assert.equal(out.env, 'staging');
+  assert.deepEqual(out.tied, [{ memberId: 'n_one', number: '67890123' }]);   // "Found in the club" ~ "Found Golfer"
+  assert.deepEqual(Object.keys(w.links), ['n_one']);
+  assert.deepEqual(w.links.n_one.link, { number: '67890123', by: 'phone', at: NOW, auto: true });
+  assert.equal(w.links.n_one.ghin.name, 'Found Golfer');
+  assert.equal(w.users.n_one.ghinNumber, '67890123');
+});
+
+test('nightly: a golfer with an unrelated name, another member\'s golfer, a phone two golfers share — left for an admin', async () => {
+  const w = nightWorld(PHONE_GOLFERS);
+  const out = await ghin.nightly(w.deps);
+  // n_other ("In another club") ↔ "Elsewhere Golfer": the phone matches, the name says nothing.
+  // n_taken's golfer is l_diff's. n_many's phone is two golfers'.
+  assert.deepEqual(out.left, { name: 1, taken: 1, several: 1 });
+  for (const id of ['n_other', 'n_taken', 'n_many', 'n_zero', 'n_nophone']) assert.equal(w.links[id], undefined, id);
+  assert.equal(w.users.n_other.ghinNumber, undefined);
+});
+
+test('nightly: then every Handicap Index is read afresh — tonight\'s tie among them', async () => {
+  const w = nightWorld(PHONE_GOLFERS);
+  const out = await ghin.nightly(w.deps);
+  assert.deepEqual(out.sync, { members: 6, found: 5, notFound: 1 });        // five tied before, n_one tonight; l_gone is not on GHIN
+  assert.equal(w.saved.n_one.hi, '9.9');
+  assert.equal(w.saved.l_same.found, true);
+  assert.equal(w.saved.l_gone.found, false);
+  assert.equal(w.saved.n_other, undefined);
+});
+
+test('nightly: no phone number and nothing personal in what it answers or stores', async () => {
+  const w = nightWorld(PHONE_GOLFERS);
+  const out = await ghin.nightly(w.deps);
+  const all = JSON.stringify([out, w.links, w.saved]);
+  for (const secret of ['88110001', '99119007', 'bat@example.mn', '1988-04-02', 'Peace Ave']) assert.equal(all.includes(secret), false, secret);
+});
+
+test('nightly: a second night ties no one again', async () => {
+  const w = nightWorld(PHONE_GOLFERS);
+  await ghin.nightly(w.deps);
+  for (const k of Object.keys(w.links)) delete w.links[k];
+  const out = await ghin.nightly(w.deps);
+  assert.deepEqual(out.tied, []);
+  assert.deepEqual(w.links, {});
+  assert.equal(out.sync.members, 6);
+});
+
+test('nightly: GHIN down — nothing tied, nothing stored, and it says so instead of failing', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { searchStatus: 503 } });
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, false);
+  assert.deepEqual(out.errors.map(e => [e.step, e.code]), [['find', 'GHIN_ERROR'], ['read', 'GHIN_ERROR']]);
+  assert.deepEqual(out.tied, []);
+  assert.deepEqual(w.links, {});
+  assert.deepEqual(w.saved, {});
+  assert.equal(out.sync, null);
+});
+
+test('nightly: the login refused (no secret set) — the same', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { loginStatus: 401 } });
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, false);
+  assert.deepEqual([...new Set(out.errors.map(e => e.code))], ['LOGIN_REFUSED']);
+  assert.deepEqual(w.links, {});
+});
+
+test('nightly: the rosters cannot be listed — no one is found, the Handicap Indexes are still read', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { clubsStatus: 404, rosterStatus: { 5001: 404, 7002: 404 } } });
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.tied, []);
+  assert.deepEqual(out.sync, { members: 5, found: 4, notFound: 1 });
+});
+
+test('nightly: nobody without a number — only the reading', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { users: { l_same: { id: 'l_same', name: 'Same', ghinNumber: '12345678', phone: '99119007' } } });
+  const out = await ghin.nightly(w.deps);
+  assert.deepEqual([out.ok, out.tied, out.left], [true, [], { name: 0, taken: 0, several: 0 }]);
+  assert.deepEqual(out.sync, { members: 1, found: 1, notFound: 0 });
+});
+
+test('an admin\'s tie still carries the admin; the night\'s does not', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'n_one', number: '67890123' }] });
+  assert.deepEqual(w.links.n_one.link, { number: '67890123', by: 'phone', at: NOW, admin: 'u_adm' });
+  assert.equal('auto' in w.links.n_one.link, false);
+});

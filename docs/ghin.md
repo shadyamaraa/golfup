@@ -57,6 +57,7 @@ hosting rewrite.
 | `ghinSyncAll { idToken }` | admins | The same for every member with a GHIN number — `golfers/search` takes fifty numbers a request. |
 | `ghinPhoneReport { idToken }` | admins | Who can be found on GHIN by the phone they sign in with (below). Counts and candidates; nothing stored. |
 | `ghinLinkByPhone { idToken, links: [{ memberId, number }] }` | admins | Ties the members found that way to their golfers. The server reads each golfer's phone again and ties only where it is the member's own. |
+| `ghinNightly` | no one — a schedule, 02:30 in Ulaanbaatar | The night's round (below): ties the new members found by phone whose name GHIN's also bears out, then reads every Handicap Index afresh. |
 
 `ghin/{memberId}`:
 
@@ -158,7 +159,8 @@ A tie is three writes in one: the GHIN number on the member's record
 sync would), and how the tie was made —
 
 ```js
-ghinLink/{memberId}: { number, by: 'phone', at, admin }
+ghinLink/{memberId}: { number, by: 'phone', at, admin }        // an admin tied it
+ghinLink/{memberId}: { number, by: 'phone', at, auto: true }   // the night's round did
 ```
 
 `ghinLink` is read by signed-in members and written by no client. It is
@@ -173,6 +175,46 @@ What it decides: if most members are found by phone, tying becomes
 automatic — «GHIN-д таны бүртгэл олдлоо … Холбох уу?» at sign-in, written
 by the server. If few are (the association did not enter phones), the
 number stays typed and an admin approves each tie.
+
+## The night's round
+
+`ghinNightly` runs every night at 02:30 (Asia/Ulaanbaatar) with no one
+asking — `nightly` in `functions/ghin.js`:
+
+1. **New members are tied by themselves.** Members with no GHIN number are
+   looked for by the phone they sign in with, exactly as the admin's report
+   does. A member is tied when one golfer holds that phone, the golfer is
+   not another member's, **and GHIN's name for the golfer agrees with the
+   member's** — one shared word, whether the member wrote their name in
+   Cyrillic or Latin (`nameAgrees`). The tie is the same three writes an
+   admin's is, the phone read again first, marked `auto: true`.
+2. **Every Handicap Index is read afresh** — the daily read; GHIN revises
+   an index once a night.
+
+So someone who signs up today with only a phone number has their GHIN
+number and Handicap Index by the morning, and has typed nothing.
+
+What it leaves for an admin (Users tab → the phone list, as before): a
+golfer whose name has nothing in common with the member's — the phone
+matched, but a placeholder golfer can hold a real phone; a golfer who is
+already another member's; a phone two golfers share. A member whose record
+has no name beyond a nickname is never tied by the night's round.
+
+It does not stop on what GHIN refuses: each step that fails is named in
+the log (`ghinNightly {…}` — counts only, no names or numbers) and the rest
+is done. The members hub rebuilds its list an hour later (03:30) and reads
+the night's ties (`docs/members-hub.md`).
+
+Deploy it with the functions it shares code with:
+
+```bash
+git checkout main && git pull origin main
+firebase deploy --only functions:ghinNightly,functions:ghinSyncAll,functions:ghinPhoneReport,functions:ghinLinkByPhone --project golfup-app
+```
+
+The first scheduled function of the project: the CLI turns on Cloud
+Scheduler and makes the job. To stop it, delete the function
+(`firebase functions:delete ghinNightly --project golfup-app`).
 
 ## Where this is going
 
@@ -250,9 +292,13 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   (`GHIN_BASE_URL`), the official index can replace the app's own in games
   and tournaments (`gamePlayingHcp` in `src/game-score.js`,
   `src/strokeplay-admin.js`). That is a decision as much as a change.
-- **A daily refresh.** GHIN has `golfers/hi_changed_golfers` for exactly
-  this; it needs a scheduled function. Today a member's index is read when
-  they open their profile (at most once a day) or when an admin reads all.
+- **A lighter daily refresh.** The night's round reads every member's
+  index; GHIN has `golfers/hi_changed_golfers` to ask only for those that
+  changed. Not worth it at a few hundred members.
+- **Tying at sign-in.** The night's round ties a new member by the next
+  morning. Doing it in the moment they sign in needs the phones of the
+  club's golfers kept somewhere between nights — GHIN does not search by
+  phone.
 - **Course data** — ratings, slopes, pars and stroke indexes from
   `courses/search` and `Courses/{id}/TeeSetRatings`. Chinggis Khaan is on
   GHIN (CourseID 29422) and matched the club's card; its coordinates are

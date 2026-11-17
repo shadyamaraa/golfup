@@ -554,17 +554,42 @@ exports.ghinPhoneReport = signInEndpoint((body) => ghin.phoneReport({
 // checked again here for each; then the GHIN number goes on the member's
 // record, the golfer's reading under ghin/{id}, and how the tie was made
 // under ghinLink/{id} — all three in one write.
+const saveGhinLink = (memberId, { number, ghin: record, link }) => admin.database().ref().update({
+  [`users/${memberId}/ghinNumber`]: number,
+  [`ghin/${memberId}`]: record,
+  [`ghinLink/${memberId}`]: link,
+});
 exports.ghinLinkByPhone = signInEndpoint((body) => ghin.linkByPhone({
   client: ghinClient(),
   verifyIdToken,
   loadUser: loadMember,
   loadUsers: loadAllUsers,
-  saveLink: (memberId, { number, ghin: record, link }) => admin.database().ref().update({
-    [`users/${memberId}/ghinNumber`]: number,
-    [`ghin/${memberId}`]: record,
-    [`ghinLink/${memberId}`]: link,
-  }),
+  saveLink: saveGhinLink,
 }, body), { ...GHIN, timeoutSeconds: 300 });
+
+// Every night at 02:30 in Ulaanbaatar, with no one asking: the members who
+// signed up without a GHIN number are looked for on GHIN by their phone and
+// tied where GHIN's name for the golfer bears it out (the rest stay for an
+// admin, on the Users tab as before); then every Handicap Index is read
+// afresh. An hour before the members hub rebuilds its list (03:30), so the
+// hub reads tonight's ties. Counts only go to the log — no names, no numbers.
+exports.ghinNightly = functions
+  .runWith({ ...GHIN, timeoutSeconds: 540 })
+  .pubsub.schedule('30 2 * * *')
+  .timeZone('Asia/Ulaanbaatar')
+  .onRun(async () => {
+    const out = await ghin.nightly({
+      client: ghinClient(),
+      loadUsers: loadAllUsers,
+      saveLink: saveGhinLink,
+      saveAllGhin: (records) => admin.database().ref('ghin').update(records),
+    });
+    console.log('ghinNightly', JSON.stringify({
+      ok: out.ok, env: out.env, tied: out.tied.length, left: out.left,
+      refused: out.refused.length, sync: out.sync, errors: out.errors,
+    }));
+    return null;
+  });
 
 const APP_URL = 'https://ubgolf.club';
 

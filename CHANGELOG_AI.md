@@ -1,5 +1,49 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN: the night's round — new members tied by phone on their own, every index read daily)
+
+A new member was tied to their GHIN golfer only when an admin opened the
+phone list and pressed the button; a Handicap Index was read when the
+member opened their profile or an admin read all. Both now happen by
+themselves, every night.
+
+- `functions/ghin.js`: `nightly(deps)` — (1) members with no GHIN number
+  are looked for by the phone they sign in with, as the admin's report
+  does, and tied when one golfer holds the phone, the golfer is not another
+  member's, and GHIN's name for the golfer agrees with the member's
+  (`nameAgrees`: one shared word, Cyrillic or Latin, loosely spelled); the
+  phone is read again before each tie, which is marked `auto: true` under
+  `ghinLink/{id}`; (2) every member's Handicap Index is read afresh. What
+  GHIN refuses is named and the rest is done. The admin checks of
+  `syncAll`, `phoneReport` and `linkByPhone` are unchanged; their work is
+  now shared with the night's round (`syncAllNow`, `phoneReportNow`,
+  `linkNow`).
+- `functions/index.js`: `ghinNightly`, a scheduled function — 02:30
+  Asia/Ulaanbaatar, an hour before the members hub rebuilds its list. Counts
+  only go to the log.
+- Left for an admin, on the Users tab as before: a golfer whose name has
+  nothing in common with the member's (a placeholder golfer can hold a real
+  phone), a golfer who is another member's, a phone two golfers share.
+- `docs/ghin.md` («The night's round», deploy command), `docs/members-hub.md`
+  (the order of a night), `PROJECT_NOTES.md`.
+
+Still GHIN's staging environment. No app change, no rules change.
+
+**To take effect the functions must be deployed** (they are not deployed by
+CI):
+
+```bash
+git checkout main && git pull origin main
+firebase deploy --only functions:ghinNightly,functions:ghinSyncAll,functions:ghinPhoneReport,functions:ghinLinkByPhone --project golfup-app
+```
+
+Tests: `scripts/test-ghin.mjs` 60 (12 more): the name check, the tie and
+its mark, what is left for an admin, the reading that follows, nothing
+personal in the answer, a second night, GHIN down, the login refused, the
+rosters unlisted, no one to tie. `functions/index.js` loaded with
+firebase-functions 7.2.5: `ghinNightly` is a 1st-gen schedule with the GHIN
+secrets.
+
 ## 2026-11-17 (GHIN stays in UB Golf; the members hub reads it from here)
 
 UB Golf showed «All three 112» and the hub «Гурвуулаа 106»: the two counted
