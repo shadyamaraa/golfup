@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, toGhinScorePayload,
+  ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
 } from '../src/ghin.js';
 
 const NOW = Date.parse('2026-11-16T10:00:00.000Z');
@@ -125,4 +125,16 @@ test('toGhinScorePayload: a stored round in the shape GHIN posts', () => {
   assert.equal(p.played_at, '2026-11-15');
   assert.equal(p.adjusted_gross_score, 88);
   assert.deepEqual(p.hole_details, [{ hole_number: 1, raw_score: 5 }, { hole_number: 2, raw_score: 4 }]);
+});
+
+test('ghinLinkWhyKey: why a member was not tied', () => {
+  assert.equal(ghinLinkWhyKey('PHONE_DIFFERS'), 'ghinWhyPhoneDiffers');
+  assert.equal(ghinLinkWhyKey('TAKEN'), 'ghinWhyTaken');
+  assert.equal(ghinLinkWhyKey('HAS_NUMBER'), 'ghinWhyHasNumber');
+  assert.equal(ghinLinkWhyKey('NOT_ON_GHIN'), 'ghinWhyNotOnGhin');
+  assert.equal(ghinLinkWhyKey('NO_PHONE'), 'ghinWhyNoPhone');
+  assert.equal(ghinLinkWhyKey('NO_MEMBER'), 'ghinWhyNoMember');
+  assert.equal(ghinLinkWhyKey('BAD_GHIN'), 'gsGhinInvalid');
+  assert.equal(ghinLinkWhyKey('SOMETHING_NEW'), 'ghinWhyOther');
+  assert.equal(ghinLinkWhyKey(undefined), 'ghinWhyOther');
 });

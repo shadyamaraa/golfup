@@ -80,6 +80,19 @@ export function ghinErrorKey(err) {
   return 'ghinErrUnreachable';
 }
 
+/** The i18n key for why the server would not tie a member to a golfer. */
+export function ghinLinkWhyKey(reason) {
+  return {
+    NO_MEMBER: 'ghinWhyNoMember',
+    BAD_GHIN: 'gsGhinInvalid',
+    HAS_NUMBER: 'ghinWhyHasNumber',
+    NO_PHONE: 'ghinWhyNoPhone',
+    TAKEN: 'ghinWhyTaken',
+    NOT_ON_GHIN: 'ghinWhyNotOnGhin',
+    PHONE_DIFFERS: 'ghinWhyPhoneDiffers',
+  }[String(reason ?? '')] || 'ghinWhyOther';
+}
+
 /**
  * What the admin's table shows: every member with a GHIN number, with what
  * GHIN said of it — found, not found, or not read yet — and the totals.

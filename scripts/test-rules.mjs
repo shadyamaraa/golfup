@@ -45,6 +45,7 @@ const SEED = {
   },
   userSecrets: { m2: { pass: 'scrypt$x' } },
   ghin: { m2: { number: '12345678', found: true, name: 'Two', hi: '12.3', syncedAt: 1 } },
+  ghinLink: { m2: { number: '12345678', by: 'phone', at: 1, admin: 'admin1' } },
 };
 
 // The emulator's own back door ("Bearer owner") — how the test lays its data.
@@ -124,6 +125,15 @@ test('what GHIN said is read by members and written by no one but the server', a
   await denied(update(ref(admin, 'ghin/m2'), { hi: '2.0' }), 'an admin');
   await denied(set(ref(sysAdmin, 'ghin/m1'), { number: '1234567', hi: '0.0' }), 'the system admin');
   await denied(remove(ref(admin, 'ghin/m2')), 'removing it');
+});
+
+test('how a member was tied to their golfer is the server\'s to write', async () => {
+  assert.equal((await get(ref(m1, 'ghinLink/m2'))).val().by, 'phone', 'a member reads it');
+  await denied(get(ref(visitor, 'ghinLink/m2')), 'a visitor');
+  await denied(get(ref(anon, 'ghinLink')), 'an anonymous device');
+  await denied(set(ref(m2, 'ghinLink/m2'), { number: '99999999', by: 'phone', at: 2 }), 'the member, their own');
+  await denied(update(ref(admin, 'ghinLink/m1'), { number: '12345678', by: 'admin' }), 'an admin');
+  await denied(remove(ref(sysAdmin, 'ghinLink/m2')), 'removing it');
 });
 
 test('no one writes a private field onto the public record', async () => {

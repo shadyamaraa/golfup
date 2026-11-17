@@ -1,5 +1,41 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN: tie the members found by phone)
+
+The phone trial now answers: of 52 members without a GHIN number, 36 were
+found on GHIN by the phone they sign in with (one golfer each), 16 were
+not; of the 95 who have a number, for 77 the phone GHIN holds is their own.
+So the phone is proof enough for most, and the admin can act on it.
+
+- **Server** (`functions/ghin.js`, `ghinLinkByPhone` in
+  `functions/index.js`): admins only. Takes `{ memberId, number }` pairs and
+  does not take the screen on trust — it reads those golfers from GHIN
+  again and ties a member only when the phone GHIN holds for that number is
+  the phone on the member's record. Each tie stands or falls on its own,
+  with a reason (the member has another number, the number is another
+  member's or asked for twice, no phone, not on GHIN, the phone differs).
+  A tie writes, in one update: the GHIN number on the member's record, the
+  golfer's reading under `ghin/{id}`, and how it was made under
+  `ghinLink/{id}` — `{ number, by: 'phone', at, admin }`.
+- **Rules** (`database.rules.json` — changed): a new path `ghinLink`, read
+  by signed-in members and written by no client.
+- **App**: the candidates have a tick each (a number another member has
+  cannot be ticked) and «Сонгосныг холбох»; what was tied, and who was not
+  and why, is shown in the card once the panel is drawn again.
+
+**Needs the owner**: deploy `ghinLinkByPhone`, press «Утсаар хайх», untick
+any row that is not a person, and press «Сонгосныг холбох».
+
+Not changed: a member can still type any GHIN number on their profile, and
+the number sits on the public half of the record. Making the tie the
+server's alone — a typed number checked against the phone, an admin
+approving the rest — is the next step.
+
+Tests: `scripts/test-ghin.mjs` now 48, `scripts/test-ghin-app.mjs` 10, one
+more case in `npm run test:rules` (23). Browser, local mode, the functions
+stubbed: the ticks, the count on the button, a failure staying on the
+page, the result after the redraw. Not run against the real GHIN.
+
 ## 2026-11-17 (GHIN phone trial: the roster for the numbers, a search for the phones)
 
 The second press gave the first real answer — and showed what GHIN allows.

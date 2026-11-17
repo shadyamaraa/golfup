@@ -15,8 +15,10 @@
 //              record and stored under ghin/{memberId}: their own, or anyone's
 //              for an admin.
 //   syncAll  — every member with a GHIN number, in batches. Admins only.
-//   phoneReport — a trial, for admins: can a member be found on GHIN by the
-//              phone number they sign in with? Counts, and who was found.
+//   phoneReport — for admins: who can be found on GHIN by the phone number
+//              they sign in with? Counts, and who was found.
+//   linkByPhone — an admin ties the members found that way to their golfers.
+//              The server checks the phone again for each before it writes.
 //
 // ghin/{memberId} is written only here (the database rules give no client
 // write access to it), so what it holds is what GHIN said.
@@ -533,9 +535,98 @@ async function phoneReport(deps, body) {
   };
 }
 
+// So many ties in one request: every member of the club and to spare.
+const MAX_LINKS = 300;
+
+/**
+ * Tie members to their golfers on the proof of the phone: for each
+ * { memberId, number } an admin sends, GHIN must have a golfer under that
+ * number whose phone is the member's own — the phone the member signs in
+ * with, which the app has verified by SMS. What the admin's screen showed
+ * is not taken on trust; the phones are read again here.
+ *
+ * A tie is refused, with a reason, when the member is not there
+ * (NO_MEMBER), already has another GHIN number (HAS_NUMBER), has no
+ * Mongolian phone (NO_PHONE), the number is not one (BAD_GHIN), is another
+ * member's — or asked for twice here (TAKEN), is not on GHIN (NOT_ON_GHIN),
+ * or the phone GHIN holds is not the member's (PHONE_DIFFERS).
+ *
+ * For each tie made: the GHIN number goes on the member's record, what GHIN
+ * said of the golfer under ghin/{memberId} (as a sync would), and how the
+ * tie was made under ghinLink/{memberId} — { number, by: 'phone', at, admin }.
+ *
+ * deps: { client, verifyIdToken, loadUser(id), loadUsers() (with the private half),
+ *         saveLink(memberId, { number, ghin, link }), now? }
+ */
+async function linkByPhone(deps, body) {
+  const now = deps.now || Date.now;
+  const b = body || {};
+  const caller = await callerOf(deps, b.idToken);
+  if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
+  const me = await deps.loadUser(caller);
+  if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Admins only');
+  const asked = Array.isArray(b.links) ? b.links : [];
+  if (!asked.length || asked.length > MAX_LINKS) return fail(400, 'BAD_LINKS', `Between 1 and ${MAX_LINKS} ties at a time`);
+
+  const users = (await deps.loadUsers()) || {};
+  // The numbers members already have: a golfer is one member's.
+  const owner = new Map();
+  for (const [id, u] of Object.entries(users)) {
+    const n = u && typeof u === 'object' ? ghinNumber(u.ghinNumber) : null;
+    if (n) owner.set(sameKey(n), id);
+  }
+
+  const refused = [];
+  const pending = [];
+  const claimed = new Set();   // numbers asked for in this request
+  for (const item of asked) {
+    const memberId = String((item && item.memberId) || '');
+    const number = ghinNumber(item && item.number);
+    const no = (reason) => refused.push({ memberId, number: number || String((item && item.number) || ''), reason });
+    const member = /^[\w-]{1,64}$/.test(memberId) && memberId !== 'admin_uid' ? users[memberId] : null;
+    if (!member || typeof member !== 'object') { no('NO_MEMBER'); continue; }
+    if (!number) { no('BAD_GHIN'); continue; }
+    const has = ghinNumber(member.ghinNumber);
+    if (has && sameKey(has) !== sameKey(number)) { no('HAS_NUMBER'); continue; }
+    const phone = mnLocal(member.phone);
+    if (!phone) { no('NO_PHONE'); continue; }
+    const holder = owner.get(sameKey(number));
+    if ((holder && holder !== memberId) || claimed.has(sameKey(number))) { no('TAKEN'); continue; }
+    claimed.add(sameKey(number));
+    pending.push({ memberId, number, phone });
+  }
+
+  const linked = [];
+  if (pending.length) {
+    let rows;
+    try {
+      rows = await rowsByNumber(deps.client, pending.map(x => x.number));
+    } catch (err) {
+      return refusal(err, true);
+    }
+    const at = now();
+    for (const x of pending) {
+      const list = rows.get(x.number);
+      if (!list) { refused.push({ memberId: x.memberId, number: x.number, reason: 'NOT_ON_GHIN' }); continue; }
+      if (!list.some(r => phoneKey(r.phone_number) === x.phone)) {
+        refused.push({ memberId: x.memberId, number: x.number, reason: 'PHONE_DIFFERS' });
+        continue;
+      }
+      const golfer = trimGolfer(pickRow(list), x.number);
+      await deps.saveLink(x.memberId, {
+        number: x.number,
+        ghin: recordOf(golfer, x.number, deps.client.env, at),
+        link: { number: x.number, by: 'phone', at, admin: caller },
+      });
+      linked.push({ memberId: x.memberId, number: x.number, name: golfer.name });
+    }
+  }
+  return { status: 200, body: { ok: true, env: deps.client.env, linked, refused } };
+}
+
 module.exports = {
   UAT_BASE, TOKEN_TTL_MS, LOOKUPS_PER_HOUR, BATCH, PER_PAGE,
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
-  lookup, sync, syncAll, phoneReport,
+  lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS,
   _resetTokens: () => tokens.clear(),
 };

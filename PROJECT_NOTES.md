@@ -61,8 +61,10 @@ See `docs/phone-login.md`.
 GHIN: a member's official Handicap Index is read from GHIN (the USGA's
 handicap service, through the Mongolian Golf Association's login) by the
 server only — `functions/ghin.js`, secrets `GHIN_EMAIL` / `GHIN_PASSWORD`,
-functions `ghinGolfer`, `ghinSync`, `ghinSyncAll` — and stored under
-`ghin/{memberId}`, which members read and no client writes. It is a trial
+functions `ghinGolfer`, `ghinSync`, `ghinSyncAll`, `ghinPhoneReport`,
+`ghinLinkByPhone` — and stored under `ghin/{memberId}`, which members read
+and no client writes. How a member was tied to their golfer (on the proof
+of the phone they sign in with) is under `ghinLink/{memberId}`, likewise. It is a trial
 on GHIN's staging environment: only admins see it (`GHIN_STAGE` in
 `src/app.js`), and it does not feed a playing handicap — games still use
 the app's own `hcpIndex`. Never call GHIN from the browser or put its login
