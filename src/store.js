@@ -406,8 +406,11 @@ async function callSignIn(name, body) {
   let data = null;
   try { data = await r.json(); } catch (_) { /* not JSON: a missing function answers with a page */ }
   if (!r.ok) {
-    throw Object.assign(new Error(data?.error?.message || String(r.status)),
-      { status: r.status, code: data?.error?.code || null, retryAfter: data?.error?.retryAfter ?? null });
+    throw Object.assign(new Error(data?.error?.message || String(r.status)), {
+      status: r.status, code: data?.error?.code || null, retryAfter: data?.error?.retryAfter ?? null,
+      // What a service behind the function answered, when the function says: for an admin to read.
+      upstream: data?.error?.upstream ?? null, detail: data?.error?.detail ?? null,
+    });
   }
   return data || {};
 }
@@ -547,7 +550,9 @@ export function ghinSyncAll() {
 /**
  * Admin, a trial: can members be found on GHIN by the phone they sign in
  * with? → { env, linked: {…counts}, unlinked: {…counts}, candidates:
- * [{ memberId, golfer, linkedTo }], ambiguous: [{ memberId, count }] }.
+ * [{ memberId, golfer, linkedTo }], ambiguous: [{ memberId, count }],
+ * sources: [{ kind, name, golfers, withPhone }] (the lists that were read),
+ * refused: [{ kind, name, upstream, detail }] (the ones GHIN would not give) }.
  * Reads only; nothing is stored.
  */
 export function ghinPhoneReport() {

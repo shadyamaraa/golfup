@@ -6348,6 +6348,8 @@ async function renderAdminPanel() {
     } catch (err) {
       console.warn('GHIN phone trial:', err?.code || err);
       showToast(t(ghinErrorKey(err)), 'error');
+      // What went wrong stays on the page: this is a trial, and the reason is the result.
+      if (out) out.innerHTML = `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card);font-size:0.82rem;line-height:1.5;">${ghinRefusalHTML(t(ghinErrorKey(err)), { code: err?.code || (err?.status ? `HTTP ${err.status}` : ''), upstream: err?.upstream, detail: err?.detail })}</div>`;
     }
     btn.disabled = false;
     btn.textContent = t('ghinPhoneBtn');
@@ -6583,9 +6585,18 @@ function ghinAdminHTML(roster) {
           </div>`;
 }
 
+// What GHIN said in refusing, for an admin to read: the code, GHIN's status
+// and its own words. Shown under the GHIN card, where a toast would be gone
+// before it was read.
+function ghinRefusalHTML(what, r) {
+  const parts = [r?.code, r?.upstream ? `HTTP ${r.upstream}` : '', r?.detail].filter(Boolean).map(x => esc(String(x)));
+  return `<div class="ghin-refusal" style="margin-top:6px;color:var(--danger-color);">${esc(what)}${parts.length ? ` — ${parts.join(' · ')}` : ''}</div>`;
+}
+
 // What the phone trial found (store.ghinPhoneReport): for the members who
 // have a GHIN number, whether the phone GHIN holds is their own; for those
-// who have none, who was found on GHIN by their phone. Nothing was changed.
+// who have none, who was found among GHIN's golfers by their phone; which
+// of GHIN's lists were read, and which it would not give. Nothing was changed.
 function ghinPhoneHTML(report, users) {
   const fill = (key, values) => Object.entries(values).reduce((text, [k, v]) => text.replace(`{${k}}`, v ?? 0), t(key));
   const byId = new Map(users.map(u => [u.id, u]));
@@ -6595,10 +6606,16 @@ function ghinPhoneHTML(report, users) {
   const cell = 'padding:5px 8px;border-bottom:1px solid var(--border-card);text-align:left;white-space:nowrap;';
   const rows = report.candidates || [];
   const many = report.ambiguous || [];
+  const sources = report.sources || [];
+  const refused = report.refused || [];
   return `
             <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card);font-size:0.82rem;line-height:1.5;color:var(--text-secondary);">
               <div id="ghin-phone-linked">${fill('ghinPhoneLinked', { n: l.withPhone, s: l.same, d: l.different, e: l.ghinNoPhone, g: l.notOnGhin })}</div>
               <div id="ghin-phone-unlinked">${fill('ghinPhoneUnlinked', { n: n.withPhone, o: n.one, m: n.many, z: n.none })}</div>
+              <div id="ghin-phone-sources">${t('ghinPhoneSources')} ${sources.length
+                ? sources.map(x => fill('ghinPhoneSource', { name: esc(x.name || x.id), n: Number(x.golfers) || 0, p: Number(x.withPhone) || 0 })).join(' · ')
+                : t('ghinPhoneNoSource')}</div>
+              ${refused.map(r => ghinRefusalHTML(`${t('ghinPhoneRefused')} ${r.name || r.id || ''}`, r)).join('')}
               ${rows.length ? `
               <div style="overflow-x:auto;margin-top:8px;">
                 <table id="ghin-phone-table" style="width:100%;border-collapse:collapse;color:var(--text-primary);">
