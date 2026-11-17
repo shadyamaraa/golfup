@@ -1567,3 +1567,60 @@ html:not([data-theme="dark"]) .golf-ball {
 .lb-sum .tn-c-tot small { font-size: 0.78rem; font-weight: 800; margin-left: 2px; }
 .lb-actions { display: flex; gap: 8px; margin-top: 14px; }
 .lb-actions .btn { flex: 1; justify-content: center; }
+
+/* ---- Coaching (#/coaching) — src/coaching-page.js ---- */
+a.svc-tile { display: block; text-decoration: none; color: inherit; }
+.co-page .list-row { margin-bottom: 8px; }
+.co-page .list-row.co-lesson { cursor: default; align-items: flex-start; }
+.co-page .list-row.co-lesson:hover { border-color: var(--border-card); }
+.co-next { font-size: 0.78rem; font-weight: 700; color: var(--green-bright); margin-top: 4px; }
+.co-next.none { color: var(--text-muted); font-weight: 600; }
+.co-more { color: var(--text-secondary); font-weight: 600; }
+.co-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.co-hint { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45; }
+.co-hint a, .co-row a { color: var(--gold-dark); font-weight: 700; text-decoration: none; }
+.co-head { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.co-head .player-avatar-sm { width: 56px; height: 56px; font-size: 1.3rem; }
+.co-head-sub { font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.45; }
+.co-bio { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.55; margin: 12px 0 4px; white-space: pre-line; }
+.co-day { margin-bottom: 14px; }
+.co-day-name {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 8px;
+}
+.co-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.co-slot {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px;
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px;
+  color: var(--text-primary); font-family: inherit; cursor: pointer; transition: var(--transition);
+}
+.co-slot b { font-size: 1rem; font-weight: 800; }
+.co-slot span { font-size: 0.7rem; color: var(--text-secondary); }
+.co-slot:not([disabled]):hover { border-color: var(--gold); background: var(--accent-soft); }
+.co-slot[disabled] { cursor: default; }
+.co-slot.taken { opacity: 0.5; background: var(--bg-card-hover); }
+.co-slot.taken b { text-decoration: line-through; font-weight: 700; }
+.co-pay-note { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; margin-top: 12px; }
+.co-book-what {
+  padding: 12px 14px; border-radius: 12px; background: var(--bg-card-hover);
+  border: 1px solid var(--border-card); font-size: 0.9rem; line-height: 1.6; color: var(--text-primary);
+}
+.co-book-price { font-weight: 800; color: var(--gold-dark); }
+.co-card { padding: 16px; }
+.co-card-title { font-size: 0.95rem; font-weight: 800; color: var(--text-primary); margin-bottom: 12px; }
+.co-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.co-form-row .input-group { margin: 0; min-width: 0; }
+.co-form-row input, .co-form-row select, .co-textarea {
+  width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-color); color: var(--text-primary); font-family: inherit; font-size: 0.9rem;
+}
+.co-textarea { resize: vertical; }
+.co-row {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px;
+}
+.co-row > b { font-size: 0.95rem; font-weight: 800; color: var(--text-primary); min-width: 46px; }
+.co-row-what { flex: 1; min-width: 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; }
+.co-row-what b { color: var(--text-primary); }
+.co-row.booked { border-color: var(--gold); background: var(--accent-soft); }
+.co-note { display: block; font-style: italic; }

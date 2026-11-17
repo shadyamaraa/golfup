@@ -190,6 +190,21 @@ Notifications:
 
 `saveNotification()` includes duplicate protection by `gameId + type + from`.
 
+Coaching (`docs/coaching.md`) — a lesson booked with a coach:
+
+```js
+coaches/{coachId}                 // { active, bio, place, price30, price60, ... } — admin makes a coach
+coachSlots/{coachId}/{slotId}     // { start, minutes, status: 'open'|'booked', price } — slotId = 's' + start
+coachBookings/{coachId}/{slotId}  // { playerId, bookedAt, note } — coach, that player and admins only
+playerLessons/{playerId}/{key}    // { coachId, slotId, start, minutes } — key = coachId + '_' + slotId
+coachReminded/...                 // server only (functions/coaching.js)
+```
+
+Booking and cancelling are each ONE multi-path write (`bookingWrites`,
+`cancelWrites` in `src/coaching.js`); the database rules refuse a partial
+one. Do not split them into separate writes, and do not put the player's
+id on the slot — members read slots, not who booked them.
+
 ## Product Rules
 
 - Use `displayUsername(user)` for public/member list names.

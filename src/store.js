@@ -7,6 +7,9 @@ import {
   splitMember, mergeMember, carriesPrivate, baselineOf, memberWrites,
   SESSION_VERSION, sessionAction,
 } from './member-record.js';
+import {
+  cleanProfile, slotWrites, bookingWrites, cancelWrites, applyWrites,
+} from './coaching.js';
 
 let db = null;
 let auth = null;
@@ -1737,4 +1740,123 @@ export async function cancelPendingPayment(id) {
     return true;
   }
   return false;
+}
+
+// ---- Coaching ----
+// A lesson booked with a coach — the shapes and the rules are in
+// src/coaching.js and docs/coaching.md. Four nodes: coaches, coachSlots,
+// coachBookings, playerLessons. A booking or a cancellation is one write to
+// three of them; the database refuses it unless it is whole and comes from
+// the right person, so a refusal here is thrown, not swallowed.
+//
+// Local mode keeps the same tree in localStorage and has no rules: the one
+// rule that matters to a single browser — a taken slot is not booked again —
+// is checked here.
+const LOCAL_COACHING = 'golfup_coaching';
+function localCoaching() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_COACHING)) || {}; } catch { return {}; }
+}
+async function coachingWrite(writes) {
+  if (useFirebase && db) { await update(ref(db), writes); return; }
+  localStorage.setItem(LOCAL_COACHING, JSON.stringify(applyWrites(localCoaching(), writes)));
+}
+async function coachingRead(path) {
+  if (useFirebase && db) {
+    const snap = await get(ref(db, path));
+    return snap.exists() ? snap.val() : null;
+  }
+  return path.split('/').filter(Boolean).reduce((n, k) => (n && typeof n === 'object' ? n[k] : null), localCoaching()) ?? null;
+}
+// A read that may be refused (not signed in as a member): nothing, not a throw.
+async function coachingReadOr(path, fallback) {
+  try { return (await coachingRead(path)) ?? fallback; }
+  catch (e) { console.warn(`${path} not readable:`, e?.message || e); return fallback; }
+}
+
+/** Every coach's profile: { memberId: { active, bio, place, price30, price60, … } }. */
+export const loadCoaches = () => coachingReadOr('coaches', {});
+
+/** One coach's slots as stored: { slotId: { start, minutes, status, price } }. */
+export const loadCoachSlots = (coachId) => coachingReadOr(`coachSlots/${coachId}`, {});
+
+/** Every coach's slots: { coachId: { slotId: slot } }. */
+export const loadAllCoachSlots = () => coachingReadOr('coachSlots', {});
+
+/** Who booked a coach's slots: { slotId: { playerId, bookedAt, note } } — the coach's own to read. */
+export const loadCoachBookings = (coachId) => coachingReadOr(`coachBookings/${coachId}`, {});
+
+/** A member's own lessons: { key: { coachId, slotId, start, minutes } }. */
+export const loadPlayerLessons = (playerId) => coachingReadOr(`playerLessons/${playerId}`, {});
+
+/** An admin makes a member a coach, or switches one off. The profile stays. */
+export async function setCoach(coachId, active, adminId) {
+  const writes = { [`coaches/${coachId}/active`]: !!active };
+  if (active) {
+    writes[`coaches/${coachId}/approvedBy`] = String(adminId || '');
+    writes[`coaches/${coachId}/approvedAt`] = Date.now();
+  }
+  await coachingWrite(writes);
+}
+
+/** A coach's own words and prices. */
+export async function saveCoachProfile(coachId, input) {
+  const p = cleanProfile(input);
+  await coachingWrite({
+    [`coaches/${coachId}/bio`]: p.bio,
+    [`coaches/${coachId}/place`]: p.place,
+    [`coaches/${coachId}/price30`]: p.price30,
+    [`coaches/${coachId}/price60`]: p.price60,
+    [`coaches/${coachId}/updatedAt`]: Date.now(),
+  });
+  return p;
+}
+
+/** A coach opens slots (from newSlots). */
+export async function addCoachSlots(coachId, slots) {
+  if (slots && slots.length) await coachingWrite(slotWrites(coachId, slots));
+}
+
+/** A coach takes back a slot no one has booked. */
+export async function removeCoachSlot(coachId, id) {
+  await coachingWrite({ [`coachSlots/${coachId}/${id}`]: null });
+}
+
+/**
+ * A member books a slot. Throws when the database refuses — most often
+ * because someone else took the slot a moment ago; `err.code === 'TAKEN'`
+ * when that is known to be why.
+ */
+export async function bookCoachSlot(coachId, slot, playerId, note) {
+  const taken = () => Object.assign(new Error('This slot was just taken'), { code: 'TAKEN' });
+  if (!(useFirebase && db)) {
+    const now = (localCoaching().coachSlots || {})[coachId]?.[slot.id];
+    if (!now || now.status !== 'open') throw taken();
+  }
+  try {
+    await coachingWrite(bookingWrites(coachId, slot, playerId, note));
+  } catch (err) {
+    // Refused: is it because the slot is no longer open?
+    const now = await coachingReadOr(`coachSlots/${coachId}/${slot.id}`, null);
+    if (!now || now.status !== 'open') throw taken();
+    throw err;
+  }
+}
+
+/**
+ * A booking undone — by the player (until twelve hours before, the database
+ * checks), by the coach, or by an admin. `removeSlot`: the coach withdraws
+ * the time itself.
+ */
+export async function cancelCoachBooking(coachId, id, playerId, { removeSlot = false } = {}) {
+  await coachingWrite(cancelWrites(coachId, id, playerId, { removeSlot }));
+}
+
+/** A booked slot whose booking is gone (the coach's own repair): open it again. */
+export async function reopenCoachSlot(coachId, id) {
+  await coachingWrite({ [`coachSlots/${coachId}/${id}/status`]: 'open' });
+}
+
+/** A lesson left on a member's list after the coach withdrew the time. */
+export async function dropPlayerLesson(playerId, key) {
+  await coachingWrite({ [`playerLessons/${playerId}/${key}`]: null });
 }

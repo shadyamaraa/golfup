@@ -122,6 +122,17 @@ Duplicate protection exists in `saveNotification()` for the same `gameId + type 
 
 FCM push notifications are sent from `functions/index.js`.
 
+### Coaching
+
+Services → «Дасгалжуулагч» (`#/coaching`). An admin makes a member a coach
+(Users → «Засах» → the «Дасгалжуулагч» box); the coach opens 30- or
+60-minute times and sets prices on `#/coaching/me`; a member books an open
+time at once and can cancel until 12 hours before. Payment is outside the
+app for now — the next phase is the club's own QPay with the club paying the
+coaches. Reminders (a day and two hours before) come from the scheduled
+function `coachReminders`, deployed by hand like the other functions.
+Everything is in `docs/coaching.md`.
+
 ## Known Cautions
 
 - `src/app.js` is large and contains most UI logic. Keep edits focused.
