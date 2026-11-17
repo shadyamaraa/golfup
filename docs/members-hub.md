@@ -25,16 +25,49 @@ on anyone else.
 Through a service account (the Admin SDK — the database rules do not apply
 to it), both halves of every member record:
 
-- `users/{id}` — names, username
+- `users/{id}` — names, username, GHIN number
 - `userPrivate/{id}` — phone, bank details, MT Bogd club code
+- `ghin/{id}` and `ghinLink/{id}` — what this app's server read from GHIN
+  for the member's number, and whether it tied the number on the proof of
+  the phone (`docs/ghin.md`)
 
-It reads both and merges them, as the app does. (Before November 2026 it
-read `users` only; since phones moved to the private half that made every
-UB Golf member look phoneless to it.)
+It reads both halves and merges them, as the app does. (Before November
+2026 it read `users` only; since phones moved to the private half that made
+every UB Golf member look phoneless to it.)
+
+### GHIN: spoken to here, read by the hub
+
+GHIN is spoken to in one place: this app's server (`functions/ghin.js`,
+with the association's login). The hub has no GHIN login and does not call
+GHIN. At each Rebuild it reads the numbers on UB Golf's member records and
+what the server here already checked about them, and uses a number as
+evidence of who someone is:
+
+- the same GHIN number on a UB Golf account and on an MT Bogd member (from
+  MT Bogd's own record or the hub's GHIN list), with names that agree at
+  least loosely → one person, and the tie is trusted (the club code is sent);
+- a **proven** number — tied here by phone, or one whose name on GHIN
+  strongly matches the member's — that differs from the MT Bogd member's →
+  not the same person, whatever the names say;
+- a member the hub has no GHIN number for takes the proven number from
+  here, and the hub's separate «GHIN only» row for that number is merged
+  into them.
+
+A number a member only typed, which neither GHIN's name nor the hub's list
+bears out, is not used. So it matters that numbers here are checked
+(«GHIN шалгах», the admin's «Sync all» and tying by phone): an unchecked
+number does nothing in the hub.
+
+Why not move GHIN into the hub: one login in one place is simpler than two,
+players deal with GHIN only through UB Golf (index, later scores), and the
+hub already reads this database. If a second clubhouse app ever needs GHIN
+without UB Golf, that is the time to move the client — `functions/ghin.js`
+was written with injected dependencies so that it can be.
 
 ## What the hub writes here
 
-Nothing, until its admin turns the UB Golf push on (hub admin panel → Sync).
+Nothing, until its admin turns the UB Golf push on (hub admin panel →
+«Тохиргоо»).
 Then, for a member it has tied to a UB Golf account — and only if that
 account still exists:
 
@@ -49,9 +82,10 @@ Rules it keeps, whatever the setting:
 - A private field is written to `userPrivate/{id}`, never to `users/{id}`.
 - A phone that is already there is never replaced — it is how the member
   signs in, proved by SMS.
-- The club code is written only for a member tied **by phone** or **by a
-  person's decision** in the hub. Tied by name alone, it is held back: the
-  code decides the member tariff on an MT Bogd booking.
+- The club code is written only for a member tied **by phone**, **by the
+  same GHIN number**, or **by a person's decision** in the hub («Шийдэх» →
+  «Нэг хүн мөн үү?»). Tied by name alone, it is held back: the code decides
+  the member tariff on an MT Bogd booking.
 - An empty value never overwrites what is here.
 - No record is created for an id UB Golf does not have.
 
