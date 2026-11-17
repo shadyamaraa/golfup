@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (Admin's member list: by system — GHIN, MT Bogd, all three, UB Golf only)
+
+After tying the members found by phone, 130 of 150 members have a GHIN
+number. The admin asked to see the members by which systems they are in.
+
+- **Admin → Тоглогчид**: filter buttons over the list, each with its count —
+  «Бүгд», «GHIN» (has a GHIN number), «MT Bogd» (has a club code),
+  «Гурвуулаа» (both, so all three systems) and «Зөвхөн UB Golf» (neither);
+  an order — newest first (as before), by name, by GHIN Handicap Index
+  (lowest first, members without one last). Each row shows small «GHIN
+  12.3» and «MT Bogd» marks. The filter works together with the search, the
+  heading counts what is shown (`36 / 150`), and both the filter and the
+  order are kept while the panel is drawn again.
+- `src/member-systems.js` (pure): which systems a member is in by their own
+  record, the filters, their counts, the orders.
+
+This is a view of UB Golf's own members by what is on their records — no
+new data, nothing stored. Who is on GHIN or at MT Bogd and **not** in UB
+Golf is not something this app knows; that stays the members' hub's
+question (`golf-members-hub`).
+
+The MT Bogd mark comes from the private half of the record, so an admin
+signed in without a member identity sees it for no one.
+
+Tests: `scripts/test-member-systems.mjs` (7). Browser, local mode: each
+filter with its count, the three orders, filter with search, the marks,
+the filter kept over a redraw.
+
 ## 2026-11-17 (GHIN: tie the members found by phone)
 
 The phone trial now answers: of 52 members without a GHIN number, 36 were
