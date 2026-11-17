@@ -55,23 +55,35 @@ function fakeGhin(golfers = [], over = {}) {
       // eslint-disable-next-line no-unused-vars
       return all.slice((page - 1) * per, page * per).map(({ _for, ...g }) => g);
     };
-    // A club's roster: its golfers, the GHIN number under `id`.
+    // An association's clubs.
+    const clubsOf = u.pathname.match(/\/associations\/([^/]+)\/clubs\.json$/);
+    if (clubsOf) {
+      state.listings.push(`clubs of ${clubsOf[1]} p${u.searchParams.get('page')}`);
+      if (state.clubsStatus) return json(state.clubsStatus, { error: 'AccessDenied: You are not authorized to access this page.' });
+      const seen = new Map();
+      for (const g of golfers) if (String(g.association_id) === clubsOf[1] && !seen.has(g.club_id)) seen.set(g.club_id, { id: g.club_id, club_name: g.club_name, golf_association_id: g.association_id });
+      return json(200, { clubs: [...seen.values()], meta: {} });
+    }
+    // A club's roster: its golfers, the GHIN number under `id` — and, as the
+    // real one answers, no phone.
     const roster = u.pathname.match(/\/clubs\/([^/]+)\/golfers\.json$/);
     if (roster) {
       state.listings.push(`club ${roster[1]} p${u.searchParams.get('page')}`);
-      if (state.rosterStatus?.[roster[1]]) return json(state.rosterStatus[roster[1]], { errors: { base: ['No access to this club'] } });
+      if (state.rosterStatus?.[roster[1]]) return json(state.rosterStatus[roster[1]], { error: 'AccessDenied: You are not authorized to access this page.' });
       // eslint-disable-next-line no-unused-vars
-      return json(200, { golfers: pageOf(golfers.filter(g => String(g.club_id) === roster[1])).map(({ ghin, ...g }) => ({ id: ghin, ...g })), meta: {} });
+      return json(200, { golfers: pageOf(golfers.filter(g => String(g.club_id) === roster[1])).map(({ ghin, phone_number, ...g }) => ({ id: ghin, ...g })), meta: {} });
     }
     if (u.pathname.endsWith('/golfers/search.json') && u.searchParams.has('phone_number')) {
       // GHIN does not search by phone alone.
       return json(400, { errors: { base: ['Please provide a valid search criteria'] } });
     }
-    // Everyone in an association: a wildcard last name with the association's id.
     if (u.pathname.endsWith('/golfers/search.json') && u.searchParams.has('association_id')) {
-      state.listings.push(`association ${u.searchParams.get('association_id')} p${u.searchParams.get('page')} last_name=${u.searchParams.get('last_name')}`);
-      if (state.associationStatus) return json(state.associationStatus, { errors: { base: ['Please provide a valid search criteria'] } });
-      return json(200, { golfers: pageOf(golfers.filter(g => String(g.association_id) === u.searchParams.get('association_id'))) });
+      // Nor everyone in an association by a bare wildcard.
+      state.listings.push(`association ${u.searchParams.get('association_id')}`);
+      return json(400, { error: 'last_name should contain at least 3 characters with the use of wildcards' });
+    }
+    if (state.searchFailAfter != null && u.pathname.endsWith('/golfers/search.json') && state.searches.length >= state.searchFailAfter) {
+      return json(503, { error: 'Service Unavailable' });
     }
     if (u.pathname.endsWith('/golfers/search.json')) {
       const ids = u.searchParams.get('golfer_id').split(',');
@@ -480,13 +492,15 @@ function phoneWorld(golfers, over = {}) {
   });
 }
 // The club the linked members are in is 5001 (the row's default); 7002 is
-// another club of the same association.
+// another club of the same association; 9001 is a club of another one.
 const PHONE_GOLFERS = [
   row(12345678, { phone_number: '+976 9911 9007' }),
+  row(12345678, { phone_number: '', club_id: 9001, club_name: 'NCGA Test Club', association_id: 77, association_name: 'Northern California Golf Association', is_home_club: false }),
   row(23456789, { phone_number: '976 8811 0002' }),                       // l_diff's golfer holds n_taken's phone
   row(34567890, { phone_number: '' }),
   row(56789012, { phone_number: '010-1234-5678' }),
   row(67890123, { phone_number: '88110001', player_name: 'Found Golfer', hi_display: '9.9', hi_value: 9.9 }),
+  row('6*****3', { phone_number: '', club_id: 9001, association_id: 77, is_home_club: false, _for: 67890123 }),   // their row in a club this login may not see
   row(78901234, { phone_number: '88110003' }),
   row(89012345, { phone_number: '(976) 8811-0003' }),
   row(90123456, { phone_number: '88110005', club_id: 7002, club_name: 'Another Club', player_name: 'Elsewhere Golfer' }),
@@ -502,25 +516,34 @@ test('phoneReport: admins only', async () => {
   assert.equal(w.fake.state.asked.length, 0);
 });
 
-test('phoneReport: is the phone GHIN holds the member\'s own?', async () => {
+test('phoneReport: is the phone GHIN holds the member\'s own? — and whose is not', async () => {
   const w = phoneWorld(PHONE_GOLFERS);
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
   assert.equal(out.status, 200);
   // l_kr has no Mongolian phone to compare; the other four do.
   assert.deepEqual(out.body.linked, { members: 5, withPhone: 4, same: 1, different: 1, ghinNoPhone: 1, notOnGhin: 1 });
+  assert.deepEqual(out.body.linkedLists, { different: ['l_diff'], ghinNoPhone: ['l_none'], notOnGhin: ['l_gone'] });
   assert.equal(out.body.env, 'staging');
 });
 
-test('phoneReport: the linked members\' club is listed, then their association', async () => {
+test('phoneReport: the members\' association, its clubs, their rosters, then the phones by number', async () => {
   const w = phoneWorld(PHONE_GOLFERS);
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
-  assert.deepEqual(w.fake.state.listings, ['club 5001 p1', 'association 188 p1 last_name=%']);
+  assert.deepEqual(out.body.association, { id: '188', name: 'Mongolian Golf Association' });
+  // The club of another association that one golfer also has a row in is not gone to.
+  assert.deepEqual(w.fake.state.listings, ['clubs of 188 p1', 'club 5001 p1', 'club 7002 p1']);
+  // A roster has no phones: the golfers it names are searched by number —
+  // those not read already, in one request, and not again one by one for the masked row.
+  assert.deepEqual(w.fake.state.searches.map(x => x.ids), [
+    ['12345678', '23456789', '34567890', '45678901', '56789012'],
+    ['67890123', '78901234', '89012345', '90123456'],
+  ]);
   assert.deepEqual(out.body.sources, [
     { kind: 'club', id: '5001', name: 'UB Golf Club', golfers: 7, withPhone: 5 },
-    { kind: 'association', id: '188', name: 'Mongolian Golf Association', golfers: 9, withPhone: 7 },
+    { kind: 'club', id: '7002', name: 'Another Club', golfers: 2, withPhone: 1 },
   ]);
   assert.deepEqual(out.body.refused, []);
-  assert.equal(w.fake.state.asked.some(a => a.url.includes('phone_number')), false, 'GHIN is never asked by phone');
+  assert.equal(w.fake.state.asked.some(a => a.url.includes('phone_number') || a.url.includes('last_name')), false, 'GHIN is not asked what it refuses');
 });
 
 test('phoneReport: members with no GHIN number, found by their phone', async () => {
@@ -531,7 +554,7 @@ test('phoneReport: members with no GHIN number, found by their phone', async () 
   assert.deepEqual(out.body.candidates.map(c => [c.memberId, c.golfer.number, c.golfer.club, c.linkedTo]), [
     ['n_one', '67890123', 'UB Golf Club', null],
     ['n_taken', '23456789', 'UB Golf Club', 'l_diff'],
-    ['n_other', '90123456', 'Another Club', null],      // only the association's list has them
+    ['n_other', '90123456', 'Another Club', null],      // in a club no linked member is in
   ]);
   assert.equal(out.body.candidates[0].golfer.name, 'Found Golfer');
   assert.equal(out.body.candidates[0].golfer.hi, '9.9');
@@ -539,35 +562,49 @@ test('phoneReport: members with no GHIN number, found by their phone', async () 
   // n_zero's phone is on GHIN only under a masked golfer: that is nobody.
 });
 
-test('phoneReport: a listing GHIN refuses is passed over and named', async () => {
-  const w = phoneWorld(PHONE_GOLFERS, { ghin: { associationStatus: 400 } });
+test('phoneReport: the association\'s clubs refused — the clubs the linked members are in', async () => {
+  const w = phoneWorld(PHONE_GOLFERS, { ghin: { clubsStatus: 403 } });
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
   assert.equal(out.status, 200);
-  assert.deepEqual(out.body.sources.map(x => x.kind), ['club']);
+  assert.deepEqual(w.fake.state.listings, ['clubs of 188 p1', 'club 5001 p1'], 'their own association\'s club only');
+  assert.deepEqual(out.body.sources.map(x => x.name), ['UB Golf Club']);
   assert.equal(out.body.refused.length, 1);
-  assert.deepEqual({ ...out.body.refused[0], detail: undefined }, { kind: 'association', id: '188', name: 'Mongolian Golf Association', code: 'GHIN_ERROR', upstream: 400, detail: undefined });
-  assert.match(out.body.refused[0].detail, /valid search criteria/);
-  // Without the association's list, the member in another club is not found.
+  assert.deepEqual([out.body.refused[0].kind, out.body.refused[0].name, out.body.refused[0].code, out.body.refused[0].upstream], ['association', 'Mongolian Golf Association', 'GHIN_ERROR', 403]);
+  assert.match(out.body.refused[0].detail, /AccessDenied/);
+  // Without the other club's roster, the member there is not found.
   assert.deepEqual(out.body.unlinked, { members: 7, withPhone: 6, one: 2, many: 1, none: 3 });
   assert.deepEqual(out.body.candidates.map(c => c.memberId), ['n_one', 'n_taken']);
 });
 
-test('phoneReport: every listing refused — the linked half is still an answer', async () => {
-  const w = phoneWorld(PHONE_GOLFERS, { ghin: { associationStatus: 422, rosterStatus: { 5001: 403 } } });
+test('phoneReport: every listing refused — what the linked members\' own rows say still stands', async () => {
+  const w = phoneWorld(PHONE_GOLFERS, { ghin: { clubsStatus: 403, rosterStatus: { 5001: 404 } } });
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
   assert.equal(out.status, 200);
   assert.equal(out.body.linked.same, 1);
   assert.deepEqual(out.body.sources, []);
-  assert.deepEqual(out.body.refused.map(r => [r.kind, r.upstream]), [['club', 403], ['association', 422]]);
-  assert.deepEqual(out.body.unlinked, { members: 7, withPhone: 6, one: 0, many: 0, none: 6 });
+  assert.deepEqual(out.body.refused.map(r => [r.kind, r.upstream]), [['association', 403], ['club', 404]]);
+  // n_taken's phone is held by a golfer already read for a linked member.
+  assert.deepEqual(out.body.unlinked, { members: 7, withPhone: 6, one: 1, many: 0, none: 5 });
+  assert.deepEqual(out.body.candidates.map(c => [c.memberId, c.linkedTo]), [['n_taken', 'l_diff']]);
 });
 
-test('phoneReport: a long roster is read to its last page', async () => {
+test('phoneReport: the phones cannot be read — named, and the rest stands', async () => {
+  // The linked members' search goes through; the one for the rosters' golfers fails.
+  const w = phoneWorld(PHONE_GOLFERS, { ghin: { searchFailAfter: 1 } });
+  const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.refused.map(r => [r.kind, r.name, r.upstream]), [['golfers', '4 golfers', 503]]);
+  assert.deepEqual(out.body.sources.map(x => [x.name, x.golfers, x.withPhone]), [['UB Golf Club', 7, 2], ['Another Club', 2, 0]]);
+  assert.deepEqual(out.body.candidates.map(c => c.memberId), ['n_taken']);
+});
+
+test('phoneReport: a long roster is read to its last page, its golfers fifty at a time', async () => {
   const many = Array.from({ length: 230 }, (_, i) => row(20000000 + i, { phone_number: String(70000000 + i) }));
   const w = phoneWorld([row(12345678, { phone_number: '99119007' }), ...many, row(67890123, { phone_number: '88110001' })]);
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
-  assert.deepEqual(w.fake.state.listings.filter(l => l.startsWith('club')), ['club 5001 p1', 'club 5001 p2', 'club 5001 p3']);
-  assert.equal(out.body.sources[0].golfers, 232);
+  assert.deepEqual(w.fake.state.listings.filter(l => l.startsWith('club ')), ['club 5001 p1', 'club 5001 p2', 'club 5001 p3']);
+  assert.deepEqual(w.fake.state.searches.map(x => x.ids.length), [5, 50, 50, 50, 50, 31]);
+  assert.deepEqual(out.body.sources, [{ kind: 'club', id: '5001', name: 'UB Golf Club', golfers: 232, withPhone: 232 }]);
   assert.deepEqual(out.body.candidates.map(c => c.memberId), ['n_one']);
 });
 
@@ -594,7 +631,7 @@ test('phoneReport: nobody to look for', async () => {
   const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
   assert.deepEqual(out.body.linked, { members: 0, withPhone: 0, same: 0, different: 0, ghinNoPhone: 0, notOnGhin: 0 });
   assert.deepEqual(out.body.unlinked, { members: 1, withPhone: 0, one: 0, many: 0, none: 0 });
-  assert.deepEqual([out.body.sources, out.body.refused], [[], []]);
+  assert.deepEqual([out.body.association, out.body.sources, out.body.refused], [null, [], []]);
   assert.equal(w.fake.state.asked.length, 0);
 });
 
