@@ -6608,10 +6608,18 @@ function ghinPhoneHTML(report, users) {
   const many = report.ambiguous || [];
   const sources = report.sources || [];
   const refused = report.refused || [];
+  // The members whose tie is worth a second look: GHIN holds another phone
+  // for their golfer (the number may be somebody else's), or none.
+  const lists = report.linkedLists || {};
+  const named = (key, ids) => (ids && ids.length
+    ? `<div class="ghin-phone-list" data-list="${key}"><span style="font-weight:700;color:var(--text-primary);">${t(key)}</span> ${ids.map(nameOf).join(', ')}</div>` : '');
   return `
             <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card);font-size:0.82rem;line-height:1.5;color:var(--text-secondary);">
               <div id="ghin-phone-linked">${fill('ghinPhoneLinked', { n: l.withPhone, s: l.same, d: l.different, e: l.ghinNoPhone, g: l.notOnGhin })}</div>
-              <div id="ghin-phone-unlinked">${fill('ghinPhoneUnlinked', { n: n.withPhone, o: n.one, m: n.many, z: n.none })}</div>
+              ${named('ghinPhoneDifferentList', lists.different)}
+              ${named('ghinPhoneNoPhoneList', lists.ghinNoPhone)}
+              ${named('ghinPhoneNotOnGhinList', lists.notOnGhin)}
+              <div id="ghin-phone-unlinked" style="margin-top:6px;">${fill('ghinPhoneUnlinked', { n: n.withPhone, o: n.one, m: n.many, z: n.none })}</div>
               <div id="ghin-phone-sources">${t('ghinPhoneSources')} ${sources.length
                 ? sources.map(x => fill('ghinPhoneSource', { name: esc(x.name || x.id), n: Number(x.golfers) || 0, p: Number(x.withPhone) || 0 })).join(' · ')
                 : t('ghinPhoneNoSource')}</div>

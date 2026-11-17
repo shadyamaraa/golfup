@@ -549,7 +549,8 @@ export function ghinSyncAll() {
 
 /**
  * Admin, a trial: can members be found on GHIN by the phone they sign in
- * with? → { env, linked: {…counts}, unlinked: {…counts}, candidates:
+ * with? → { env, linked: {…counts}, linkedLists: { different, ghinNoPhone,
+ * notOnGhin } (member ids), unlinked: {…counts}, candidates:
  * [{ memberId, golfer, linkedTo }], ambiguous: [{ memberId, count }],
  * sources: [{ kind, name, golfers, withPhone }] (the lists that were read),
  * refused: [{ kind, name, upstream, detail }] (the ones GHIN would not give) }.

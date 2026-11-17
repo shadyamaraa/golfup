@@ -1,5 +1,37 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN phone trial: the roster for the numbers, a search for the phones)
+
+The second press gave the first real answer — and showed what GHIN allows.
+Of 95 linked members, for 77 the phone GHIN holds is their own, 14 another,
+4 none. But no member without a GHIN number was found: the club's roster
+came back (Mongolian Golf Club, 342 golfers) with no phones in it, the
+wildcard listing of the association was refused (a last name needs three
+letters), and seven rosters of another association's test clubs — where
+some golfers on staging also have a row — were asked for and denied.
+
+- **Server** (`functions/ghin.js`): the roster is now read for the GHIN
+  numbers only, and those golfers are searched by number, fifty at a time,
+  which does return phones. The clubs are the ones of the association most
+  linked members are in, by their home club's row — listed from
+  `associations/{id}/clubs`, or failing that the clubs the linked members
+  are in; another association's clubs are no longer asked for. The
+  wildcard listing is gone. The report also names the linked members for
+  whom GHIN holds another phone, or none (`linkedLists`).
+- **App**: those members are named under the first count — a number that
+  is somebody else's shows up there.
+- `docs/ghin.md`: what each request to GHIN answered.
+
+**Needs the owner**: deploy `ghinPhoneReport` again and press «Утсаар
+хайх».
+
+Tests: `scripts/test-ghin.mjs` now 41 — a roster without phones, the
+association's clubs listed and refused, another association's club left
+alone, the phones' search failing on its own, a long roster. Browser, local
+mode, the function stubbed. Not run against the real GHIN: whether
+`associations/{id}/clubs` is allowed to this login is not known; if it is
+not, the members' own club is still read.
+
 ## 2026-11-17 (GHIN phone trial: list the rosters, not search by phone)
 
 The first press of «Утсаар хайх» answered «Could not reach GHIN». GHIN's

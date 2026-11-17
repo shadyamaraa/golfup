@@ -111,22 +111,34 @@ tie the two:
   listed apart; a candidate whose number another member already has is
   marked.
 
-GHIN does not search by phone alone — `golfers/search` takes a GHIN number,
-or a last name with a state, country, association or club (the first try,
-2026-11-17, asked by `phone_number` and was refused). So the golfers are
-listed and the phones compared on the server:
+What GHIN allows shapes how it is done. Tried against staging, 2026-11-17:
 
-- the rosters of the clubs the linked members belong to
-  (`GET /clubs/{club_id}/golfers`, where the GHIN number is `id`), the
-  eight with the most members;
-- and, if GHIN allows it, everyone in their association
-  (`golfers/search?last_name=%&association_id=…`).
+| Asked | Answer |
+|---|---|
+| `golfers/search?phone_number=…` | refused — a search is by GHIN number, or a last name with a state, country, association or club |
+| `golfers/search?last_name=%&association_id=…` | 400 — «last_name should contain at least 3 characters with the use of wildcards» |
+| `clubs/{id}/golfers` for the members' own club (Mongolian Golf Club) | the roster, 342 golfers — **without phones** |
+| `clubs/{id}/golfers` for a club of another association | 404 AccessDenied |
+| `golfers/search?golfer_id=…` | the golfers **with** their phones |
 
-A listing GHIN refuses is passed over and shown with GHIN's own words; the
-card says which lists were read and how many of their golfers have a phone
-at all. A phone counts when it reads as the same Mongolian number however
-it was typed (`99119007`, `+976 9911 9007`). It only reads; no phone number
-is in the answer, and a failure stays on the page with its reason.
+So the report goes: the association most linked members are in (by their
+home club's row — a golfer on staging may also have a row in some other
+association's test club) → its clubs (`associations/{id}/clubs`, or failing
+that the clubs the linked members are in) → each club's roster, for the
+GHIN numbers (a roster calls one `id`) → those numbers searched fifty at a
+time for the phones. The phones are compared on the server; a phone counts
+when it reads as the same Mongolian number however it was typed
+(`99119007`, `+976 9911 9007`).
+
+A step GHIN refuses is passed over and shown with GHIN's own words; the
+card says which rosters were read and how many of their golfers have a
+phone. Under the first count it names the members for whom GHIN holds
+another phone, or none — a tie worth a second look, since a number that
+is somebody else's shows up there. It only reads; no phone number is in the
+answer, and a failure stays on the page with its reason.
+
+First result (staging, 2026-11-17): of 95 linked members, for 77 the phone
+on GHIN is their own, 14 another, 4 none.
 
 What it decides: if most members are found by phone, tying becomes
 automatic — «GHIN-д таны бүртгэл олдлоо … Холбох уу?» at sign-in, written

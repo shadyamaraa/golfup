@@ -191,7 +191,9 @@ async function golfersByNumber(client, numbers) {
 
 // The rows GHIN has under these numbers, as it sent them: Map(number → rows).
 // They carry the golfer's personal details and are not to leave this file.
-async function rowsByNumber(client, numbers) {
+// `oneByOne: false` leaves out the second asking described below — for a
+// long list where a golfer not found is simply passed over.
+async function rowsByNumber(client, numbers, { oneByOne = true } = {}) {
   const wanted = [...new Set(numbers.map(ghinNumber).filter(Boolean))];
   const found = new Map();
   for (let i = 0; i < wanted.length; i += BATCH) {
@@ -200,7 +202,7 @@ async function rowsByNumber(client, numbers) {
     // A row for a club this login has no rights to has its number masked
     // ("7*****4"), so among several numbers it cannot be told whose it is.
     // Asked for one number at a time, every row is that golfer's.
-    if (masked && chunk.length > 1) {
+    if (oneByOne && masked && chunk.length > 1) {
       for (const number of chunk) {
         if (!found.has(number)) await searchInto(client, [number], found);
       }
@@ -236,13 +238,14 @@ function phoneKey(value) {
   return mnLocal(value == null ? '' : String(value)) || '';
 }
 
-// Every page of a listing of golfers, as GHIN sent the rows. They carry the
-// golfers' personal details and are not to leave this file.
-async function everyPage(client, path, query, maxPages) {
+// Every page of a listing (`key` names the list in the answer: 'golfers',
+// 'clubs'), as GHIN sent the rows. Golfers' rows carry their personal
+// details and are not to leave this file.
+async function everyPage(client, path, query, maxPages, key = 'golfers') {
   const rows = [];
   for (let page = 1; page <= maxPages; page++) {
     const data = await client.get(path, { ...query, per_page: PER_PAGE, page });
-    const list = Array.isArray(data.golfers) ? data.golfers : [];
+    const list = Array.isArray(data[key]) ? data[key] : [];
     for (const row of list) if (row && typeof row === 'object') rows.push(row);
     if (list.length < PER_PAGE) break;
   }
@@ -371,26 +374,30 @@ async function syncAll(deps, body) {
   return { status: 200, body: { ok: true, members: numbers.size, found, notFound: numbers.size - found, env: deps.client.env } };
 }
 
-// How far the trial below reads: so many clubs' rosters, so many pages of
-// each (a hundred golfers a page), and so many pages of an association.
-const ROSTER_CLUBS = 8;
+// How far the trial below reads: so many clubs of the association, so many
+// pages of each roster (a hundred golfers a page).
+const ROSTER_CLUBS = 30;
 const ROSTER_PAGES = 40;
-const ASSOCIATION_PAGES = 60;
+const CLUB_PAGES = 5;
 
 /**
  * A trial, for admins: can members be tied to GHIN by the phone number they
  * sign in with — a number the app has verified by SMS?
  *
  *   linked    — members who have a GHIN number: is the phone GHIN holds for
- *               that golfer the member's own?
+ *               that golfer the member's own? `linkedLists` names the members
+ *               for whom it is another, or none — a tie to look at again.
  *   unlinked  — members who have none: is there a golfer with their phone?
  *               Those found, one golfer to a phone, are `candidates`.
  *
- * GHIN does not search by phone alone, so the golfers are listed and the
- * phones compared here: the rosters of the clubs the linked members belong
- * to (clubs/{id}/golfers), and — if GHIN allows it — everyone in their
- * association. Each listing that GHIN refuses is passed over and named in
- * `refused`, with what GHIN said; `sources` says what was read.
+ * What GHIN allows shapes how (tried against staging, 2026-11-17): it does
+ * not search by phone, a wildcard last name needs three letters, and a
+ * club's roster comes without phones — but a search by GHIN number has
+ * them. So: the association most linked members are in → its clubs
+ * (associations/{id}/clubs, or the ones the linked members are in) → each
+ * club's roster for the GHIN numbers → those numbers searched, fifty at a
+ * time, for the phones. Each step that GHIN refuses is passed over and
+ * named in `refused` with what GHIN said; `sources` says what was read.
  *
  * It only reads, and stores nothing. No phone number is in the answer.
  * deps: { client, verifyIdToken, loadUser(id), loadUsers() (with the private half) }
@@ -418,65 +425,88 @@ async function phoneReport(deps, body) {
     return refusal(err, true);
   }
   const linkedOut = { members: linked.length, withPhone: 0, same: 0, different: 0, ghinNoPhone: 0, notOnGhin: 0 };
+  const linkedLists = { different: [], ghinNoPhone: [], notOnGhin: [] };
   for (const m of linked) {
     if (!m.phone) continue;
     linkedOut.withPhone++;
     const list = rows.get(m.number);
-    if (!list) { linkedOut.notOnGhin++; continue; }
-    const held = list.map(r => String(r.phone_number == null ? '' : r.phone_number).trim()).filter(Boolean);
-    if (!held.length) linkedOut.ghinNoPhone++;
-    else if (held.some(p => phoneKey(p) === m.phone)) linkedOut.same++;
-    else linkedOut.different++;
+    const held = (list || []).map(r => String(r.phone_number == null ? '' : r.phone_number).trim()).filter(Boolean);
+    const state = !list ? 'notOnGhin' : !held.length ? 'ghinNoPhone' : held.some(p => phoneKey(p) === m.phone) ? 'same' : 'different';
+    linkedOut[state]++;
+    if (state !== 'same') linkedLists[state].push(m.id);
   }
 
-  // Where the linked members are: their clubs and associations, the ones
-  // with the most members first.
-  const tally = (map, id, name) => {
-    if (id == null || id === '') return;
-    const key = String(id);
-    const at = map.get(key) || { id: key, name: String(name || key), members: 0 };
-    at.members++;
-    map.set(key, at);
-  };
-  const clubs = new Map();
-  const associations = new Map();
-  for (const list of rows.values()) {
-    for (const r of list) {
-      tally(clubs, r.club_id, r.club_name);
-      tally(associations, r.association_id, r.association_name);
-    }
-  }
-  const most = (map, n) => [...map.values()].sort((a, b) => b.members - a.members).slice(0, n);
-
-  // The listings, each on its own: one GHIN refuses does not undo the rest.
   const sources = [];
   const refused = [];
-  const byPhone = new Map();   // phone → Map(GHIN number → rows)
-  const read = async (kind, at, load) => {
+  // A step on its own: what GHIN refuses is named and passed over.
+  const attempt = async (kind, at, run) => {
     try {
-      const list = await load();
-      let withPhone = 0;
-      for (const row of list) {
-        const phone = phoneKey(row.phone_number);
-        const number = ghinNumber(row.ghin != null ? row.ghin : row.id);   // a roster calls it `id`
-        if (phone) withPhone++;
-        if (!phone || !number) continue;
-        if (!byPhone.has(phone)) byPhone.set(phone, new Map());
-        const golfers = byPhone.get(phone);
-        if (!golfers.has(number)) golfers.set(number, []);
-        golfers.get(number).push(row);
-      }
-      sources.push({ kind, id: at.id, name: at.name, golfers: list.length, withPhone });
+      return await run();
     } catch (err) {
       if (!err || !err.ghin) throw err;
       refused.push({ kind, id: at.id, name: at.name, code: err.ghin, upstream: err.upstream, detail: err.detail || '' });
+      return null;
     }
   };
-  for (const club of most(clubs, ROSTER_CLUBS)) {
-    await read('club', club, () => everyPage(deps.client, `clubs/${encodeURIComponent(club.id)}/golfers`, {}, ROSTER_PAGES));
+
+  // The association most linked members are in, by their home club's row. A
+  // golfer may also have a row in some other association's club; that is
+  // not where the members are looked for.
+  const tally = new Map();
+  const seenClubs = new Map();   // the clubs the linked members are in: id → { id, name, association }
+  for (const list of rows.values()) {
+    const home = pickRow(list);
+    if (home && home.association_id != null) {
+      const key = String(home.association_id);
+      const at = tally.get(key) || { id: key, name: String(home.association_name || key), members: 0 };
+      at.members++;
+      tally.set(key, at);
+    }
+    for (const r of list) {
+      if (r.club_id != null) seenClubs.set(String(r.club_id), { id: String(r.club_id), name: String(r.club_name || r.club_id), association: String(r.association_id) });
+    }
   }
-  for (const association of most(associations, 2)) {
-    await read('association', association, () => everyPage(deps.client, 'golfers/search', { last_name: '%', association_id: association.id }, ASSOCIATION_PAGES));
+  const association = [...tally.values()].sort((a, b) => b.members - a.members)[0] || null;
+
+  let clubs = [];
+  if (association) {
+    const listed = await attempt('association', association,
+      () => everyPage(deps.client, `associations/${encodeURIComponent(association.id)}/clubs`, {}, CLUB_PAGES, 'clubs'));
+    clubs = listed
+      ? listed.filter(c => c.id != null).map(c => ({ id: String(c.id), name: String(c.club_name || c.short_name || c.id) }))
+      : [...seenClubs.values()].filter(c => c.association === association.id);
+  }
+
+  // Each club's roster, for the GHIN numbers (a roster calls one `id`).
+  const rosters = [];
+  for (const club of clubs.slice(0, ROSTER_CLUBS)) {
+    const list = await attempt('club', club, () => everyPage(deps.client, `clubs/${encodeURIComponent(club.id)}/golfers`, {}, ROSTER_PAGES));
+    if (!list) continue;
+    const numbers = [...new Set(list.map(r => ghinNumber(r.ghin != null ? r.ghin : r.id)).filter(Boolean))];
+    rosters.push({ club, golfers: list.length, numbers });
+  }
+
+  // The phones: a search by GHIN number has them. The golfers already read
+  // for the linked members are not asked for again.
+  const have = new Set([...rows.keys()].map(sameKey));
+  const missing = [...new Set(rosters.flatMap(r => r.numbers))].filter(n => !have.has(sameKey(n)));
+  const more = missing.length
+    ? await attempt('golfers', { id: '', name: `${missing.length} golfers` }, () => rowsByNumber(deps.client, missing, { oneByOne: false }))
+    : new Map();
+  const all = new Map([...rows].map(([n, list]) => [sameKey(n), { number: n, list }]));
+  for (const [n, list] of more || []) all.set(sameKey(n), { number: n, list });
+
+  const phonesOf = (list) => [...new Set(list.map(r => phoneKey(r.phone_number)).filter(Boolean))];
+  const byPhone = new Map();   // phone → Map(GHIN number → rows)
+  for (const { number, list } of all.values()) {
+    for (const phone of phonesOf(list)) {
+      if (!byPhone.has(phone)) byPhone.set(phone, new Map());
+      byPhone.get(phone).set(number, list);
+    }
+  }
+  for (const r of rosters) {
+    const withPhone = r.numbers.filter(n => all.has(sameKey(n)) && phonesOf(all.get(sameKey(n)).list).length).length;
+    sources.push({ kind: 'club', id: r.club.id, name: r.club.name, golfers: r.golfers, withPhone });
   }
 
   // A golfer found by phone may already be another member's.
@@ -496,7 +526,10 @@ async function phoneReport(deps, body) {
   }
   return {
     status: 200,
-    body: { ok: true, env: deps.client.env, linked: linkedOut, unlinked: unlinkedOut, candidates, ambiguous, sources, refused },
+    body: {
+      ok: true, env: deps.client.env, association: association ? { id: association.id, name: association.name } : null,
+      linked: linkedOut, linkedLists, unlinked: unlinkedOut, candidates, ambiguous, sources, refused,
+    },
   };
 }
 
