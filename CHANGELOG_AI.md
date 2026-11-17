@@ -1,5 +1,37 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN phone trial: list the rosters, not search by phone)
+
+The first press of «Утсаар хайх» answered «Could not reach GHIN». GHIN's
+`golfers/search` does not take a phone alone — its spec names the accepted
+searches (a GHIN number, or a last name with a state, country, association
+or club) — and one refused request sank the whole report. The message also
+said nothing of why.
+
+- **Server** (`functions/ghin.js`): the phone search is gone. The report
+  lists the rosters of the clubs the linked members belong to
+  (`clubs/{id}/golfers`) and, if GHIN allows it, everyone in their
+  association (`last_name=%` with the association's id), and compares
+  phones itself. Each listing stands on its own: one GHIN refuses is passed
+  over and named in `refused` with GHIN's status and its own words, and
+  `sources` says which lists were read and how many of their golfers have
+  a phone. The linked half of the answer no longer depends on the rest.
+  A refused GHIN request now carries the start of what GHIN said; the
+  admins' functions pass it on, a member's lookup does not.
+- **App**: the card shows the lists read and the ones refused, and a
+  failure stays on the page with its code, GHIN's status and words — a
+  toast was gone before it could be read.
+
+**Needs the owner**: deploy `ghinPhoneReport` again and press «Утсаар
+хайх».
+
+Tests: `scripts/test-ghin.mjs` now 40 — the roster and the association
+listing, each refused in turn, a long roster to its last page, a masked
+golfer not counted, nothing personal in the answer. Browser, local mode,
+the function stubbed. Not run against the real GHIN: whether the roster
+and the association listing are allowed to this login is what the next
+press shows.
+
 ## 2026-11-17 (GHIN: can a member be found by their phone? — a trial)
 
 The first read (2026-11-16) went through against the real staging GHIN: 95

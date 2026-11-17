@@ -99,21 +99,34 @@ for posting scores: a mistyped or borrowed number would send a member's
 scores to somebody else's record.
 
 The app has one thing that is proven: the phone number a member signs in
-with (the SMS). GHIN holds a phone for a golfer too, and `golfers/search`
-takes `phone_number`. «Утсаар хайх» in the admin's GHIN card
-(`ghinPhoneReport`) measures whether that is enough to tie the two:
+with (the SMS). GHIN holds a phone for a golfer too. «Утсаар хайх» in the
+admin's GHIN card (`ghinPhoneReport`) measures whether that is enough to
+tie the two:
 
 - For members who **have** a GHIN number: is the phone GHIN holds for that
   golfer the member's own — the same, another, none, or the golfer not
   found.
-- For members who have **none**: GHIN is searched by their phone. Exactly
-  one golfer is a candidate (shown with the name GHIN has); several are
+- For members who have **none**: is there a golfer with their phone?
+  Exactly one is a candidate (shown with the name GHIN has); several are
   listed apart; a candidate whose number another member already has is
   marked.
 
-Only a row whose own phone is the very number counts (GHIN's search may
-match loosely), and both spellings — eight digits, and with 976 — are
-asked. It only reads; no phone number is in the answer.
+GHIN does not search by phone alone — `golfers/search` takes a GHIN number,
+or a last name with a state, country, association or club (the first try,
+2026-11-17, asked by `phone_number` and was refused). So the golfers are
+listed and the phones compared on the server:
+
+- the rosters of the clubs the linked members belong to
+  (`GET /clubs/{club_id}/golfers`, where the GHIN number is `id`), the
+  eight with the most members;
+- and, if GHIN allows it, everyone in their association
+  (`golfers/search?last_name=%&association_id=…`).
+
+A listing GHIN refuses is passed over and shown with GHIN's own words; the
+card says which lists were read and how many of their golfers have a phone
+at all. A phone counts when it reads as the same Mongolian number however
+it was typed (`99119007`, `+976 9911 9007`). It only reads; no phone number
+is in the answer, and a failure stays on the page with its reason.
 
 What it decides: if most members are found by phone, tying becomes
 automatic — «GHIN-д таны бүртгэл олдлоо … Холбох уу?» at sign-in, written
