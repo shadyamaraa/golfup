@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN stays in UB Golf; the members hub reads it from here)
+
+UB Golf showed «All three 112» and the hub «Гурвуулаа 106»: the two counted
+"has GHIN" from different sources — UB Golf from the number on the member
+record, the hub from a pasted GHIN list matched by name; the hub never read
+UB Golf's numbers. The question was where GHIN should live now that one
+person develops all three systems (UB Golf, the hub, MT Bogd's Sky ONE).
+
+Decided: GHIN is spoken to in one place, this app's server, as now. The
+hub gets no GHIN login; at Rebuild it reads `users/{id}/ghinNumber`,
+`ghin/{id}` and `ghinLink/{id}` from this database and uses a number as
+evidence of identity (hub repository, branch `ai/claude-hub-ubgolf-ghin`):
+the same number on both sides ties a UB Golf account to an MT Bogd member;
+a proven different number keeps two same-named people apart; a member the
+hub had no GHIN for takes the proven number from here and the hub's
+duplicate «GHIN only» row is merged away.
+
+In this repository, documentation only: `docs/members-hub.md` — what the
+hub now reads here, the rules, why GHIN was not moved, and that an
+unchecked typed number does nothing in the hub. No app, function or rules
+change.
+
 ## 2026-11-17 (MT Bogd membership: through the members hub — the hub side, and what it may write here)
 
 A member who is in UB Golf and at MT Bogd showed as «GHIN» only: UB Golf
