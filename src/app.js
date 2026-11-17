@@ -4,6 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
+import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -96,6 +97,11 @@ const ghinOn = () => ghinVisibleTo(GHIN_STAGE, currentUser);
 // What the last «Сонгосныг холбох» did, shown once in the GHIN card after
 // the admin panel is drawn again with the members it tied.
 let ghinLinkNotice = '';
+// The admin's member list: which members are shown and in what order. Kept
+// while the panel is drawn again (after an edit, a tie), so the admin stays
+// where they were.
+let adminUserFilter = 'all';
+let adminUserOrder = 'new';
 let homeFilter = 'all';
 let homeGamesCache = [];
 // A game page asked to open on its score board — set by the scorer's 🏁 and
@@ -5981,24 +5987,46 @@ async function renderAdminPanel() {
           </div>
 
           <div>
-            <h3 style="margin-bottom: 10px;">${t('users')} (${users.length})</h3>
-            <div class="input-group" style="margin: 4px 0 14px;">
+            <h3 style="margin-bottom: 10px;">${t('users')} (<span id="admin-user-count">${users.length}</span>)</h3>
+            <div class="input-group" style="margin: 4px 0 10px;">
               <input type="search" id="admin-user-search-input" placeholder="Тоглогчийн нэрээр хайх..." autocomplete="off" style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-size:1rem;" />
             </div>
-            <div style="display:flex; flex-direction: column; gap: 8px;">
-              ${users.map(u => `
-                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" style="background: var(--bg-card-hover); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
+            ${(() => {
+              // Which other systems a member is in, by their own record: on
+              // GHIN (a GHIN number), at MT Bogd (a club code). The filters
+              // show each kind with its count; the order is the admin's.
+              const counts = memberFilterCounts(users);
+              return `
+            <div id="admin-user-filters" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;">
+              ${MEMBER_FILTERS.map(f => `<button type="button" class="btn btn-sm ${adminUserFilter === f ? 'btn-primary' : 'btn-outline'} admin-user-filter" data-filter="${f}">${t('memberFilter_' + f)} <span style="opacity:0.75;">${counts[f]}</span></button>`).join('')}
+              <select id="admin-user-order" style="margin-left:auto;padding:7px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-primary);font-size:0.85rem;">
+                ${MEMBER_ORDERS.filter(o => o !== 'hi' || ghin).map(o => `<option value="${o}" ${adminUserOrder === o ? 'selected' : ''}>${t('memberOrder_' + o)}</option>`).join('')}
+              </select>
+            </div>`;
+            })()}
+            <div id="admin-user-list" style="display:flex; flex-direction: column; gap: 8px;">
+              ${(() => {
+                const ghinById = new Map((ghin ? ghin.rows : []).map(r => [r.id, r]));
+                const chip = 'font-size:0.68rem;font-weight:700;border-radius:4px;padding:1px 5px;border:1px solid var(--border-card);color:var(--text-secondary);white-space:nowrap;';
+                return users.map(u => {
+                  const sys = memberSystems(u);
+                  const g = ghinById.get(u.id);
+                  const hi = g && g.state === 'found' ? ghinHiText(g.record) : '';
+                  const key = memberSortKey(u, { nameOf: displayUsername, hiValue: g && g.state === 'found' ? g.record.hiValue : null });
+                  return `
+                <div class="player-row admin-user-list-row" data-name="${`${displayUsername(u)} ${displayFullName(u)} ${u.phone || ''}`.toLowerCase()}" data-id="${u.id}" data-ghin="${sys.ghin ? 1 : 0}" data-mtbogd="${sys.mtbogd ? 1 : 0}" data-created="${key.created}" data-sortname="${esc(key.name)}" data-hi="${key.hi === null ? '' : key.hi}" style="background: var(--bg-card-hover); border-radius: 8px; padding: 10px; flex-wrap: wrap; gap: 10px; justify-content: flex-start;">
                   <span class="player-avatar-sm" style="background: ${u.status === 'hold' ? 'var(--danger-color)' : 'var(--primary-color)'}">${avatarInner(u.avatar, displayUsername(u).charAt(0).toUpperCase())}</span>
                   <div style="display:flex; flex-direction:column;">
                     <span class="player-name" style="${u.status === 'hold' ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${displayUsername(u)} ${u.role === 'admin' ? '<span style="font-size:0.7rem;background:var(--gold);color:#000;border-radius:4px;padding:1px 5px;">Admin</span>' : u.role === 'marshal' ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 5px;">Marshal</span>' : ''}</span>
-                    <span style="font-size:0.75rem; color:var(--text-secondary);">${u.phone || '—'}</span>
+                    <span style="font-size:0.75rem; color:var(--text-secondary);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${u.phone || '—'}${sys.ghin ? `<span class="member-sys" data-sys="ghin" style="${chip}">GHIN${hi ? ' ' + esc(hi) : ''}</span>` : ''}${sys.mtbogd ? `<span class="member-sys" data-sys="mtbogd" style="${chip}">MT Bogd</span>` : ''}</span>
                   </div>
                   <div style="margin-left: auto; display: flex; gap: 8px;">
                     <button class="btn btn-sm btn-outline edit-user-btn" data-id="${u.id}" style="gap:5px;">${icon('edit', { size: 14 })} Засах</button>
                     ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger delete-user-btn" data-id="${u.id}">${t('delete')}</button>` : ''}
                   </div>
-                </div>
-              `).join('')}
+                </div>`;
+                }).join('');
+              })()}
             </div>
           </div>
         </div>
@@ -6369,15 +6397,44 @@ async function renderAdminPanel() {
     if (createUserChevron) createUserChevron.textContent = isOpen ? '▼' : '▲';
   });
 
+  // The member list: the search, the system filter and the order work
+  // together — a row shows when it matches both the words typed and the
+  // filter, and the rows stand in the chosen order.
   const adminSearchInput = document.getElementById('admin-user-search-input');
-  if (adminSearchInput) {
-    adminSearchInput.addEventListener('input', () => {
-      const query = adminSearchInput.value.trim().toLowerCase();
-      document.querySelectorAll('.admin-user-list-row').forEach(row => {
-        row.style.display = row.dataset.name.includes(query) ? 'flex' : 'none';
+  const adminUserList = document.getElementById('admin-user-list');
+  const applyUserList = () => {
+    if (!adminUserList) return;
+    const query = (adminSearchInput?.value || '').trim().toLowerCase();
+    const rows = [...adminUserList.querySelectorAll('.admin-user-list-row')];
+    const keyOf = (row) => ({ created: Number(row.dataset.created) || 0, name: row.dataset.sortname || '', hi: row.dataset.hi === '' ? null : Number(row.dataset.hi) });
+    rows.sort((a, b) => compareMembers(keyOf(a), keyOf(b), adminUserOrder));
+    let shown = 0;
+    for (const row of rows) {
+      const show = row.dataset.name.includes(query)
+        && systemsInFilter({ ghin: row.dataset.ghin === '1', mtbogd: row.dataset.mtbogd === '1' }, adminUserFilter);
+      row.style.display = show ? 'flex' : 'none';
+      if (show) shown++;
+      adminUserList.appendChild(row);
+    }
+    const count = document.getElementById('admin-user-count');
+    if (count) count.textContent = shown === rows.length ? String(rows.length) : `${shown} / ${rows.length}`;
+  };
+  adminSearchInput?.addEventListener('input', applyUserList);
+  document.querySelectorAll('.admin-user-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminUserFilter = btn.dataset.filter;
+      document.querySelectorAll('.admin-user-filter').forEach(b => {
+        b.classList.toggle('btn-primary', b === btn);
+        b.classList.toggle('btn-outline', b !== btn);
       });
+      applyUserList();
     });
-  }
+  });
+  document.getElementById('admin-user-order')?.addEventListener('change', (e) => {
+    adminUserOrder = e.target.value;
+    applyUserList();
+  });
+  applyUserList();
 
   document.getElementById('create-user-form').addEventListener('submit', async (e) => {
     e.preventDefault();
