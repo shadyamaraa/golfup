@@ -544,6 +544,16 @@ export function ghinSyncAll() {
   return callAsMember('ghinSyncAll', {});
 }
 
+/**
+ * Admin, a trial: can members be found on GHIN by the phone they sign in
+ * with? → { env, linked: {…counts}, unlinked: {…counts}, candidates:
+ * [{ memberId, golfer, linkedTo }], ambiguous: [{ memberId, count }] }.
+ * Reads only; nothing is stored.
+ */
+export function ghinPhoneReport() {
+  return callAsMember('ghinPhoneReport', {});
+}
+
 /** What GHIN said of one member, or null: never read, or not this browser's to read. */
 export async function loadGhin(memberId) {
   if (!memberId) return null;

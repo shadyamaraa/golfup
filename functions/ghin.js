@@ -15,6 +15,8 @@
 //              record and stored under ghin/{memberId}: their own, or anyone's
 //              for an admin.
 //   syncAll  — every member with a GHIN number, in batches. Admins only.
+//   phoneReport — a trial, for admins: can a member be found on GHIN by the
+//              phone number they sign in with? Counts, and who was found.
 //
 // ghin/{memberId} is written only here (the database rules give no client
 // write access to it), so what it holds is what GHIN said.
@@ -27,6 +29,7 @@
 // permission.
 
 const { callerOf } = require('./passwords');
+const { mnLocal } = require('./phone-verify');
 
 const UAT_BASE = 'https://api-uat.ghin.com/api/v2';
 // A token is good for twelve hours (seen on staging, 2026-11); it is renewed
@@ -170,6 +173,13 @@ const pickRow = (rows) => rows.find(r => r && r.is_home_club === true) || rows[0
  * A number GHIN does not know (or that this login may not see) is absent.
  */
 async function golfersByNumber(client, numbers) {
+  const rows = await rowsByNumber(client, numbers);
+  return new Map([...rows].map(([number, list]) => [number, trimGolfer(pickRow(list), number)]));
+}
+
+// The rows GHIN has under these numbers, as it sent them: Map(number → rows).
+// They carry the golfer's personal details and are not to leave this file.
+async function rowsByNumber(client, numbers) {
   const wanted = [...new Set(numbers.map(ghinNumber).filter(Boolean))];
   const found = new Map();
   for (let i = 0; i < wanted.length; i += BATCH) {
@@ -187,11 +197,10 @@ async function golfersByNumber(client, numbers) {
   return found;
 }
 
-// One search for a chunk of numbers, every page of it; what it finds goes
+// One search for a chunk of numbers, every page of it; the rows it finds go
 // into `found`. Answers whether it met rows it could not tell the owner of.
 async function searchInto(client, chunk, found) {
   const byKey = new Map(chunk.map(n => [sameKey(n), n]));
-  const rows = new Map();   // number → its rows
   let masked = false;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const data = await client.get('golfers/search', { golfer_id: chunk.join(','), per_page: PER_PAGE, page });
@@ -200,13 +209,41 @@ async function searchInto(client, chunk, found) {
       if (!row || typeof row !== 'object') continue;
       const number = byKey.get(sameKey(row.ghin)) || (chunk.length === 1 ? chunk[0] : null);
       if (!number) { masked = true; continue; }
-      if (!rows.has(number)) rows.set(number, []);
-      rows.get(number).push(row);
+      if (!found.has(number)) found.set(number, []);
+      found.get(number).push(row);
     }
     if (list.length < PER_PAGE) break;
   }
-  for (const [number, list] of rows) found.set(number, trimGolfer(pickRow(list), number));
   return masked;
+}
+
+// A phone number as GHIN may hold it — '+976 9911 9007', '99119007',
+// 97699119007 — down to the eight digits a Mongolian number is at home.
+// Another country's number, or something that is not a number, is ''.
+function phoneKey(value) {
+  return mnLocal(value == null ? '' : String(value)) || '';
+}
+
+/**
+ * The golfers GHIN has under a Mongolian phone number (its eight digits):
+ * trimmed, one for each GHIN number. GHIN's search may match loosely, and
+ * how a number was typed in there is not known, so both spellings are asked
+ * and only a row whose own phone is this very number counts.
+ */
+async function golfersByPhone(client, local) {
+  const rows = new Map();   // GHIN number → rows
+  for (const spelling of [local, '976' + local]) {
+    const data = await client.get('golfers/search', { phone_number: spelling, per_page: 20, page: 1 });
+    for (const row of Array.isArray(data.golfers) ? data.golfers : []) {
+      if (!row || typeof row !== 'object' || phoneKey(row.phone_number) !== local) continue;
+      const number = ghinNumber(row.ghin);   // a masked number is not one
+      if (!number) continue;
+      if (!rows.has(number)) rows.set(number, []);
+      rows.get(number).push(row);
+    }
+    if (rows.size) break;
+  }
+  return [...rows].map(([number, list]) => trimGolfer(pickRow(list), number));
 }
 
 // A thrown GHIN refusal as an answer. Which is which matters to the admin
@@ -327,9 +364,84 @@ async function syncAll(deps, body) {
   return { status: 200, body: { ok: true, members: numbers.size, found, notFound: numbers.size - found, env: deps.client.env } };
 }
 
+// So many phone searches at once: enough to be done in half a minute, few
+// enough to be no burden on GHIN.
+const PHONE_SEARCHES_AT_ONCE = 4;
+
+/**
+ * A trial, for admins: can members be tied to GHIN by the phone number they
+ * sign in with — a number the app has verified by SMS?
+ *
+ *   linked    — members who have a GHIN number: is the phone GHIN holds for
+ *               that golfer the member's own?
+ *   unlinked  — members who have none: does GHIN have a golfer under their
+ *               phone? Those found, one golfer to a phone, are `candidates`.
+ *
+ * It only reads, and stores nothing. No phone number is in the answer.
+ * deps: { client, verifyIdToken, loadUser(id), loadUsers() (with the private half) }
+ */
+async function phoneReport(deps, body) {
+  const caller = await callerOf(deps, body && body.idToken);
+  if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
+  const me = await deps.loadUser(caller);
+  if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Admins only');
+
+  const users = (await deps.loadUsers()) || {};
+  const linked = [];
+  const unlinked = [];
+  for (const [id, u] of Object.entries(users)) {
+    if (!u || typeof u !== 'object' || id === 'admin_uid') continue;
+    const number = ghinNumber(u.ghinNumber);
+    (number ? linked : unlinked).push({ id, number, phone: mnLocal(u.phone) });
+  }
+
+  const linkedOut = { members: linked.length, withPhone: 0, same: 0, different: 0, ghinNoPhone: 0, notOnGhin: 0 };
+  const unlinkedOut = { members: unlinked.length, withPhone: 0, one: 0, many: 0, none: 0 };
+  const candidates = [];
+  const ambiguous = [];
+  try {
+    const rows = await rowsByNumber(deps.client, linked.map(m => m.number));
+    for (const m of linked) {
+      if (!m.phone) continue;
+      linkedOut.withPhone++;
+      const list = rows.get(m.number);
+      if (!list) { linkedOut.notOnGhin++; continue; }
+      const held = list.map(r => String(r.phone_number == null ? '' : r.phone_number).trim()).filter(Boolean);
+      if (!held.length) linkedOut.ghinNoPhone++;
+      else if (held.some(p => phoneKey(p) === m.phone)) linkedOut.same++;
+      else linkedOut.different++;
+    }
+
+    // A golfer found by phone may already be another member's.
+    const owner = new Map(linked.map(m => [sameKey(m.number), m.id]));
+    const queue = unlinked.filter(m => m.phone);
+    unlinkedOut.withPhone = queue.length;
+    let next = 0;
+    const worker = async () => {
+      while (next < queue.length) {
+        const m = queue[next++];
+        const golfers = await golfersByPhone(deps.client, m.phone);
+        if (!golfers.length) unlinkedOut.none++;
+        else if (golfers.length > 1) { unlinkedOut.many++; ambiguous.push({ memberId: m.id, count: golfers.length }); }
+        else {
+          unlinkedOut.one++;
+          candidates.push({ memberId: m.id, golfer: golfers[0], linkedTo: owner.get(sameKey(golfers[0].number)) || null });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PHONE_SEARCHES_AT_ONCE, queue.length) }, worker));
+  } catch (err) {
+    return refusal(err);
+  }
+  const order = new Map(unlinked.map((m, i) => [m.id, i]));
+  candidates.sort((a, b) => order.get(a.memberId) - order.get(b.memberId));
+  ambiguous.sort((a, b) => order.get(a.memberId) - order.get(b.memberId));
+  return { status: 200, body: { ok: true, env: deps.client.env, linked: linkedOut, unlinked: unlinkedOut, candidates, ambiguous } };
+}
+
 module.exports = {
   UAT_BASE, TOKEN_TTL_MS, LOOKUPS_PER_HOUR, BATCH, PER_PAGE,
-  baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber,
-  lookup, sync, syncAll,
+  baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, golfersByPhone, phoneKey,
+  lookup, sync, syncAll, phoneReport,
   _resetTokens: () => tokens.clear(),
 };

@@ -30,7 +30,7 @@ const row = (ghinNo, over = {}) => ({
 
 // A fake GHIN. `golfers` are the rows it holds; everything asked is logged.
 function fakeGhin(golfers = [], over = {}) {
-  const state = { logins: 0, searches: [], asked: [], tokens: new Set(), n: 0, ...over };
+  const state = { logins: 0, searches: [], phoneSearches: [], asked: [], tokens: new Set(), n: 0, ...over };
   const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -49,6 +49,16 @@ function fakeGhin(golfers = [], over = {}) {
     const bearer = String(init.headers?.Authorization || '').replace(/^Bearer /, '');
     if (!state.tokens.has(bearer)) return json(401, { error: 'Unauthorized' });
     if (state.searchStatus) return json(state.searchStatus, {});
+    if (u.pathname.endsWith('/golfers/search.json') && u.searchParams.has('phone_number')) {
+      // GHIN's phone search, as loosely as it might be: a row whose phone
+      // contains the digits asked for — or, when `exactPhone`, is them.
+      const q = u.searchParams.get('phone_number').replace(/\D/g, '');
+      state.phoneSearches.push(q);
+      const digits = (g) => String(g.phone_number ?? '').replace(/\D/g, '');
+      const all = golfers.filter(g => digits(g) && (state.exactPhone ? digits(g) === q : digits(g).includes(q)));
+      // eslint-disable-next-line no-unused-vars
+      return json(200, { golfers: all.map(({ _for, ...g }) => g) });
+    }
     if (u.pathname.endsWith('/golfers/search.json')) {
       const ids = u.searchParams.get('golfer_id').split(',');
       const page = Number(u.searchParams.get('page'));
@@ -411,5 +421,144 @@ test('syncAll: no member has a number', async () => {
   const w = world([], { users: { u_adm: { id: 'u_adm', role: 'admin', status: 'active' } } });
   const out = await ghin.syncAll(w.deps, { idToken: 'tok-adm' });
   assert.deepEqual(out.body, { ok: true, members: 0, found: 0, notFound: 0, env: 'staging' });
+  assert.equal(w.fake.state.asked.length, 0);
+});
+
+// ---- Finding a member on GHIN by their phone ----
+
+test('phoneKey: a Mongolian number however GHIN holds it', () => {
+  for (const p of ['99119007', '+976 9911 9007', '(976) 9911-9007', 97699119007, 99119007, '0097699119007']) {
+    assert.equal(ghin.phoneKey(p), '99119007', String(p));
+  }
+  for (const p of ['', null, undefined, '+1 555 123 4567', '15551234567', '12345', 'n/a']) assert.equal(ghin.phoneKey(p), '', String(p));
+});
+
+test('golfersByPhone: the golfer under a phone, whichever way GHIN spelled it', async () => {
+  ghin._resetTokens();
+  const fake = fakeGhin([
+    row(12345678, { phone_number: '+976 9911 9007' }),
+    row(23456789, { phone_number: '95001234', player_name: 'Bold B' }),
+  ], { exactPhone: true });
+  const { client } = clientFor(fake);
+  // Held with the country code: the plain eight digits find nothing, the second spelling does.
+  const a = await ghin.golfersByPhone(client, '99119007');
+  assert.deepEqual(a.map(g => g.number), ['12345678']);
+  assert.deepEqual(fake.state.phoneSearches, ['99119007', '97699119007']);
+  // Held as eight digits: found at once, no second question.
+  fake.state.phoneSearches.length = 0;
+  const b = await ghin.golfersByPhone(client, '95001234');
+  assert.deepEqual(b.map(g => g.name), ['Bold B']);
+  assert.deepEqual(fake.state.phoneSearches, ['95001234']);
+  for (const k of PII) assert.equal(k in b[0], false, k);
+  assert.equal(JSON.stringify(b).includes('95001234'), false, 'the phone itself is not in the answer');
+});
+
+test('golfersByPhone: only a row whose own phone is that number counts', async () => {
+  ghin._resetTokens();
+  const fake = fakeGhin([
+    row(12345678, { phone_number: '+1 (299) 119-0070' }),          // contains the digits, is another number
+    row(23456789, { phone_number: '99119007', ghin: '2*****9' }),   // the right phone, a masked golfer
+    row(34567890, { phone_number: '' }),
+  ]);
+  assert.deepEqual(await ghin.golfersByPhone(clientFor(fake).client, '99119007'), []);
+});
+
+test('golfersByPhone: one golfer for each GHIN number, the home club\'s row', async () => {
+  ghin._resetTokens();
+  const fake = fakeGhin([
+    row(12345678, { phone_number: '99119007', club_name: 'Another Club', is_home_club: false }),
+    row(12345678, { phone_number: '99119007', club_name: 'UB Golf Club' }),
+    row(23456789, { phone_number: '97699119007', player_name: 'Shared Phone' }),
+  ]);
+  const found = await ghin.golfersByPhone(clientFor(fake).client, '99119007');
+  assert.deepEqual(found.map(g => [g.number, g.club || g.name]), [['12345678', 'UB Golf Club'], ['23456789', 'UB Golf Club']]);
+});
+
+// Members for the report: some tied to GHIN already, some not.
+function phoneWorld(golfers, over = {}) {
+  return world(golfers, {
+    users: {
+      l_same: { id: 'l_same', name: 'Same', role: 'user', ghinNumber: '12345678', phone: '99119007' },
+      l_diff: { id: 'l_diff', name: 'Different', role: 'user', ghinNumber: '23456789', phone: '95001234' },
+      l_none: { id: 'l_none', name: 'GHIN has no phone', role: 'user', ghinNumber: '34567890', phone: '95005678' },
+      l_gone: { id: 'l_gone', name: 'Not on GHIN', role: 'user', ghinNumber: '45678901', phone: '95009999' },
+      l_kr: { id: 'l_kr', name: 'Korean phone', role: 'user', ghinNumber: '56789012', phone: '01012345678' },
+      n_one: { id: 'n_one', name: 'Found', role: 'user', phone: '88110001' },
+      n_taken: { id: 'n_taken', name: 'Found, but taken', role: 'user', phone: '88110002' },
+      n_many: { id: 'n_many', name: 'Two golfers', role: 'user', phone: '88110003' },
+      n_zero: { id: 'n_zero', name: 'Nobody', role: 'user', phone: '88110004' },
+      n_nophone: { id: 'n_nophone', name: 'No phone', role: 'user' },
+      admin_uid: { id: 'admin_uid', name: 'System Admin', role: 'admin' },
+      u_adm: { id: 'u_adm', name: 'Admin', role: 'admin', phone: '88001100' },
+    },
+    ...over,
+  });
+}
+const PHONE_GOLFERS = [
+  row(12345678, { phone_number: '+976 9911 9007' }),
+  row(23456789, { phone_number: '99990000' }),
+  row(34567890, { phone_number: '' }),
+  row(56789012, { phone_number: '010-1234-5678' }),
+  row(67890123, { phone_number: '88110001', player_name: 'Found Golfer', hi_display: '9.9', hi_value: 9.9 }),
+  // The golfer l_diff is tied to holds n_taken's phone as a second row.
+  row(23456789, { phone_number: '976 8811 0002', is_home_club: false }),
+  row(78901234, { phone_number: '88110003' }),
+  row(89012345, { phone_number: '88110003' }),
+];
+
+test('phoneReport: admins only', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  assert.equal(codeOf(await ghin.phoneReport(w.deps, {})), 'UNAUTHENTICATED');
+  w.deps.verifyIdToken = async () => ({ memberId: 'l_same' });
+  const out = await ghin.phoneReport(w.deps, { idToken: 'x' });
+  assert.equal(out.status, 403);
+  assert.equal(w.fake.state.asked.length, 0);
+});
+
+test('phoneReport: is the phone GHIN holds the member\'s own?', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
+  assert.equal(out.status, 200);
+  // l_kr has no Mongolian phone to compare; the other four do.
+  assert.deepEqual(out.body.linked, { members: 5, withPhone: 4, same: 1, different: 1, ghinNoPhone: 1, notOnGhin: 1 });
+  assert.equal(out.body.env, 'staging');
+});
+
+test('phoneReport: members with no GHIN number, looked for by phone', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
+  // u_adm is a member too; the system admin is not, and n_nophone has nothing to look by.
+  assert.deepEqual(out.body.unlinked, { members: 6, withPhone: 5, one: 2, many: 1, none: 2 });
+  assert.deepEqual(out.body.candidates.map(c => [c.memberId, c.golfer.number, c.linkedTo]), [
+    ['n_one', '67890123', null],
+    ['n_taken', '23456789', 'l_diff'],
+  ]);
+  assert.equal(out.body.candidates[0].golfer.name, 'Found Golfer');
+  assert.equal(out.body.candidates[0].golfer.hi, '9.9');
+  assert.deepEqual(out.body.ambiguous, [{ memberId: 'n_many', count: 2 }]);
+});
+
+test('phoneReport: no phone number and nothing personal is in the answer', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const text = JSON.stringify((await ghin.phoneReport(w.deps, { idToken: 'tok-adm' })).body);
+  for (const phone of ['99119007', '95001234', '88110001', '88110002', '88110003', '88001100']) assert.equal(text.includes(phone), false, phone);
+  assert.equal(text.includes('example.mn'), false);
+  assert.equal(text.includes('1988'), false);
+  assert.deepEqual(w.saved, {}, 'and nothing is stored');
+});
+
+test('phoneReport: when GHIN fails there is no half an answer', async () => {
+  const w = phoneWorld(PHONE_GOLFERS, { ghin: { searchStatus: 503 } });
+  const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
+  assert.equal(out.status, 502);
+  assert.equal(codeOf(out), 'GHIN_ERROR');
+  assert.equal('candidates' in out.body, false);
+});
+
+test('phoneReport: nobody to look for', async () => {
+  const w = phoneWorld([], { users: { u_adm: { id: 'u_adm', role: 'admin' } } });
+  const out = await ghin.phoneReport(w.deps, { idToken: 'tok-adm' });
+  assert.deepEqual(out.body.linked, { members: 0, withPhone: 0, same: 0, different: 0, ghinNoPhone: 0, notOnGhin: 0 });
+  assert.deepEqual(out.body.unlinked, { members: 1, withPhone: 0, one: 0, many: 0, none: 0 });
   assert.equal(w.fake.state.asked.length, 0);
 });

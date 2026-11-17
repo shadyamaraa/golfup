@@ -1,5 +1,41 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (GHIN: can a member be found by their phone? — a trial)
+
+The first read (2026-11-16) went through against the real staging GHIN: 95
+of 95 members with a GHIN number found, names and indexes right. Those were
+found because a number had been typed for each. The question now is how a
+member should be tied to their golfer at all — a typed number is not proof,
+and once scores are posted a wrong one sends them to somebody else's
+record. The one proven thing the app has is the phone a member signs in
+with.
+
+- **Server** (`functions/ghin.js`, `ghinPhoneReport` in
+  `functions/index.js`): admins only, reads only. For members who have a
+  GHIN number — is the phone GHIN holds for that golfer the member's own
+  (same / another / none / golfer not found). For members who have none —
+  GHIN is searched by their phone (`golfers/search?phone_number=`, as eight
+  digits and with 976); exactly one golfer is a candidate, several are
+  listed apart, and a candidate whose number another member already has is
+  marked. Only a row whose own phone is that very number counts. The
+  answer carries no phone number and nothing is stored.
+- **App**: «Утсаар хайх» in the admin's GHIN card shows the two counts and
+  the candidates with the name GHIN has. Nothing is tied by it.
+- `docs/ghin.md`: the trial, and where the connection is going — a proven
+  tie, production, playing off the index (revised daily, not on a refresh),
+  posting scores (GHIN course and tee ids, acceptable formats, once, with
+  its own permission).
+
+**Needs the owner**: deploy `ghinPhoneReport` (no new secret), then press
+«Утсаар хайх» as an admin.
+
+Tests: `scripts/test-ghin.mjs` now 37 — the phone as GHIN may hold it, the
+search with both spellings, a loose match and a masked golfer refused, the
+report's counts, a taken number, nothing personal in the answer. Browser,
+local mode, the function stubbed: the button, each refusal, an empty and a
+full result. Not run against the real GHIN: how its phone search matches,
+and how phones were typed there, are exactly what the trial is to show.
+
 ## 2026-11-16 (GHIN: the official Handicap Index, a trial on staging)
 
 The first step of the GHIN connection: reading a member's Handicap Index.
