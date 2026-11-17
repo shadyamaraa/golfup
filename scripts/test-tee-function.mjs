@@ -51,7 +51,7 @@ function fakeDb() {
 // Load functions/index.js with its two Firebase modules stubbed. The
 // functions builder is a proxy that swallows any chain and records the
 // handler given to onWrite/onCreate under its ref path.
-function loadFunctions(db) {
+function loadFunctions(db, pushed = []) {
   const handlers = {};
   const chain = () => new Proxy(function () {}, {
     get(_, prop) {
@@ -62,7 +62,7 @@ function loadFunctions(db) {
   });
   const nodeRequire = createRequire(import.meta.url);
   const require = (name) => {
-    if (name === 'firebase-admin') return { initializeApp() {}, database: () => db, messaging: () => ({ send: async () => {} }) };
+    if (name === 'firebase-admin') return { initializeApp() {}, database: () => db, messaging: () => ({ send: async (m) => { pushed.push(m); } }) };
     if (name === 'firebase-functions/v1') return chain();
     if (name === 'crypto') return nodeRequire('crypto');
     if (name === './qpay') return {};
@@ -70,6 +70,7 @@ function loadFunctions(db) {
     if (name === './passwords') return {};
     if (name === './member-private') return {};
     if (name === './ghin') return {};
+    if (name === './coaching') return {};
     throw new Error('unexpected require: ' + name);
   };
   const src = fs.readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
@@ -217,4 +218,25 @@ test('the M Cup result fan-out stores the record id too', async () => {
   assert.equal(n.length, 1);
   assert.equal(n[0].type, 'mcup');
   assert.equal(n[0].id, 'n1');
+});
+
+test('a push opens the page a notice names — a plain route of this app, nothing else', async () => {
+  const db = fakeDb();
+  db.set('users/u1', { fcmToken: 'tok' });
+  const pushed = [];
+  const send = loadFunctions(db, pushed)['/notifications/{userId}/{notifId}'];
+  const fire = (notif) => send({ val: () => notif }, { params: { userId: 'u1', notifId: 'n1' } });
+  const base = { type: 'tn_sched', title: 'Хичээлийн сануулга', body: 'Маргааш 10:00' };
+  await fire({ ...base, kind: 'coach', link: '#/coaching' });
+  await fire({ ...base, tnId: 't1', link: '#/coaching' });
+  await fire(base);
+  await fire({ ...base, link: 'https://evil.example/#/coaching' });
+  await fire({ ...base, link: 'javascript:alert(1)' });
+  await fire({ ...base, link: '#/coaching?x=<script>' });
+  assert.deepEqual(pushed.map(m => m.data.link), [
+    'https://ubgolf.club/#/coaching',
+    'https://ubgolf.club/#/tournament/t1',
+    'https://ubgolf.club', 'https://ubgolf.club', 'https://ubgolf.club', 'https://ubgolf.club',
+  ]);
+  assert.deepEqual([pushed[0].data.title, pushed[0].data.body], ['Хичээлийн сануулга', 'Маргааш 10:00']);
 });

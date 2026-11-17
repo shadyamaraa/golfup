@@ -20,12 +20,19 @@
       statistics, historical results.
 - [ ] Casual formats phase 3: a cross-group scramble leaderboard — rank every
       team in the game by net total, not only the 2 v 2 inside each group.
+- [ ] Coaching phase 2: payment through the club's own QPay and the club
+      paying the coaches their share; then group lessons, packages, lesson
+      notes. See `docs/coaching.md` («Not in this version»).
+
 ## In Progress
 
 - [ ] None
 
 ## Done
 
+- [x] Coaching, first version — Services → «Дасгалжуулагч»: admin-made
+      coaches open their own times, members book and cancel, both are
+      reminded. Payment stays outside the app. `docs/coaching.md`.
 - [x] Gender on the member profile — chips on the member's own form, a
       required select when an admin creates a profile, and a one-off backfill
       from the women's circle and the club's ladies events.

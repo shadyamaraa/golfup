@@ -40,6 +40,67 @@
       ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
       ".write": false
     },
+    "coaches": {
+      ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+      "$coachId": {
+        ".write": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin'",
+        "active": { ".validate": "newData.isBoolean()" },
+        "approvedBy": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "approvedAt": { ".validate": "newData.isNumber()" },
+        "bio": { ".write": "auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true", ".validate": "newData.isString() && newData.val().length <= 600" },
+        "place": { ".write": "auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true", ".validate": "newData.isString() && newData.val().length <= 120" },
+        "price30": { ".write": "auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true", ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "price60": { ".write": "auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true", ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "updatedAt": { ".write": "auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true", ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "coachSlots": {
+      ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+      "$coachId": {
+        "$slotId": {
+          ".write": "(auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')) && (newData.exists() || !newData.parent().parent().parent().child('coachBookings').child($coachId).child($slotId).exists())",
+          ".validate": "newData.hasChildren(['start', 'minutes', 'status']) && $slotId === 's' + newData.child('start').val() && (newData.child('status').val() === 'booked') === newData.parent().parent().parent().child('coachBookings').child($coachId).child($slotId).exists()",
+          "start": { ".validate": "newData.isNumber() && newData.val() > 0 && (data.exists() ? newData.val() === data.val() : newData.val() > now)" },
+          "minutes": { ".validate": "(newData.val() === 30 || newData.val() === 60) && (!data.exists() || newData.val() === data.val())" },
+          "status": {
+            ".write": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold' && auth.token.memberId !== $coachId && ((data.val() === 'open' && newData.val() === 'booked' && root.child('coachSlots').child($coachId).child($slotId).child('start').val() > now && newData.parent().parent().parent().parent().child('coachBookings').child($coachId).child($slotId).child('playerId').val() === auth.token.memberId) || (data.val() === 'booked' && newData.val() === 'open' && root.child('coachBookings').child($coachId).child($slotId).child('playerId').val() === auth.token.memberId && !newData.parent().parent().parent().parent().child('coachBookings').child($coachId).child($slotId).exists()))",
+            ".validate": "newData.val() === 'open' || newData.val() === 'booked'"
+          },
+          "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "coachBookings": {
+      "$coachId": {
+        ".read": "auth != null && auth.token.memberId != null && (auth.token.memberId === $coachId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin')",
+        "$slotId": {
+          ".read": "auth != null && auth.token.memberId != null && data.child('playerId').val() === auth.token.memberId",
+          ".write": "auth != null && auth.token.memberId != null && ((!data.exists() && newData.exists() && newData.child('playerId').val() === auth.token.memberId && auth.token.memberId !== $coachId && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold' && root.child('coachSlots').child($coachId).child($slotId).child('status').val() === 'open' && root.child('coachSlots').child($coachId).child($slotId).child('start').val() > now && newData.parent().parent().parent().child('coachSlots').child($coachId).child($slotId).child('status').val() === 'booked' && newData.parent().parent().parent().child('playerLessons').child(auth.token.memberId).child($coachId + '_' + $slotId).exists()) || (data.exists() && !newData.exists() && !newData.parent().parent().parent().child('playerLessons').child(data.child('playerId').val()).child($coachId + '_' + $slotId).exists() && ((data.child('playerId').val() === auth.token.memberId && root.child('coachSlots').child($coachId).child($slotId).child('start').val() - now >= 43200000 && newData.parent().parent().parent().child('coachSlots').child($coachId).child($slotId).child('status').val() === 'open') || ((auth.token.memberId === $coachId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin') && newData.parent().parent().parent().child('coachSlots').child($coachId).child($slotId).child('status').val() !== 'booked'))))",
+          ".validate": "newData.hasChildren(['playerId', 'bookedAt'])",
+          "playerId": { ".validate": "newData.isString() && root.child('users').child(newData.val()).exists()" },
+          "bookedAt": { ".validate": "newData.isNumber()" },
+          "note": { ".validate": "newData.isString() && newData.val().length <= 300" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "playerLessons": {
+      "$playerId": {
+        ".read": "auth != null && auth.token.memberId != null && (auth.token.memberId === $playerId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin')",
+        "$key": {
+          ".write": "auth != null && auth.token.memberId != null && ((newData.exists() && auth.token.memberId === $playerId && newData.parent().parent().parent().child('coachBookings').child(newData.child('coachId').val()).child(newData.child('slotId').val()).child('playerId').val() === $playerId) || (!newData.exists() && data.exists() && (auth.token.memberId === $playerId || data.child('coachId').val() === auth.token.memberId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin') && newData.parent().parent().parent().child('coachBookings').child(data.child('coachId').val()).child(data.child('slotId').val()).child('playerId').val() !== $playerId))",
+          ".validate": "newData.hasChildren(['coachId', 'slotId', 'start', 'minutes']) && $key === newData.child('coachId').val() + '_' + newData.child('slotId').val()",
+          "coachId": { ".validate": "newData.isString()" },
+          "slotId": { ".validate": "newData.isString()" },
+          "start": { ".validate": "newData.isNumber()" },
+          "minutes": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },

@@ -6,6 +6,7 @@ const phoneVerify = require('./phone-verify');
 const passwords = require('./passwords');
 const memberPrivate = require('./member-private');
 const ghin = require('./ghin');
+const coaching = require('./coaching');
 
 admin.initializeApp();
 
@@ -591,7 +592,31 @@ exports.ghinNightly = functions
     return null;
   });
 
+// ---- Coaching: lesson reminders ----
+// Every half hour: a booked lesson is announced to its player and its coach
+// a day before and two hours before (functions/coaching.js, docs/coaching.md).
+// The notices go through notifications/, so sendPushOnNotification below
+// pushes them like any other. Counts only go to the log.
+exports.coachReminders = functions.pubsub.schedule('every 30 minutes')
+  .timeZone('Asia/Ulaanbaatar')
+  .onRun(async () => {
+    const db = admin.database();
+    const out = await coaching.remind({
+      read: async (path) => (await db.ref(path).once('value')).val(),
+      mark: (writes) => db.ref('coachReminded').update(writes),
+      loadUser: async (id) => (await db.ref(`users/${id}`).once('value')).val(),
+      notify: (memberId, notice) => {
+        const id = 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        return db.ref(`notifications/${memberId}/${id}`).set({ ...notice, id, createdAt: Date.now() });
+      },
+    });
+    console.log('coachReminders', JSON.stringify(out));
+    return null;
+  });
+
 const APP_URL = 'https://ubgolf.club';
+// A notification may name a page of this app to open; nothing else is a link.
+const appLink = (link) => (/^#\/[a-z][\w/-]*$/i.test(String(link || '')) ? `${APP_URL}/${link}` : APP_URL);
 
 // A data-only web push: the service worker (public/firebase-messaging-sw.js)
 // displays it with the brand icon and opens `link` on tap. A `notification`
@@ -625,7 +650,7 @@ exports.sendPushOnNotification = functions.database
       await admin.messaging().send(pushMessage(user.fcmToken, {
         title: notif.title || 'UB Golf',
         body: notif.body || '',
-        link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : APP_URL,
+        link: notif.tnId ? `${APP_URL}/#/tournament/${notif.tnId}` : appLink(notif.link),
         tag: notif.tag || notifId
       }));
       console.log(`FCM mcup push sent to user ${userId} for notif ${notifId}`);

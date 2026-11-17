@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, remove } from 'firebase/database';
 import { mergeMember, baselineOf, memberWrites } from '../src/member-record.js';
+import { slotId, slotWrites, bookingWrites, cancelWrites, lessonKey, CANCEL_MS } from '../src/coaching.js';
 
 const HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const PROJECT = 'demo-golfup';
@@ -323,4 +324,280 @@ test('a browser with no member identity still saves what is public — and is re
   await denied(save(anon, { ...rec, role: 'admin' }, base), 'and so does a role');
   assert.equal((await raw('userPrivate/f2')).phone, '99220022');
   assert.equal((await raw('users/f2')).role, 'user');
+});
+
+// ---- Coaching ----
+// m2 is a coach taking bookings; f2 was made one and is switched off. The
+// slots are laid afresh before each test, by the clock the rules read (`now`).
+const HOUR = 60 * 60 * 1000;
+const T0 = Math.floor(Date.now() / 1000) * 1000;
+const S = {
+  far: T0 + 48 * HOUR,         // open, two days off
+  soon: T0 + 2 * HOUR,         // open, in two hours
+  taken: T0 + 50 * HOUR,       // m1's, well ahead
+  takenSoon: T0 + 3 * HOUR,    // m1's, inside the twelve hours
+  past: T0 - 2 * HOUR,         // open, already begun
+};
+const slotOf = (start, status = 'open') => ({ start, minutes: 60, status, price: 80000, createdAt: T0 });
+const COACHING = {
+  coaches: {
+    m2: { active: true, bio: 'Pro', place: 'Range', price30: 50000, price60: 80000, approvedBy: 'admin1', approvedAt: T0 },
+    f2: { active: false, bio: 'Was a coach' },
+  },
+  coachSlots: {
+    m2: {
+      [slotId(S.far)]: slotOf(S.far), [slotId(S.soon)]: slotOf(S.soon), [slotId(S.past)]: slotOf(S.past),
+      [slotId(S.taken)]: slotOf(S.taken, 'booked'), [slotId(S.takenSoon)]: slotOf(S.takenSoon, 'booked'),
+    },
+  },
+  coachBookings: {
+    m2: {
+      [slotId(S.taken)]: { playerId: 'm1', bookedAt: T0, note: 'my slice' },
+      [slotId(S.takenSoon)]: { playerId: 'm1', bookedAt: T0 },
+    },
+  },
+  playerLessons: {
+    m1: {
+      [lessonKey('m2', slotId(S.taken))]: { coachId: 'm2', slotId: slotId(S.taken), start: S.taken, minutes: 60 },
+      [lessonKey('m2', slotId(S.takenSoon))]: { coachId: 'm2', slotId: slotId(S.takenSoon), start: S.takenSoon, minutes: 60 },
+    },
+  },
+};
+async function layCoaching() {
+  for (const [node, value] of Object.entries(COACHING)) {
+    const r = await fetch(`http://${HOST}/${node}.json?ns=${NS}`, {
+      method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+    });
+    assert.equal(r.status, 200, 'laying ' + node);
+  }
+}
+// What is really there, read through the emulator's back door.
+async function stored(path) {
+  const r = await fetch(`http://${HOST}/${path}.json?ns=${NS}`, { headers: { Authorization: 'Bearer owner' } });
+  return r.json();
+}
+// Something removed behind the rules' back — a record edited in the console.
+async function wipe(path) {
+  const r = await fetch(`http://${HOST}/${path}.json?ns=${NS}`, { method: 'DELETE', headers: { Authorization: 'Bearer owner' } });
+  assert.equal(r.status, 200, 'wiping ' + path);
+}
+const far = { id: slotId(S.far), start: S.far, minutes: 60 };
+const soon = { id: slotId(S.soon), start: S.soon, minutes: 60 };
+const root = (db) => ref(db);
+
+test('coaching: members read the coaches and their slots; a visitor does not', async () => {
+  await layCoaching();
+  assert.equal((await get(ref(m1, 'coaches'))).val().m2.bio, 'Pro');
+  assert.equal((await get(ref(f1, 'coachSlots/m2'))).val()[slotId(S.far)].status, 'open');
+  await denied(get(ref(visitor, 'coaches')), 'a visitor, the coaches');
+  await denied(get(ref(anon, 'coachSlots/m2')), 'an anonymous device, the slots');
+  await denied(get(ref(held, 'coachSlots')), 'a member on hold');
+});
+
+test('coaching: an admin makes a member a coach; no one makes themselves one', async () => {
+  await layCoaching();
+  await ok(update(ref(admin, 'coaches/f1'), { active: true, approvedBy: 'admin1', approvedAt: T0 }), 'an admin');
+  await ok(set(ref(sysAdmin, 'coaches/f2/active'), true), 'the system admin switches one back on');
+  await denied(set(ref(m1, 'coaches/m1'), { active: true }), 'a member, themselves');
+  await denied(set(ref(m1, 'coaches/m1/active'), true), 'a member, the switch alone');
+  await denied(set(ref(m2, 'coaches/m2/active'), false), 'a coach, their own switch');
+  await denied(set(ref(m2, 'coaches/m2/approvedBy'), 'm2'), 'a coach, who approved them');
+  await denied(update(ref(admin, 'coaches/f1'), { rating: 5 }), 'a field that is not one');
+  await denied(set(ref(admin, 'coaches/f1/active'), 'yes'), 'a switch that is not a boolean');
+});
+
+test('coaching: a coach writes their own profile — while they are one — and no one else\'s', async () => {
+  await layCoaching();
+  await ok(update(ref(m2, 'coaches/m2'), { bio: 'PGA', place: 'Mt. Bogd range', price30: 60000, price60: 90000, updatedAt: T0 }), 'their own');
+  assert.deepEqual([(await stored('coaches/m2')).bio, (await stored('coaches/m2')).active], ['PGA', true]);
+  // As the store writes it: paths from the root, one write.
+  await ok(update(root(m2), { 'coaches/m2/bio': 'PGA pro', 'coaches/m2/place': 'Range', 'coaches/m2/price30': 0, 'coaches/m2/price60': 90000, 'coaches/m2/updatedAt': T0 }), 'from the root');
+  await denied(update(root(m2), { 'coaches/m2/bio': 'PGA pro', 'coaches/m2/active': false }), 'the switch slipped in with the profile');
+  await denied(set(ref(m1, 'coaches/m2/bio'), 'hacked'), 'another member');
+  await denied(set(ref(f2, 'coaches/f2/bio'), 'still here'), 'a coach who is switched off');
+  await denied(set(ref(m1, 'coaches/m1/bio'), 'me too'), 'a member who is not a coach');
+  await denied(set(ref(m2, 'coaches/m2/price60'), '90000'), 'a price that is not a number');
+  await denied(set(ref(m2, 'coaches/m2/bio'), 'x'.repeat(601)), 'a bio too long');
+});
+
+test('coaching: a coach opens slots — their own, ahead, keyed by the start', async () => {
+  await layCoaching();
+  const start = T0 + 72 * HOUR;
+  const fresh = [{ id: slotId(start), start, minutes: 30, status: 'open', price: 50000, createdAt: T0 }];
+  await ok(update(root(m2), slotWrites('m2', fresh)), 'the coach');
+  assert.equal((await stored(`coachSlots/m2/${slotId(start)}`)).minutes, 30);
+  await denied(update(root(m1), slotWrites('m2', [{ ...fresh[0], id: slotId(start + HOUR), start: start + HOUR }])), 'another member, for the coach');
+  await denied(update(root(m1), slotWrites('m1', fresh)), 'a member who is not a coach');
+  await denied(update(root(f2), slotWrites('f2', fresh)), 'a coach who is switched off');
+  await denied(update(root(m2), slotWrites('m2', [{ ...fresh[0], id: slotId(T0 - HOUR), start: T0 - HOUR }])), 'a slot in the past');
+  await denied(update(root(m2), slotWrites('m2', [{ ...fresh[0], id: 's123', start: start + 2 * HOUR }])), 'a key that is not the start');
+  await denied(update(root(m2), slotWrites('m2', [{ ...fresh[0], id: slotId(start + 3 * HOUR), start: start + 3 * HOUR, minutes: 45 }])), 'a length that is not 30 or 60');
+  await denied(update(root(m2), slotWrites('m2', [{ ...fresh[0], id: slotId(start + 4 * HOUR), start: start + 4 * HOUR, playerId: 'm1' }])), 'a field that is not one');
+  await denied(set(ref(m2, `coachSlots/m2/${slotId(S.far)}/start`), S.far + HOUR), 'moving a slot');
+  await denied(update(root(m2), slotWrites('m2', [{ ...fresh[0], id: slotId(start + 5 * HOUR), start: start + 5 * HOUR, status: 'booked' }])), 'a slot born taken, with no booking');
+  await denied(set(ref(m2, `coachSlots/m2/${slotId(S.far)}/status`), 'booked'), 'the coach marks an open slot taken');
+});
+
+test('coaching: a member books an open slot — the slot, the booking and their list, in one write', async () => {
+  await layCoaching();
+  await ok(update(root(f1), bookingWrites('m2', far, 'f1', 'first lesson', T0)), 'the booking');
+  assert.equal((await stored(`coachSlots/m2/${far.id}`)).status, 'booked');
+  assert.deepEqual(await stored(`coachBookings/m2/${far.id}`), { playerId: 'f1', bookedAt: T0, note: 'first lesson' });
+  assert.equal((await stored(`playerLessons/f1/${lessonKey('m2', far.id)}`)).start, S.far);
+  // The slot other members read does not say who.
+  assert.equal(JSON.stringify((await get(ref(m1, `coachSlots/m2/${far.id}`))).val()).includes('f1'), false);
+});
+
+test('coaching: who booked is the coach\'s and the player\'s to read — no one else\'s', async () => {
+  await layCoaching();
+  assert.equal((await get(ref(m2, 'coachBookings/m2'))).val()[slotId(S.taken)].playerId, 'm1', 'the coach, all of theirs');
+  assert.equal((await get(ref(m1, `coachBookings/m2/${slotId(S.taken)}`))).val().note, 'my slice', 'the player, their own');
+  assert.ok((await get(ref(m1, 'playerLessons/m1'))).exists(), 'the player, their own list');
+  assert.ok((await get(ref(admin, 'coachBookings/m2'))).exists(), 'an admin');
+  await denied(get(ref(f1, `coachBookings/m2/${slotId(S.taken)}`)), 'another member, one booking');
+  await denied(get(ref(f1, 'coachBookings/m2')), 'another member, the coach\'s bookings');
+  await denied(get(ref(m1, 'coachBookings/m2')), 'the player, the coach\'s other bookings');
+  await denied(get(ref(f1, 'playerLessons/m1')), 'another member, the player\'s list');
+  await denied(get(ref(m2, 'playerLessons/m1')), 'the coach, the player\'s whole list');
+  await denied(get(ref(visitor, `coachBookings/m2/${slotId(S.taken)}`)), 'a visitor');
+});
+
+test('coaching: a taken slot is not booked again — the second of two loses', async () => {
+  await layCoaching();
+  await denied(update(root(f1), bookingWrites('m2', { id: slotId(S.taken), start: S.taken, minutes: 60 }, 'f1', '', T0)), 'a slot m1 holds');
+  assert.equal((await stored(`coachBookings/m2/${slotId(S.taken)}`)).playerId, 'm1');
+  const both = await Promise.allSettled([
+    update(root(f1), bookingWrites('m2', far, 'f1', '', T0)),
+    update(root(m1), bookingWrites('m2', far, 'm1', '', T0)),
+  ]);
+  assert.deepEqual(both.map(r => r.status).sort(), ['fulfilled', 'rejected'], 'one of the two');
+  const winner = (await stored(`coachBookings/m2/${far.id}`)).playerId;
+  const loser = winner === 'f1' ? 'm1' : 'f1';
+  assert.equal(await stored(`playerLessons/${loser}/${lessonKey('m2', far.id)}`), null, 'the loser has no lesson');
+});
+
+test('coaching: a booking is whole or it is nothing', async () => {
+  await layCoaching();
+  const w = bookingWrites('m2', far, 'f1', '', T0);
+  const only = (...keys) => Object.fromEntries(Object.entries(w).filter(([p]) => keys.some(k => p.startsWith(k))));
+  await denied(update(root(f1), only('coachSlots')), 'the slot taken with no booking');
+  await denied(update(root(f1), only('coachBookings')), 'a booking with the slot left open');
+  await denied(update(root(f1), only('playerLessons')), 'a lesson on the list with no booking');
+  await denied(update(root(f1), only('coachSlots', 'playerLessons')), 'no booking record');
+  await denied(update(root(f1), only('coachSlots', 'coachBookings')), 'slot and booking, the lesson left off the player\'s list');
+  await denied(update(root(f1), only('coachBookings', 'playerLessons')), 'booking and lesson, the slot left open');
+  assert.equal((await stored(`coachSlots/m2/${far.id}`)).status, 'open');
+  assert.equal(await stored(`coachBookings/m2/${far.id}`), null);
+  await ok(update(root(f1), w), 'all three');
+});
+
+test('coaching: who may not book, and what', async () => {
+  await layCoaching();
+  await denied(update(root(f1), bookingWrites('m2', far, 'm1', '', T0)), 'in another member\'s name');
+  await denied(update(root(m2), bookingWrites('m2', far, 'm2', '', T0)), 'the coach, their own slot');
+  await denied(update(root(held), bookingWrites('m2', far, 'held', '', T0)), 'a member on hold');
+  await denied(update(root(anon), bookingWrites('m2', far, 'm1', '', T0)), 'an anonymous device');
+  await denied(update(root(visitor), bookingWrites('m2', far, 'm1', '', T0)), 'a visitor');
+  await denied(update(root(f1), bookingWrites('m2', { id: slotId(S.past), start: S.past, minutes: 60 }, 'f1', '', T0)), 'a slot that has begun');
+  await denied(update(root(f1), bookingWrites('m2', { id: slotId(T0 + 99 * HOUR), start: T0 + 99 * HOUR, minutes: 60 }, 'f1', '', T0)), 'a slot the coach never opened');
+  const extra = bookingWrites('m2', far, 'f1', '', T0);
+  extra[`coachBookings/m2/${far.id}`] = { ...extra[`coachBookings/m2/${far.id}`], paid: true };
+  await denied(update(root(f1), extra), 'a field that is not one');
+  // (bookingWrites trims a note to size itself; this is a write made by hand.)
+  const long = bookingWrites('m2', far, 'f1', '', T0);
+  long[`coachBookings/m2/${far.id}`] = { ...long[`coachBookings/m2/${far.id}`], note: 'n'.repeat(301) };
+  await denied(update(root(f1), long), 'a note too long');
+  assert.equal((await stored(`coachSlots/m2/${far.id}`)).status, 'open');
+  await ok(update(root(f1), bookingWrites('m2', soon, 'f1', '', T0)), 'a slot two hours off is still open to book');
+});
+
+test('coaching: the player cancels until twelve hours before — the slot opens again', async () => {
+  await layCoaching();
+  assert.ok(S.taken - Date.now() > CANCEL_MS && S.takenSoon - Date.now() < CANCEL_MS);
+  await ok(update(root(m1), cancelWrites('m2', slotId(S.taken), 'm1')), 'well ahead');
+  assert.equal((await stored(`coachSlots/m2/${slotId(S.taken)}`)).status, 'open');
+  assert.equal(await stored(`coachBookings/m2/${slotId(S.taken)}`), null);
+  assert.equal(await stored(`playerLessons/m1/${lessonKey('m2', slotId(S.taken))}`), null);
+  await denied(update(root(m1), cancelWrites('m2', slotId(S.takenSoon), 'm1')), 'inside the twelve hours');
+  assert.equal((await stored(`coachBookings/m2/${slotId(S.takenSoon)}`)).playerId, 'm1');
+  // And someone else books the freed slot.
+  await ok(update(root(f1), bookingWrites('m2', { id: slotId(S.taken), start: S.taken, minutes: 60 }, 'f1', '', T0)), 'the freed slot');
+});
+
+test('coaching: a booking is not another member\'s to cancel, change or half-undo', async () => {
+  await layCoaching();
+  const id = slotId(S.taken);
+  await denied(update(root(f1), cancelWrites('m2', id, 'm1')), 'another member cancels it');
+  await denied(set(ref(f1, `coachSlots/m2/${id}/status`), 'open'), 'another member reopens the slot');
+  await denied(set(ref(m1, `coachSlots/m2/${id}/status`), 'open'), 'the player reopens the slot and keeps the booking');
+  await denied(remove(ref(m1, `coachBookings/m2/${id}`)), 'the player drops the booking and leaves the slot taken');
+  await denied(set(ref(m1, `coachBookings/m2/${id}/note`), 'changed'), 'the player rewrites the booking');
+  await denied(set(ref(m1, `coachBookings/m2/${id}/playerId`), 'f1'), 'the player hands it to someone else');
+  await denied(update(root(m1), cancelWrites('m2', id, 'm1', { removeSlot: true })), 'the player removes the coach\'s slot');
+  await denied(remove(ref(f1, `playerLessons/m1/${lessonKey('m2', id)}`)), 'another member, the player\'s list');
+  const kept = cancelWrites('m2', id, 'm1');
+  delete kept[`playerLessons/m1/${lessonKey('m2', id)}`];
+  await denied(update(root(m1), kept), 'the player cancels and keeps the lesson on their list');
+  await denied(remove(ref(m1, `playerLessons/m1/${lessonKey('m2', id)}`)), 'the player takes the lesson off their list and keeps the booking');
+  assert.equal((await stored(`coachBookings/m2/${id}`)).note, 'my slice');
+  assert.equal((await stored(`playerLessons/m1/${lessonKey('m2', id)}`)).start, S.taken);
+});
+
+test('coaching: the coach cancels at any time — reopening the slot, or withdrawing it', async () => {
+  await layCoaching();
+  // Whole, like the player's: not the booking alone, not with the lesson left behind.
+  const whole = cancelWrites('m2', slotId(S.taken), 'm1');
+  const lesson = `playerLessons/m1/${lessonKey('m2', slotId(S.taken))}`;
+  await denied(remove(ref(m2, `coachBookings/m2/${slotId(S.taken)}`)), 'the booking alone, the slot left taken');
+  await denied(update(root(m2), Object.fromEntries(Object.entries(whole).filter(([path]) => path !== lesson))), 'the lesson left on the player\'s list');
+  await denied(remove(ref(m2, lesson)), 'the lesson taken off the player\'s list, the booking kept');
+  await denied(update(root(m2), { [`coachBookings/m2/${slotId(S.taken)}`]: null, [lesson]: null }), 'booking and lesson gone, the slot left taken');
+  assert.equal((await stored(`coachBookings/m2/${slotId(S.taken)}`)).playerId, 'm1');
+  await ok(update(root(m2), cancelWrites('m2', slotId(S.takenSoon), 'm1')), 'inside the twelve hours, reopened');
+  assert.equal((await stored(`coachSlots/m2/${slotId(S.takenSoon)}`)).status, 'open');
+  assert.equal(await stored(`playerLessons/m1/${lessonKey('m2', slotId(S.takenSoon))}`), null, 'off the player\'s list');
+  await ok(update(root(m2), cancelWrites('m2', slotId(S.taken), 'm1', { removeSlot: true })), 'withdrawn');
+  assert.equal(await stored(`coachSlots/m2/${slotId(S.taken)}`), null);
+  assert.equal(await stored(`coachBookings/m2/${slotId(S.taken)}`), null);
+});
+
+test('coaching: an open slot is the coach\'s to remove; a booked one only with its booking', async () => {
+  await layCoaching();
+  await ok(remove(ref(m2, `coachSlots/m2/${far.id}`)), 'an open slot');
+  await denied(remove(ref(m2, `coachSlots/m2/${slotId(S.taken)}`)), 'a booked slot, the booking left behind');
+  assert.equal((await stored(`coachBookings/m2/${slotId(S.taken)}`)).playerId, 'm1');
+  await denied(remove(ref(m1, `coachSlots/m2/${soon.id}`)), 'a member, the coach\'s slot');
+  await denied(remove(ref(f2, `coachSlots/m2/${soon.id}`)), 'another coach');
+});
+
+test('coaching: a slot is not opened again over a booking that is still there', async () => {
+  await layCoaching();
+  const id = slotId(S.taken);
+  await denied(set(ref(m2, `coachSlots/m2/${id}/status`), 'open'), 'the coach, the booking left in place');
+  await denied(set(ref(m2, `coachSlots/m2/${id}`), slotOf(S.taken)), 'the whole slot rewritten as open');
+  assert.equal((await stored(`coachSlots/m2/${id}`)).status, 'booked');
+  // The repair: a booked slot whose booking is gone (a record edited in the
+  // console — the rules let no browser leave it so) is the coach's to open.
+  await wipe(`coachBookings/m2/${id}`);
+  await wipe(`playerLessons/m1/${lessonKey('m2', id)}`);
+  await ok(set(ref(m2, `coachSlots/m2/${id}/status`), 'open'), 'the coach opens the slot');
+  await ok(update(root(f1), bookingWrites('m2', { id, start: S.taken, minutes: 60 }, 'f1', '', T0)), 'which is then booked again');
+});
+
+test('coaching: a lesson left behind on a list is the member\'s to take off — a live one is not', async () => {
+  await layCoaching();
+  const id = slotId(S.takenSoon);
+  await denied(remove(ref(m1, `playerLessons/m1/${lessonKey('m2', id)}`)), 'while the booking stands');
+  // The booking went behind the rules' back; the entry is all that is left.
+  await wipe(`coachBookings/m2/${id}`);
+  await denied(remove(ref(f1, `playerLessons/m1/${lessonKey('m2', id)}`)), 'another member');
+  await ok(remove(ref(m1, `playerLessons/m1/${lessonKey('m2', id)}`)), 'their own, with no booking behind it');
+});
+
+test('coaching: an admin can step in — cancel a booking, clear a slot', async () => {
+  await layCoaching();
+  await denied(remove(ref(admin, `coachBookings/m2/${slotId(S.takenSoon)}`)), 'an admin, the booking alone');
+  await ok(update(root(admin), cancelWrites('m2', slotId(S.takenSoon), 'm1')), 'an admin cancels');
+  assert.equal((await stored(`coachSlots/m2/${slotId(S.takenSoon)}`)).status, 'open');
+  await ok(remove(ref(sysAdmin, `coachSlots/m2/${soon.id}`)), 'the system admin clears an open slot');
 });

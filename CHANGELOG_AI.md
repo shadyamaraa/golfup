@@ -1,5 +1,52 @@
 # CHANGELOG_AI.md
 
+## 2026-11-17 (Coaching: coaches open their times, members book a lesson)
+
+The «Дасгалжуулагч» tile on Services said «Тун удахгүй». It now opens the
+first version of coaching: the booking, not the money — coaches are
+independent and are paid directly for now.
+
+- **Coaches**: an admin ticks «Дасгалжуулагч» on a member (Users → «Засах»).
+  The coach's desk, `#/coaching/me`: about, where they teach, a price for
+  30 and for 60 minutes; opening a range of times as slots (ones already
+  begun or overlapping are left out and counted); who booked — name, phone,
+  note — with cancel.
+- **Members**: `#/coaching` lists «Миний хичээлүүд» and the coaches with
+  their next open time (by username, as every member list; the full name
+  is on the coach's own page); `#/coaching/c/{id}` shows a coach's times by
+  day — taken ones without the name of who took them. Tap, optional note,
+  «Захиалах»: booked at once. Cancel until 12 hours before; after that the
+  coach's phone is shown instead.
+- **Notices**: the coach is told of a booking and of a cancellation, the
+  player of a coach's cancellation — in the bell, which now opens a
+  notice's own page (`link`), and as a push. A day before and two hours
+  before, both are reminded by a new scheduled function.
+- `src/coaching.js` (new, pure): slot arithmetic, the booking and
+  cancelling writes. `src/coaching-page.js` (new): the three pages.
+  `src/store.js`: the «Coaching» section. `src/app.js`: routes, the tile,
+  the bell's link, the admin's box. `src/i18n.js`: mn / en / kr.
+- **`database.rules.json` — new rules** for four new nodes: `coaches`,
+  `coachSlots`, `coachBookings`, `playerLessons`. A booking is one write to
+  three places and is refused unless whole and from the right person: only
+  an open slot still to come, only for oneself, never the coach's own; of
+  two people after one slot the first wins; only the player (12 hours
+  before), the coach or an admin undoes it — and the undoing is whole too,
+  whoever does it: a slot is `booked` exactly when it has a booking, and a
+  booking stands exactly when the lesson is on that player's list. Nobody
+  makes themselves a coach. Nothing existing is changed.
+- **`functions/` — needs a manual deploy**: `functions/coaching.js` (new)
+  and `coachReminders` in `functions/index.js`, every 30 minutes; and a
+  push now opens the page a notice names. Until deployed, only the
+  reminders are missing. No runtime or dependency change.
+  `firebase deploy --only functions:coachReminders,functions:sendPushOnNotification`
+- Tests: `scripts/test-coaching.mjs` (20), `scripts/test-coach-reminders.mjs`
+  (12), both in `npm run test:mp`; 16 coaching tests in
+  `scripts/test-rules.mjs` (`npm run test:rules`).
+- `docs/coaching.md` (new), `AGENTS.md`, `PROJECT_NOTES.md`, `TASKS.md`.
+
+Not in this version: payment through the app (next: the club's QPay, the
+club pays the coaches), group lessons, packages, lesson notes.
+
 ## 2026-11-17 (GHIN: the night's round — new members tied by phone on their own, every index read daily)
 
 A new member was tied to their GHIN golfer only when an admin opened the

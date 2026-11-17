@@ -20,6 +20,8 @@ import {
 } from './tournament-media.js';
 import { renderSpScorer, renderSpGroupScorer } from './strokeplay-score.js';
 import { renderSpSheetPage } from './strokeplay-sheet.js';
+import { renderCoachingPage } from './coaching-page.js';
+import { isCoach } from './coaching.js';
 import { renderSpPlayerCard } from './strokeplay-card.js';
 import { renderGameScorePage, canScoreGamePlayer, gameScoreLine, gamePlayingHcp, fmtToPar, isCompMode } from './game-score.js';
 import {
@@ -562,6 +564,11 @@ export async function router() {
     else if (hash === '#/profile/edit') await renderProfileEdit();
     else if (hash === '#/games') await renderGames();
     else if (hash === '#/services') await renderServices();
+    else if (hash === '#/coaching' || hash.startsWith('#/coaching/')) {
+      await renderCoachingPage(hash.slice('#/coaching'.length).replace(/^\//, ''), {
+        main, user: currentUser, showToast, alive: viewAlive(), formatDate, avatarInner, displayUsername, notify: coachNotify
+      });
+    }
     else if (hash === '#/create') await renderCreateGame();
     else if (hash === '#/users') await renderUsersList();
     else if (hash === '#/ranking') await renderRankingPage();
@@ -726,7 +733,7 @@ function updateBottomNav(hash) {
   const active = (hash === '#/' || hash === '#/home') ? 'home'
     : hash === '#/games' ? 'games'
     : hash === '#/create' ? 'create'
-    : (hash === '#/services' || hash === '#/menu' || hash.startsWith('#/order/')) ? 'services'
+    : (hash === '#/services' || hash === '#/menu' || hash.startsWith('#/order/') || hash.startsWith('#/coaching')) ? 'services'
     : (hash === '#/orders' || hash.startsWith('#/orders/')) ? 'orders'
     : '';
   nav.querySelectorAll('.bn-item').forEach(el => el.classList.toggle('active', el.dataset.route === active));
@@ -3245,12 +3252,13 @@ function publicCtx() {
 
 // ---- Services hub (#/services) ----
 async function renderServices() {
-  const svc = (iconName, title, desc) => `
-    <div class="svc-tile">
+  // A service that is built is a link; one that is not says so when tapped.
+  const svc = (iconName, title, desc, href) => `
+    <${href ? `a href="${href}"` : 'div'} class="svc-tile${href ? ' svc-live' : ''}">
       <div class="svc-ic">${icon(iconName, { size: 21 })}</div>
       <div class="svc-name">${title}</div>
       <div class="svc-desc">${desc}</div>
-    </div>`;
+    </${href ? 'a' : 'div'}>`;
   main().innerHTML = `
     <div class="home-container fade-in">
       <div class="page-head"><div>
@@ -3271,7 +3279,7 @@ async function renderServices() {
       <div class="svc-grid">
         ${svc('time', t('svTee'), t('svTeeDesc'))}
         ${svc('ball-tee', t('svRent'), t('svRentDesc'))}
-        ${svc('handicap', t('svCoach'), t('svCoachDesc'))}
+        ${svc('handicap', t('svCoach'), t('svCoachDesc'), '#/coaching')}
         ${svc('pro-shop', t('svShop'), t('svShopDesc'))}
         <div class="list-row svc-event">
           <div class="svc-ic">${icon('bookings', { size: 21 })}</div>
@@ -3280,10 +3288,26 @@ async function renderServices() {
         </div>
       </div>
     </div>`;
-  // The non-food services aren't built yet — hint instead of dead-ending.
-  document.querySelectorAll('.svc-tile, .svc-event').forEach(el => {
+  // The services that aren't built yet — hint instead of dead-ending.
+  document.querySelectorAll('.svc-tile:not(.svc-live), .svc-event').forEach(el => {
     el.addEventListener('click', () => showToast(t('comingSoon'), 'info'));
   });
+}
+
+// The page of this app a notification opens, when it names one. The
+// notifications node is written by browsers, so only a plain route is taken.
+function notifPage(n) {
+  const link = String(n?.link || '');
+  return /^#\/[a-z][\w/-]*$/i.test(link) ? link : '';
+}
+
+// A coaching notice — a lesson booked, a lesson cancelled. It rides the
+// tournament notices' type because the push function sends those with their
+// own text (functions/index.js sendPushOnNotification).
+function coachNotify(memberId, title, body) {
+  if (!memberId || memberId === currentUser?.id) return;
+  store.saveNotification(memberId, { type: 'tn_sched', kind: 'coach', title, body, link: '#/coaching' })
+    .catch(err => console.warn('coach notice:', err?.message || err));
 }
 
 // Count notifications that haven't expired (game start passed), grouped per
@@ -3359,10 +3383,13 @@ function renderNotifications(notifs) {
               // A result is read, not accepted or declined: one action —
               // opening the tournament — and that is what clears the row
               // (the whole group, so a "+2" goes with it).
-              const open = !!n.tnId;
+              // A coaching notice is the same shape with a page of the
+              // app's own to open instead of a tournament.
+              const page = notifPage(n);
+              const open = !!n.tnId || !!page;
               return `
               <div class="notif-item glass-card${open ? ' notif-open' : ''}"${open
-                ? ` data-tn="${esc(n.tnId)}" data-ids="${n.groupIds.join(',')}" role="button" tabindex="0" style="cursor:pointer;"`
+                ? ` data-tn="${esc(n.tnId || '')}" data-page="${esc(page)}" data-ids="${n.groupIds.join(',')}" role="button" tabindex="0" style="cursor:pointer;"`
                 : ''}>
                 <div class="notif-content">
                   <span class="notif-icon">${icon(n.type === 'mcup' ? 'play' : 'time', { size: 18 })}</span>
@@ -3437,7 +3464,7 @@ function renderNotifications(notifs) {
   container.querySelectorAll('.notif-item.notif-open').forEach(card => {
     const open = async () => {
       await Promise.all(card.dataset.ids.split(',').map(id => store.deleteNotification(currentUser.id, id)));
-      location.hash = '#/tournament/' + card.dataset.tn;
+      location.hash = card.dataset.tn ? '#/tournament/' + card.dataset.tn : card.dataset.page;
     };
     card.addEventListener('click', open);
     card.addEventListener('keydown', (e) => {
@@ -6827,6 +6854,10 @@ function showAdminEditUserModal(user, onSaved) {
           <option value="hold" ${user.status === 'hold' ? 'selected' : ''}>Hold</option>
         </select>
       </div>
+      <label class="ae-coach" style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer;">
+        <input type="checkbox" id="ae-coach" disabled style="width:18px;height:18px;" />
+        <span><b>${t('coAdminCoach')}</b><br><span style="font-size:0.8rem;color:var(--text-secondary);">${t('coAdminCoachSub')}</span></span>
+      </label>
 
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-card);">
         <h4 style="margin-bottom:8px;color:var(--emerald);">${t('editBank')}</h4>
@@ -6866,6 +6897,16 @@ function showAdminEditUserModal(user, onSaved) {
       opt.style.background = 'var(--primary-color)';
       selectedAvatar = opt.dataset.val;
     };
+  });
+
+  // Whether the member is a coach is not on the member record (coaches/{id},
+  // docs/coaching.md): read it, and until it is read the box stays shut.
+  const coachBox = modal.querySelector('#ae-coach');
+  let wasCoach = null;
+  store.loadCoaches().then(coaches => {
+    wasCoach = isCoach(coaches, user.id);
+    coachBox.checked = wasCoach;
+    coachBox.disabled = false;
   });
 
   modal.querySelector('#ae-cancel').onclick = () => modal.remove();
@@ -6908,6 +6949,15 @@ function showAdminEditUserModal(user, onSaved) {
       console.warn('save member:', err?.message || err);
       showToast(t('memberSaveRefused'), 'error');
       return;
+    }
+    if (wasCoach !== null && coachBox.checked !== wasCoach) {
+      try {
+        await store.setCoach(user.id, coachBox.checked, currentUser.id);
+      } catch (err) {
+        console.warn('set coach:', err?.message || err);
+        showToast(t('memberSaveRefused'), 'error');
+        return;
+      }
     }
     if (currentUser && currentUser.id === user.id) {
       store.saveUser(user);
