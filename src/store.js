@@ -560,6 +560,16 @@ export function ghinPhoneReport() {
   return callAsMember('ghinPhoneReport', {});
 }
 
+/**
+ * Admin: tie members to the golfers found by their phone — `links` is
+ * [{ memberId, number }]. The server reads each golfer's phone again and
+ * ties only where it is the member's own. → { linked: [{ memberId, number,
+ * name }], refused: [{ memberId, number, reason }] }
+ */
+export function ghinLinkByPhone(links) {
+  return callAsMember('ghinLinkByPhone', { links });
+}
+
 /** What GHIN said of one member, or null: never read, or not this browser's to read. */
 export async function loadGhin(memberId) {
   if (!memberId) return null;

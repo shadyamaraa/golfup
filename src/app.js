@@ -3,7 +3,7 @@ import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
-import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster } from './ghin.js';
+import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
 import * as tsheet from './tournament-sheet.js';
@@ -93,6 +93,9 @@ let activeUnsubs = [];
 let viewEpoch = 0;
 const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
 const ghinOn = () => ghinVisibleTo(GHIN_STAGE, currentUser);
+// What the last «Сонгосныг холбох» did, shown once in the GHIN card after
+// the admin panel is drawn again with the members it tied.
+let ghinLinkNotice = '';
 let homeFilter = 'all';
 let homeGamesCache = [];
 // A game page asked to open on its score board — set by the scorer's 🏁 and
@@ -6344,7 +6347,10 @@ async function renderAdminPanel() {
     btn.textContent = '...';
     try {
       const report = await store.ghinPhoneReport();
-      if (out) out.innerHTML = ghinPhoneHTML(report, nonAdminUsers);
+      if (out) {
+        out.innerHTML = ghinPhoneHTML(report, nonAdminUsers);
+        wireGhinLink(out, nonAdminUsers);
+      }
     } catch (err) {
       console.warn('GHIN phone trial:', err?.code || err);
       showToast(t(ghinErrorKey(err)), 'error');
@@ -6539,6 +6545,8 @@ async function renderAdminPanel() {
 // a number GHIN does not know, or one that is somebody else's (the name GHIN
 // has is beside the member's), is a number typed wrong.
 function ghinAdminHTML(roster) {
+  const linkNotice = ghinLinkNotice;
+  ghinLinkNotice = '';
   const staging = roster.rows.some(r => r.record?.env === 'staging');
   const when = roster.syncedAt ? new Date(roster.syncedAt).toLocaleString('sv-SE').slice(0, 16) : '';
   const summary = t('ghinAdminSummary').replace('{n}', roster.total).replace('{f}', roster.found)
@@ -6559,7 +6567,7 @@ function ghinAdminHTML(roster) {
                 <button type="button" id="ghin-sync-all-btn" class="btn btn-primary btn-sm" ${roster.total ? '' : 'disabled'}>${t('ghinAdminBtn')}</button>
               </div>
             </div>
-            <div id="ghin-phone-result"></div>
+            <div id="ghin-phone-result">${linkNotice}</div>
             ${rows.length ? `
             <details style="margin-top:10px;">
               <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-secondary);">${t('ghinAdminList')}</summary>
@@ -6583,6 +6591,44 @@ function ghinAdminHTML(roster) {
               </div>
             </details>` : ''}
           </div>`;
+}
+
+// «Сонгосныг холбох» under the members found by phone: the ticked rows go
+// to the server, which reads each golfer's phone again and ties the ones
+// where it is the member's own. What it did is shown in the card once the
+// panel is drawn again with the newly tied members in the list.
+function wireGhinLink(scope, users) {
+  const btn = scope.querySelector('#ghin-link-btn');
+  if (!btn) return;
+  const picks = () => [...scope.querySelectorAll('.ghin-link-pick')].filter(x => x.checked && !x.disabled);
+  const label = () => { const n = picks().length; btn.textContent = t('ghinLinkBtn').replace('{n}', n); btn.disabled = n === 0; };
+  scope.querySelectorAll('.ghin-link-pick').forEach(x => x.addEventListener('change', label));
+  label();
+  btn.addEventListener('click', async () => {
+    const links = picks().map(x => ({ memberId: x.dataset.member, number: x.dataset.number }));
+    if (!links.length || !confirm(t('ghinLinkConfirm').replace('{n}', links.length))) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const out = await store.ghinLinkByPhone(links);
+      const byId = new Map(users.map(u => [u.id, u]));
+      const nameOf = (id) => esc(byId.has(id) ? displayUsername(byId.get(id)) : id);
+      const done = (out.linked || []).length;
+      const refused = out.refused || [];
+      showToast(t('ghinLinkDone').replace('{n}', done), done ? 'success' : 'info');
+      ghinLinkNotice = `
+            <div id="ghin-link-result" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card);font-size:0.82rem;line-height:1.5;color:var(--text-secondary);">
+              <div style="color:var(--text-primary);font-weight:700;">${t('ghinLinkDone').replace('{n}', done)}</div>
+              ${refused.length ? `<div style="color:var(--danger-color);">${t('ghinLinkRefused')} ${refused.map(r => `${nameOf(r.memberId)} (${t(ghinLinkWhyKey(r.reason))})`).join(', ')}</div>` : ''}
+            </div>`;
+      renderAdminPanel();
+    } catch (err) {
+      console.warn('GHIN link:', err?.code || err);
+      showToast(t(ghinErrorKey(err)), 'error');
+      scope.insertAdjacentHTML('beforeend', `<div style="font-size:0.82rem;">${ghinRefusalHTML(t(ghinErrorKey(err)), { code: err?.code || (err?.status ? `HTTP ${err.status}` : ''), upstream: err?.upstream, detail: err?.detail })}</div>`);
+      label();
+    }
+  });
 }
 
 // What GHIN said in refusing, for an admin to read: the code, GHIN's status
@@ -6628,12 +6674,14 @@ function ghinPhoneHTML(report, users) {
               <div style="overflow-x:auto;margin-top:8px;">
                 <table id="ghin-phone-table" style="width:100%;border-collapse:collapse;color:var(--text-primary);">
                   <thead><tr style="color:var(--text-secondary);">
+                    <th style="${cell}"></th>
                     <th style="${cell}">${t('ghinColMember')}</th><th style="${cell}">${t('ghinColName')}</th>
                     <th style="${cell}">${t('ghinNumber')}</th><th style="${cell}">${t('ghinHi')}</th><th style="${cell}"></th>
                   </tr></thead>
                   <tbody>
                     ${rows.map(c => `
                     <tr>
+                      <td style="${cell}"><input type="checkbox" class="ghin-link-pick" data-member="${esc(c.memberId)}" data-number="${esc(c.golfer?.number || '')}" ${c.linkedTo || !c.golfer?.number ? 'disabled' : 'checked'} style="width:16px;height:16px;" /></td>
                       <td style="${cell}">${nameOf(c.memberId)}</td>
                       <td style="${cell}">${esc(c.golfer?.name || '—')}</td>
                       <td style="${cell}font-variant-numeric:tabular-nums;">${esc(c.golfer?.number || '')}</td>
@@ -6642,6 +6690,10 @@ function ghinPhoneHTML(report, users) {
                     </tr>`).join('')}
                   </tbody>
                 </table>
+              </div>
+              <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <button type="button" id="ghin-link-btn" class="btn btn-primary btn-sm"></button>
+                <span style="font-size:0.75rem;">${t('ghinLinkHint')}</span>
               </div>` : ''}
               ${many.length ? `<div id="ghin-phone-many" style="margin-top:6px;">${t('ghinPhoneMany')} ${many.map(a => `${nameOf(a.memberId)} (${Number(a.count) || 0})`).join(', ')}</div>` : ''}
               <div style="margin-top:6px;font-size:0.75rem;">${t('ghinPhoneNote')}</div>

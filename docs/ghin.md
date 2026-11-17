@@ -55,7 +55,8 @@ hosting rewrite.
 | `ghinGolfer { idToken, ghin }` | any member | Who GHIN has under a number. Nothing is stored. Thirty an hour for each member. |
 | `ghinSync { idToken, memberId? }` | a member for themselves, an admin for anyone | Reads the Handicap Index for the GHIN number **on the member's record** and stores it under `ghin/{memberId}`. |
 | `ghinSyncAll { idToken }` | admins | The same for every member with a GHIN number — `golfers/search` takes fifty numbers a request. |
-| `ghinPhoneReport { idToken }` | admins | A trial (below): can members be found on GHIN by the phone they sign in with? Counts and candidates; nothing stored. |
+| `ghinPhoneReport { idToken }` | admins | Who can be found on GHIN by the phone they sign in with (below). Counts and candidates; nothing stored. |
+| `ghinLinkByPhone { idToken, links: [{ memberId, number }] }` | admins | Ties the members found that way to their golfers. The server reads each golfer's phone again and ties only where it is the member's own. |
 
 `ghin/{memberId}`:
 
@@ -137,8 +138,36 @@ another phone, or none — a tie worth a second look, since a number that
 is somebody else's shows up there. It only reads; no phone number is in the
 answer, and a failure stays on the page with its reason.
 
-First result (staging, 2026-11-17): of 95 linked members, for 77 the phone
-on GHIN is their own, 14 another, 4 none.
+Result (staging, 2026-11-17): of 95 linked members, for 77 the phone on
+GHIN is their own, 14 another, 4 none; of 52 members without a GHIN
+number, 36 were found by phone — one golfer each — and 16 were not. The
+roster read was Mongolian Golf Club, 342 golfers, 304 with a phone.
+
+### Tying the members found
+
+The candidates come with a tick each (a number another member already has
+cannot be ticked) and «Сонгосныг холбох». The ticked `{ memberId, number }`
+pairs go to `ghinLinkByPhone`, which does not take the screen on trust: it
+reads those golfers from GHIN again and ties a member only when the phone
+GHIN holds for that number is the phone on the member's record. Each tie
+is refused on its own, with a reason — the member has another number, the
+number is another member's, the phone differs, GHIN has no such golfer.
+
+A tie is three writes in one: the GHIN number on the member's record
+(`users/{id}/ghinNumber`), what GHIN said of the golfer (`ghin/{id}`, as a
+sync would), and how the tie was made —
+
+```js
+ghinLink/{memberId}: { number, by: 'phone', at, admin }
+```
+
+`ghinLink` is read by signed-in members and written by no client. It is
+the start of the record a posted score will need: that this member is
+that golfer, and on what proof.
+
+Not everything found should be tied: an account that is not a person (a
+marshal's desk login, say) can share a phone with a placeholder golfer —
+untick it.
 
 What it decides: if most members are found by phone, tying becomes
 automatic — «GHIN-д таны бүртгэл олдлоо … Холбох уу?» at sign-in, written

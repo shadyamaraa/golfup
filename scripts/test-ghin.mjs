@@ -121,6 +121,7 @@ function world(golfers = [], over = {}) {
   };
   const secrets = {};
   const saved = {};
+  const links = {};
   const tokens = { 'tok-a': { memberId: 'u_a' }, 'tok-b': { memberId: 'u_b' }, 'tok-adm': { memberId: 'u_adm' }, 'tok-anon': {} };
   const deps = {
     client,
@@ -132,8 +133,9 @@ function world(golfers = [], over = {}) {
     patchSecret: async (id, patch) => { secrets[id] = { ...(secrets[id] || {}), ...patch }; },
     saveGhin: async (id, record) => { saved[id] = record; },
     saveAllGhin: async (records) => { Object.assign(saved, records); },
+    saveLink: async (id, tie) => { links[id] = tie; },
   };
-  return { fake, deps, users, secrets, saved, tick };
+  return { fake, deps, users, secrets, saved, links, tick };
 }
 const codeOf = (out) => out.body.error?.code;
 const PII = ['email', 'phone_number', 'date_of_birth', 'street_1', 'city', 'zip', 'first_name', 'last_name'];
@@ -642,4 +644,97 @@ test('a member\'s lookup does not pass GHIN\'s own words on; an admin\'s read-al
   const adminOut = await ghin.syncAll(world([row(12345678)], { ghin: { searchStatus: 500 } }).deps, { idToken: 'tok-adm' });
   assert.equal(codeOf(adminOut), 'GHIN_ERROR');
   assert.equal(adminOut.body.error.upstream, 500);
+});
+
+// ---- Tying the members found by phone to their golfers ----
+
+test('linkByPhone: admins only, and something to tie', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const one = [{ memberId: 'n_one', number: '67890123' }];
+  assert.equal(codeOf(await ghin.linkByPhone(w.deps, { links: one })), 'UNAUTHENTICATED');
+  w.deps.verifyIdToken = async (t) => ({ memberId: t === 'tok-adm' ? 'u_adm' : 'l_same' });
+  assert.equal(codeOf(await ghin.linkByPhone(w.deps, { idToken: 'x', links: one })), 'FORBIDDEN');
+  for (const links of [undefined, [], 'n_one', Array.from({ length: ghin.MAX_LINKS + 1 }, () => one[0])]) {
+    assert.equal(codeOf(await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links })), 'BAD_LINKS');
+  }
+  assert.equal(w.fake.state.asked.length, 0);
+  assert.deepEqual(w.links, {});
+});
+
+test('linkByPhone: the member is tied — the number, what GHIN said, and how', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'n_one', number: '6789-0123' }] });
+  assert.deepEqual(out, { status: 200, body: { ok: true, env: 'staging', linked: [{ memberId: 'n_one', number: '67890123', name: 'Found Golfer' }], refused: [] } });
+  assert.deepEqual(Object.keys(w.links), ['n_one']);
+  const tie = w.links.n_one;
+  assert.equal(tie.number, '67890123');
+  assert.deepEqual(tie.link, { number: '67890123', by: 'phone', at: NOW, admin: 'u_adm' });
+  assert.equal(tie.ghin.found, true);
+  assert.equal(tie.ghin.name, 'Found Golfer');
+  assert.equal(tie.ghin.hi, '9.9');
+  assert.deepEqual([tie.ghin.env, tie.ghin.syncedAt], ['staging', NOW]);
+  assert.equal(JSON.stringify(tie).includes('88110001'), false, 'the phone is not written anywhere');
+  assert.equal(JSON.stringify(out.body).includes('88110001'), false);
+});
+
+test('linkByPhone: the phone is read again here — what the screen showed is not taken on trust', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  // n_zero's phone is not the one GHIN holds for that golfer.
+  const out = await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'n_zero', number: '67890123' }] });
+  assert.deepEqual(out.body.linked, []);
+  assert.deepEqual(out.body.refused, [{ memberId: 'n_zero', number: '67890123', reason: 'PHONE_DIFFERS' }]);
+  assert.deepEqual(w.links, {});
+});
+
+test('linkByPhone: each tie stands or falls on its own, with a reason', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.linkByPhone(w.deps, {
+    idToken: 'tok-adm',
+    links: [
+      { memberId: 'n_one', number: '67890123' },      // good
+      { memberId: 'n_other', number: '90123456' },    // good
+      { memberId: 'nobody', number: '67890123' },     // no such member
+      { memberId: 'admin_uid', number: '67890123' },  // not a member
+      { memberId: 'users/n_one', number: '67890123' },
+      { memberId: 'n_many', number: '12' },           // not a GHIN number
+      { memberId: 'l_same', number: '67890123' },     // already has another number
+      { memberId: 'n_nophone', number: '78901234' },  // nothing to prove it by
+      { memberId: 'n_taken', number: '23456789' },    // l_diff's number
+      { memberId: 'n_many', number: '67890123' },     // asked for twice here
+      { memberId: 'n_zero', number: '11111111' },     // GHIN has no such golfer
+    ],
+  });
+  assert.deepEqual(out.body.linked.map(x => x.memberId), ['n_one', 'n_other']);
+  assert.deepEqual(out.body.refused.map(x => [x.memberId, x.reason]), [
+    ['nobody', 'NO_MEMBER'], ['admin_uid', 'NO_MEMBER'], ['users/n_one', 'NO_MEMBER'],
+    ['n_many', 'BAD_GHIN'], ['l_same', 'HAS_NUMBER'], ['n_nophone', 'NO_PHONE'],
+    ['n_taken', 'TAKEN'], ['n_many', 'TAKEN'], ['n_zero', 'NOT_ON_GHIN'],
+  ]);
+  assert.deepEqual(Object.keys(w.links).sort(), ['n_one', 'n_other']);
+  // The golfers to check are asked for together. One of them has a masked
+  // row beside its own, so the number that was not found is asked for once more alone.
+  assert.deepEqual(w.fake.state.searches.map(x => x.ids), [['67890123', '90123456', '11111111'], ['11111111']]);
+});
+
+test('linkByPhone: a member who already has that number is tied again — now with the proof', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'l_same', number: '12345678' }, { memberId: 'l_diff', number: '23456789' }] });
+  assert.deepEqual(out.body.linked.map(x => x.memberId), ['l_same']);
+  assert.deepEqual(out.body.refused, [{ memberId: 'l_diff', number: '23456789', reason: 'PHONE_DIFFERS' }]);
+  assert.equal(w.links.l_same.link.by, 'phone');
+});
+
+test('linkByPhone: when GHIN fails nothing is tied', async () => {
+  const w = phoneWorld(PHONE_GOLFERS, { ghin: { searchStatus: 503 } });
+  const out = await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'n_one', number: '67890123' }] });
+  assert.equal(out.status, 502);
+  assert.equal(codeOf(out), 'GHIN_ERROR');
+  assert.deepEqual(w.links, {});
+});
+
+test('linkByPhone: nothing to ask GHIN when every tie is refused beforehand', async () => {
+  const w = phoneWorld(PHONE_GOLFERS);
+  const out = await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'nobody', number: '67890123' }] });
+  assert.equal(out.status, 200);
+  assert.equal(w.fake.state.asked.length, 0);
 });

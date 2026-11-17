@@ -550,6 +550,22 @@ exports.ghinPhoneReport = signInEndpoint((body) => ghin.phoneReport({
   loadUsers: loadAllUsers,
 }, body), { ...GHIN, timeoutSeconds: 300 });
 
+// An admin ties members to the golfers found by their phone. The phone is
+// checked again here for each; then the GHIN number goes on the member's
+// record, the golfer's reading under ghin/{id}, and how the tie was made
+// under ghinLink/{id} — all three in one write.
+exports.ghinLinkByPhone = signInEndpoint((body) => ghin.linkByPhone({
+  client: ghinClient(),
+  verifyIdToken,
+  loadUser: loadMember,
+  loadUsers: loadAllUsers,
+  saveLink: (memberId, { number, ghin: record, link }) => admin.database().ref().update({
+    [`users/${memberId}/ghinNumber`]: number,
+    [`ghin/${memberId}`]: record,
+    [`ghinLink/${memberId}`]: link,
+  }),
+}, body), { ...GHIN, timeoutSeconds: 300 });
+
 const APP_URL = 'https://ubgolf.club';
 
 // A data-only web push: the service worker (public/firebase-messaging-sw.js)
