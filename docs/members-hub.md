@@ -53,6 +53,11 @@ evidence of who someone is:
   here, and the hub's separate «GHIN only» row for that number is merged
   into them.
 
+The order of a night: this app's `ghinNightly` at 02:30 ties new members to
+their golfers and reads the indexes (`docs/ghin.md`); the hub rebuilds its
+list at 03:30 and reads the result. A member who signs up today is, by the
+morning, tied to GHIN here and to their MT Bogd membership in the hub.
+
 A number a member only typed, which neither GHIN's name nor the hub's list
 bears out, is not used. So it matters that numbers here are checked
 («GHIN шалгах», the admin's «Sync all» and tying by phone): an unchecked

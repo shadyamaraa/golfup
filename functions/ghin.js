@@ -19,6 +19,9 @@
 //              they sign in with? Counts, and who was found.
 //   linkByPhone — an admin ties the members found that way to their golfers.
 //              The server checks the phone again for each before it writes.
+//   nightly  — the server on its own, every night: ties the members found by
+//              phone whose name GHIN's also bears out, then reads every
+//              Handicap Index afresh. No admin, no browser.
 //
 // ghin/{memberId} is written only here (the database rules give no client
 // write access to it), so what it holds is what GHIN said.
@@ -345,12 +348,17 @@ async function sync(deps, body) {
  * deps: { client, verifyIdToken, loadUser(id), loadUsers(), saveAllGhin({memberId: record}), now? }
  */
 async function syncAll(deps, body) {
-  const now = deps.now || Date.now;
   const caller = await callerOf(deps, body && body.idToken);
   if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
   const me = await deps.loadUser(caller);
   if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Admins only');
+  return syncAllNow(deps);
+}
 
+// syncAll's work, once the asker is known to be allowed.
+// deps: { client, loadUsers(), saveAllGhin({memberId: record}), now? }
+async function syncAllNow(deps) {
+  const now = deps.now || Date.now;
   const users = (await deps.loadUsers()) || {};
   const numbers = new Map();   // member id → GHIN number
   for (const [key, u] of Object.entries(users)) {
@@ -409,7 +417,12 @@ async function phoneReport(deps, body) {
   if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
   const me = await deps.loadUser(caller);
   if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Admins only');
+  return phoneReportNow(deps);
+}
 
+// phoneReport's work, once the asker is known to be allowed.
+// deps: { client, loadUsers() (with the private half) }
+async function phoneReportNow(deps) {
   const users = (await deps.loadUsers()) || {};
   const linked = [];
   const unlinked = [];
@@ -559,7 +572,6 @@ const MAX_LINKS = 300;
  *         saveLink(memberId, { number, ghin, link }), now? }
  */
 async function linkByPhone(deps, body) {
-  const now = deps.now || Date.now;
   const b = body || {};
   const caller = await callerOf(deps, b.idToken);
   if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
@@ -567,7 +579,15 @@ async function linkByPhone(deps, body) {
   if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Admins only');
   const asked = Array.isArray(b.links) ? b.links : [];
   if (!asked.length || asked.length > MAX_LINKS) return fail(400, 'BAD_LINKS', `Between 1 and ${MAX_LINKS} ties at a time`);
+  return linkNow(deps, asked, { admin: caller });
+}
 
+// linkByPhone's work, once the asker is known to be allowed. `who` goes on
+// each tie's record: { admin: memberId } for an admin, { auto: true } for the
+// night's round.
+// deps: { client, loadUsers() (with the private half), saveLink, now? }
+async function linkNow(deps, asked, who) {
+  const now = deps.now || Date.now;
   const users = (await deps.loadUsers()) || {};
   // The numbers members already have: a golfer is one member's.
   const owner = new Map();
@@ -616,7 +636,7 @@ async function linkByPhone(deps, body) {
       await deps.saveLink(x.memberId, {
         number: x.number,
         ghin: recordOf(golfer, x.number, deps.client.env, at),
-        link: { number: x.number, by: 'phone', at, admin: caller },
+        link: { number: x.number, by: 'phone', at, ...who },
       });
       linked.push({ memberId: x.memberId, number: x.number, name: golfer.name });
     }
@@ -624,9 +644,104 @@ async function linkByPhone(deps, body) {
   return { status: 200, body: { ok: true, env: deps.client.env, linked, refused } };
 }
 
+// ---- Names ----
+// A member's name and GHIN's name for a golfer are rarely written alike: one
+// in Cyrillic, one in some Latin spelling, in either order. Both are folded
+// to a rough skeleton — Мөнхбат, Munkhbat, Monhbat all come out "munhbat" —
+// and two names agree when they share a word long enough to mean something.
+const CYR = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j', 'з': 'z',
+  'и': 'i', 'й': 'i', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'ө': 'u', 'п': 'p',
+  'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ү': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch',
+  'ш': 'sh', 'щ': 'sh', 'ъ': '', 'ы': 'i', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+};
+const foldWord = (w) => w.replace(/kh/g, 'h').replace(/ts/g, 's').replace(/o/g, 'u')
+  .replace(/w/g, 'v').replace(/z/g, 'j').replace(/y/g, 'i').replace(/(.)\1+/g, '$1');
+
+/** The words of a name, folded; short ones (initials, "Od", "Bat") dropped. */
+function nameWords(...parts) {
+  const latin = parts.filter(Boolean).join(' ').toLowerCase()
+    .split('').map(c => (CYR[c] !== undefined ? CYR[c] : c)).join('');
+  return [...new Set(latin.split(/[^a-z]+/).map(foldWord).filter(w => w.length >= 4))];
+}
+
+// One letter apart: a letter changed, dropped or added.
+function oneApart(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  const rest = (s, from) => s.slice(from);
+  return rest(a, i + 1) === rest(b, i + 1) || rest(a, i) === rest(b, i + 1) || rest(a, i + 1) === rest(b, i);
+}
+
+/**
+ * Does GHIN's name for a golfer bear out that it is this member? One shared
+ * word is enough — the phone has already matched; this keeps out a golfer
+ * whose name has nothing in common with the member's (a placeholder golfer
+ * can hold a real phone). A member with no usable name agrees with no one.
+ */
+function nameAgrees(member, golferName) {
+  const m = member && typeof member === 'object' ? member : {};
+  const mine = nameWords(m.firstName, m.lastName, m.name, m.fullName);
+  const theirs = nameWords(golferName);
+  const near = (a, b) => a === b
+    || (Math.min(a.length, b.length) >= 5 && (a.includes(b) || b.includes(a)))   // Bat-Erdene / Baterdene
+    || (Math.min(a.length, b.length) >= 6 && oneApart(a, b));
+  return mine.some(a => theirs.some(b => near(a, b)));
+}
+
+/**
+ * The night's round, run by the server on its own — no admin, no browser:
+ *
+ *   1. Members who have no GHIN number are looked for on GHIN by the phone
+ *      they sign in with, as phoneReport does. One golfer to the phone, not
+ *      another member's, and GHIN's name for the golfer agrees with the
+ *      member's → tied, as linkByPhone ties (the phone is read again). A
+ *      golfer whose name has nothing in common with the member's is left for
+ *      an admin to look at; so are a golfer who is another member's, and a
+ *      phone two golfers share.
+ *   2. Every member's Handicap Index is read afresh.
+ *
+ * What GHIN refuses does not stop the rest: the answer says what was done,
+ * and `errors` what was not. No phone number is in the answer.
+ * deps: { client, loadUsers() (with the private half), saveLink, saveAllGhin, now? }
+ */
+async function nightly(deps) {
+  const out = { ok: true, env: deps.client.env, tied: [], left: { name: 0, taken: 0, several: 0 }, refused: [], sync: null, errors: [] };
+  const failed = (step, res) => out.errors.push({ step, ...((res.body && res.body.error) || {}) });
+
+  const report = await phoneReportNow(deps);
+  if (report.status !== 200) failed('find', report);
+  else {
+    const users = (await deps.loadUsers()) || {};
+    const picks = [];
+    for (const c of report.body.candidates) {
+      if (c.linkedTo) out.left.taken++;
+      else if (!nameAgrees(users[c.memberId], c.golfer.name)) out.left.name++;
+      else picks.push({ memberId: c.memberId, number: c.golfer.number });
+    }
+    out.left.several = report.body.ambiguous.length;
+    if (picks.length) {
+      const res = await linkNow(deps, picks.slice(0, MAX_LINKS), { auto: true });
+      if (res.status !== 200) failed('tie', res);
+      else {
+        out.tied = res.body.linked.map(x => ({ memberId: x.memberId, number: x.number }));
+        out.refused = res.body.refused;
+      }
+    }
+  }
+
+  const sync = await syncAllNow(deps);
+  if (sync.status !== 200) failed('read', sync);
+  else out.sync = { members: sync.body.members, found: sync.body.found, notFound: sync.body.notFound };
+
+  out.ok = out.errors.length === 0;
+  return out;
+}
+
 module.exports = {
   UAT_BASE, TOKEN_TTL_MS, LOOKUPS_PER_HOUR, BATCH, PER_PAGE,
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
-  lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS,
+  lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS, nameWords, nameAgrees, nightly,
   _resetTokens: () => tokens.clear(),
 };
