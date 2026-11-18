@@ -13,6 +13,9 @@
 //                                       — the coach and that player read
 //   playerLessons/{playerId}/{key}    { coachId, slotId, start, minutes }
 //                                       — the player's own list
+//   coachChanges/{coachId}/{slotId}   { playerId, wantStart, note, at }
+//                                       — the player of a booked lesson asks for
+//                                         another time; the coach says yes or no
 //
 // Who booked is not on the slot: other members see only that it is taken.
 // Booking is one write to three places (bookingWrites), cancelling another
@@ -27,6 +30,10 @@ export const CANCEL_HOURS = 12;
 export const CANCEL_MS = CANCEL_HOURS * 60 * 60 * 1000;
 // So many slots opened in one go: a long day in half hours, and to spare.
 export const MAX_NEW_SLOTS = 40;
+// … and over several weeks at once: a full week of days, for three months.
+export const MAX_REPEAT_SLOTS = 400;
+// How many weeks a coach may open — or a player take — in one go.
+export const REPEAT_WEEKS = [1, 2, 3, 4, 6, 8, 12];
 const BIO_MAX = 600;
 const PLACE_MAX = 120;
 const NOTE_MAX = 300;
@@ -84,6 +91,9 @@ function at(date, time) {
   return new Date(y, mo, day, h, m, 0, 0).getTime();   // 24:00 is the next day's midnight
 }
 
+/** 'YYYY-MM-DD' and 'HH:MM' in the device's own time → the moment, or NaN. */
+export const momentOf = (date, time) => at(date, time);
+
 const overlaps = (aStart, aMin, bStart, bMin) => aStart < bStart + bMin * MIN && bStart < aStart + aMin * MIN;
 
 /**
@@ -114,6 +124,52 @@ export function newSlots({ date, from, to, minutes, price: slotPrice, existing =
     slots.push({ id: slotId(start), start, minutes: len, status: 'open', price: price(slotPrice), createdAt: now });
   }
   return { slots, past, overlap, error: null };
+}
+
+/**
+ * The same hours opened on several days at once: on each chosen weekday,
+ * from `date` on, for `weeks` weeks. `days` are weekdays as Date has them —
+ * 0 Sunday … 6 Saturday; none chosen means the weekday of `date` itself.
+ * Counts and errors as newSlots; 'many' when it comes to more than
+ * MAX_REPEAT_SLOTS.
+ */
+export function newSlotsRepeat({ date, from, to, minutes, price: slotPrice, existing = [], now = Date.now(), days = [], weeks = 1 }) {
+  const none = (error) => ({ slots: [], past: 0, overlap: 0, error });
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+  if (!d || !Number.isFinite(at(date, '00:00'))) return none('time');
+  const [y, mo, day] = [Number(d[1]), Number(d[2]) - 1, Number(d[3])];
+  const want = new Set((days || []).map(Number).filter(n => n >= 0 && n <= 6));
+  if (!want.size) want.add(new Date(y, mo, day).getDay());
+  const span = Math.max(1, Math.min(12, Math.round(Number(weeks)) || 1)) * 7;
+  const total = { slots: [], past: 0, overlap: 0, error: null };
+  for (let i = 0; i < span; i++) {
+    const on = new Date(y, mo, day + i);
+    if (!want.has(on.getDay())) continue;
+    const one = newSlots({ date: dayKey(on.getTime()), from, to, minutes, price: slotPrice, existing, now });
+    if (one.error) return none(one.error);
+    total.slots.push(...one.slots);
+    total.past += one.past;
+    total.overlap += one.overlap;
+    if (total.slots.length > MAX_REPEAT_SLOTS) return none('many');
+  }
+  return total;
+}
+
+/**
+ * The same weekday and hour in the weeks from `first` on: one entry a week,
+ * with the coach's open slot of the same length at that moment, or null
+ * when there is none to take. `first` itself is week one.
+ */
+export function weeklySeries(slots, first, weeks, now = Date.now()) {
+  const d = new Date(first.start);
+  const out = [];
+  for (let k = 0; k < Math.max(1, Math.round(Number(weeks)) || 1); k++) {
+    // By the calendar, not by adding hours: the same clock time across a change of clocks.
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * k, d.getHours(), d.getMinutes()).getTime();
+    const slot = (slots || []).find(s => s.start === start && s.minutes === first.minutes && s.status === 'open' && s.start > now) || null;
+    out.push({ start, slot });
+  }
+  return out;
 }
 
 /** The write that opens slots. Paths from the database root. */
@@ -153,9 +209,75 @@ export function cancelWrites(coachId, id, playerId, { removeSlot = false } = {})
   const out = {
     [`coachBookings/${coachId}/${id}`]: null,
     [`playerLessons/${playerId}/${lessonKey(coachId, id)}`]: null,
+    // a request to move this lesson has nothing left to move
+    [`coachChanges/${coachId}/${id}`]: null,
   };
   if (removeSlot) out[`coachSlots/${coachId}/${id}`] = null;
   else out[`coachSlots/${coachId}/${id}/status`] = 'open';
+  return out;
+}
+
+/**
+ * The write that moves a player's lesson to another of the coach's open
+ * slots — the old time freed and the new one taken, both or neither. The
+ * player's own to make while they may still cancel the old one.
+ */
+export function moveWrites(coachId, fromId, toSlot, playerId, note, now = Date.now()) {
+  return { ...cancelWrites(coachId, fromId, playerId), ...bookingWrites(coachId, toSlot, playerId, note, now) };
+}
+
+/** The write that asks the coach to move a booked lesson to another time. */
+export function changeRequestWrites(coachId, id, playerId, wantStart, note, now = Date.now()) {
+  const request = { playerId, wantStart: Math.round(Number(wantStart)), at: now };
+  const n = cleanNote(note);
+  if (n) request.note = n;
+  return { [`coachChanges/${coachId}/${id}`]: request };
+}
+
+/** The write that takes a request back, or turns it down. */
+export const dropChangeWrites = (coachId, id) => ({ [`coachChanges/${coachId}/${id}`]: null });
+
+/**
+ * Can the coach grant a request, and how? `slots` is the coach's list
+ * (slotList), `from` the lesson's own slot, `wantStart` the time asked for.
+ *
+ * @returns {{ slot: object|null, error: string|null }}
+ *   slot: the open slot already at that time, to take — or null, to make one
+ *   error: 'past' | 'same' | 'busy' (another lesson is there, or would overlap) | null
+ */
+export function changeTarget(slots, from, wantStart, now = Date.now()) {
+  const start = Math.round(Number(wantStart));
+  if (!(start > now)) return { slot: null, error: 'past' };
+  if (start === from.start) return { slot: null, error: 'same' };
+  const others = (slots || []).filter(s => s.id !== from.id);
+  const there = others.find(s => s.start === start);
+  if (there) return there.status === 'open' ? { slot: there, error: null } : { slot: null, error: 'busy' };
+  // No slot at that moment: one is made — unless it would run into another lesson.
+  const clash = others.some(s => s.status === 'booked' && overlaps(start, from.minutes, s.start, s.minutes));
+  return { slot: null, error: clash ? 'busy' : null };
+}
+
+/**
+ * The write with which the coach grants a request: the lesson leaves its old
+ * time (which opens again) and takes the one asked for — an open slot that
+ * is there (`slot`), or a new one made for it. One write, the request gone
+ * with it.
+ */
+export function approveChangeWrites(coachId, from, request, { slot = null, note = '', now = Date.now() } = {}) {
+  const playerId = request.playerId;
+  const start = slot ? slot.start : Math.round(Number(request.wantStart));
+  const minutes = slot ? slot.minutes : from.minutes;
+  const to = slotId(start);
+  const booking = { playerId, bookedAt: now, movedFrom: from.id };
+  const n = cleanNote(note);
+  if (n) booking.note = n;
+  const out = {
+    ...cancelWrites(coachId, from.id, playerId),
+    [`coachBookings/${coachId}/${to}`]: booking,
+    [`playerLessons/${playerId}/${lessonKey(coachId, to)}`]: { coachId, slotId: to, start, minutes },
+  };
+  if (slot) out[`coachSlots/${coachId}/${to}/status`] = 'booked';
+  else out[`coachSlots/${coachId}/${to}`] = { start, minutes, status: 'booked', price: price(from.price), createdAt: now };
   return out;
 }
 

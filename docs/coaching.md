@@ -54,6 +54,40 @@ notice to the other of the two.
 - **Two people, one slot:** the first write wins. The second is refused by
   the database and told «Энэ цагийг дөнгөж сая өөр хүн авчихлаа».
 
+### Weeks at a time
+
+- **The coach opens the same hours for weeks**: «Давтах» on the desk —
+  1 to 12 weeks — and the weekdays to open (the weekday of the date chosen
+  is marked to begin with). «Мягмар, Пүрэв 15:00–17:00, 4 долоо хоног» is
+  sixteen slots in one go; up to 400. What has begun or overlaps is left
+  out and counted, as for one day.
+- **A player takes the same hour week after week**: in the booking dialog,
+  «Давтах» → «Долоо хоног бүр — 4 удаа» lists that weekday and hour for the
+  weeks that follow, each marked «сул» or «боломжгүй», and books the open
+  ones. Each is its own write, so one that was taken a moment ago does not
+  undo the rest; the toast says how many were booked and how many were not.
+  Two weekdays are two bookings (Tuesday's four, then Thursday's four).
+
+### Another time for a lesson — «Цаг солих»
+
+On each of «Миний хичээлүүд»:
+
+- **An open time of the coach's** is taken **at once** — the old time freed
+  and the new one booked in one write — while the player may still cancel
+  the old lesson (12 hours or more before it).
+- **Any other time** — one the coach has not opened, or any change inside
+  the 12 hours — is a **request**: the day and hour wanted, and a note. The
+  coach sees it on the lesson's row on their desk («Цаг солих хүсэлт: …»)
+  and presses «Зөвшөөрөх» or «Татгалзах».
+  - Granted: the lesson moves to the time asked for — onto the open slot
+    there, or onto a slot made for it (the lesson's own length and price) —
+    and the old time opens again. Refused when another lesson is at that
+    time or would overlap it, or when the time has passed.
+  - Turned down, or taken back by the player («Хүсэлтээ буцаах»): the
+    lesson stays as it was.
+- One request per lesson; asking again replaces it. Cancelling the lesson
+  removes its request. Each side is told of the other's move.
+
 ## Programs — «Сургалт»
 
 A lesson is one booked time. A **program** is what a coach offers around
@@ -112,6 +146,8 @@ In the app's bell, and as a push where the member allows them:
 | A player cancels | the coach |
 | A coach cancels | the player |
 | A day before, and two hours before | both — `coachReminders` |
+| A player moves a lesson to an open time, or asks for another time | the coach |
+| A coach grants or turns down a request to move a lesson | the player |
 | A member asks to join a program, or takes it back | the coach |
 | A coach removes a request, or the program | the member(s) |
 
@@ -138,6 +174,8 @@ coachSlots/{coachId}/{slotId}     { start, minutes, status, price, createdAt }
 coachBookings/{coachId}/{slotId}  { playerId, bookedAt, note }
 playerLessons/{playerId}/{key}    { coachId, slotId, start, minutes }
                                     key = coachId + '_' + slotId
+coachChanges/{coachId}/{slotId}   { playerId, wantStart, note, at } — a request to
+                                    move that booked lesson to another time
 coachReminded/{coachId}/{slotId}  { day, soon } — the server's own mark
 
 coachPrograms/{coachId}/{id}      { title, level, summary, options: [{ label, price }],
@@ -184,6 +222,17 @@ leave one without the others:
   theirs behind it. The player, that lesson's coach or an admin removes it
   only when the booking is no longer that player's — in the cancelling
   write, or afterwards for an entry left behind.
+- `coachChanges/{coach}/{slot}`: only the player of that booked lesson asks
+  — for a time still to come that is not the one it has; the coach reads
+  all of theirs, the player their own. The player, the coach or an admin
+  removes it. A booking is not removed while its request stands (the
+  cancelling write takes both), so a request never outlives its lesson.
+- The coach places a booking **for a player** in one case only: granting
+  that player's request — the booking says which lesson it was moved from,
+  the slot's start is the time asked for and still to come, and the old
+  booking goes in the same write. Otherwise a booking is made by the player
+  alone. The coach may put the moved lesson on the player's list only with
+  that player's booking behind it.
 - `coachReminded`: no rule — server only.
 
 A record edited in the Firebase console can still break the chain (the
@@ -249,8 +298,11 @@ than the coaching page.
 - Payment through the app (the club's QPay, then the club pays the coaches).
   A request to join a program is not a purchase: nothing counts lessons
   used against a package yet.
-- A class with a fixed timetable and limited seats; a recurring weekly
-  timetable.
+- A class with a fixed timetable and limited seats (several players in one
+  slot). A coach's weekly timetable that renews itself — the coach opens
+  the next weeks when they want them.
+- A coach moving a lesson on their own, without a request: for now the
+  coach cancels and the player books again.
 - Lesson notes, ratings.
 - A link to MT Bogd's range or tee sheet (Sky ONE).
 - Past slots are kept (they are the record the payment phase will need) and

@@ -31,6 +31,9 @@
 
 ## Done
 
+- [x] Coaching, flexible times — a coach opens weeks at once, a player
+      books a weekly series, and a lesson's time is changed at once or by a
+      request the coach grants. `docs/coaching.md`.
 - [x] Coach programs — a coach posts a course or package with a poster and
       prices in four steps; members ask to join and the coach sees who.
       `docs/coaching.md` («Programs»).

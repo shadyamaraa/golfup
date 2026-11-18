@@ -16,7 +16,10 @@ import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, remove } from 'firebase/database';
 import { mergeMember, baselineOf, memberWrites } from '../src/member-record.js';
-import { slotId, slotWrites, bookingWrites, cancelWrites, lessonKey, CANCEL_MS } from '../src/coaching.js';
+import {
+  slotId, slotWrites, bookingWrites, cancelWrites, lessonKey, CANCEL_MS,
+  moveWrites, changeRequestWrites, dropChangeWrites, approveChangeWrites,
+} from '../src/coaching.js';
 import { programWrites, publishWrites, enrollWrites, unenrollWrites, removeProgramWrites, enrollKey } from '../src/coaching-programs.js';
 
 const HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
@@ -601,6 +604,163 @@ test('coaching: an admin can step in — cancel a booking, clear a slot', async 
   await ok(update(root(admin), cancelWrites('m2', slotId(S.takenSoon), 'm1')), 'an admin cancels');
   assert.equal((await stored(`coachSlots/m2/${slotId(S.takenSoon)}`)).status, 'open');
   await ok(remove(ref(sysAdmin, `coachSlots/m2/${soon.id}`)), 'the system admin clears an open slot');
+});
+
+// ---- Coaching: another time for a booked lesson ----
+// m1's lessons with m2: S.taken (50 hours off) and S.takenSoon (3 hours off).
+// S.far is open; a request asks for a time, the coach grants it or not.
+const taken = { id: slotId(S.taken), start: S.taken, minutes: 60, price: 80000 };
+const takenSoon = { id: slotId(S.takenSoon), start: S.takenSoon, minutes: 60, price: 80000 };
+const openFar = { id: slotId(S.far), start: S.far, minutes: 60, status: 'open' };
+const FREE = T0 + 60 * HOUR;                                  // a time with no slot at all
+async function layChange(want, playerId = 'm1', id = taken.id) {
+  await layCoaching();
+  const r = await fetch(`http://${HOST}/coachChanges.json?ns=${NS}`, {
+    method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify(want === null ? null : { m2: { [id]: { playerId, wantStart: want, at: T0 } } }),
+  });
+  assert.equal(r.status, 200, 'laying coachChanges');
+}
+
+test('change: the player of a booked lesson asks for another time; the coach and they read it, no one else', async () => {
+  await layChange(null);
+  await ok(update(root(m1), changeRequestWrites('m2', taken.id, 'm1', FREE, 'an hour later, please', T0)), 'their own lesson');
+  assert.deepEqual(await stored(`coachChanges/m2/${taken.id}`), { playerId: 'm1', wantStart: FREE, at: T0, note: 'an hour later, please' });
+  await ok(update(root(m1), changeRequestWrites('m2', taken.id, 'm1', S.far, '', T0)), 'and asks again, for another time');
+  assert.equal((await get(ref(m2, 'coachChanges/m2'))).val()[taken.id].wantStart, S.far);
+  assert.equal((await get(ref(m1, `coachChanges/m2/${taken.id}`))).val().wantStart, S.far);
+  assert.equal((await get(ref(m1, `coachChanges/m2/${takenSoon.id}`))).val(), null, 'their other lesson: nothing asked, and readable so');
+  assert.ok((await get(ref(admin, 'coachChanges/m2'))).exists());
+  await denied(get(ref(f1, `coachChanges/m2/${taken.id}`)), 'another member, the request');
+  await denied(get(ref(f1, 'coachChanges/m2')), 'another member, all of them');
+  await denied(get(ref(m1, 'coachChanges/m2')), 'the player, every request to the coach');
+  await denied(get(ref(visitor, `coachChanges/m2/${taken.id}`)), 'a visitor');
+});
+
+test('change: who may not ask, and what a request may say', async () => {
+  await layChange(null);
+  const ask = (db, id, player, want, note = '') => update(root(db), changeRequestWrites('m2', id, player, want, note, T0));
+  await denied(ask(f1, taken.id, 'f1', FREE), 'a member, for a lesson that is not theirs');
+  await denied(ask(f1, taken.id, 'm1', FREE), 'a member, in the player\'s name');
+  await denied(ask(m1, taken.id, 'f1', FREE), 'the player, in another\'s name');
+  await denied(ask(m2, taken.id, 'm1', FREE), 'the coach, for the player');
+  await denied(ask(m1, openFar.id, 'm1', FREE), 'for a slot no one has booked');
+  await denied(ask(anon, taken.id, 'm1', FREE), 'an anonymous device');
+  await denied(ask(m1, taken.id, 'm1', T0 - HOUR), 'for a time already past');
+  await denied(ask(m1, taken.id, 'm1', S.taken), 'for the time it already has');
+  const w = changeRequestWrites('m2', taken.id, 'm1', FREE, '', T0);
+  const say = (change) => ({ [`coachChanges/m2/${taken.id}`]: { ...w[`coachChanges/m2/${taken.id}`], ...change } });
+  await denied(update(root(m1), say({ wantStart: 'tomorrow' })), 'a time that is not a number');
+  await denied(update(root(m1), say({ note: 'n'.repeat(301) })), 'a note too long');
+  await denied(update(root(m1), say({ approved: true })), 'a field that is not one');
+  // Asked while cancelling the same lesson: there would be nothing left to move.
+  await denied(update(root(m1), { ...cancelWrites('m2', taken.id, 'm1'), ...w }), 'a request for a lesson cancelled in the same write');
+  assert.equal(await stored(`coachChanges/m2/${taken.id}`), null);
+  await ok(update(root(m1), w), 'as the app writes it');
+  // A member put on hold after booking does not ask either.
+  for (const [path, value] of [[`coachSlots/m2/${openFar.id}/status`, 'booked'], [`coachBookings/m2/${openFar.id}`, { playerId: 'held', bookedAt: T0 }]]) {
+    await fetch(`http://${HOST}/${path}.json?ns=${NS}`, { method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+  }
+  await denied(ask(held, openFar.id, 'held', FREE), 'a member on hold');
+});
+
+test('change: a request is taken back by the player, turned down by the coach — and goes with the lesson', async () => {
+  await layChange(FREE);
+  await denied(update(root(f1), dropChangeWrites('m2', taken.id)), 'another member');
+  await ok(update(root(m1), dropChangeWrites('m2', taken.id)), 'the player takes it back');
+  await layChange(FREE);
+  await ok(update(root(m2), dropChangeWrites('m2', taken.id)), 'the coach turns it down');
+  assert.equal((await stored(`coachBookings/m2/${taken.id}`)).playerId, 'm1', 'the lesson stands as it was');
+  await layChange(FREE);
+  await ok(update(root(sysAdmin), dropChangeWrites('m2', taken.id)), 'an admin');
+  // A lesson is not cancelled out from under its request.
+  await layChange(FREE);
+  const cancel = cancelWrites('m2', taken.id, 'm1');
+  await denied(update(root(m1), without(cancel, 'coachChanges')), 'the player cancels, the request left behind');
+  await denied(update(root(m2), without(cancel, 'coachChanges')), 'the coach cancels, the request left behind');
+  await ok(update(root(m1), cancel), 'cancelled whole');
+  assert.deepEqual([await stored(`coachChanges/m2/${taken.id}`), await stored(`coachBookings/m2/${taken.id}`)], [null, null]);
+});
+
+test('change: a player moves their own lesson onto an open slot — while they may still cancel it', async () => {
+  await layChange(null);
+  await denied(update(root(m1), moveWrites('m2', takenSoon.id, openFar, 'm1', '', T0)), 'inside the twelve hours');
+  await denied(update(root(f1), moveWrites('m2', taken.id, openFar, 'm1', '', T0)), 'another member moves it');
+  await denied(update(root(m1), moveWrites('m2', taken.id, takenSoon, 'm1', '', T0)), 'onto a slot that is taken');
+  await denied(update(root(m1), moveWrites('m2', taken.id, { id: slotId(FREE), start: FREE, minutes: 60 }, 'm1', '', T0)), 'onto a time the coach has not opened');
+  assert.equal((await stored(`coachBookings/m2/${taken.id}`)).playerId, 'm1');
+  await ok(update(root(m1), moveWrites('m2', taken.id, openFar, 'm1', 'moved', T0)), 'well ahead, onto an open slot');
+  assert.deepEqual([(await stored(`coachSlots/m2/${taken.id}`)).status, (await stored(`coachSlots/m2/${openFar.id}`)).status], ['open', 'booked']);
+  assert.deepEqual(await stored(`coachBookings/m2/${openFar.id}`), { playerId: 'm1', bookedAt: T0, note: 'moved' });
+  assert.equal(await stored(`coachBookings/m2/${taken.id}`), null);
+  assert.deepEqual(Object.keys(await stored('playerLessons/m1')).sort(), [lessonKey('m2', takenSoon.id), lessonKey('m2', openFar.id)].sort());
+});
+
+test('change: the coach grants a request — onto an open slot, or a time made for it', async () => {
+  // Onto the open slot the player asked for — even inside the twelve hours of the old one.
+  await layChange(S.far, 'm1', takenSoon.id);
+  const request = await stored(`coachChanges/m2/${takenSoon.id}`);
+  await ok(update(root(m2), approveChangeWrites('m2', takenSoon, request, { slot: openFar, note: 'kept', now: T0 })), 'onto an open slot');
+  assert.deepEqual(await stored(`coachBookings/m2/${openFar.id}`), { playerId: 'm1', bookedAt: T0, movedFrom: takenSoon.id, note: 'kept' });
+  assert.deepEqual([(await stored(`coachSlots/m2/${takenSoon.id}`)).status, (await stored(`coachSlots/m2/${openFar.id}`)).status], ['open', 'booked']);
+  assert.deepEqual([await stored(`coachBookings/m2/${takenSoon.id}`), await stored(`coachChanges/m2/${takenSoon.id}`)], [null, null]);
+  assert.equal((await stored(`playerLessons/m1/${lessonKey('m2', openFar.id)}`)).start, S.far);
+  assert.equal(await stored(`playerLessons/m1/${lessonKey('m2', takenSoon.id)}`), null);
+  // The player reads their moved lesson.
+  assert.equal((await get(ref(m1, `coachBookings/m2/${openFar.id}`))).val().playerId, 'm1');
+
+  // Onto a time with no slot: one is made, taken from the start.
+  await layChange(FREE);
+  await ok(update(root(m2), approveChangeWrites('m2', taken, await stored(`coachChanges/m2/${taken.id}`), { now: T0 })), 'a slot made for it');
+  assert.deepEqual(await stored(`coachSlots/m2/${slotId(FREE)}`), { start: FREE, minutes: 60, status: 'booked', price: 80000, createdAt: T0 });
+  assert.equal((await stored(`coachBookings/m2/${slotId(FREE)}`)).movedFrom, taken.id);
+  assert.equal((await stored(`coachSlots/m2/${taken.id}`)).status, 'open');
+});
+
+test('change: the coach places a lesson for a player only as that player asked, and only whole', async () => {
+  await layChange(FREE);
+  const request = await stored(`coachChanges/m2/${taken.id}`);
+  const grant = approveChangeWrites('m2', taken, request, { now: T0 });
+  const to = slotId(FREE);
+  await denied(update(root(m1), grant), 'the player grants their own request');
+  await denied(update(root(f1), grant), 'another member');
+  await denied(update(root(m2), approveChangeWrites('m2', taken, { ...request, wantStart: FREE + HOUR }, { now: T0 })), 'a time the player did not ask for');
+  await denied(update(root(m2), approveChangeWrites('m2', taken, request, { slot: openFar, now: T0 })), 'an open slot at another time');
+  await denied(update(root(m2), approveChangeWrites('m2', taken, { ...request, playerId: 'f1' }, { now: T0 })), 'for a member who did not ask');
+  await denied(update(root(m2), approveChangeWrites('m2', takenSoon, request, { now: T0 })), 'another lesson than the one asked about');
+  await denied(update(root(m2), without(grant, `coachBookings/m2/${taken.id}`)), 'the old booking left standing');
+  await denied(update(root(m2), without(grant, 'coachChanges')), 'the request left behind');
+  // The old lesson cancelled properly, and the new time handed to someone who never asked.
+  const stranger = { ...cancelWrites('m2', taken.id, 'm1'),
+    [`coachSlots/m2/${to}`]: grant[`coachSlots/m2/${to}`],
+    [`coachBookings/m2/${to}`]: { playerId: 'f1', bookedAt: T0, movedFrom: taken.id },
+    [`playerLessons/f1/${lessonKey('m2', to)}`]: { coachId: 'm2', slotId: to, start: FREE, minutes: 60 } };
+  await denied(update(root(m2), stranger), 'the freed lesson\'s request used to book another member in');
+  // A second lesson at the time asked for, the first one kept: not a move.
+  const copy = Object.fromEntries(Object.entries(grant).filter(([path]) => path.includes(to) || path.startsWith('coachChanges')));
+  await denied(update(root(m2), copy), 'the new lesson added, the old one kept');
+  await denied(update(root(m2), without(grant, `playerLessons/m1/${lessonKey('m2', to)}`)), 'the new lesson not on the player\'s list');
+  await denied(update(root(m2), without(grant, `playerLessons/m1/${lessonKey('m2', taken.id)}`)), 'the old lesson left on the player\'s list');
+  await denied(update(root(m2), without(grant, `coachSlots/m2/${to}`)), 'no slot under the new booking');
+  assert.equal((await stored(`coachBookings/m2/${taken.id}`)).playerId, 'm1');
+  assert.equal(await stored(`coachSlots/m2/${to}`), null);
+  // With no request at all, the coach cannot put a member into a slot.
+  await layChange(null);
+  await denied(update(root(m2), grant), 'no request');
+  await denied(update(root(m2), bookingWrites('m2', openFar, 'f1', '', T0)), 'the coach books a member in');
+  await denied(set(ref(m2, `playerLessons/f1/${lessonKey('m2', openFar.id)}`), { coachId: 'm2', slotId: openFar.id, start: S.far, minutes: 60 }), 'the coach, a lesson on a member\'s list with no booking');
+  // Nor does anyone but the player and the lesson's coach write a player's list, whatever stands behind it.
+  await wipe(`playerLessons/m1/${lessonKey('m2', taken.id)}`);
+  const entry = { coachId: 'm2', slotId: taken.id, start: S.taken, minutes: 60 };
+  await denied(set(ref(f1, `playerLessons/m1/${lessonKey('m2', taken.id)}`), entry), 'another member, an entry for the player\'s real booking');
+  await denied(set(ref(f2, `playerLessons/m1/${lessonKey('m2', taken.id)}`), entry), 'another coach');
+  await ok(set(ref(m1, `playerLessons/m1/${lessonKey('m2', taken.id)}`), entry), 'the player themselves');
+  // A request whose time has passed is not granted.
+  await layCoaching();
+  await fetch(`http://${HOST}/coachChanges.json?ns=${NS}`, { method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ m2: { [taken.id]: { playerId: 'm1', wantStart: S.past, at: T0 } } }) });
+  const pastSlot = { id: slotId(S.past), start: S.past, minutes: 60, status: 'open' };
+  await denied(update(root(m2), approveChangeWrites('m2', taken, { playerId: 'm1', wantStart: S.past }, { slot: pastSlot, now: T0 })), 'onto a slot that has begun');
 });
 
 // ---- Coaching: programs ----

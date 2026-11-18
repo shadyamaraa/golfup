@@ -1717,3 +1717,28 @@ div.cp-opt { cursor: default; }
 .cw-quick .seg-chip { flex: 0 0 auto; font-size: 0.76rem; padding: 6px 10px; }
 .cw-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .cw-review h3 { font-size: 1.1rem; font-weight: 800; color: var(--text-primary); }
+
+/* ---- Coaching: several weeks at once, another time for a lesson ---- */
+.co-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.co-days .seg-chip { flex: 1 1 0; min-width: 40px; padding: 8px 4px; text-align: center; }
+.co-series { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.co-series-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px;
+  border-radius: 10px; background: var(--bg-card-hover); font-size: 0.82rem; color: var(--text-primary);
+}
+.co-series-row b { font-size: 0.74rem; font-weight: 800; color: var(--green-bright); }
+.co-series-row.no { opacity: 0.6; }
+.co-series-row.no span { text-decoration: line-through; }
+.co-series-row.no b { color: var(--text-secondary); }
+.co-wide { flex-basis: 100%; }
+.co-move-h { font-size: 0.8rem; font-weight: 800; color: var(--text-secondary); margin: 14px 0 8px; }
+.co-move-free { max-height: 220px; overflow-y: auto; }
+.co-move-free .co-day { margin-bottom: 10px; }
+.co-slot.on { border-color: var(--gold); background: var(--accent-soft); }
+.co-row { flex-wrap: wrap; }
+.co-change {
+  flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--gold);
+  font-size: 0.82rem; color: var(--text-primary);
+}
+

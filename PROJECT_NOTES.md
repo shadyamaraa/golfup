@@ -131,6 +131,11 @@ time at once and can cancel until 12 hours before. Payment is outside the
 app for now — the next phase is the club's own QPay with the club paying the
 coaches. Reminders (a day and two hours before) come from the scheduled
 function `coachReminders`, deployed by hand like the other functions.
+Times are flexible: the coach opens the same hours for weeks at once
+(weekdays × 1–12 weeks), a player books the same hour week after week in
+one go, and «Цаг солих» moves a booked lesson — at once onto an open time,
+or by a request the coach grants for any other time.
+
 A coach also offers **programs** («Сургалт»): a course or a package with a
 poster, a description and prices («10 хичээл», «1 сар», a trial lesson),
 made in four steps on `#/coaching/new`. A member opens one and presses

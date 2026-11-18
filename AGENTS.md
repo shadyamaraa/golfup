@@ -197,6 +197,7 @@ coaches/{coachId}                 // { active, bio, place, price30, price60, ...
 coachSlots/{coachId}/{slotId}     // { start, minutes, status: 'open'|'booked', price } — slotId = 's' + start
 coachBookings/{coachId}/{slotId}  // { playerId, bookedAt, note } — coach, that player and admins only
 playerLessons/{playerId}/{key}    // { coachId, slotId, start, minutes } — key = coachId + '_' + slotId
+coachChanges/{coachId}/{slotId}   // the player of a booked lesson asks for another time: { playerId, wantStart, note, at }
 coachReminded/...                 // server only (functions/coaching.js)
 coachPrograms/{coachId}/{id}      // a coach's course or package: { title, level, summary, options, people, thumb, hasPoster, active }
 coachPosters/{coachId}/{id}       // its poster, an image data URI — read one at a time, never the whole node
@@ -207,7 +208,10 @@ playerPrograms/{playerId}/{key}   // the member's own list — key = coachId + '
 Booking and cancelling are each ONE multi-path write (`bookingWrites`,
 `cancelWrites` in `src/coaching.js`); the database rules refuse a partial
 one from anyone — player, coach or admin (slot `booked` ⇔ a booking ⇔ the
-lesson on that player's list). Programs the same way (`src/coaching-programs.js`):
+lesson on that player's list). Moving a lesson is one write as well
+(`moveWrites` by the player onto an open slot, `approveChangeWrites` by the
+coach for a request), and a cancellation takes the lesson's request to
+change with it. Programs the same way (`src/coaching-programs.js`):
 a request to join and the member's list entry are one write, a program and
 its poster are one write, and a program is removed only with its poster and
 every request. Keep the poster out of the program record — the list of

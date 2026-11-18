@@ -1,5 +1,40 @@
 # CHANGELOG_AI.md
 
+## 2026-11-18 (Coaching: weeks at a time, and another time for a lesson)
+
+A coach opened one day at a time, a player booked one lesson at a time, and
+a time could only be changed by cancelling and booking again.
+
+- **The coach opens weeks at once**: «Давтах» on the desk — the weekdays
+  and 1–12 weeks («4 долоо хоног (1 сар)»). `newSlotsRepeat` in
+  `src/coaching.js`; up to 400 slots in one go.
+- **A player books a weekly series**: «Давтах» in the booking dialog lists
+  the same weekday and hour for the weeks that follow, open or not, and
+  books the open ones — each its own write, so one taken meanwhile does not
+  undo the rest. `weeklySeries`, `store.bookCoachSlots`.
+- **«Цаг солих»** on each of a player's lessons: an open time of the
+  coach's is taken at once (while the lesson may still be cancelled); any
+  other time is a request with a note. The coach sees it on the lesson's
+  row and grants it — the lesson moves onto the open slot there or one made
+  for it, the old time opens again — or turns it down. Not granted into
+  another lesson. Both sides are told.
+- **`database.rules.json`**: a new node `coachChanges` (only the player of
+  a booked lesson asks; the coach and they read it), and two changes to the
+  coaching rules of yesterday: a booking is not removed while a request to
+  move it stands (the cancelling write takes both — `cancelWrites` now
+  does), and the coach may place a booking for a player in one case only —
+  granting that player's request, for exactly the time asked, with the old
+  booking gone in the same write.
+- Tests: 9 more in `scripts/test-coaching.mjs` (29), 6 more rules tests
+  (56 in `npm run test:rules`); the new rules and logic broken on purpose
+  to see the tests fail.
+- `docs/coaching.md` («Weeks at a time», «Another time for a lesson»),
+  `AGENTS.md`, `PROJECT_NOTES.md`, `TASKS.md`, mn / en / kr strings.
+
+No functions change: reminders follow the lesson to its new time by
+themselves. Not in this version: several players in one slot, a coach
+moving a lesson without a request.
+
 ## 2026-11-18 (Coaching: programs — a coach posts a course with a poster, members ask to join)
 
 Coaches had times to book but no way to say what they offer. A coach can

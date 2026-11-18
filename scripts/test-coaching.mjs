@@ -9,6 +9,8 @@ import {
   slotId, lessonKey, isCoach, cleanProfile, priceOf, cleanNote,
   newSlots, slotWrites, bookingWrites, cancelWrites, canPlayerCancel,
   slotList, upcoming, openSlots, dayKey, timeText, byDay, myLessons, applyWrites,
+  MAX_REPEAT_SLOTS, REPEAT_WEEKS, newSlotsRepeat, weeklySeries,
+  moveWrites, changeRequestWrites, dropChangeWrites, changeTarget, approveChangeWrites,
 } from '../src/coaching.js';
 
 // A fixed "now": 2026-11-20 08:00 in the machine's own time.
@@ -138,16 +140,145 @@ test('who booked is not on the slot', () => {
 });
 
 test('cancelWrites: the booking and the lesson go; the slot opens again, or goes too', () => {
+  // …and a request to move the lesson goes with it: there is nothing left to move.
   assert.deepEqual(cancelWrites('c1', SLOT.id, 'p1'), {
     [`coachBookings/c1/${SLOT.id}`]: null,
     [`playerLessons/p1/c1_${SLOT.id}`]: null,
+    [`coachChanges/c1/${SLOT.id}`]: null,
     [`coachSlots/c1/${SLOT.id}/status`]: 'open',
   });
   assert.deepEqual(cancelWrites('c1', SLOT.id, 'p1', { removeSlot: true }), {
     [`coachBookings/c1/${SLOT.id}`]: null,
     [`playerLessons/p1/c1_${SLOT.id}`]: null,
+    [`coachChanges/c1/${SLOT.id}`]: null,
     [`coachSlots/c1/${SLOT.id}`]: null,
   });
+});
+
+// ---- several weeks at once ----
+// 20 November 2026 is a Friday; NOW is that morning at eight.
+test('newSlotsRepeat: the same hours on the chosen weekdays, week after week', () => {
+  // Tuesdays and Thursdays 16:00–18:00 for four weeks, from Monday the 23rd.
+  const out = newSlotsRepeat({ date: '2026-11-23', from: '16:00', to: '18:00', minutes: 60, price: 80000, now: NOW, days: [2, 4], weeks: 4 });
+  assert.equal(out.error, null);
+  assert.equal(out.slots.length, 16);                                       // 2 days × 2 hours × 4 weeks
+  assert.deepEqual([...new Set(out.slots.map(s => new Date(s.start).getDay()))], [2, 4]);
+  assert.deepEqual(out.slots.slice(0, 4).map(s => `${dayKey(s.start)} ${timeText(s.start)}`),
+    ['2026-11-24 16:00', '2026-11-24 17:00', '2026-11-26 16:00', '2026-11-26 17:00']);
+  assert.equal(dayKey(out.slots.at(-1).start), '2026-12-17');               // the fourth Thursday — over the month's end
+  assert.ok(out.slots.every(s => s.status === 'open' && s.price === 80000 && s.id === slotId(s.start)));
+});
+
+test('newSlotsRepeat: no weekday chosen is the day itself, each week; one week of it is newSlots', () => {
+  const weekly = newSlotsRepeat({ date: '2026-11-21', from: '10:00', to: '11:00', minutes: 60, now: NOW, weeks: 3 });
+  assert.deepEqual(weekly.slots.map(s => dayKey(s.start)), ['2026-11-21', '2026-11-28', '2026-12-05']);
+  const args = { date: '2026-11-21', from: '10:00', to: '13:00', minutes: 30, price: 5, now: NOW };
+  assert.deepEqual(newSlotsRepeat({ ...args, weeks: 1 }), newSlots(args));
+  assert.deepEqual(newSlotsRepeat(args), newSlots(args));
+});
+
+test('newSlotsRepeat: what has begun or overlaps is left out and counted, across all the days', () => {
+  // From today (Friday, 08:00 now): today's 07:00 has begun; next Friday's 07:00 is one the coach already has.
+  const existing = [{ start: at(27, 7), minutes: 60 }];
+  const out = newSlotsRepeat({ date: '2026-11-20', from: '07:00', to: '09:00', minutes: 60, now: NOW, weeks: 2, existing });
+  assert.deepEqual(out.slots.map(s => `${dayKey(s.start)} ${timeText(s.start)}`), ['2026-11-27 08:00']);
+  assert.deepEqual([out.past, out.overlap], [2, 1]);
+});
+
+test('newSlotsRepeat: what it will not take', () => {
+  const ok = { date: '2026-11-23', from: '10:00', to: '12:00', minutes: 60, now: NOW, days: [1], weeks: 2 };
+  assert.equal(newSlotsRepeat({ ...ok, date: '2026-02-31' }).error, 'time');
+  assert.equal(newSlotsRepeat({ ...ok, date: 'tomorrow' }).error, 'time');
+  assert.equal(newSlotsRepeat({ ...ok, to: '10:30' }).error, 'range');
+  assert.equal(newSlotsRepeat({ ...ok, minutes: 45 }).error, 'minutes');
+  // Every day, 06:00–22:00 in half hours, for twelve weeks: more than one go takes.
+  const flood = newSlotsRepeat({ ...ok, from: '06:00', to: '22:00', minutes: 30, days: [0, 1, 2, 3, 4, 5, 6], weeks: 12 });
+  assert.deepEqual([flood.error, flood.slots.length], ['many', 0]);
+  assert.ok(MAX_REPEAT_SLOTS >= 160);                                       // five days of eight lessons, for a month
+  // Weeks out of range are brought in; weekdays that are not are dropped.
+  assert.equal(newSlotsRepeat({ ...ok, weeks: 99 }).slots.length, 12 * 2);
+  assert.equal(newSlotsRepeat({ ...ok, weeks: 0 }).slots.length, 2);
+  assert.deepEqual([...new Set(newSlotsRepeat({ ...ok, days: [1, 9, -1] }).slots.map(s => new Date(s.start).getDay()))], [1]);
+  assert.deepEqual(REPEAT_WEEKS, [1, 2, 3, 4, 6, 8, 12]);
+});
+
+test('weeklySeries: the same weekday and hour, week after week — the open ones a player can take', () => {
+  // The coach has Tuesdays 16:00 open for four weeks; the third is taken, and the fourth is a half hour.
+  const tue = (k) => new Date(2026, 10, 24 + 7 * k, 16, 0).getTime();
+  const slots = [
+    { id: slotId(tue(0)), start: tue(0), minutes: 60, status: 'open' },
+    { id: slotId(tue(1)), start: tue(1), minutes: 60, status: 'open' },
+    { id: slotId(tue(2)), start: tue(2), minutes: 60, status: 'booked' },
+    { id: slotId(tue(3)), start: tue(3), minutes: 30, status: 'open' },
+    { id: 'other', start: tue(1) + 3600000, minutes: 60, status: 'open' },
+  ];
+  const series = weeklySeries(slots, slots[0], 5, NOW);
+  assert.deepEqual(series.map(x => x.start), [0, 1, 2, 3, 4].map(tue));
+  assert.deepEqual(series.map(x => x.slot && x.slot.id), [slots[0].id, slots[1].id, null, null, null]);
+  assert.deepEqual(weeklySeries(slots, slots[0], 1, NOW).map(x => x.slot.id), [slots[0].id]);
+  // One that has begun is not there to take.
+  assert.equal(weeklySeries(slots, slots[0], 1, tue(0) + 1)[0].slot, null);
+});
+
+// ---- another time for a booked lesson ----
+const FROM = { id: slotId(at(24, 16)), start: at(24, 16), minutes: 60, status: 'booked', price: 80000 };
+const TO = { id: slotId(at(24, 15)), start: at(24, 15), minutes: 60, status: 'open', price: 90000 };
+
+test('moveWrites: the old time is freed and the new one taken, in one write', () => {
+  assert.deepEqual(moveWrites('c1', FROM.id, TO, 'p1', ' moved ', NOW), {
+    [`coachBookings/c1/${FROM.id}`]: null,
+    [`playerLessons/p1/c1_${FROM.id}`]: null,
+    [`coachChanges/c1/${FROM.id}`]: null,
+    [`coachSlots/c1/${FROM.id}/status`]: 'open',
+    [`coachSlots/c1/${TO.id}/status`]: 'booked',
+    [`coachBookings/c1/${TO.id}`]: { playerId: 'p1', bookedAt: NOW, note: 'moved' },
+    [`playerLessons/p1/c1_${TO.id}`]: { coachId: 'c1', slotId: TO.id, start: TO.start, minutes: 60 },
+  });
+});
+
+test('asking the coach for another time, and taking the request back', () => {
+  assert.deepEqual(changeRequestWrites('c1', FROM.id, 'p1', at(24, 15), '  an hour earlier ', NOW),
+    { [`coachChanges/c1/${FROM.id}`]: { playerId: 'p1', wantStart: at(24, 15), at: NOW, note: 'an hour earlier' } });
+  assert.equal('note' in changeRequestWrites('c1', FROM.id, 'p1', at(24, 15), ' ', NOW)[`coachChanges/c1/${FROM.id}`], false);
+  assert.deepEqual(dropChangeWrites('c1', FROM.id), { [`coachChanges/c1/${FROM.id}`]: null });
+});
+
+test('changeTarget: an open slot is taken, a free hour is made, another lesson is in the way', () => {
+  const other = { id: slotId(at(24, 13)), start: at(24, 13), minutes: 60, status: 'booked' };
+  const slots = [FROM, TO, other];
+  assert.deepEqual(changeTarget(slots, FROM, TO.start, NOW), { slot: TO, error: null });               // the open slot there
+  assert.deepEqual(changeTarget(slots, FROM, at(24, 18), NOW), { slot: null, error: null });           // nothing there: one is made
+  assert.deepEqual(changeTarget(slots, FROM, other.start, NOW), { slot: null, error: 'busy' });        // someone else's lesson
+  assert.deepEqual(changeTarget(slots, FROM, at(24, 13, 30), NOW), { slot: null, error: 'busy' });     // would run into it
+  assert.deepEqual(changeTarget(slots, FROM, at(24, 12), NOW), { slot: null, error: null });           // ends as it begins: fine
+  assert.deepEqual(changeTarget(slots, FROM, at(24, 16, 30), NOW), { slot: null, error: null });       // only its own old time in the way
+  assert.deepEqual(changeTarget(slots, FROM, FROM.start, NOW), { slot: null, error: 'same' });
+  assert.deepEqual(changeTarget(slots, FROM, NOW - 1, NOW), { slot: null, error: 'past' });
+  assert.deepEqual(changeTarget(slots, FROM, NOW, NOW), { slot: null, error: 'past' });
+  // An open slot in the way of a made one is the coach's own to sort out — it is not a lesson.
+  assert.deepEqual(changeTarget(slots, FROM, at(24, 14, 30), NOW), { slot: null, error: null });
+});
+
+test('approveChangeWrites: the lesson leaves its time and takes the one asked for — an open slot, or one made for it', () => {
+  const request = { playerId: 'p1', wantStart: TO.start, at: NOW };
+  // Onto an open slot that is there: its own length and price stay.
+  assert.deepEqual(approveChangeWrites('c1', FROM, request, { slot: TO, note: 'my slice', now: NOW }), {
+    [`coachBookings/c1/${FROM.id}`]: null,
+    [`playerLessons/p1/c1_${FROM.id}`]: null,
+    [`coachChanges/c1/${FROM.id}`]: null,
+    [`coachSlots/c1/${FROM.id}/status`]: 'open',
+    [`coachBookings/c1/${TO.id}`]: { playerId: 'p1', bookedAt: NOW, movedFrom: FROM.id, note: 'my slice' },
+    [`playerLessons/p1/c1_${TO.id}`]: { coachId: 'c1', slotId: TO.id, start: TO.start, minutes: 60 },
+    [`coachSlots/c1/${TO.id}/status`]: 'booked',
+  });
+  // Onto a time with no slot: one is made, the lesson's own length and price carried over.
+  const made = approveChangeWrites('c1', { ...FROM, minutes: 30 }, { playerId: 'p1', wantStart: at(25, 9) }, { now: NOW });
+  const to = slotId(at(25, 9));
+  assert.deepEqual(made[`coachSlots/c1/${to}`], { start: at(25, 9), minutes: 30, status: 'booked', price: 80000, createdAt: NOW });
+  assert.deepEqual(made[`coachBookings/c1/${to}`], { playerId: 'p1', bookedAt: NOW, movedFrom: FROM.id });
+  assert.deepEqual(made[`playerLessons/p1/c1_${to}`], { coachId: 'c1', slotId: to, start: at(25, 9), minutes: 30 });
+  assert.equal(`coachSlots/c1/${to}/status` in made, false);
+  assert.equal(made[`coachSlots/c1/${FROM.id}/status`], 'open');
 });
 
 test('a player may cancel until twelve hours before', () => {
