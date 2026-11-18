@@ -8,6 +8,10 @@ a time could only be changed by cancelling and booking again.
 - **The coach opens weeks at once**: «Давтах» on the desk — the weekdays
   and 1–12 weeks («4 долоо хоног (1 сар)»). `newSlotsRepeat` in
   `src/coaching.js`; up to 400 slots in one go.
+- **A rest between lessons, and lunch**: when opening times the coach
+  picks the rest after each lesson (10 minutes to begin with) and may enter
+  lunch; no lesson is opened across lunch and the day goes on from its end.
+  The day's shape is remembered on the coach's device.
 - **A player books a weekly series**: «Давтах» in the booking dialog lists
   the same weekday and hour for the weeks that follow, open or not, and
   books the open ones — each its own write, so one taken meanwhile does not
@@ -25,7 +29,7 @@ a time could only be changed by cancelling and booking again.
   does), and the coach may place a booking for a player in one case only —
   granting that player's request, for exactly the time asked, with the old
   booking gone in the same write.
-- Tests: 9 more in `scripts/test-coaching.mjs` (29), 6 more rules tests
+- Tests: 13 more in `scripts/test-coaching.mjs` (33), 6 more rules tests
   (56 in `npm run test:rules`); the new rules and logic broken on purpose
   to see the tests fail.
 - `docs/coaching.md` («Weeks at a time», «Another time for a lesson»),

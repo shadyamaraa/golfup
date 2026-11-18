@@ -487,6 +487,9 @@ const T = {
     coNtfBooked: 'Шинэ хичээлийн захиалга', coNtfCancelled: 'Хичээл цуцлагдлаа',
     coAdminCoach: 'Дасгалжуулагч', coAdminCoachSub: 'Цаг нээж, хичээлийн захиалга авч чадна',
     // Coaching: several weeks at once, and another time for a lesson
+    coGap: 'Хичээл хоорондын завсарлага', coGapNone: 'Завсарлагагүй', coLunchFrom: 'Өдрийн хоол — эхлэх', coLunchTo: 'Өдрийн хоол — дуусах',
+    coGapHint: 'Хичээл бүрийн дараа завсарлага авна. Өдрийн хоолны цагаа оруулбал тэр хооронд хичээл нээгдэхгүй, хоолны дараагаас үргэлжилнэ.',
+    coErrLunch: 'Өдрийн хоолны эхлэх, дуусах цагаа зөв оруулна уу',
     coRepeat: 'Давтах', coRepeatNone: 'Давтахгүй — зөвхөн энэ өдөр', coWeeks: '{n} долоо хоног', coMonths: '{n} сар',
     coDays: 'Да,Мя,Лх,Пү,Ба,Бя,Ня', coDaysHint: 'Сонгосон өдрөөс эхлэн, тэмдэглэсэн гаригуудад ижил цагуудыг нээнэ.',
     coNeedDay: 'Дор хаяж нэг гариг сонгоно уу',
@@ -1027,6 +1030,9 @@ const T = {
     coNtfBooked: 'New lesson booking', coNtfCancelled: 'Lesson cancelled',
     coAdminCoach: 'Coach', coAdminCoachSub: 'Can open times and take lesson bookings',
     // Coaching: several weeks at once, and another time for a lesson
+    coGap: 'Rest between lessons', coGapNone: 'No rest', coLunchFrom: 'Lunch — from', coLunchTo: 'Lunch — until',
+    coGapHint: 'A rest follows each lesson. With lunch entered, no lesson is opened across it and the day goes on from its end.',
+    coErrLunch: 'Enter both lunch times, the end after the start',
     coRepeat: 'Repeat', coRepeatNone: 'No repeat — this day only', coWeeks: '{n} weeks', coMonths: '{n} mo',
     coDays: 'Mon,Tue,Wed,Thu,Fri,Sat,Sun', coDaysHint: 'From the day chosen, the same hours are opened on the marked weekdays.',
     coNeedDay: 'Choose at least one weekday',
@@ -1458,6 +1464,9 @@ const T = {
     coNtfBooked: '새 레슨 예약', coNtfCancelled: '레슨이 취소되었습니다',
     coAdminCoach: '코치', coAdminCoachSub: '시간을 열고 레슨 예약을 받을 수 있습니다',
     // Coaching: several weeks at once, and another time for a lesson
+    coGap: '레슨 사이 쉬는 시간', coGapNone: '쉬는 시간 없음', coLunchFrom: '점심 — 시작', coLunchTo: '점심 — 종료',
+    coGapHint: '레슨마다 쉬는 시간을 둡니다. 점심 시간을 입력하면 그 사이에는 레슨이 열리지 않고 점심 후부터 이어집니다.',
+    coErrLunch: '점심 시작과 종료 시간을 올바르게 입력하세요',
     coRepeat: '반복', coRepeatNone: '반복 없음 — 이 날만', coWeeks: '{n}주', coMonths: '{n}개월',
     coDays: '월,화,수,목,금,토,일', coDaysHint: '선택한 날부터 표시한 요일에 같은 시간을 엽니다.',
     coNeedDay: '요일을 하나 이상 선택하세요',

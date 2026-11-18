@@ -56,6 +56,13 @@ notice to the other of the two.
 
 ### Weeks at a time
 
+- **A rest between lessons, and lunch**: when opening times the coach
+  chooses the rest after each lesson (none, 5–30 minutes; 10 to begin with)
+  and may enter lunch (from–until). «10:00–17:00, 60 мин, 10 мин завсарлага,
+  хоол 13:00–14:00» opens 10:00, 11:10, 14:00, 15:10 — the 12:20 lesson
+  would run into lunch, so it is not opened, and the afternoon starts where
+  lunch ends. The day's shape (hours, length, rest, lunch) is remembered on
+  the coach's device for the next opening.
 - **The coach opens the same hours for weeks**: «Давтах» on the desk —
   1 to 12 weeks — and the weekdays to open (the weekday of the date chosen
   is marked to begin with). «Мягмар, Пүрэв 15:00–17:00, 4 долоо хоног» is

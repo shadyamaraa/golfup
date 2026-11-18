@@ -9,7 +9,7 @@ import {
   slotId, lessonKey, isCoach, cleanProfile, priceOf, cleanNote,
   newSlots, slotWrites, bookingWrites, cancelWrites, canPlayerCancel,
   slotList, upcoming, openSlots, dayKey, timeText, byDay, myLessons, applyWrites,
-  MAX_REPEAT_SLOTS, REPEAT_WEEKS, newSlotsRepeat, weeklySeries,
+  MAX_REPEAT_SLOTS, REPEAT_WEEKS, GAP_MINUTES, newSlotsRepeat, weeklySeries,
   moveWrites, changeRequestWrites, dropChangeWrites, changeTarget, approveChangeWrites,
 } from '../src/coaching.js';
 
@@ -153,6 +153,56 @@ test('cancelWrites: the booking and the lesson go; the slot opens again, or goes
     [`coachChanges/c1/${SLOT.id}`]: null,
     [`coachSlots/c1/${SLOT.id}`]: null,
   });
+});
+
+// ---- a rest between lessons, and lunch ----
+const times = (out) => out.slots.map(s => timeText(s.start));
+const DAY = { date: '2026-11-21', from: '10:00', to: '16:00', minutes: 60, now: NOW };
+
+test('a rest between lessons: the next begins that much after the last ends', () => {
+  assert.deepEqual(times(newSlots({ ...DAY, gap: 10 })), ['10:00', '11:10', '12:20', '13:30', '14:40']);   // 15:50 would end at 16:50
+  assert.deepEqual(times(newSlots({ ...DAY, minutes: 30, to: '12:00', gap: 10 })), ['10:00', '10:40', '11:20']);
+  assert.deepEqual(times(newSlots({ ...DAY, gap: 0 })), times(newSlots(DAY)));
+  assert.equal(newSlots({ ...DAY, gap: 10 }).slots.every(s => s.id === slotId(s.start) && s.minutes === 60), true);
+  // The last lesson may end on the dot; there is no rest to fit in after it.
+  assert.deepEqual(times(newSlots({ ...DAY, to: '12:10', gap: 10 })), ['10:00', '11:10']);
+  // Nonsense is no rest; a long one is cut to two hours.
+  assert.deepEqual(times(newSlots({ ...DAY, gap: 'soon' })), times(newSlots(DAY)));
+  assert.deepEqual(times(newSlots({ ...DAY, gap: -10 })), times(newSlots(DAY)));
+  assert.deepEqual(times(newSlots({ ...DAY, gap: 999 })), ['10:00', '13:00']);
+  assert.deepEqual(GAP_MINUTES, [0, 5, 10, 15, 20, 30]);
+});
+
+test('lunch: no lesson runs into it, and the day goes on from its end', () => {
+  const lunch = { lunchFrom: '13:00', lunchTo: '14:00' };
+  assert.deepEqual(times(newSlots({ ...DAY, ...lunch })), ['10:00', '11:00', '12:00', '14:00', '15:00']);
+  // With a rest: 12:20 would run into lunch, so the afternoon starts at 14:00 sharp.
+  assert.deepEqual(times(newSlots({ ...DAY, ...lunch, gap: 10 })), ['10:00', '11:10', '14:00']);
+  assert.deepEqual(times(newSlots({ ...DAY, to: '17:00', ...lunch, gap: 10 })), ['10:00', '11:10', '14:00', '15:10']);
+  // A lesson that ends as lunch begins is fine; one that begins as lunch ends is too.
+  assert.deepEqual(times(newSlots({ ...DAY, lunchFrom: '12:00', lunchTo: '12:30' })), ['10:00', '11:00', '12:30', '13:30', '14:30']);
+  // Lunch outside the hours opened changes nothing; lunch over all of them leaves nothing.
+  assert.deepEqual(times(newSlots({ ...DAY, lunchFrom: '17:00', lunchTo: '18:00' })), times(newSlots(DAY)));
+  assert.deepEqual(times(newSlots({ ...DAY, lunchFrom: '08:00', lunchTo: '09:00' })), times(newSlots(DAY)));
+  assert.deepEqual(newSlots({ ...DAY, lunchFrom: '09:00', lunchTo: '17:00' }), { slots: [], past: 0, overlap: 0, error: null });
+  // A lesson skipped for lunch is neither «begun» nor «overlapping».
+  assert.deepEqual([newSlots({ ...DAY, ...lunch }).past, newSlots({ ...DAY, ...lunch }).overlap], [0, 0]);
+});
+
+test('lunch: both times or neither, the end after the start', () => {
+  for (const bad of [{ lunchFrom: '13:00' }, { lunchTo: '14:00' }, { lunchFrom: '14:00', lunchTo: '13:00' },
+    { lunchFrom: '13:00', lunchTo: '13:00' }, { lunchFrom: 'noon', lunchTo: '14:00' }]) {
+    assert.deepEqual(newSlots({ ...DAY, ...bad }), { slots: [], past: 0, overlap: 0, error: 'lunch' }, JSON.stringify(bad));
+  }
+  assert.equal(newSlots({ ...DAY, lunchFrom: '', lunchTo: '  ' }).error, null);
+});
+
+test('the rest and lunch hold on every day of a repeat', () => {
+  const out = newSlotsRepeat({ date: '2026-11-23', from: '10:00', to: '16:00', minutes: 60, now: NOW, days: [1, 3], weeks: 2,
+    gap: 10, lunchFrom: '13:00', lunchTo: '14:00' });
+  assert.equal(out.slots.length, 4 * 3);
+  assert.deepEqual([...new Set(out.slots.map(s => timeText(s.start)))], ['10:00', '11:10', '14:00']);
+  assert.equal(newSlotsRepeat({ date: '2026-11-23', from: '10:00', to: '16:00', minutes: 60, now: NOW, weeks: 2, lunchFrom: '13:00' }).error, 'lunch');
 });
 
 // ---- several weeks at once ----

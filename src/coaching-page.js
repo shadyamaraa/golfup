@@ -22,7 +22,7 @@ import { icon } from './icons.js';
 import {
   SLOT_MINUTES, CANCEL_HOURS, isCoach, priceOf, canPlayerCancel,
   slotList, upcoming, openSlots, dayKey, timeText, byDay, myLessons,
-  REPEAT_WEEKS, newSlotsRepeat, weeklySeries, changeTarget, momentOf,
+  REPEAT_WEEKS, GAP_MINUTES, newSlotsRepeat, weeklySeries, changeTarget, momentOf,
 } from './coaching.js';
 import { allPrograms, programList } from './coaching-programs.js';
 import {
@@ -37,6 +37,27 @@ const nameOf = (u) => store.memberName(u) || u?.username || u?.name || '—';
 const listKey = (u) => String(u?.username || u?.name || '').toLowerCase();
 const whenText = (ctx, start) => `${ctx.formatDate(dayKey(start))} ${timeText(start)}`;
 const minText = (m) => `${m} ${t('coMin')}`;
+// The hours a coach last opened with — the day's start and end, the length,
+// the rest between lessons, lunch — kept on this device, so next week's
+// opening starts from the same day shape. A convenience only; nothing reads
+// it but the desk's form.
+const FORM_KEY = 'golfup_coach_form';
+const FORM_DEFAULT = { from: '10:00', to: '16:00', minutes: 60, gap: 10, lunchFrom: '', lunchTo: '' };
+const clock = (v, fallback) => (/^\d{1,2}:\d{2}$/.test(String(v || '')) ? String(v) : fallback);
+function lastForm() {
+  let kept = {};
+  try { kept = JSON.parse(localStorage.getItem(FORM_KEY)) || {}; } catch (_) { /* nothing kept, or storage is off */ }
+  return {
+    from: clock(kept.from, FORM_DEFAULT.from), to: clock(kept.to, FORM_DEFAULT.to),
+    minutes: SLOT_MINUTES.includes(Number(kept.minutes)) ? Number(kept.minutes) : FORM_DEFAULT.minutes,
+    gap: GAP_MINUTES.includes(Number(kept.gap)) ? Number(kept.gap) : FORM_DEFAULT.gap,
+    lunchFrom: clock(kept.lunchFrom, ''), lunchTo: clock(kept.lunchTo, ''),
+  };
+}
+function keepForm(form) {
+  try { localStorage.setItem(FORM_KEY, JSON.stringify(form)); } catch (_) { /* storage is off: asked again next time */ }
+}
+
 // «4 долоо хоног (1 сар)» — a month is four weeks to the eye.
 const weeksText = (n) => t('coWeeks').replace('{n}', n) + (n % 4 === 0 ? ` (${t('coMonths').replace('{n}', n / 4)})` : '');
 const pricesText = (profile) => SLOT_MINUTES
@@ -445,6 +466,7 @@ async function renderDesk(ctx) {
   };
 
   const tomorrow = dayKey(now + 24 * 60 * 60 * 1000);
+  const form = lastForm();
   ctx.main().innerHTML = `
     <div class="detail-container fade-in co-page">
       ${back}
@@ -457,11 +479,20 @@ async function renderDesk(ctx) {
         <h3 class="co-card-title">${t('coOpenTimes')}</h3>
         <div class="co-form-row">
           <div class="input-group"><label>${t('coDate')}</label><input type="date" id="co-date" value="${tomorrow}" min="${dayKey(now)}" /></div>
-          <div class="input-group"><label>${t('coFrom')}</label><input type="time" id="co-from" value="10:00" /></div>
-          <div class="input-group"><label>${t('coTo')}</label><input type="time" id="co-to" value="16:00" /></div>
+          <div class="input-group"><label>${t('coFrom')}</label><input type="time" id="co-from" value="${form.from}" /></div>
+          <div class="input-group"><label>${t('coTo')}</label><input type="time" id="co-to" value="${form.to}" /></div>
           <div class="input-group"><label>${t('coLength')}</label>
-            <select id="co-len">${SLOT_MINUTES.slice().reverse().map(m => `<option value="${m}">${minText(m)}</option>`).join('')}</select></div>
+            <select id="co-len">${SLOT_MINUTES.slice().reverse().map(m =>
+              `<option value="${m}" ${m === form.minutes ? 'selected' : ''}>${minText(m)}</option>`).join('')}</select></div>
         </div>
+        <div class="input-group" style="margin-top:10px;"><label>${t('coGap')}</label>
+          <select id="co-gap" class="co-textarea">${GAP_MINUTES.map(m =>
+            `<option value="${m}" ${m === form.gap ? 'selected' : ''}>${m ? minText(m) : t('coGapNone')}</option>`).join('')}</select></div>
+        <div class="co-form-row" style="margin-top:10px;">
+          <div class="input-group"><label>${t('coLunchFrom')}</label><input type="time" id="co-lunch-from" value="${form.lunchFrom}" /></div>
+          <div class="input-group"><label>${t('coLunchTo')}</label><input type="time" id="co-lunch-to" value="${form.lunchTo}" /></div>
+        </div>
+        <p class="co-hint" style="margin-top:6px;">${t('coGapHint')}</p>
         <div class="input-group" style="margin-top:10px;"><label>${t('coRepeat')}</label>
           <select id="co-repeat" class="co-textarea">
             <option value="0">${t('coRepeatNone')}</option>
@@ -536,14 +567,22 @@ async function renderDesk(ctx) {
     const weeks = Number(view.querySelector('#co-repeat').value);
     const days = weeks ? dayChips.filter(b => b.classList.contains('active')).map(b => Number(b.dataset.day)) : [];
     if (weeks && !days.length) { ctx.showToast(t('coNeedDay'), 'error'); return; }
+    const shape = {
+      from: view.querySelector('#co-from').value, to: view.querySelector('#co-to').value, minutes,
+      gap: Number(view.querySelector('#co-gap').value) || 0,
+      lunchFrom: view.querySelector('#co-lunch-from').value, lunchTo: view.querySelector('#co-lunch-to').value,
+    };
     const out = newSlotsRepeat({
-      date: view.querySelector('#co-date').value, from: view.querySelector('#co-from').value,
-      to: view.querySelector('#co-to').value, minutes, price: priceOf(profile, minutes), existing: all,
+      ...shape, date: view.querySelector('#co-date').value, price: priceOf(profile, minutes), existing: all,
       days, weeks: weeks || 1,
     });
-    if (out.error) { ctx.showToast(t({ time: 'coErrTime', range: 'coErrRange', many: 'coErrMany' }[out.error] || 'coErrTime'), 'error'); return; }
+    if (out.error) {
+      ctx.showToast(t({ time: 'coErrTime', range: 'coErrRange', many: 'coErrMany', lunch: 'coErrLunch' }[out.error] || 'coErrTime'), 'error');
+      return;
+    }
     if (!out.slots.length) { ctx.showToast(t('coNothingOpened'), 'info'); return; }
     try { await store.addCoachSlots(me.id, out.slots); } catch (err) { return refused('open slots:', err); }
+    keepForm(shape);
     const left = out.past + out.overlap;
     ctx.showToast(t('coOpened').replace('{n}', out.slots.length) + (left ? ' ' + t('coSkipped').replace('{n}', left) : ''), 'success');
     again();

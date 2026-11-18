@@ -34,6 +34,8 @@ export const MAX_NEW_SLOTS = 40;
 export const MAX_REPEAT_SLOTS = 400;
 // How many weeks a coach may open — or a player take — in one go.
 export const REPEAT_WEEKS = [1, 2, 3, 4, 6, 8, 12];
+// The rest a coach may leave between one lesson and the next, in minutes.
+export const GAP_MINUTES = [0, 5, 10, 15, 20, 30];
 const BIO_MAX = 600;
 const PLACE_MAX = 120;
 const NOTE_MAX = 300;
@@ -97,14 +99,18 @@ export const momentOf = (date, time) => at(date, time);
 const overlaps = (aStart, aMin, bStart, bMin) => aStart < bStart + bMin * MIN && bStart < aStart + aMin * MIN;
 
 /**
- * The slots a coach opens in one go: every `minutes` from `from` until `to`
- * on `date`. A slot that has already begun, or that overlaps one the coach
- * already has (`existing`, any status), is left out and counted.
+ * The slots a coach opens in one go: a lesson of `minutes` from `from`, then
+ * the next after a rest of `gap` minutes, until `to` on `date`. A slot that
+ * has already begun, or that overlaps one the coach already has (`existing`,
+ * any status), is left out and counted.
+ *
+ * Lunch (`lunchFrom`–`lunchTo`, both or neither): no lesson runs into it —
+ * one that would is not opened, and the day goes on from the end of lunch.
  *
  * @returns {{ slots: object[], past: number, overlap: number, error: string|null }}
- *   error: 'minutes' | 'time' | 'range' | 'many' | null
+ *   error: 'minutes' | 'time' | 'range' | 'many' | 'lunch' | null
  */
-export function newSlots({ date, from, to, minutes, price: slotPrice, existing = [], now = Date.now() }) {
+export function newSlots({ date, from, to, minutes, price: slotPrice, existing = [], now = Date.now(), gap = 0, lunchFrom = '', lunchTo = '' }) {
   const none = (error) => ({ slots: [], past: 0, overlap: 0, error });
   const len = Number(minutes);
   if (!SLOT_MINUTES.includes(len)) return none('minutes');
@@ -113,15 +119,23 @@ export function newSlots({ date, from, to, minutes, price: slotPrice, existing =
   if (!Number.isFinite(first) || !Number.isFinite(end)) return none('time');
   if (end - first < len * MIN) return none('range');
   if ((end - first) / (len * MIN) > MAX_NEW_SLOTS) return none('many');
+  const rest = Math.max(0, Math.min(120, Math.round(Number(gap)) || 0)) * MIN;
+  const lunch = String(lunchFrom || '').trim() || String(lunchTo || '').trim()
+    ? [at(date, lunchFrom), at(date, lunchTo)] : null;
+  if (lunch && !(Number.isFinite(lunch[0]) && Number.isFinite(lunch[1]) && lunch[1] > lunch[0])) return none('lunch');
 
   const taken = (existing || []).filter(s => s && Number.isFinite(Number(s.start)));
   const slots = [];
   let past = 0;
   let overlap = 0;
-  for (let start = first; start + len * MIN <= end; start += len * MIN) {
-    if (start <= now) { past++; continue; }
-    if (taken.some(s => overlaps(start, len, Number(s.start), Number(s.minutes) || 60))) { overlap++; continue; }
-    slots.push({ id: slotId(start), start, minutes: len, status: 'open', price: price(slotPrice), createdAt: now });
+  let start = first;
+  while (start + len * MIN <= end) {
+    // Into lunch: not this one — on from where lunch ends, with no rest to wait out.
+    if (lunch && start < lunch[1] && start + len * MIN > lunch[0]) { start = lunch[1]; continue; }
+    if (start <= now) past++;
+    else if (taken.some(s => overlaps(start, len, Number(s.start), Number(s.minutes) || 60))) overlap++;
+    else slots.push({ id: slotId(start), start, minutes: len, status: 'open', price: price(slotPrice), createdAt: now });
+    start += len * MIN + rest;
   }
   return { slots, past, overlap, error: null };
 }
@@ -133,7 +147,7 @@ export function newSlots({ date, from, to, minutes, price: slotPrice, existing =
  * Counts and errors as newSlots; 'many' when it comes to more than
  * MAX_REPEAT_SLOTS.
  */
-export function newSlotsRepeat({ date, from, to, minutes, price: slotPrice, existing = [], now = Date.now(), days = [], weeks = 1 }) {
+export function newSlotsRepeat({ date, from, to, minutes, price: slotPrice, existing = [], now = Date.now(), days = [], weeks = 1, gap = 0, lunchFrom = '', lunchTo = '' }) {
   const none = (error) => ({ slots: [], past: 0, overlap: 0, error });
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
   if (!d || !Number.isFinite(at(date, '00:00'))) return none('time');
@@ -145,7 +159,7 @@ export function newSlotsRepeat({ date, from, to, minutes, price: slotPrice, exis
   for (let i = 0; i < span; i++) {
     const on = new Date(y, mo, day + i);
     if (!want.has(on.getDay())) continue;
-    const one = newSlots({ date: dayKey(on.getTime()), from, to, minutes, price: slotPrice, existing, now });
+    const one = newSlots({ date: dayKey(on.getTime()), from, to, minutes, price: slotPrice, existing, now, gap, lunchFrom, lunchTo });
     if (one.error) return none(one.error);
     total.slots.push(...one.slots);
     total.past += one.past;
