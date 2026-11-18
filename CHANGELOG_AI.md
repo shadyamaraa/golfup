@@ -1,5 +1,47 @@
 # CHANGELOG_AI.md
 
+## 2026-11-18 (Coaching: programs — a coach posts a course with a poster, members ask to join)
+
+Coaches had times to book but no way to say what they offer. A coach can
+now post a program — «Анхан шатны сургалт», «1 сарын хичээл» — with its
+poster and prices, and members ask to join it.
+
+- **The coach**, on «Миний хуваарь» → «+ Сургалт нэмэх», in four steps:
+  the poster → name, level, description → prices, one row per package
+  («10 хичээл», «1 сар», «Туршилтын хичээл»; up to six) and for how many
+  people one fee is → a review, then «Нийтлэх» or «Нууцалж хадгалах».
+  Typing survives going back and forth; nothing is written until the end.
+  The same steps edit a program. Under each program on the desk: who asked
+  to join (name, phone, which price, note), hide/show, delete.
+- **Members**: «Сургалтууд» on `#/coaching` and on a coach's page; a
+  program's own page (`#/coaching/p/{coachId}/{id}`) with the poster (tap
+  for full size), the prices and «Бүртгүүлэх» — a request, not a booking
+  or a payment. «Миний бүртгүүлсэн сургалт» lists theirs; it can be taken
+  back. Each side is told of the other's move.
+- **The poster** is shrunk in the browser (WebP, then JPEG, until under
+  600,000 characters) and stored as a data URI in its own node, read one
+  program at a time; the program carries a small thumbnail. No storage
+  bucket, as with the tournament pictures.
+- `src/coaching-programs.js` (new, pure), `src/coaching-program-page.js`
+  (new), `src/coaching-page.js`, `src/store.js`, `src/i18n.js` (mn / en /
+  kr), `src/app.js` (a notice can name which page it opens).
+- **`database.rules.json` — new rules** for four new nodes:
+  `coachPrograms`, `coachPosters`, `coachEnrollments`, `playerPrograms`.
+  Only an active coach (or an admin) writes programs; a program and its
+  poster are written and removed together; a member asks only for
+  themselves, only for a published program, and only at one of the
+  program's own prices; a request and the member's list entry stand and
+  fall together, whoever removes them; posters cannot be read in bulk.
+  Nothing existing is changed.
+- Tests: `scripts/test-coaching-programs.mjs` (14, in `npm run test:mp`),
+  10 program tests in `scripts/test-rules.mjs`; each rule and each piece of
+  the logic broken on purpose to see a test fail.
+- `docs/coaching.md` («Programs»), `AGENTS.md`, `PROJECT_NOTES.md`,
+  `TASKS.md`.
+
+No functions change. Not in this version: payment, counting lessons used
+against a package, a class with a fixed timetable.
+
 ## 2026-11-17 (Coaching: coaches open their times, members book a lesson)
 
 The «Дасгалжуулагч» tile on Services said «Тун удахгүй». It now opens the

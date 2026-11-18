@@ -131,6 +131,12 @@ time at once and can cancel until 12 hours before. Payment is outside the
 app for now — the next phase is the club's own QPay with the club paying the
 coaches. Reminders (a day and two hours before) come from the scheduled
 function `coachReminders`, deployed by hand like the other functions.
+A coach also offers **programs** («Сургалт»): a course or a package with a
+poster, a description and prices («10 хичээл», «1 сар», a trial lesson),
+made in four steps on `#/coaching/new`. A member opens one and presses
+«Бүртгүүлэх» — a request the coach sees with the member's name and phone;
+not a booking and not a payment. The poster is an image data URI kept in
+its own node (`coachPosters`), not in a storage bucket.
 Everything is in `docs/coaching.md`.
 
 ## Known Cautions

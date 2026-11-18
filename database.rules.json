@@ -101,6 +101,73 @@
         }
       }
     },
+    "coachPrograms": {
+      ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+      "$coachId": {
+        "$programId": {
+          ".write": "((auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true) || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')) && (newData.exists() || (!newData.parent().parent().parent().child('coachEnrollments').child($coachId).child($programId).exists() && !newData.parent().parent().parent().child('coachPosters').child($coachId).child($programId).exists()))",
+          ".validate": "newData.hasChildren(['title', 'active', 'hasPoster', 'createdAt', 'updatedAt']) && newData.child('hasPoster').val() === newData.parent().parent().parent().child('coachPosters').child($coachId).child($programId).exists()",
+          "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
+          "level": { ".validate": "newData.val() === 'all' || newData.val() === 'beginner' || newData.val() === 'intermediate' || newData.val() === 'advanced'" },
+          "summary": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+          "options": {
+            "$i": {
+              ".validate": "$i.matches(/^[0-5]$/) && newData.hasChildren(['label', 'price'])",
+              "label": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
+              "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+              "$other": { ".validate": false }
+            }
+          },
+          "people": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10" },
+          "thumb": { ".validate": "newData.isString() && newData.val().length <= 60000 && newData.val().beginsWith('data:image/')" },
+          "hasPoster": { ".validate": "newData.isBoolean()" },
+          "active": { ".validate": "newData.isBoolean()" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "coachPosters": {
+      "$coachId": {
+        "$programId": {
+          ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
+          ".write": "((auth != null && auth.token.memberId === $coachId && root.child('coaches').child($coachId).child('active').val() === true) || (auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).child('role').val() === 'admin')) && (newData.parent().parent().parent().child('coachPrograms').child($coachId).child($programId).child('hasPoster').val() === true) === newData.exists()",
+          ".validate": "newData.isString() && newData.val().length <= 600000 && newData.val().beginsWith('data:image/')"
+        }
+      }
+    },
+    "coachEnrollments": {
+      "$coachId": {
+        ".read": "auth != null && auth.token.memberId != null && (auth.token.memberId === $coachId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin')",
+        "$programId": {
+          "$playerId": {
+            ".read": "auth != null && auth.token.memberId != null && auth.token.memberId === $playerId",
+            ".write": "auth != null && auth.token.memberId != null && ((newData.exists() && auth.token.memberId === $playerId && $playerId !== $coachId && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold' && root.child('coachPrograms').child($coachId).child($programId).child('active').val() === true && root.child('coaches').child($coachId).child('active').val() === true && newData.parent().parent().parent().parent().child('playerPrograms').child($playerId).child($coachId + '_' + $programId).exists()) || (!newData.exists() && data.exists() && (auth.token.memberId === $playerId || auth.token.memberId === $coachId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin') && !newData.parent().parent().parent().parent().child('playerPrograms').child($playerId).child($coachId + '_' + $programId).exists()))",
+            ".validate": "newData.hasChildren(['option', 'label', 'price', 'at']) && newData.child('label').val() === root.child('coachPrograms').child($coachId).child($programId).child('options').child(newData.child('option').val()).child('label').val() && newData.child('price').val() === root.child('coachPrograms').child($coachId).child($programId).child('options').child(newData.child('option').val()).child('price').val()",
+            "option": { ".validate": "newData.isString() && newData.val().matches(/^[0-5]$/)" },
+            "label": { ".validate": "newData.isString() && newData.val().length <= 40" },
+            "price": { ".validate": "newData.isNumber()" },
+            "note": { ".validate": "newData.isString() && newData.val().length <= 300" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
+    "playerPrograms": {
+      "$playerId": {
+        ".read": "auth != null && auth.token.memberId != null && (auth.token.memberId === $playerId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin')",
+        "$key": {
+          ".write": "auth != null && auth.token.memberId != null && ((newData.exists() && auth.token.memberId === $playerId && newData.parent().parent().parent().child('coachEnrollments').child(newData.child('coachId').val()).child(newData.child('programId').val()).child($playerId).exists()) || (!newData.exists() && data.exists() && (auth.token.memberId === $playerId || data.child('coachId').val() === auth.token.memberId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin') && !newData.parent().parent().parent().child('coachEnrollments').child(data.child('coachId').val()).child(data.child('programId').val()).child($playerId).exists()))",
+          ".validate": "newData.hasChildren(['coachId', 'programId', 'at']) && $key === newData.child('coachId').val() + '_' + newData.child('programId').val()",
+          "coachId": { ".validate": "newData.isString()" },
+          "programId": { ".validate": "newData.isString()" },
+          "at": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
     "follows": { ".read": true, ".write": true },
     "followers": { ".read": true, ".write": true },
     "notifications": { ".read": true, ".write": true },

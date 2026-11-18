@@ -21,6 +21,8 @@ not the money.
 | `#/coaching` | «Миний хичээлүүд» — the lessons I have booked, soonest first — then the coaches, each with where they teach, their prices and their next open time |
 | `#/coaching/c/{coachId}` | One coach: about them, and every time still to come, by day. An open time is a button; a taken one is shown struck through, **without the name of who took it** |
 | `#/coaching/me` | A coach's own desk («Миний хуваарь»): open times, see who booked (name, phone, note), cancel, and the profile |
+| `#/coaching/p/{coachId}/{id}` | A program: poster, description, prices, «Бүртгүүлэх» — see «Programs» below |
+| `#/coaching/new`, `#/coaching/edit/{id}` | The coach's four steps that make or change a program |
 
 Booking: tap a time → the dialog shows the coach, the time, the length and
 the price, takes an optional note for the coach → «Захиалах». No approval
@@ -52,6 +54,54 @@ notice to the other of the two.
 - **Two people, one slot:** the first write wins. The second is refused by
   the database and told «Энэ цагийг дөнгөж сая өөр хүн авчихлаа».
 
+## Programs — «Сургалт»
+
+A lesson is one booked time. A **program** is what a coach offers around
+lessons: a course, a package, a month of lessons — «Анхан шатны сургалт:
+10 хичээл 1,200,000₮», «1 сар», a trial lesson — with a poster.
+
+**The coach makes one in four steps** (`#/coaching/new`, from «Миний
+хуваарь» → «+ Сургалт нэмэх»):
+
+1. **Зурагт хуудас** — pick a picture; it is shrunk in the browser until it
+   fits (see below). Optional.
+2. **Тухай** — the name, the level (all / beginner / intermediate /
+   advanced), a description.
+3. **Үнэ** — one row per package: a name («10 хичээл», «1 сар», «Туршилтын
+   хичээл» — quick buttons fill the name) and a price; up to six. A price
+   left empty shows «Тохирно». And for how many people one fee is (1–10).
+4. **Нийтлэх** — what members will see; «Нийтлэх», or «Нууцалж хадгалах»
+   to keep it out of sight for now.
+
+What is typed lives on a draft, so going back and forth loses nothing;
+nothing is written until the last step. `#/coaching/edit/{id}` is the same
+four steps over a program the coach already has.
+
+**A member** sees programs on `#/coaching` («Сургалтууд») and on the coach's
+page, opens one (`#/coaching/p/{coachId}/{id}`) — the poster (tap to see it
+whole), the description, the prices — picks a price and presses
+«Бүртгүүлэх». That is a **request**, not a booking and not a payment: the
+coach sees who asked — name, phone, which price, the note — under the
+program on their desk and takes it from there; the times are then arranged
+between them, or booked from the coach's open times as before. The member
+sees it under «Миний бүртгүүлсэн сургалт» and can take it back at any time;
+the coach can remove a request too. Each is told of the other's move.
+
+A program the coach hides, or the programs of a coach who is switched off,
+leave the lists; a member who already asked still sees theirs and can leave.
+Removing a program removes its poster and every request to join it.
+
+### The poster
+
+There is no storage bucket: the poster is an image data URI in the database,
+like the tournament pictures (`src/media.js`). It is kept **apart** from the
+program — `coachPosters/{coachId}/{id}` — and read one program at a time, so
+the list of programs does not carry every poster; the program holds a small
+thumbnail instead. The browser shrinks a picked picture (WebP, then JPEG;
+1400 px down to 800 px on the long side) until it is under 600,000
+characters — a 1024×1536 poster comes to about 180–300 thousand — and
+makes a 360 px thumbnail under 60,000.
+
 ## Notices
 
 In the app's bell, and as a push where the member allows them:
@@ -62,6 +112,8 @@ In the app's bell, and as a push where the member allows them:
 | A player cancels | the coach |
 | A coach cancels | the player |
 | A day before, and two hours before | both — `coachReminders` |
+| A member asks to join a program, or takes it back | the coach |
+| A coach removes a request, or the program | the member(s) |
 
 The first three are written by the browser of whoever acted
 (`coachNotify` in `src/app.js`). The reminders come from the server:
@@ -87,6 +139,14 @@ coachBookings/{coachId}/{slotId}  { playerId, bookedAt, note }
 playerLessons/{playerId}/{key}    { coachId, slotId, start, minutes }
                                     key = coachId + '_' + slotId
 coachReminded/{coachId}/{slotId}  { day, soon } — the server's own mark
+
+coachPrograms/{coachId}/{id}      { title, level, summary, options: [{ label, price }],
+                                    people, thumb, hasPoster, active, createdAt, updatedAt }
+coachPosters/{coachId}/{id}       the poster — an image data URI
+coachEnrollments/{coachId}/{id}/{playerId}
+                                  { option, label, price, note, at } — a request to join
+playerPrograms/{playerId}/{key}   { coachId, programId, at }
+                                    key = coachId + '_' + programId
 ```
 
 Who booked is **not on the slot**: every member reads `coachSlots`, only the
@@ -132,8 +192,30 @@ shows «Дасгалжуулагч энэ цагийг хаасан» with «Ж�
 booked slot with no booking can be cancelled back to open on the coach's
 desk.
 
-`npm run test:rules` runs these against the emulator (the coaching tests in
-`scripts/test-rules.mjs`), with the same write builders the app uses.
+For programs, the same idea — what belongs together is written together:
+
+    a program says it has a poster  ⇔  its poster is there
+    a request to join               ⇔  the program is on that member's list
+
+- `coachPrograms/{coach}/{id}`: every member reads; the active coach (or an
+  admin) writes — a name, at most six prices, a thumbnail that is an image.
+  It is removed only in a write that removes its poster and every request.
+- `coachPosters/{coach}/{id}`: read **one at a time** (no rule lets the
+  whole node be read); written by the coach only together with a program
+  that says it has one; an image data URI under 600,000 characters.
+- `coachEnrollments/{coach}/{id}/{player}`: the member asks for themselves —
+  not the coach, not on hold — for a published program of a coach who is
+  taking bookings, at **one of the program's own prices** (the name and the
+  amount must be that price's as it stands), in a write that puts the
+  program on their list. Taken back by the member, the coach or an admin,
+  in a write that takes it off the list. The coach reads all of theirs; a
+  member reads only their own.
+- `playerPrograms/{player}/{key}`: the member's own list; an entry stands
+  exactly while its request does.
+
+`npm run test:rules` runs these against the emulator (the coaching and
+programs tests in `scripts/test-rules.mjs`), with the same write builders
+the app uses.
 
 ## Files
 
@@ -141,6 +223,8 @@ desk.
 |---|---|
 | `src/coaching.js` | The shapes and the arithmetic — pure, tested by `scripts/test-coaching.mjs` |
 | `src/coaching-page.js` | The three pages |
+| `src/coaching-programs.js` | Programs: the shapes and the writes — pure, tested by `scripts/test-coaching-programs.mjs` |
+| `src/coaching-program-page.js` | The program page, the four steps, the programs block of the desk |
 | `src/store.js` («Coaching») | Reads and writes; local mode keeps the same tree in `localStorage` |
 | `src/app.js` | Routes, the Services tile, the bell's `link`, the admin's coach box |
 | `functions/coaching.js` | Reminders — pure, tested by `scripts/test-coach-reminders.mjs` |
@@ -163,7 +247,10 @@ than the coaching page.
 ## Not in this version
 
 - Payment through the app (the club's QPay, then the club pays the coaches).
-- Group lessons, lesson packages, a recurring weekly timetable.
+  A request to join a program is not a purchase: nothing counts lessons
+  used against a package yet.
+- A class with a fixed timetable and limited seats; a recurring weekly
+  timetable.
 - Lesson notes, ratings.
 - A link to MT Bogd's range or tee sheet (Sky ONE).
 - Past slots are kept (they are the record the payment phase will need) and

@@ -17,6 +17,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, remove } from 'firebase/database';
 import { mergeMember, baselineOf, memberWrites } from '../src/member-record.js';
 import { slotId, slotWrites, bookingWrites, cancelWrites, lessonKey, CANCEL_MS } from '../src/coaching.js';
+import { programWrites, publishWrites, enrollWrites, unenrollWrites, removeProgramWrites, enrollKey } from '../src/coaching-programs.js';
 
 const HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const PROJECT = 'demo-golfup';
@@ -601,3 +602,193 @@ test('coaching: an admin can step in — cancel a booking, clear a slot', async 
   assert.equal((await stored(`coachSlots/m2/${slotId(S.takenSoon)}`)).status, 'open');
   await ok(remove(ref(sysAdmin, `coachSlots/m2/${soon.id}`)), 'the system admin clears an open slot');
 });
+
+// ---- Coaching: programs ----
+// m2 (a coach) has a published program with a poster (p1) and a hidden one
+// (pHidden); f2, who is switched off, has one too. m1 has asked to join p1.
+const POSTER = 'data:image/webp;base64,' + 'A'.repeat(400);
+const THUMB = 'data:image/webp;base64,AAAA';
+const OPTIONS = [{ label: '10 lessons', price: 1200000 }, { label: 'Trial lesson', price: 200000 }];
+const program = (over = {}) => ({ title: 'Beginner course', level: 'beginner', summary: 'The basics.', options: OPTIONS, people: 3,
+  active: true, hasPoster: false, createdAt: T0, updatedAt: T0, ...over });
+const PROGRAMS = {
+  coaches: COACHING.coaches,
+  coachPrograms: {
+    m2: { p1: program({ hasPoster: true, thumb: THUMB }), pHidden: program({ title: 'Not yet', active: false }) },
+    f2: { pOff: program({ title: 'From a coach who is off' }) },
+  },
+  coachPosters: { m2: { p1: POSTER } },
+  coachEnrollments: { m2: { p1: { m1: { option: '0', label: '10 lessons', price: 1200000, at: T0, note: 'evenings' } } } },
+  playerPrograms: { m1: { [enrollKey('m2', 'p1')]: { coachId: 'm2', programId: 'p1', at: T0 } } },
+};
+async function layPrograms() {
+  for (const [node, value] of Object.entries(PROGRAMS)) {
+    const r = await fetch(`http://${HOST}/${node}.json?ns=${NS}`, {
+      method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+    });
+    assert.equal(r.status, 200, 'laying ' + node);
+  }
+}
+const draft = { title: 'Short game', level: 'advanced', summary: 'Chip, pitch, bunker.', options: [{ label: '5 lessons', price: 800000 }], people: 1 };
+const join = (coach, id, player, index = 0, note = '') =>
+  enrollWrites(coach, id, player, PROGRAMS.coachPrograms[coach][id], index, note, T0);
+const without = (writes, prefix) => Object.fromEntries(Object.entries(writes).filter(([path]) => !path.startsWith(prefix)));
+
+test('programs: members read them; a poster is read one at a time; a visitor reads neither', async () => {
+  await layPrograms();
+  assert.equal((await get(ref(m1, 'coachPrograms'))).val().m2.p1.title, 'Beginner course');
+  assert.equal((await get(ref(m1, 'coachPosters/m2/p1'))).val(), POSTER);
+  await denied(get(ref(m1, 'coachPosters')), 'every poster at once');
+  await denied(get(ref(m1, 'coachPosters/m2')), 'a coach\'s posters at once');
+  await denied(get(ref(visitor, 'coachPrograms')), 'a visitor, the programs');
+  await denied(get(ref(visitor, 'coachPosters/m2/p1')), 'a visitor, a poster');
+  await denied(get(ref(anon, 'coachPrograms')), 'an anonymous device');
+  await denied(get(ref(held, 'coachPrograms')), 'a member on hold');
+});
+
+test('programs: a coach publishes their own — with a poster or without — and no one else\'s', async () => {
+  await layPrograms();
+  await ok(update(root(m2), programWrites('m2', 'pNew', draft, { poster: POSTER, thumb: THUMB, now: T0 })), 'with a poster');
+  assert.deepEqual([(await stored('coachPrograms/m2/pNew')).hasPoster, await stored('coachPosters/m2/pNew')], [true, POSTER]);
+  await ok(update(root(m2), programWrites('m2', 'pPlain', draft, { poster: null, now: T0 })), 'without one');
+  assert.equal((await stored('coachPrograms/m2/pPlain')).hasPoster, false);
+  // An edit that leaves the poster alone keeps it.
+  await ok(update(root(m2), programWrites('m2', 'pNew', { ...draft, title: 'Short game, again' },
+    { existing: await stored('coachPrograms/m2/pNew'), now: T0 + 1 })), 'an edit, the poster untouched');
+  assert.deepEqual([(await stored('coachPrograms/m2/pNew')).title, await stored('coachPosters/m2/pNew')], ['Short game, again', POSTER]);
+  await denied(update(root(m1), programWrites('m1', 'pMine', draft, { poster: null, now: T0 })), 'a member who is not a coach');
+  await denied(update(root(m1), programWrites('m2', 'pTheirs', draft, { poster: null, now: T0 })), 'a member, for the coach');
+  await denied(update(root(f2), programWrites('f2', 'pNew', draft, { poster: null, now: T0 })), 'a coach who is switched off');
+  await denied(update(root(visitor), programWrites('m2', 'pV', draft, { poster: null, now: T0 })), 'a visitor');
+  await ok(update(root(admin), programWrites('m2', 'pPlain', { ...draft, title: 'Fixed by an admin' },
+    { existing: await stored('coachPrograms/m2/pPlain'), now: T0 + 2 })), 'an admin steps in');
+});
+
+test('programs: what a program may hold', async () => {
+  await layPrograms();
+  const base = programWrites('m2', 'pX', draft, { poster: null, now: T0 });
+  const bad = (change) => ({ 'coachPrograms/m2/pX': { ...base['coachPrograms/m2/pX'], ...change } });
+  await denied(update(root(m2), bad({ title: '' })), 'no title');
+  await denied(update(root(m2), bad({ title: 'x'.repeat(81) })), 'a title too long');
+  await denied(update(root(m2), bad({ level: 'pro' })), 'a level that is not one');
+  await denied(update(root(m2), bad({ summary: 'x'.repeat(1001) })), 'a summary too long');
+  await denied(update(root(m2), bad({ options: Array.from({ length: 7 }, () => ({ label: 'a', price: 1 })) })), 'a seventh price');
+  await denied(update(root(m2), bad({ options: [{ label: 'a' }] })), 'a price row with no price');
+  await denied(update(root(m2), bad({ options: [{ label: 'a', price: '100' }] })), 'a price that is not a number');
+  await denied(update(root(m2), bad({ options: [{ label: 'a', price: 1, paid: true }] })), 'a field on a price that is not one');
+  await denied(update(root(m2), bad({ people: 0 })), 'for no people');
+  await denied(update(root(m2), bad({ thumb: 'https://example.com/x.png' })), 'a thumbnail that is not an image');
+  await denied(update(root(m2), bad({ thumb: 'data:image/webp;base64,' + 'A'.repeat(60000) })), 'a thumbnail too large');
+  await denied(update(root(m2), bad({ rating: 5 })), 'a field that is not one');
+  await denied(update(root(m2), bad({ active: 'yes' })), 'a switch that is not a boolean');
+  await ok(update(root(m2), base), 'as the app writes it');
+});
+
+test('programs: a poster and its program stand together', async () => {
+  await layPrograms();
+  const withPoster = programWrites('m2', 'pP', draft, { poster: POSTER, thumb: THUMB, now: T0 });
+  await denied(update(root(m2), without(withPoster, 'coachPosters')), 'says it has a poster, has none');
+  await denied(update(root(m2), without(withPoster, 'coachPrograms')), 'a poster with no program');
+  await denied(set(ref(m2, 'coachPosters/m2/pHidden'), POSTER), 'a poster slipped under a program that says it has none');
+  await denied(remove(ref(m2, 'coachPosters/m2/p1')), 'the poster taken away, the program still saying it has one');
+  await denied(update(root(m2), { ...withPoster, 'coachPosters/m2/pP': 'https://example.com/poster.png' }), 'a poster that is not an image');
+  await denied(update(root(m2), { ...withPoster, 'coachPosters/m2/pP': 'data:image/webp;base64,' + 'A'.repeat(600000) }), 'a poster too large');
+  await denied(set(ref(m1, 'coachPosters/m2/p1'), POSTER), 'a member, the coach\'s poster');
+  // Taken away properly: the program says so in the same write.
+  await ok(update(root(m2), programWrites('m2', 'p1', PROGRAMS.coachPrograms.m2.p1, { poster: null, existing: PROGRAMS.coachPrograms.m2.p1, now: T0 })), 'removed, whole');
+  assert.deepEqual([(await stored('coachPrograms/m2/p1')).hasPoster, (await stored('coachPrograms/m2/p1')).thumb, await stored('coachPosters/m2/p1')], [false, undefined, null]);
+});
+
+test('programs: a coach hides and shows their own', async () => {
+  await layPrograms();
+  await ok(update(root(m2), publishWrites('m2', 'p1', false, T0 + 1)), 'hidden');
+  assert.equal((await stored('coachPrograms/m2/p1')).active, false);
+  await ok(update(root(m2), publishWrites('m2', 'pHidden', true, T0 + 1)), 'shown');
+  await denied(update(root(m1), publishWrites('m2', 'p1', true, T0 + 2)), 'a member');
+  await denied(update(root(f2), publishWrites('f2', 'pOff', false, T0 + 2)), 'a coach who is switched off');
+});
+
+test('programs: a member asks to join — the request and their own list, in one write', async () => {
+  await layPrograms();
+  await ok(update(root(f1), join('m2', 'p1', 'f1', 1, 'weekends only')), 'a member');
+  assert.deepEqual(await stored('coachEnrollments/m2/p1/f1'), { option: '1', label: 'Trial lesson', price: 200000, at: T0, note: 'weekends only' });
+  assert.deepEqual(await stored(`playerPrograms/f1/${enrollKey('m2', 'p1')}`), { coachId: 'm2', programId: 'p1', at: T0 });
+  await ok(update(root(f1), join('m2', 'p1', 'f1', 0)), 'and changes their mind about which');
+  assert.equal((await stored('coachEnrollments/m2/p1/f1')).label, '10 lessons');
+  // Who reads it: the coach, the member themselves, an admin — no one else.
+  assert.deepEqual(Object.keys((await get(ref(m2, 'coachEnrollments/m2/p1'))).val()).sort(), ['f1', 'm1']);
+  assert.equal((await get(ref(f1, 'coachEnrollments/m2/p1/f1'))).val().label, '10 lessons');
+  assert.ok((await get(ref(f1, 'playerPrograms/f1'))).exists());
+  assert.ok((await get(ref(admin, 'coachEnrollments/m2'))).exists());
+  await denied(get(ref(f1, 'coachEnrollments/m2/p1')), 'a member, who else asked');
+  await denied(get(ref(f1, 'coachEnrollments/m2/p1/m1')), 'a member, another\'s request');
+  await denied(get(ref(f1, 'playerPrograms/m1')), 'a member, another\'s list');
+  await denied(get(ref(m2, 'playerPrograms/m1')), 'the coach, a member\'s whole list');
+});
+
+test('programs: joining is whole or it is nothing', async () => {
+  await layPrograms();
+  const w = join('m2', 'p1', 'f1');
+  await denied(update(root(f1), without(w, 'playerPrograms')), 'the request, their list left without it');
+  await denied(update(root(f1), without(w, 'coachEnrollments')), 'on their list, with no request');
+  assert.equal(await stored('coachEnrollments/m2/p1/f1'), null);
+  assert.equal(await stored(`playerPrograms/f1/${enrollKey('m2', 'p1')}`), null);
+});
+
+test('programs: who may not join, and what a request may say', async () => {
+  await layPrograms();
+  await denied(update(root(f1), join('m2', 'p1', 'm1')), 'in another member\'s name');
+  await denied(update(root(m2), join('m2', 'p1', 'm2')), 'the coach, their own program');
+  await denied(update(root(held), join('m2', 'p1', 'held')), 'a member on hold');
+  await denied(update(root(anon), join('m2', 'p1', 'f1')), 'an anonymous device');
+  await denied(update(root(visitor), join('m2', 'p1', 'f1')), 'a visitor');
+  await denied(update(root(f1), join('m2', 'pHidden', 'f1')), 'a program that is hidden');
+  await denied(update(root(f1), join('f2', 'pOff', 'f1')), 'a program of a coach who is switched off');
+  const w = join('m2', 'p1', 'f1');
+  const request = w['coachEnrollments/m2/p1/f1'];
+  const say = (change) => ({ ...w, 'coachEnrollments/m2/p1/f1': { ...request, ...change } });
+  await denied(update(root(f1), say({ price: 1 })), 'a price of their own');
+  await denied(update(root(f1), say({ label: 'Free lessons' })), 'a name that is not the program\'s');
+  await denied(update(root(f1), say({ option: '1' })), 'one price\'s number with another\'s name');
+  await denied(update(root(f1), say({ option: '5', label: 'x', price: 0 })), 'a price the program does not have');
+  await denied(update(root(f1), say({ option: 0 })), 'a number where the key belongs');
+  await denied(update(root(f1), say({ note: 'n'.repeat(301) })), 'a note too long');
+  await denied(update(root(f1), say({ paid: true })), 'a field that is not one');
+  await denied(update(root(f1), { ...w, [`playerPrograms/f1/${enrollKey('m2', 'p1')}`]: { coachId: 'm2', programId: 'pHidden', at: T0 } }), 'a list entry under the wrong key');
+  await denied(update(root(f1), { ...w, 'playerPrograms/f1/extra': { coachId: 'm2', programId: 'p1', at: T0 } }), 'a second list entry for the same request, under a key of their own');
+  assert.equal(await stored('coachEnrollments/m2/p1/f1'), null);
+  await ok(update(root(f1), w), 'as the app writes it');
+});
+
+test('programs: a request is taken back whole — by the member, the coach or an admin, no one else', async () => {
+  await layPrograms();
+  const leave = unenrollWrites('m2', 'p1', 'm1');
+  await denied(update(root(f1), leave), 'another member');
+  await denied(update(root(m1), without(leave, 'playerPrograms')), 'the member, their list left pointing at it');
+  await denied(update(root(m1), without(leave, 'coachEnrollments')), 'the member, off their list with the request standing');
+  await denied(update(root(m2), without(leave, 'playerPrograms')), 'the coach, the member\'s list left pointing at it');
+  await denied(update(root(m2), without(leave, 'coachEnrollments')), 'the coach, the member\'s list alone');
+  await denied(set(ref(m2, 'coachEnrollments/m2/p1/m1/note'), 'paid'), 'the coach rewrites a request');
+  assert.equal((await stored('coachEnrollments/m2/p1/m1')).note, 'evenings');
+  await ok(update(root(m1), leave), 'the member');
+  assert.deepEqual([await stored('coachEnrollments/m2/p1/m1'), await stored(`playerPrograms/m1/${enrollKey('m2', 'p1')}`)], [null, null]);
+  await layPrograms();
+  await ok(update(root(m2), leave), 'the coach');
+  await layPrograms();
+  await ok(update(root(sysAdmin), leave), 'an admin');
+});
+
+test('programs: a program is removed whole — its poster and every request with it', async () => {
+  await layPrograms();
+  await denied(remove(ref(m2, 'coachPrograms/m2/p1')), 'the program alone');
+  await denied(update(root(m2), removeProgramWrites('m2', 'p1', [])), 'the requests left behind');
+  await denied(update(root(m2), without(removeProgramWrites('m2', 'p1', ['m1']), 'coachPosters')), 'the poster left behind');
+  await denied(update(root(m1), removeProgramWrites('m2', 'p1', ['m1'])), 'a member');
+  assert.equal((await stored('coachPrograms/m2/p1')).title, 'Beginner course');
+  await ok(update(root(m2), removeProgramWrites('m2', 'p1', ['m1'])), 'whole');
+  assert.deepEqual([await stored('coachPrograms/m2/p1'), await stored('coachPosters/m2/p1'), await stored('coachEnrollments/m2/p1'),
+    await stored(`playerPrograms/m1/${enrollKey('m2', 'p1')}`)], [null, null, null, null]);
+  await ok(update(root(m2), removeProgramWrites('m2', 'pHidden', [])), 'one with no poster and no requests');
+  await ok(update(root(admin), removeProgramWrites('f2', 'pOff', [])), 'an admin clears a switched-off coach\'s');
+});
+

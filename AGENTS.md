@@ -198,12 +198,20 @@ coachSlots/{coachId}/{slotId}     // { start, minutes, status: 'open'|'booked', 
 coachBookings/{coachId}/{slotId}  // { playerId, bookedAt, note } — coach, that player and admins only
 playerLessons/{playerId}/{key}    // { coachId, slotId, start, minutes } — key = coachId + '_' + slotId
 coachReminded/...                 // server only (functions/coaching.js)
+coachPrograms/{coachId}/{id}      // a coach's course or package: { title, level, summary, options, people, thumb, hasPoster, active }
+coachPosters/{coachId}/{id}       // its poster, an image data URI — read one at a time, never the whole node
+coachEnrollments/{coachId}/{id}/{playerId}  // a member's request to join: { option, label, price, note, at }
+playerPrograms/{playerId}/{key}   // the member's own list — key = coachId + '_' + programId
 ```
 
 Booking and cancelling are each ONE multi-path write (`bookingWrites`,
 `cancelWrites` in `src/coaching.js`); the database rules refuse a partial
 one from anyone — player, coach or admin (slot `booked` ⇔ a booking ⇔ the
-lesson on that player's list). Do not split them into separate writes, and do not put the player's
+lesson on that player's list). Programs the same way (`src/coaching-programs.js`):
+a request to join and the member's list entry are one write, a program and
+its poster are one write, and a program is removed only with its poster and
+every request. Keep the poster out of the program record — the list of
+programs is read whole. Do not split them into separate writes, and do not put the player's
 id on the slot — members read slots, not who booked them.
 
 ## Product Rules

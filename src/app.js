@@ -3304,9 +3304,9 @@ function notifPage(n) {
 // A coaching notice — a lesson booked, a lesson cancelled. It rides the
 // tournament notices' type because the push function sends those with their
 // own text (functions/index.js sendPushOnNotification).
-function coachNotify(memberId, title, body) {
+function coachNotify(memberId, title, body, link = '#/coaching') {
   if (!memberId || memberId === currentUser?.id) return;
-  store.saveNotification(memberId, { type: 'tn_sched', kind: 'coach', title, body, link: '#/coaching' })
+  store.saveNotification(memberId, { type: 'tn_sched', kind: 'coach', title, body, link })
     .catch(err => console.warn('coach notice:', err?.message || err));
 }
 

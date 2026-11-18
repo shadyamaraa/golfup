@@ -1,9 +1,10 @@
 // src/coaching-page.js
 // Coaching, as a member sees it:
 //
-//   #/coaching           the coaches, and the lessons I have booked
-//   #/coaching/c/:id     one coach — their open times; tap one to book it
-//   #/coaching/me        a coach's own desk: profile, opening times, who booked
+//   #/coaching           the coaches and their programs, and what I have booked or joined
+//   #/coaching/c/:id     one coach — their programs and open times; tap a time to book it
+//   #/coaching/me        a coach's own desk: opening times, who booked, programs, profile
+//   #/coaching/p/…, /new, /edit/…   a program and the steps that make one — coaching-program-page.js
 //
 // The shapes and the arithmetic are in coaching.js, the reads and writes in
 // store.js, who may write what in database.rules.json. docs/coaching.md.
@@ -22,6 +23,10 @@ import {
   SLOT_MINUTES, CANCEL_HOURS, isCoach, priceOf, newSlots, canPlayerCancel,
   slotList, upcoming, openSlots, dayKey, timeText, byDay, myLessons,
 } from './coaching.js';
+import { allPrograms, programList } from './coaching-programs.js';
+import {
+  programCardHTML, renderProgramPage, renderProgramWizard, deskProgramsHTML, wireDeskPrograms,
+} from './coaching-program-page.js';
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -41,6 +46,12 @@ const avatar = (ctx, u) => `<span class="player-avatar-sm" style="flex-shrink:0;
 export async function renderCoachingPage(sub, ctx) {
   ctx.main().innerHTML = spinner;
   if (sub === 'me') return renderDesk(ctx);
+  if (sub === 'new') return renderProgramWizard(null, ctx);
+  if (sub.startsWith('edit/')) return renderProgramWizard(decodeURIComponent(sub.slice(5)), ctx);
+  if (sub.startsWith('p/')) {
+    const [coachId, id] = sub.slice(2).split('/').map(decodeURIComponent);
+    return renderProgramPage(coachId, id || '', ctx);
+  }
   if (sub.startsWith('c/')) return renderCoach(decodeURIComponent(sub.slice(2)), ctx);
   return renderHome(ctx);
 }
@@ -48,12 +59,26 @@ export async function renderCoachingPage(sub, ctx) {
 // ---- #/coaching ----
 async function renderHome(ctx) {
   const me = ctx.user;
-  const [coaches, users, allSlots, lessons] = await Promise.all([
+  const [coaches, users, allSlots, lessons, byCoach, joined] = await Promise.all([
     store.loadCoaches(), store.loadAllUsers(), store.loadAllCoachSlots(), store.loadPlayerLessons(me.id),
+    store.loadAllCoachPrograms(), store.loadPlayerPrograms(me.id),
   ]);
   if (!ctx.alive()) return;
   const byId = new Map((users || []).map(u => [u.id, u]));
   const now = Date.now();
+
+  // Programs: the ones I have asked to join (hidden since or not), then every published one.
+  const card = (p) => programCardHTML(p, byId.get(p.coachId), ctx);
+  const mineP = Object.values(joined || {})
+    .map(j => ({ j, p: j && ((byCoach || {})[j.coachId] || {})[j.programId] }))
+    .filter(x => x.p && x.p.title)
+    .sort((a, b) => (Number(b.j.at) || 0) - (Number(a.j.at) || 0))
+    .map(x => ({ coachId: x.j.coachId, id: x.j.programId, ...x.p }));
+  const programs = allPrograms(byCoach, (id) => isCoach(coaches, id) && byId.has(id));
+  const joinedHTML = mineP.length
+    ? `<h3 class="section-title" style="margin:18px 0 10px;">${t('cpMyPrograms')}</h3>${mineP.map(card).join('')}` : '';
+  const programsHTML = programs.length
+    ? `<h3 class="section-title" style="margin:18px 0 10px;">${t('cpPrograms')}</h3>${programs.map(card).join('')}` : '';
 
   const mine = myLessons(lessons, allSlots, now);
   const lessonsHTML = mine.length ? `
@@ -114,6 +139,8 @@ async function renderHome(ctx) {
           <span class="lr-chev">${icon('next', { size: 18 })}</span>
         </a>` : ''}
       ${lessonsHTML}
+      ${joinedHTML}
+      ${programsHTML}
       <h3 class="section-title" style="margin:18px 0 10px;">${t('coCoaches')}</h3>
       ${coachesHTML}
     </div>`;
@@ -145,8 +172,8 @@ async function renderHome(ctx) {
 // ---- #/coaching/c/:id ----
 async function renderCoach(coachId, ctx) {
   const me = ctx.user;
-  const [coaches, coach, slotMap] = await Promise.all([
-    store.loadCoaches(), store.loadUserById(coachId), store.loadCoachSlots(coachId),
+  const [coaches, coach, slotMap, programMap] = await Promise.all([
+    store.loadCoaches(), store.loadUserById(coachId), store.loadCoachSlots(coachId), store.loadCoachPrograms(coachId),
   ]);
   if (!ctx.alive()) return;
   const back = `<a href="#/coaching" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>`;
@@ -159,6 +186,7 @@ async function renderCoach(coachId, ctx) {
   const now = Date.now();
   const days = byDay(upcoming(slotList(slotMap), now));
   const own = me.id === coachId;
+  const programs = programList(programMap);
 
   const slotsHTML = days.length ? days.map(d => `
     <div class="co-day">
@@ -184,6 +212,8 @@ async function renderCoach(coachId, ctx) {
       </div>
       ${profile.bio ? `<p class="co-bio">${esc(profile.bio)}</p>` : ''}
       ${own ? `<a href="#/coaching/me" class="btn btn-ghost btn-sm" style="margin:6px 0 4px;">${t('coMyDesk')} ${icon('next', { size: 15 })}</a>` : ''}
+      ${programs.length ? `<h3 class="section-title" style="margin:18px 0 10px;">${t('cpPrograms')}</h3>
+        ${programs.map(p => programCardHTML({ coachId, ...p }, null, ctx)).join('')}` : ''}
       <h3 class="section-title" style="margin:18px 0 10px;">${t('coFreeTimes')}</h3>
       ${slotsHTML}
       <p class="co-pay-note">${t('coPayNote')}</p>
@@ -244,8 +274,9 @@ function bookDialog(ctx, coachId, coach, slot) {
 // ---- #/coaching/me ----
 async function renderDesk(ctx) {
   const me = ctx.user;
-  const [coaches, slotMap, bookings, users] = await Promise.all([
+  const [coaches, slotMap, bookings, users, programMap, asked] = await Promise.all([
     store.loadCoaches(), store.loadCoachSlots(me.id), store.loadCoachBookings(me.id), store.loadAllUsers(),
+    store.loadCoachPrograms(me.id), store.loadCoachEnrollments(me.id),
   ]);
   if (!ctx.alive()) return;
   const back = `<a href="#/coaching" class="back-link">${icon('back', { size: 16 })} ${t('back')}</a>`;
@@ -304,6 +335,8 @@ async function renderDesk(ctx) {
           ${d.slots.map(rowHTML).join('')}
         </div>`).join('') : `<div class="co-hint" style="margin-bottom:14px;">${t('coNoSlotsYet')}</div>`}
 
+      ${deskProgramsHTML(programMap, asked, byId, ctx)}
+
       <div class="glass-card co-card" style="margin-top:18px;">
         <h3 class="co-card-title">${t('coProfile')}</h3>
         <div class="input-group"><label>${t('coBio')}</label>
@@ -322,6 +355,7 @@ async function renderDesk(ctx) {
   const view = ctx.main();
   const again = () => renderDesk(ctx);
   const refused = (what, err) => { console.warn(what, err?.message || err); ctx.showToast(t('coSaveFailed'), 'error'); };
+  wireDeskPrograms(view, programMap, asked, byId, ctx, again);
 
   view.querySelector('#co-save').onclick = async () => {
     try {

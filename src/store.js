@@ -10,6 +10,7 @@ import {
 import {
   cleanProfile, slotWrites, bookingWrites, cancelWrites, applyWrites,
 } from './coaching.js';
+import { programWrites, publishWrites, enrollWrites, unenrollWrites, removeProgramWrites } from './coaching-programs.js';
 
 let db = null;
 let auth = null;
@@ -1860,3 +1861,59 @@ export async function reopenCoachSlot(coachId, id) {
 export async function dropPlayerLesson(playerId, key) {
   await coachingWrite({ [`playerLessons/${playerId}/${key}`]: null });
 }
+
+// ---- Coaching: programs ----
+// A coach's courses and packages — the shapes are in src/coaching-programs.js,
+// who may write what in database.rules.json, the whole in docs/coaching.md.
+// Four more nodes: coachPrograms, coachPosters, coachEnrollments,
+// playerPrograms. The poster is read on its own, one program at a time.
+
+/** Every coach's programs: { coachId: { programId: program } }. */
+export const loadAllCoachPrograms = () => coachingReadOr('coachPrograms', {});
+
+/** One coach's programs, hidden ones included. */
+export const loadCoachPrograms = (coachId) => coachingReadOr(`coachPrograms/${coachId}`, {});
+
+/** One program, or null. */
+export const loadCoachProgram = (coachId, id) => coachingReadOr(`coachPrograms/${coachId}/${id}`, null);
+
+/** A program's poster — an image data URI — or null. */
+export const loadCoachPoster = (coachId, id) => coachingReadOr(`coachPosters/${coachId}/${id}`, null);
+
+/** Who asked to join a coach's programs: { programId: { playerId: request } } — the coach's own to read. */
+export const loadCoachEnrollments = (coachId) => coachingReadOr(`coachEnrollments/${coachId}`, {});
+
+/** A member's own request to join one program, or null. */
+export const loadMyEnrollment = (coachId, id, playerId) => coachingReadOr(`coachEnrollments/${coachId}/${id}/${playerId}`, null);
+
+/** The programs a member has asked to join: { key: { coachId, programId, at } }. */
+export const loadPlayerPrograms = (playerId) => coachingReadOr(`playerPrograms/${playerId}`, {});
+
+/** A coach saves a program. `opts`: { poster, thumb, existing } — see programWrites. */
+export async function saveCoachProgram(coachId, id, input, opts) {
+  await coachingWrite(programWrites(coachId, id, input, opts));
+}
+
+/** A coach shows or hides a program. */
+export async function publishCoachProgram(coachId, id, active) {
+  await coachingWrite(publishWrites(coachId, id, active));
+}
+
+/** A coach removes a program whole: its poster and every request to join go with it. */
+export async function removeCoachProgram(coachId, id) {
+  const asked = await coachingRead(`coachEnrollments/${coachId}/${id}`);
+  await coachingWrite(removeProgramWrites(coachId, id, Object.keys(asked || {})));
+}
+
+/** A member asks to join a program at one of its prices. Throws when the database refuses. */
+export async function enrollInProgram(coachId, id, playerId, program, index, note) {
+  const writes = enrollWrites(coachId, id, playerId, program, index, note);
+  if (!writes) throw Object.assign(new Error('This program has no such price'), { code: 'OPTION' });
+  await coachingWrite(writes);
+}
+
+/** A request to join taken back — by the member, or by the coach. */
+export async function leaveProgram(coachId, id, playerId) {
+  await coachingWrite(unenrollWrites(coachId, id, playerId));
+}
+
