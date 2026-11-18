@@ -1,5 +1,105 @@
 # CHANGELOG_AI.md
 
+## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)
+
+Found in review of the pull request. Granting a request made a slot for the
+lesson and left the open slots it ran into as they were; another member
+could book one, or the coach could grant a second request onto one, and two
+lessons overlapped.
+
+- `changeTarget` (`src/coaching.js`): an open slot at the time asked for is
+  taken only when no other lesson runs across it, by that slot's own length.
+- `approveChangeWrites`: given the coach's slots, it withdraws the open ones
+  the moved lesson runs into, in the same write; the old slot is removed
+  instead of opened when the lesson moves onto part of it.
+- `openSlots`: an open slot across a booked lesson is not offered — the
+  coach's page shows it as taken; «Цаг солих» and the weekly series
+  (`weeklySeries`) leave it out. A member moving their own lesson is not
+  blocked by that lesson.
+- Tests: `scripts/test-coaching.mjs` (37), `scripts/test-rules.mjs` (57 —
+  the rules already let the wider write through; no rules change).
+
+## 2026-11-18 (Coaching: weeks at a time, and another time for a lesson)
+
+A coach opened one day at a time, a player booked one lesson at a time, and
+a time could only be changed by cancelling and booking again.
+
+- **The coach opens weeks at once**: «Давтах» on the desk — the weekdays
+  and 1–12 weeks («4 долоо хоног (1 сар)»). `newSlotsRepeat` in
+  `src/coaching.js`; up to 400 slots in one go.
+- **A rest between lessons, and lunch**: when opening times the coach
+  picks the rest after each lesson (10 minutes to begin with) and may enter
+  lunch; no lesson is opened across lunch and the day goes on from its end.
+  The day's shape is remembered on the coach's device.
+- **A player books a weekly series**: «Давтах» in the booking dialog lists
+  the same weekday and hour for the weeks that follow, open or not, and
+  books the open ones — each its own write, so one taken meanwhile does not
+  undo the rest. `weeklySeries`, `store.bookCoachSlots`.
+- **«Цаг солих»** on each of a player's lessons: an open time of the
+  coach's is taken at once (while the lesson may still be cancelled); any
+  other time is a request with a note. The coach sees it on the lesson's
+  row and grants it — the lesson moves onto the open slot there or one made
+  for it, the old time opens again — or turns it down. Not granted into
+  another lesson. Both sides are told.
+- **`database.rules.json`**: a new node `coachChanges` (only the player of
+  a booked lesson asks; the coach and they read it), and two changes to the
+  coaching rules of yesterday: a booking is not removed while a request to
+  move it stands (the cancelling write takes both — `cancelWrites` now
+  does), and the coach may place a booking for a player in one case only —
+  granting that player's request, for exactly the time asked, with the old
+  booking gone in the same write.
+- Tests: 13 more in `scripts/test-coaching.mjs` (33), 6 more rules tests
+  (56 in `npm run test:rules`); the new rules and logic broken on purpose
+  to see the tests fail.
+- `docs/coaching.md` («Weeks at a time», «Another time for a lesson»),
+  `AGENTS.md`, `PROJECT_NOTES.md`, `TASKS.md`, mn / en / kr strings.
+
+No functions change: reminders follow the lesson to its new time by
+themselves. Not in this version: several players in one slot, a coach
+moving a lesson without a request.
+
+## 2026-11-18 (Coaching: programs — a coach posts a course with a poster, members ask to join)
+
+Coaches had times to book but no way to say what they offer. A coach can
+now post a program — «Анхан шатны сургалт», «1 сарын хичээл» — with its
+poster and prices, and members ask to join it.
+
+- **The coach**, on «Миний хуваарь» → «+ Сургалт нэмэх», in four steps:
+  the poster → name, level, description → prices, one row per package
+  («10 хичээл», «1 сар», «Туршилтын хичээл»; up to six) and for how many
+  people one fee is → a review, then «Нийтлэх» or «Нууцалж хадгалах».
+  Typing survives going back and forth; nothing is written until the end.
+  The same steps edit a program. Under each program on the desk: who asked
+  to join (name, phone, which price, note), hide/show, delete.
+- **Members**: «Сургалтууд» on `#/coaching` and on a coach's page; a
+  program's own page (`#/coaching/p/{coachId}/{id}`) with the poster (tap
+  for full size), the prices and «Бүртгүүлэх» — a request, not a booking
+  or a payment. «Миний бүртгүүлсэн сургалт» lists theirs; it can be taken
+  back. Each side is told of the other's move.
+- **The poster** is shrunk in the browser (WebP, then JPEG, until under
+  600,000 characters) and stored as a data URI in its own node, read one
+  program at a time; the program carries a small thumbnail. No storage
+  bucket, as with the tournament pictures.
+- `src/coaching-programs.js` (new, pure), `src/coaching-program-page.js`
+  (new), `src/coaching-page.js`, `src/store.js`, `src/i18n.js` (mn / en /
+  kr), `src/app.js` (a notice can name which page it opens).
+- **`database.rules.json` — new rules** for four new nodes:
+  `coachPrograms`, `coachPosters`, `coachEnrollments`, `playerPrograms`.
+  Only an active coach (or an admin) writes programs; a program and its
+  poster are written and removed together; a member asks only for
+  themselves, only for a published program, and only at one of the
+  program's own prices; a request and the member's list entry stand and
+  fall together, whoever removes them; posters cannot be read in bulk.
+  Nothing existing is changed.
+- Tests: `scripts/test-coaching-programs.mjs` (14, in `npm run test:mp`),
+  10 program tests in `scripts/test-rules.mjs`; each rule and each piece of
+  the logic broken on purpose to see a test fail.
+- `docs/coaching.md` («Programs»), `AGENTS.md`, `PROJECT_NOTES.md`,
+  `TASKS.md`.
+
+No functions change. Not in this version: payment, counting lessons used
+against a package, a class with a fixed timetable.
+
 ## 2026-11-17 (Coaching: coaches open their times, members book a lesson)
 
 The «Дасгалжуулагч» tile on Services said «Тун удахгүй». It now opens the

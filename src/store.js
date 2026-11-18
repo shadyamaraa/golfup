@@ -9,7 +9,9 @@ import {
 } from './member-record.js';
 import {
   cleanProfile, slotWrites, bookingWrites, cancelWrites, applyWrites,
+  moveWrites, changeRequestWrites, dropChangeWrites, approveChangeWrites,
 } from './coaching.js';
+import { programWrites, publishWrites, enrollWrites, unenrollWrites, removeProgramWrites } from './coaching-programs.js';
 
 let db = null;
 let auth = null;
@@ -1860,3 +1862,115 @@ export async function reopenCoachSlot(coachId, id) {
 export async function dropPlayerLesson(playerId, key) {
   await coachingWrite({ [`playerLessons/${playerId}/${key}`]: null });
 }
+
+/**
+ * A member books several slots — the same hour week after week. Each is its
+ * own write, so one that was taken meanwhile does not undo the rest; what
+ * could not be booked is told, not thrown.
+ */
+export async function bookCoachSlots(coachId, slots, playerId, note) {
+  const booked = [];
+  const missed = [];
+  for (const slot of slots || []) {
+    try { await bookCoachSlot(coachId, slot, playerId, note); booked.push(slot); }
+    catch (err) { console.warn('book slot:', err?.message || err); missed.push(slot); }
+  }
+  return { booked, missed };
+}
+
+/**
+ * A member moves their own lesson onto another open slot of the coach — the
+ * old time freed, the new one taken, in one write. Throws as bookCoachSlot
+ * does (`err.code === 'TAKEN'` when the new slot is no longer open).
+ */
+export async function moveCoachBooking(coachId, fromId, toSlot, playerId, note) {
+  const taken = () => Object.assign(new Error('This slot was just taken'), { code: 'TAKEN' });
+  if (!(useFirebase && db)) {
+    const now = (localCoaching().coachSlots || {})[coachId]?.[toSlot.id];
+    if (!now || now.status !== 'open') throw taken();
+  }
+  try {
+    await coachingWrite(moveWrites(coachId, fromId, toSlot, playerId, note));
+  } catch (err) {
+    const now = await coachingReadOr(`coachSlots/${coachId}/${toSlot.id}`, null);
+    if (!now || now.status !== 'open') throw taken();
+    throw err;
+  }
+}
+
+/** The requests to move a lesson that a coach has waiting: { slotId: { playerId, wantStart, note, at } }. */
+export const loadCoachChanges = (coachId) => coachingReadOr(`coachChanges/${coachId}`, {});
+
+/** A member's own request to move one of their lessons, or null. */
+export const loadMyChange = (coachId, id) => coachingReadOr(`coachChanges/${coachId}/${id}`, null);
+
+/** A member asks the coach to move a booked lesson to another time. */
+export async function askCoachChange(coachId, id, playerId, wantStart, note) {
+  await coachingWrite(changeRequestWrites(coachId, id, playerId, wantStart, note));
+}
+
+/** A request to move a lesson taken back by the member, or turned down by the coach. */
+export async function dropCoachChange(coachId, id) {
+  await coachingWrite(dropChangeWrites(coachId, id));
+}
+
+/** The coach grants a request: the lesson moves to the time asked for. `opts`: { slot, note, slots } — approveChangeWrites. */
+export async function approveCoachChange(coachId, from, request, opts) {
+  await coachingWrite(approveChangeWrites(coachId, from, request, opts));
+}
+
+// ---- Coaching: programs ----
+// A coach's courses and packages — the shapes are in src/coaching-programs.js,
+// who may write what in database.rules.json, the whole in docs/coaching.md.
+// Four more nodes: coachPrograms, coachPosters, coachEnrollments,
+// playerPrograms. The poster is read on its own, one program at a time.
+
+/** Every coach's programs: { coachId: { programId: program } }. */
+export const loadAllCoachPrograms = () => coachingReadOr('coachPrograms', {});
+
+/** One coach's programs, hidden ones included. */
+export const loadCoachPrograms = (coachId) => coachingReadOr(`coachPrograms/${coachId}`, {});
+
+/** One program, or null. */
+export const loadCoachProgram = (coachId, id) => coachingReadOr(`coachPrograms/${coachId}/${id}`, null);
+
+/** A program's poster — an image data URI — or null. */
+export const loadCoachPoster = (coachId, id) => coachingReadOr(`coachPosters/${coachId}/${id}`, null);
+
+/** Who asked to join a coach's programs: { programId: { playerId: request } } — the coach's own to read. */
+export const loadCoachEnrollments = (coachId) => coachingReadOr(`coachEnrollments/${coachId}`, {});
+
+/** A member's own request to join one program, or null. */
+export const loadMyEnrollment = (coachId, id, playerId) => coachingReadOr(`coachEnrollments/${coachId}/${id}/${playerId}`, null);
+
+/** The programs a member has asked to join: { key: { coachId, programId, at } }. */
+export const loadPlayerPrograms = (playerId) => coachingReadOr(`playerPrograms/${playerId}`, {});
+
+/** A coach saves a program. `opts`: { poster, thumb, existing } — see programWrites. */
+export async function saveCoachProgram(coachId, id, input, opts) {
+  await coachingWrite(programWrites(coachId, id, input, opts));
+}
+
+/** A coach shows or hides a program. */
+export async function publishCoachProgram(coachId, id, active) {
+  await coachingWrite(publishWrites(coachId, id, active));
+}
+
+/** A coach removes a program whole: its poster and every request to join go with it. */
+export async function removeCoachProgram(coachId, id) {
+  const asked = await coachingRead(`coachEnrollments/${coachId}/${id}`);
+  await coachingWrite(removeProgramWrites(coachId, id, Object.keys(asked || {})));
+}
+
+/** A member asks to join a program at one of its prices. Throws when the database refuses. */
+export async function enrollInProgram(coachId, id, playerId, program, index, note) {
+  const writes = enrollWrites(coachId, id, playerId, program, index, note);
+  if (!writes) throw Object.assign(new Error('This program has no such price'), { code: 'OPTION' });
+  await coachingWrite(writes);
+}
+
+/** A request to join taken back — by the member, or by the coach. */
+export async function leaveProgram(coachId, id, playerId) {
+  await coachingWrite(unenrollWrites(coachId, id, playerId));
+}
+

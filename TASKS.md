@@ -21,8 +21,9 @@
 - [ ] Casual formats phase 3: a cross-group scramble leaderboard — rank every
       team in the game by net total, not only the 2 v 2 inside each group.
 - [ ] Coaching phase 2: payment through the club's own QPay and the club
-      paying the coaches their share; then group lessons, packages, lesson
-      notes. See `docs/coaching.md` («Not in this version»).
+      paying the coaches their share; then counting lessons used against a
+      package, a class with a fixed timetable, lesson notes. See
+      `docs/coaching.md` («Not in this version»).
 
 ## In Progress
 
@@ -30,6 +31,12 @@
 
 ## Done
 
+- [x] Coaching, flexible times — a coach opens weeks at once, a player
+      books a weekly series, and a lesson's time is changed at once or by a
+      request the coach grants. `docs/coaching.md`.
+- [x] Coach programs — a coach posts a course or package with a poster and
+      prices in four steps; members ask to join and the coach sees who.
+      `docs/coaching.md` («Programs»).
 - [x] Coaching, first version — Services → «Дасгалжуулагч»: admin-made
       coaches open their own times, members book and cancel, both are
       reminded. Payment stays outside the app. `docs/coaching.md`.
