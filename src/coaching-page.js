@@ -215,7 +215,7 @@ async function renderHome(ctx) {
 function changeDialog(ctx, lesson, coach, slots, done) {
   const me = ctx.user;
   const now = Date.now();
-  const free = byDay(openSlots(slots, now).filter(s => s.id !== lesson.slotId));
+  const free = byDay(openSlots(slots.filter(s => s.id !== lesson.slotId), now));
   const own = canPlayerCancel(lesson.start, now);       // may move it themselves
   const modal = document.createElement('div');
   modal.className = 'modal-overlay fade-in';
@@ -308,6 +308,8 @@ async function renderCoach(coachId, ctx) {
   const profile = coaches[coachId];
   const now = Date.now();
   const days = byDay(upcoming(slotList(slotMap), now));
+  // open, and not across a lesson someone has — openSlots
+  const free = new Set(openSlots(slotList(slotMap), now).map(s => s.id));
   const own = me.id === coachId;
   const programs = programList(programMap);
 
@@ -316,8 +318,8 @@ async function renderCoach(coachId, ctx) {
       <div class="co-day-name">${esc(ctx.formatDate(d.day))}</div>
       <div class="co-slots">
         ${d.slots.map(s => `
-          <button class="co-slot${s.status === 'open' ? '' : ' taken'}" data-slot="${esc(s.id)}" ${s.status === 'open' && !own ? '' : 'disabled'}>
-            <b>${timeText(s.start)}</b><span>${s.status === 'open' ? `${minText(s.minutes)}${s.price ? ' · ' + money(s.price) : ''}` : t('coTaken')}</span>
+          <button class="co-slot${free.has(s.id) ? '' : ' taken'}" data-slot="${esc(s.id)}" ${free.has(s.id) && !own ? '' : 'disabled'}>
+            <b>${timeText(s.start)}</b><span>${free.has(s.id) ? `${minText(s.minutes)}${s.price ? ' · ' + money(s.price) : ''}` : t('coTaken')}</span>
           </button>`).join('')}
       </div>
     </div>`).join('')
@@ -609,7 +611,7 @@ async function renderDesk(ctx) {
     const target = changeTarget(all, slot, want.wantStart);
     if (target.error) { ctx.showToast(t(target.error === 'busy' ? 'coChBusy' : 'coChPast'), 'error'); return; }
     try {
-      await store.approveCoachChange(me.id, slot, want, { slot: target.slot, note: b?.note || '' });
+      await store.approveCoachChange(me.id, slot, want, { slot: target.slot, note: b?.note || '', slots: all });
     } catch (err) { return refused('grant change:', err); }
     ctx.showToast(t('coChDone'), 'success');
     ctx.notify(want.playerId, t('coNtfMoved'), `${nameOf(me)} · ${line}`);

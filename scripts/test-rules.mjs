@@ -717,6 +717,30 @@ test('change: the coach grants a request — onto an open slot, or a time made f
   assert.equal((await stored(`coachSlots/m2/${taken.id}`)).status, 'open');
 });
 
+test('change: a grant withdraws the open times the moved lesson runs into — its own old slot too, when it does', async () => {
+  // m1's lesson, well ahead, is asked to half an hour before the open slot two days off: across it.
+  const want = S.far - HOUR / 2;
+  await layChange(want);
+  const slots = [{ ...taken, status: 'booked' }, openFar];
+  const grant = approveChangeWrites('m2', taken, await stored(`coachChanges/m2/${taken.id}`), { now: T0, slots });
+  assert.equal(grant[`coachSlots/m2/${openFar.id}`], null);
+  await ok(update(root(m2), grant), 'the open slot across it goes with the grant');
+  assert.equal(await stored(`coachSlots/m2/${openFar.id}`), null);
+  assert.equal((await stored(`coachSlots/m2/${slotId(want)}`)).status, 'booked');
+  assert.equal((await stored(`coachSlots/m2/${taken.id}`)).status, 'open');
+
+  // Half an hour later than it was: the old slot goes rather than lie open across the lesson.
+  const later = S.taken + HOUR / 2;
+  await layChange(later);
+  const shift = approveChangeWrites('m2', taken, await stored(`coachChanges/m2/${taken.id}`), { now: T0, slots: [{ ...taken, status: 'booked' }] });
+  assert.equal(shift[`coachSlots/m2/${taken.id}`], null);
+  await ok(update(root(m2), shift), 'onto part of its own old time');
+  assert.deepEqual([await stored(`coachSlots/m2/${taken.id}`), await stored(`coachBookings/m2/${taken.id}`)], [null, null]);
+  assert.equal((await stored(`coachBookings/m2/${slotId(later)}`)).playerId, 'm1');
+  assert.equal(await stored(`playerLessons/m1/${lessonKey('m2', taken.id)}`), null);
+  assert.equal((await stored(`playerLessons/m1/${lessonKey('m2', slotId(later))}`)).start, later);
+});
+
 test('change: the coach places a lesson for a player only as that player asked, and only whole', async () => {
   await layChange(FREE);
   const request = await stored(`coachChanges/m2/${taken.id}`);

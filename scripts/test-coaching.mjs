@@ -305,8 +305,25 @@ test('changeTarget: an open slot is taken, a free hour is made, another lesson i
   assert.deepEqual(changeTarget(slots, FROM, FROM.start, NOW), { slot: null, error: 'same' });
   assert.deepEqual(changeTarget(slots, FROM, NOW - 1, NOW), { slot: null, error: 'past' });
   assert.deepEqual(changeTarget(slots, FROM, NOW, NOW), { slot: null, error: 'past' });
-  // An open slot in the way of a made one is the coach's own to sort out — it is not a lesson.
+  // An open slot in the way of a made one is not a lesson: the grant withdraws it (approveChangeWrites).
   assert.deepEqual(changeTarget(slots, FROM, at(24, 14, 30), NOW), { slot: null, error: null });
+});
+
+test('changeTarget: an open slot that lies across another lesson is not there to take', () => {
+  // 10:00–11:00 stands open, and someone has 10:30–11:30: the coach cannot be at both.
+  const open = { id: slotId(at(24, 10)), start: at(24, 10), minutes: 60, status: 'open' };
+  const lesson = { id: slotId(at(24, 10, 30)), start: at(24, 10, 30), minutes: 60, status: 'booked' };
+  assert.deepEqual(changeTarget([FROM, open, lesson], FROM, open.start, NOW), { slot: null, error: 'busy' });
+  assert.deepEqual(changeTarget([FROM, open], FROM, open.start, NOW), { slot: open, error: null });
+  // It is the open slot's own length that counts, not the moved lesson's: a half hour
+  // at 10:00 ends as the 10:30 lesson begins.
+  const half = { ...open, minutes: 30 };
+  assert.deepEqual(changeTarget([FROM, half, lesson], FROM, half.start, NOW), { slot: half, error: null });
+  // ... and an hour's slot is in the way of it even when the lesson moved is a half hour.
+  assert.deepEqual(changeTarget([{ ...FROM, minutes: 30 }, open, lesson], { ...FROM, minutes: 30 }, open.start, NOW), { slot: null, error: 'busy' });
+  // The lesson being moved is not in its own way.
+  const near = { id: slotId(at(24, 16, 30)), start: at(24, 16, 30), minutes: 60, status: 'open' };
+  assert.deepEqual(changeTarget([FROM, near], FROM, near.start, NOW), { slot: near, error: null });
 });
 
 test('approveChangeWrites: the lesson leaves its time and takes the one asked for — an open slot, or one made for it', () => {
@@ -329,6 +346,45 @@ test('approveChangeWrites: the lesson leaves its time and takes the one asked fo
   assert.deepEqual(made[`playerLessons/p1/c1_${to}`], { coachId: 'c1', slotId: to, start: at(25, 9), minutes: 30 });
   assert.equal(`coachSlots/c1/${to}/status` in made, false);
   assert.equal(made[`coachSlots/c1/${FROM.id}/status`], 'open');
+});
+
+test('approveChangeWrites: the open times the moved lesson runs into are withdrawn with it', () => {
+  // The lesson (16:00, an hour) moves to 10:30. Open at 10:00 and 11:00 — both an hour, both
+  // across it; open at 9:30 (ends as it begins) and 11:30 (begins as it ends) are clear of it.
+  const o = (h, m = 0, status = 'open') => ({ id: slotId(at(24, h, m)), start: at(24, h, m), minutes: 60, status });
+  const [before, across1, across2, after, taken] = [o(9, 30), o(10), o(11), o(11, 30), o(13, 0, 'booked')];
+  const slots = [FROM, before, across1, across2, after, taken];
+  const out = approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: at(24, 10, 30) }, { now: NOW, slots });
+  const to = slotId(at(24, 10, 30));
+  assert.equal(out[`coachSlots/c1/${across1.id}`], null);
+  assert.equal(out[`coachSlots/c1/${across2.id}`], null);
+  for (const s of [before, after, taken]) assert.equal(`coachSlots/c1/${s.id}` in out, false);
+  assert.equal(out[`coachSlots/c1/${to}`].status, 'booked');
+  assert.equal(out[`coachSlots/c1/${FROM.id}/status`], 'open');          // the old time is clear of the new: open again
+  // Onto an open slot: it is taken, not withdrawn — what lies across it goes.
+  const onto = approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: across1.start }, { slot: across1, now: NOW, slots });
+  assert.equal(onto[`coachSlots/c1/${across1.id}/status`], 'booked');
+  assert.equal(`coachSlots/c1/${across1.id}` in onto, false);
+  assert.equal(onto[`coachSlots/c1/${before.id}`], null);                // 9:30–10:30 runs into 10:00–11:00
+  assert.equal(`coachSlots/c1/${across2.id}` in onto, false);            // 11:00 begins as it ends
+  // A lesson is never withdrawn, whatever the list says.
+  const odd = approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: at(24, 12, 30) }, { now: NOW, slots: [FROM, taken] });
+  assert.equal(`coachSlots/c1/${taken.id}` in odd, false);
+  // With no list given nothing else is touched.
+  assert.equal(Object.keys(approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: at(24, 10, 30) }, { now: NOW })).length, 7);
+});
+
+test('approveChangeWrites: a lesson moved onto part of its own old time does not leave that time open', () => {
+  // 16:00–17:00 → 16:30–17:30: the old slot goes; opened again it would lie across the lesson.
+  const out = approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: at(24, 16, 30) }, { now: NOW, slots: [FROM] });
+  assert.equal(out[`coachSlots/c1/${FROM.id}`], null);
+  assert.equal(`coachSlots/c1/${FROM.id}/status` in out, false);
+  assert.equal(out[`coachBookings/c1/${FROM.id}`], null);
+  assert.equal(out[`coachSlots/c1/${slotId(at(24, 16, 30))}`].status, 'booked');
+  // 16:00–17:00 → 17:00: clear of it, so it opens again.
+  const clear = approveChangeWrites('c1', FROM, { playerId: 'p1', wantStart: at(24, 17) }, { now: NOW, slots: [FROM] });
+  assert.equal(clear[`coachSlots/c1/${FROM.id}/status`], 'open');
+  assert.equal(`coachSlots/c1/${FROM.id}` in clear, false);
 });
 
 test('a player may cancel until twelve hours before', () => {
@@ -361,6 +417,18 @@ test('slotList / upcoming / openSlots: in time order, the past and the taken apa
   assert.equal(upcoming(list, NOW).length, 3);
   assert.deepEqual(openSlots(list, NOW).map(s => timeText(s.start)), ['10:00', '09:00']);
   assert.deepEqual(slotList(null), []);
+});
+
+test('openSlots: an open slot that lies across a booked lesson is not one a member can take', () => {
+  const s = (h, m, minutes, status) => ({ id: slotId(at(21, h, m)), start: at(21, h, m), minutes, status });
+  const list = [s(10, 0, 60, 'open'), s(10, 30, 60, 'booked'), s(11, 30, 60, 'open'), s(9, 30, 30, 'open'), s(11, 0, 60, 'open')];
+  // 10:00–11:00 and 11:00–12:00 run into the 10:30–11:30 lesson; 9:30–10:00 and 11:30 do not.
+  assert.deepEqual(openSlots(list, NOW).map(x => timeText(x.start)).sort(), ['09:30', '11:30']);
+  // Two open slots across each other are both still there: neither is a lesson.
+  assert.equal(openSlots([s(14, 0, 60, 'open'), s(14, 30, 60, 'open')], NOW).length, 2);
+  // The series a member is offered leaves such a slot out too.
+  assert.equal(weeklySeries(list, list[0], 1, NOW)[0].slot, null);
+  assert.equal(weeklySeries(list, list[2], 1, NOW)[0].slot.id, list[2].id);
 });
 
 test('byDay: slots under their day', () => {

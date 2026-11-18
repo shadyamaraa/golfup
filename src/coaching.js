@@ -176,11 +176,12 @@ export function newSlotsRepeat({ date, from, to, minutes, price: slotPrice, exis
  */
 export function weeklySeries(slots, first, weeks, now = Date.now()) {
   const d = new Date(first.start);
+  const free = openSlots(slots, now);
   const out = [];
   for (let k = 0; k < Math.max(1, Math.round(Number(weeks)) || 1); k++) {
     // By the calendar, not by adding hours: the same clock time across a change of clocks.
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * k, d.getHours(), d.getMinutes()).getTime();
-    const slot = (slots || []).find(s => s.start === start && s.minutes === first.minutes && s.status === 'open' && s.start > now) || null;
+    const slot = free.find(s => s.start === start && s.minutes === first.minutes) || null;
     out.push({ start, slot });
   }
   return out;
@@ -264,11 +265,13 @@ export function changeTarget(slots, from, wantStart, now = Date.now()) {
   if (!(start > now)) return { slot: null, error: 'past' };
   if (start === from.start) return { slot: null, error: 'same' };
   const others = (slots || []).filter(s => s.id !== from.id);
-  const there = others.find(s => s.start === start);
-  if (there) return there.status === 'open' ? { slot: there, error: null } : { slot: null, error: 'busy' };
-  // No slot at that moment: one is made — unless it would run into another lesson.
-  const clash = others.some(s => s.status === 'booked' && overlaps(start, from.minutes, s.start, s.minutes));
-  return { slot: null, error: clash ? 'busy' : null };
+  const there = others.find(s => s.start === start) || null;
+  if (there && there.status !== 'open') return { slot: null, error: 'busy' };
+  // The open slot at that moment is taken, or — with none there — one is made:
+  // either way not across another lesson.
+  const minutes = there ? there.minutes : from.minutes;
+  const clash = others.some(s => s.status === 'booked' && overlaps(start, minutes, s.start, s.minutes));
+  return clash ? { slot: null, error: 'busy' } : { slot: there, error: null };
 }
 
 /**
@@ -276,8 +279,13 @@ export function changeTarget(slots, from, wantStart, now = Date.now()) {
  * time (which opens again) and takes the one asked for — an open slot that
  * is there (`slot`), or a new one made for it. One write, the request gone
  * with it.
+ *
+ * `slots` is the coach's list: the open times the moved lesson would run
+ * into are withdrawn in the same write — left open, another member could
+ * book one and the coach would be in two places. The old time itself opens
+ * again only when the lesson does not run into it.
  */
-export function approveChangeWrites(coachId, from, request, { slot = null, note = '', now = Date.now() } = {}) {
+export function approveChangeWrites(coachId, from, request, { slot = null, note = '', now = Date.now(), slots = [] } = {}) {
   const playerId = request.playerId;
   const start = slot ? slot.start : Math.round(Number(request.wantStart));
   const minutes = slot ? slot.minutes : from.minutes;
@@ -286,12 +294,17 @@ export function approveChangeWrites(coachId, from, request, { slot = null, note 
   const n = cleanNote(note);
   if (n) booking.note = n;
   const out = {
-    ...cancelWrites(coachId, from.id, playerId),
+    ...cancelWrites(coachId, from.id, playerId, { removeSlot: overlaps(start, minutes, from.start, from.minutes) }),
     [`coachBookings/${coachId}/${to}`]: booking,
     [`playerLessons/${playerId}/${lessonKey(coachId, to)}`]: { coachId, slotId: to, start, minutes },
   };
   if (slot) out[`coachSlots/${coachId}/${to}/status`] = 'booked';
   else out[`coachSlots/${coachId}/${to}`] = { start, minutes, status: 'booked', price: price(from.price), createdAt: now };
+  for (const s of slots || []) {
+    if (s.id !== to && s.status === 'open' && overlaps(start, minutes, s.start, s.minutes)) {
+      out[`coachSlots/${coachId}/${s.id}`] = null;
+    }
+  }
   return out;
 }
 
@@ -311,8 +324,16 @@ export function slotList(map) {
 /** The slots still to come. */
 export const upcoming = (slots, now = Date.now()) => (slots || []).filter(s => s.start > now);
 
-/** The slots a member can book now. */
-export const openSlots = (slots, now = Date.now()) => upcoming(slots, now).filter(s => s.status === 'open');
+/**
+ * The slots a member can book now: open, still to come — and not across a
+ * lesson someone has booked (a slot made for a moved lesson can lie over an
+ * open one; that one is no longer there to take).
+ */
+export function openSlots(slots, now = Date.now()) {
+  const booked = (slots || []).filter(s => s.status === 'booked');
+  return upcoming(slots, now).filter(s => s.status === 'open'
+    && !booked.some(b => overlaps(s.start, s.minutes, b.start, b.minutes)));
+}
 
 /** 'YYYY-MM-DD' of a moment, in the device's own time. */
 export function dayKey(ms) {

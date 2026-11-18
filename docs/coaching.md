@@ -89,7 +89,16 @@ On each of «Миний хичээлүүд»:
   - Granted: the lesson moves to the time asked for — onto the open slot
     there, or onto a slot made for it (the lesson's own length and price) —
     and the old time opens again. Refused when another lesson is at that
-    time or would overlap it, or when the time has passed.
+    time or would overlap it — an open slot that lies across another lesson
+    is no exception — or when the time has passed.
+  - A coach is in one place at a time: the **open slots the moved lesson
+    runs into are withdrawn in the same write** (`approveChangeWrites` is
+    given the coach's slots), and the old slot is removed rather than opened
+    when the lesson has moved onto part of it (16:00 → 16:30).
+  - `openSlots` — what a member is offered, on the coach's page, in «Цаг
+    солих» and in a weekly series — leaves out an open slot that lies across
+    a booked lesson; such a slot shows as taken. The database rules cannot
+    compare one slot's hours with another's, so this is the app's to keep.
   - Turned down, or taken back by the player («Хүсэлтээ буцаах»): the
     lesson stays as it was.
 - One request per lesson; asking again replaces it. Cancelling the lesson

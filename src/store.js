@@ -1914,7 +1914,7 @@ export async function dropCoachChange(coachId, id) {
   await coachingWrite(dropChangeWrites(coachId, id));
 }
 
-/** The coach grants a request: the lesson moves to the time asked for. `opts`: { slot, note } — approveChangeWrites. */
+/** The coach grants a request: the lesson moves to the time asked for. `opts`: { slot, note, slots } — approveChangeWrites. */
 export async function approveCoachChange(coachId, from, request, opts) {
   await coachingWrite(approveChangeWrites(coachId, from, request, opts));
 }

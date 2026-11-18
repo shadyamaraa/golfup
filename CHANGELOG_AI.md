@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)
+
+Found in review of the pull request. Granting a request made a slot for the
+lesson and left the open slots it ran into as they were; another member
+could book one, or the coach could grant a second request onto one, and two
+lessons overlapped.
+
+- `changeTarget` (`src/coaching.js`): an open slot at the time asked for is
+  taken only when no other lesson runs across it, by that slot's own length.
+- `approveChangeWrites`: given the coach's slots, it withdraws the open ones
+  the moved lesson runs into, in the same write; the old slot is removed
+  instead of opened when the lesson moves onto part of it.
+- `openSlots`: an open slot across a booked lesson is not offered — the
+  coach's page shows it as taken; «Цаг солих» and the weekly series
+  (`weeklySeries`) leave it out. A member moving their own lesson is not
+  blocked by that lesson.
+- Tests: `scripts/test-coaching.mjs` (37), `scripts/test-rules.mjs` (57 —
+  the rules already let the wider write through; no rules change).
+
 ## 2026-11-18 (Coaching: weeks at a time, and another time for a lesson)
 
 A coach opened one day at a time, a player booked one lesson at a time, and
