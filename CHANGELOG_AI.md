@@ -1,5 +1,33 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: a member's last twenty scores)
+
+The profile showed a Handicap Index from GHIN and nothing of what it is made
+of. Now it shows the scoring record GHIN keeps: the scores of the current
+revision (usually twenty), the ones the index counts marked, and the scores
+posted since.
+
+- **Server**: `ghinScores` (`functions/ghin.js` `scores`, `scoresByNumber`,
+  `trimScore`; exported in `functions/index.js`) — a member for themselves,
+  an admin for anyone; `GET golfers/{n}/scores`, falling back to
+  `revision_scores` + `recent_scores`; stored under `ghinScores/{memberId}`;
+  an answer under ten minutes old is not asked for again. Nothing personal
+  and no hole-by-hole is kept. `sync` and `scores` share `memberAsked`.
+  **A new function — deploy it by hand.** Written from GHIN's spec, not yet
+  tried against GHIN: `scripts/ghin-smoke.mjs` now reads a scoring record
+  too and says which request answered.
+- **Database rules**: `ghinScores/{memberId}` — read by the member, by an
+  admin, and by another member only when GHIN shows the record to everyone;
+  no client writes; not readable as a whole.
+- **App**: «Сүүлийн 20 оноо» on the profile and «GHIN оноо» in a player's
+  details (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`,
+  `loadGhinScores` / `ghinScoresSync` in `src/store.js`), for whoever sees
+  the GHIN parts — admins only while `GHIN_STAGE = 'admin'`.
+- `docs/ghin.md`: the scoring record, and why a number in the app is not the
+  number in the GHIN app (the app's own index; GHIN's staging copy).
+- Tests: `scripts/test-ghin.mjs` (70), `scripts/test-ghin-app.mjs` (17),
+  `scripts/test-rules.mjs` (58).
+
 ## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)
 
 Found in review of the pull request. Granting a request made a slot for the

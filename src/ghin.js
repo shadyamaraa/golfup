@@ -10,6 +10,13 @@
 //   { number, found, name, club, association, status,
 //     hi, hiValue, lowHi, revDate, withdrawn, env, syncedAt }
 //
+// and a member's scoring record under ghinScores/{memberId} (ghinScoreRows):
+//
+//   { number, env, syncedAt, visibility, revision: [score], recent: [score],
+//     stats?, message? }
+//   score: { date, score, used, id?, diff?, holes?, course?, tee?, rating?,
+//            slope?, type?, pcc?, exceptional?, penalty? }
+//
 // `hi` is the Handicap Index as GHIN displays it ('12.3', '+1.2', 'NH');
 // `hiValue` is the number behind it, null when there is none; `env` is
 // 'staging' until the USGA grants production — staging holds a copy of the
@@ -58,6 +65,35 @@ export function ghinHiText(record) {
 export function ghinStale(record, now = Date.now(), maxAgeMs = 24 * 60 * 60 * 1000) {
   const at = Number(record?.syncedAt);
   return !Number.isFinite(at) || at <= 0 || now - at > maxAgeMs;
+}
+
+// A list as stored: an array, or the object a database makes of one.
+const scoreItems = (v) => (Array.isArray(v) ? v : Object.values(v && typeof v === 'object' ? v : {}))
+  .filter(s => s && typeof s === 'object' && s.date && typeof s.score === 'number');
+
+/**
+ * The scores of a stored scoring record as the list shows them, newest
+ * first: those posted since the last revision (`pending` — the Handicap Index
+ * has not taken them in yet), then the revision's own, `used` marking the
+ * ones the index is the average of.
+ */
+export function ghinScoreRows(record) {
+  return [
+    ...scoreItems(record?.recent).map(s => ({ ...s, used: false, pending: true })),
+    ...scoreItems(record?.revision).map(s => ({ ...s, used: s.used === true, pending: false })),
+  ];
+}
+
+/** How many scores the Handicap Index is worked out from, how many of them count, how many wait. */
+export function ghinScoreCounts(record) {
+  const rows = ghinScoreRows(record);
+  const revision = rows.filter(r => !r.pending);
+  return { revision: revision.length, used: revision.filter(r => r.used).length, pending: rows.length - revision.length };
+}
+
+/** A differential as shown: one decimal; '' when GHIN gave none. */
+export function ghinDiffText(diff) {
+  return typeof diff === 'number' && Number.isFinite(diff) ? diff.toFixed(1) : '';
 }
 
 /** The i18n key for a refusal from the GHIN functions. */

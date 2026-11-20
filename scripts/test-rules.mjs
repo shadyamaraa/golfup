@@ -51,6 +51,11 @@ const SEED = {
   userSecrets: { m2: { pass: 'scrypt$x' } },
   ghin: { m2: { number: '12345678', found: true, name: 'Two', hi: '12.3', syncedAt: 1 } },
   ghinLink: { m2: { number: '12345678', by: 'phone', at: 1, admin: 'admin1' } },
+  // A scoring record GHIN shows to the golfer's club only, and one it shows to everyone.
+  ghinScores: {
+    m2: { number: '12345678', env: 'staging', syncedAt: 1, visibility: 'club', revision: [{ date: '2026-11-01', score: 88, diff: 15.2, used: true }] },
+    f2: { number: '7900344', env: 'staging', syncedAt: 1, visibility: 'everyone', revision: [{ date: '2026-11-02', score: 79, diff: 6.1, used: false }] },
+  },
   // What the members hub leaves when it writes to a member (docs/members-hub.md).
   hubSync: { m2: { memberId: 'MB-0002', hash: 'a1b2c3', at: '2026-11-17T00:00:00.000Z' } },
 };
@@ -132,6 +137,24 @@ test('what GHIN said is read by members and written by no one but the server', a
   await denied(update(ref(admin, 'ghin/m2'), { hi: '2.0' }), 'an admin');
   await denied(set(ref(sysAdmin, 'ghin/m1'), { number: '1234567', hi: '0.0' }), 'the system admin');
   await denied(remove(ref(admin, 'ghin/m2')), 'removing it');
+});
+
+test('a scoring record is read by its member, by an admin, and by others only where GHIN shows it to everyone', async () => {
+  assert.equal((await get(ref(m2, 'ghinScores/m2'))).val().revision[0].score, 88, 'the member, their own');
+  assert.equal((await get(ref(admin, 'ghinScores/m2'))).val().visibility, 'club', 'an admin');
+  await denied(get(ref(m1, 'ghinScores/m2')), 'another member, a record for the club only');
+  assert.equal((await get(ref(m1, 'ghinScores/f2'))).val().revision[0].score, 79, 'another member, a record for everyone');
+  await denied(get(ref(m1, 'ghinScores')), 'every record at once');
+  await denied(get(ref(admin, 'ghinScores')), 'every record at once, an admin');
+  await denied(get(ref(visitor, 'ghinScores/f2')), 'a visitor');
+  await denied(get(ref(anon, 'ghinScores/f2')), 'an anonymous device');
+  await denied(get(ref(held, 'ghinScores/f2')), 'a member on hold');
+  // Written by no one but the server.
+  await denied(set(ref(m2, 'ghinScores/m2/visibility'), 'everyone'), 'the member opens their own');
+  await denied(set(ref(m2, 'ghinScores/m2/revision/0/score'), 70), 'the member, a better score');
+  await denied(update(ref(admin, 'ghinScores/m2'), { visibility: 'everyone' }), 'an admin');
+  await denied(set(ref(sysAdmin, 'ghinScores/m1'), { number: '1234567', visibility: 'everyone' }), 'the system admin');
+  await denied(remove(ref(m2, 'ghinScores/m2')), 'removing it');
 });
 
 test('how a member was tied to their golfer is the server\'s to write', async () => {

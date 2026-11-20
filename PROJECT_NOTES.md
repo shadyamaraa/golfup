@@ -65,7 +65,10 @@ functions `ghinGolfer`, `ghinSync`, `ghinSyncAll`, `ghinPhoneReport`,
 `ghinLinkByPhone`, and `ghinNightly` (a schedule, 02:30: ties new members
 found by phone whose name agrees, then reads every index) — and stored
 under `ghin/{memberId}`, which members read
-and no client writes. How a member was tied to their golfer (on the proof
+and no client writes. `ghinScores` reads a member's scoring record — the
+twenty or so scores the index is worked out from, and the ones posted since
+— into `ghinScores/{memberId}`; the profile shows it as «Сүүлийн 20 оноо»
+(`src/ghin-scores.js`). How a member was tied to their golfer (on the proof
 of the phone they sign in with) is under `ghinLink/{memberId}`, likewise. It is a trial
 on GHIN's staging environment: only admins see it (`GHIN_STAGE` in
 `src/app.js`), and it does not feed a playing handicap — games still use

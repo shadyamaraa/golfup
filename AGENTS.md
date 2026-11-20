@@ -135,6 +135,21 @@ GHIN (`ghin/{memberId}`, written by the server only — `docs/ghin.md`):
 }
 ```
 
+A member's scoring record on GHIN (`ghinScores/{memberId}`, written by the
+server only; read by the member, an admin, and by others only when
+`visibility` is `everyone`):
+
+```js
+{
+  number, env, syncedAt,
+  visibility, // 'everyone' | 'club' — GHIN's own setting for the golfer
+  revision,   // the scores the Handicap Index is worked out from, newest first
+  recent,     // posted since the last revision
+  stats, message
+}
+// a score: { date, score, used, id, diff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
+```
+
 Games:
 
 ```js

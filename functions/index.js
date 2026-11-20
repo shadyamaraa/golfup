@@ -532,6 +532,17 @@ exports.ghinSync = signInEndpoint((body) => ghin.sync({
   saveGhin: (memberId, record) => admin.database().ref(`ghin/${memberId}`).set(record),
 }, body), GHIN);
 
+// One member's scoring record — the scores their Handicap Index is worked
+// out from, and the ones posted since — stored under ghinScores/{memberId},
+// which only the server writes. Their own, or anyone's for an admin.
+exports.ghinScores = signInEndpoint((body) => ghin.scores({
+  client: ghinClient(),
+  verifyIdToken,
+  loadUser: loadMember,
+  loadScores: async (memberId) => (await admin.database().ref(`ghinScores/${memberId}`).once('value')).val(),
+  saveScores: (memberId, record) => admin.database().ref(`ghinScores/${memberId}`).set(record),
+}, body), GHIN);
+
 // Every member with a GHIN number, by an admin from the app's Users tab.
 exports.ghinSyncAll = signInEndpoint((body) => ghin.syncAll({
   client: ghinClient(),

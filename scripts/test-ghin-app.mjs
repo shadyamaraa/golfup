@@ -1,14 +1,17 @@
 // scripts/test-ghin-app.mjs
 // GHIN on the app's side (src/ghin.js): who sees it, which stored record is
 // a member's, how a Handicap Index reads, when it is read again, what a
-// refusal says, and the admin's table.
+// refusal says, the admin's table — and a scoring record as a list
+// (src/ghin-scores.js).
 // Run with: npm run test:mp
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
+  ghinScoreRows, ghinScoreCounts, ghinDiffText,
 } from '../src/ghin.js';
+import { ghinScoresHTML } from '../src/ghin-scores.js';
 
 const NOW = Date.parse('2026-11-16T10:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -137,4 +140,93 @@ test('ghinLinkWhyKey: why a member was not tied', () => {
   assert.equal(ghinLinkWhyKey('BAD_GHIN'), 'gsGhinInvalid');
   assert.equal(ghinLinkWhyKey('SOMETHING_NEW'), 'ghinWhyOther');
   assert.equal(ghinLinkWhyKey(undefined), 'ghinWhyOther');
+});
+
+// ---- A scoring record ----
+
+const score = (date, n, over = {}) => ({ date, score: n, used: false, diff: n - 72, course: 'Chinggis Khaan Golf Club', tee: 'Blue', rating: 71.2, slope: 128, holes: 18, type: 'H', ...over });
+const RECORD = {
+  number: '12345678', env: 'staging', syncedAt: NOW, visibility: 'everyone',
+  revision: [score('2026-11-01', 88, { used: true }), score('2026-10-20', 94), score('2026-10-02', 85, { used: true })],
+  recent: [score('2026-11-14', 90, { used: true })],
+};
+
+test('ghinScoreRows: the scores posted since first, then the revision\'s — only those count', () => {
+  const rows = ghinScoreRows(RECORD);
+  assert.deepEqual(rows.map(r => [r.date, r.pending, r.used]), [
+    ['2026-11-14', true, false],      // not in the index yet, whatever it says of itself
+    ['2026-11-01', false, true], ['2026-10-20', false, false], ['2026-10-02', false, true],
+  ]);
+  assert.equal(rows[1].course, 'Chinggis Khaan Golf Club');
+  assert.deepEqual(ghinScoreCounts(RECORD), { revision: 3, used: 2, pending: 1 });
+});
+
+test('ghinScoreRows: a record as a database gives it back, or none', () => {
+  // A list comes back as an object when it has gaps; an empty one not at all.
+  const asObject = { revision: { 0: score('2026-11-01', 88, { used: true }), 2: score('2026-10-02', 85) } };
+  assert.deepEqual(ghinScoreRows(asObject).map(r => r.score), [88, 85]);
+  assert.deepEqual(ghinScoreCounts(asObject), { revision: 2, used: 1, pending: 0 });
+  for (const none of [null, undefined, {}, { revision: null, recent: 'x' }, { revision: [null, 'x', {}, { date: '2026-11-01' }, { score: 80 }] }]) {
+    assert.deepEqual(ghinScoreRows(none), []);
+    assert.deepEqual(ghinScoreCounts(none), { revision: 0, used: 0, pending: 0 });
+  }
+  // `used` is only what was stored as true.
+  assert.equal(ghinScoreRows({ revision: [score('2026-11-01', 88, { used: 'yes' })] })[0].used, false);
+});
+
+test('ghinDiffText: one decimal, nothing when GHIN gave none', () => {
+  assert.equal(ghinDiffText(15.4), '15.4');
+  assert.equal(ghinDiffText(8), '8.0');
+  assert.equal(ghinDiffText(-1.25), '-1.3');
+  assert.equal(ghinDiffText(0), '0.0');
+  for (const none of [null, undefined, '', '12.3', NaN]) assert.equal(ghinDiffText(none), '');
+});
+
+// The page's helpers, as plain stand-ins.
+const H = {
+  t: (k) => ({ ghinScoresSub: 'best {used} of {n}', ghinScoresWaiting: '{n} waiting', ghinScoresAll: 'all ({n})', ghinStagingShort: 'trial', ghinScoresNone: 'no scores' }[k] || k),
+  esc: (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+  icon: (name) => `<i-${name}>`,
+};
+const rowsOf = (html) => html.split('<div class="gs-row').slice(1);
+
+test('ghinScoresHTML: the list, the scores that count marked, the first five shown', () => {
+  const many = { ...RECORD, revision: Array.from({ length: 20 }, (_, i) => score(`2026-10-${String(28 - i).padStart(2, '0')}`, 80 + i, { used: i < 8 })) };
+  const html = ghinScoresHTML(many, H);
+  const rows = rowsOf(html);
+  assert.equal(rows.length, 21);
+  assert.match(html, /GHIN · trial · best 8 of 20 1 waiting/);
+  assert.equal(rows.filter(r => r.startsWith(' used')).length, 8);
+  assert.equal(rows.filter(r => r.includes('<i-star>')).length, 8);
+  assert.match(rows[0], /^ pending"/);
+  assert.match(rows[0], /ghinScoresPending/);
+  assert.equal(rows.filter(r => / hidden data-more>/.test(r.split('\n')[0])).length, 16, 'five shown, the rest behind the button');
+  assert.match(html, /class="gs-more"[^>]*>all \(21\)</);
+  // What a row says: the score, where and when, the tee and its rating, the differential.
+  assert.match(rows[1], /gs-score">80</);
+  assert.match(rows[1], /2026\.10\.28 · Blue · 71\.2\/128 · H/);
+  assert.match(rows[1], /<i-star>8\.0</);
+});
+
+test('ghinScoresHTML: few scores need no button; production is not marked a trial', () => {
+  const html = ghinScoresHTML({ ...RECORD, env: 'production', recent: [] }, H);
+  assert.equal(rowsOf(html).length, 3);
+  assert.equal(html.includes('gs-more'), false);
+  assert.match(html, /<div class="gs-sub">GHIN · best 2 of 3<\/div>/);
+});
+
+test('ghinScoresHTML: what marks a score out — nine holes, the day\'s conditions, no differential', () => {
+  const html = ghinScoresHTML({ revision: [score('2026-11-01', 44, { holes: 9, pcc: 1, type: 'C', diff: undefined }), score('2026-10-01', 90, { pcc: -1, tee: '', rating: null })] }, H);
+  const [nine, plain] = rowsOf(html);
+  assert.match(nine, /2026\.11\.01 · Blue · 71\.2\/128 · ghinScores9 · C · PCC \+1/);
+  assert.match(nine, /gs-diff" title="">—</);
+  assert.match(plain, /2026\.10\.01 · H · PCC -1/);
+});
+
+test('ghinScoresHTML: no scores — GHIN\'s own words when it gave any; nothing of GHIN\'s is markup', () => {
+  assert.match(ghinScoresHTML({ revision: [], recent: [] }, H), /<div class="gs-empty">no scores<\/div>/);
+  assert.match(ghinScoresHTML(null, H), /no scores/);
+  assert.match(ghinScoresHTML({ message: 'Private <b>record</b>' }, H), /<div class="gs-empty">Private &lt;b&gt;record&lt;\/b&gt;<\/div>/);
+  const html = ghinScoresHTML({ revision: [score('2026-11-01', 88, { course: '<img src=x onerror=alert(1)>', tee: '"><script>', type: '<i>' })] }, H);
+  assert.equal(/<img|<script|<i>/.test(html), false);
 });
