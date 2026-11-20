@@ -916,7 +916,9 @@ const COURSE_SEARCH_LIMIT = 50;
  * list: [{ id, name, facility, city, state, country, status }].
  */
 async function findCourses(client, name) {
-  const data = await client.get('courses/search', { name: String(name || '').trim(), limit: COURSE_SEARCH_LIMIT });
+  // GHIN takes a limit only with an offset ("Offset and limit must be
+  // provided together or not at all" — staging, 2026-11-20).
+  const data = await client.get('courses/search', { name: String(name || '').trim(), offset: 0, limit: COURSE_SEARCH_LIMIT });
   return (Array.isArray(data.courses) ? data.courses : [])
     .filter(c => c && typeof c === 'object' && c.CourseID != null)
     .map(c => ({
