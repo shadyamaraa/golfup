@@ -70,8 +70,27 @@ export function ghinStale(record, now = Date.now(), maxAgeMs = 24 * 60 * 60 * 10
 }
 
 // A list as stored: an array, or the object a database makes of one.
-const scoreItems = (v) => (Array.isArray(v) ? v : Object.values(v && typeof v === 'object' ? v : {}))
-  .filter(s => s && typeof s === 'object' && s.date && typeof s.score === 'number');
+const listOf = (v) => (Array.isArray(v) ? v : Object.values(v && typeof v === 'object' ? v : {}));
+// … and the scores in one.
+const scoreItems = (v) => listOf(v).filter(s => s && typeof s === 'object' && s.date && typeof s.score === 'number');
+
+// So long between two askings for a record's missing history — as long as
+// the server lets one answer stand (functions/ghin.js, SCORES_FRESH_MS):
+// sooner, it would answer with the same record.
+const HISTORY_ASK_MS = 10 * 60 * 1000;
+
+/**
+ * Whether a stored scoring record is due a fresh read for its history alone,
+ * young as it is: it has scores and no index over the last year — stored
+ * before the server read one, or when GHIN refused it. Not a record whose
+ * scores were kept back (its history is kept back with them), and not one
+ * asked for a moment ago (`askedAt`, ms).
+ */
+export function ghinHistoryDue(record, askedAt = 0, now = Date.now()) {
+  if (!record || typeof record !== 'object' || record.withheld === true) return false;
+  if (!scoreItems(record.revision).length || listOf(record.history).length) return false;
+  return !(now - Number(askedAt) < HISTORY_ASK_MS);
+}
 
 /**
  * The scores of a stored scoring record as the list shows them, newest

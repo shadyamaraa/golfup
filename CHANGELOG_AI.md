@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Profile: the index chart no longer waits a day for its history)
+
+The chart shipped, the function was deployed — and the chart still did not
+show: the member's record had been read within the day, so the app did not
+ask GHIN again, and the record it held was stored before the server read a
+history.
+
+- `src/ghin.js` `ghinHistoryDue`: a stored scoring record with scores and no
+  index history is due a fresh read however young it is — not one whose
+  scores were kept back, and not one asked for in the last ten minutes (the
+  server would answer with the same record).
+- `src/app.js` `mountGhinScores` asks on that account too, and remembers
+  when (per member, for the visit to the app).
+- App only: no function, rule or config changed. The chart still needs
+  `ghinScores` deployed with the history reading (the entry below).
+- Tests: `scripts/test-ghin-app.mjs` (28).
+
 ## 2026-11-20 (Profile: the Handicap Index over the last year, as a chart)
 
 The second half: what the server already reads is now drawn.
