@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: the app's courses against GHIN's — a comparison to run)
+
+A differential agrees with GHIN's only when it is worked out from GHIN's
+rating and slope, and a score is posted under GHIN's course and tee-set
+ids. The app's course list is typed from the clubs' scorecards and differs
+from GHIN's in places (Mt. Bogd Blue and White, by screens of GHIN's app).
+
+- `functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`,
+  `trimTeeSet` — a course as GHIN keeps it: tee sets with their ids, gender,
+  ratings (eighteen and each nine), par and stroke allocation by hole. No
+  new function is deployed.
+- `src/ghin-course.js` (pure): `courseDiff` — each app tee against the GHIN
+  tee set of its colour and gender, tees GHIN lacks, holes whose par or
+  stroke index differ.
+- `scripts/ghin-courses.mjs`: run from the owner's terminal, prints the
+  comparison and GHIN's ids. `scripts/ghin-login.mjs` is the login prompt it
+  shares with `scripts/ghin-smoke.mjs`.
+- Nothing in the app changes yet: `src/courses.js` is untouched until the
+  comparison has been read. Written from GHIN's spec — the course requests
+  are untried with the association's login.
+- Tests: `scripts/test-ghin.mjs` (77), `scripts/test-ghin-course.mjs` (6).
+
 ## 2026-11-20 (GHIN: a member's last twenty scores)
 
 The profile showed a Handicap Index from GHIN and nothing of what it is made

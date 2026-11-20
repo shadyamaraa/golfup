@@ -195,6 +195,49 @@ Two different things can be meant:
   the GHIN tile and the dates in the list say how old the copy is. Only
   production access from the USGA (`GHIN_BASE_URL`) makes the two agree.
 
+## Courses — the app's list against GHIN's
+
+A score differential is `(113 / slope) × (score − rating)`: it agrees with
+GHIN's only when it is worked out from GHIN's rating and slope for the tee
+played. And a score is posted under GHIN's own course id and tee-set id,
+not a name. So the app's course list (`src/courses.js`, typed from the
+clubs' scorecards) has to agree with the course as GHIN keeps it. It does
+not everywhere: on screens of GHIN's own app Mt. Bogd is Blue 71.4 / 131
+and White 69.4 / 127, where the app has 71.5 / 130 and 69.4 / 128.
+
+GHIN side (`functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`):
+
+- `GET /courses/search.json?name=…` → `{ courses: [{ CourseID, CourseName,
+  FacilityName, City, State, Country, CourseStatus, … }] }` — a facility's
+  or a course's name, the world over.
+- `GET /courses/{id}.json` → `{ Facility, CourseId, CourseName, TeeSets: [{
+  TeeSetRatingId, TeeSetRatingName, Gender, TotalPar, Ratings: [{ RatingType:
+  Total | Front | Back, CourseRating, SlopeRating, BogeyRating }], Holes: [{
+  Number, Par, Allocation, Length }] }] }` — a tee set is rated for men or
+  for women; par and stroke allocation come with each tee set.
+
+**The comparison** is read from your own terminal — it only reads, and
+nothing in it is personal:
+
+```bash
+node scripts/ghin-courses.mjs
+```
+
+For each course of the app it finds the GHIN course (Chinggis Khaan by its
+id, 29422; Mt. Bogd by a search — when a search finds several it lists them
+and asks for `sky=<id>`), prints every tee set GHIN has with its id, rating
+and slope, and what differs from the app (`src/ghin-course.js`,
+`courseDiff`): a tee's rating or slope, a tee GHIN has no rating for, a
+hole's par or stroke index — men's and women's cards apart. An app tee is
+matched to the GHIN tee set of its colour rated for its gender (`gold` is
+men's, `goldLadies` and `red` women's); a rating is not carried from one
+gender to the other. `--find "name"` only searches.
+
+Written from GHIN's spec; the course requests have not been tried with the
+association's login yet. What follows once they are: `src/courses.js` takes
+GHIN's numbers where they differ (a decision — a playing handicap moves with
+them) and carries the GHIN course and tee-set ids a posted score needs.
+
 ## Tying a member to their golfer — the phone trial
 
 Today a member is tied to GHIN by a GHIN number typed on their record, by
@@ -356,6 +399,8 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
 | A live check from your own terminal | `scripts/ghin-smoke.mjs` |
+| The app's courses against GHIN's, from your own terminal | `scripts/ghin-courses.mjs`, `src/ghin-course.js` (pure), `scripts/test-ghin-course.mjs` |
+| The login prompt the two scripts share | `scripts/ghin-login.mjs` |
 
 ## Setup — once
 
@@ -414,10 +459,11 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   morning. Doing it in the moment they sign in needs the phones of the
   club's golfers kept somewhere between nights — GHIN does not search by
   phone.
-- **Course data** — ratings, slopes, pars and stroke indexes from
-  `courses/search` and `Courses/{id}/TeeSetRatings`. Chinggis Khaan is on
-  GHIN (CourseID 29422) and matched the club's card; its coordinates are
-  wrong there and it has no women's tee set — both for MGA to fix.
+- **Course data in the app.** `scripts/ghin-courses.mjs` reads the courses
+  and says what differs (above); `src/courses.js` has not been changed by it
+  yet. Chinggis Khaan is on GHIN (CourseID 29422) and matched the club's
+  card; its coordinates are wrong there and it has no women's tee set —
+  both for MGA to fix.
 - **Posting scores** (`scores/hbh`). Not in the first phase by agreement.
   `rounds/{ghinNumber}/{gameId}` is already kept in a shape that posts
   (`toGhinScorePayload`).

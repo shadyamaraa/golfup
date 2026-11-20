@@ -18,8 +18,8 @@
 // would keep it: how many scores, how many count, the newest three, and
 // which request GHIN answered — or what it said in refusing.
 
-import readline from 'node:readline';
 import { createRequire } from 'node:module';
+import { askLogin, failureText } from './ghin-login.mjs';
 
 const ghin = createRequire(import.meta.url)('../functions/ghin.js');
 
@@ -27,30 +27,6 @@ const numbers = process.argv.slice(2).map(a => ghin.ghinNumber(a));
 if (!numbers.length || numbers.some(n => !n)) {
   console.error('Usage: node scripts/ghin-smoke.mjs <GHIN number> [more numbers]   (7 or 8 digits each)');
   process.exit(1);
-}
-
-// One reader for both questions; what is typed for the password is not echoed.
-async function askLogin() {
-  let email = process.env.GHIN_EMAIL || '';
-  let password = process.env.GHIN_PASSWORD || '';
-  if (email && password) return { email, password };
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  let hidden = false;
-  const write = rl._writeToOutput.bind(rl);
-  rl._writeToOutput = (text) => { if (!hidden) write(text); };
-  const lines = rl[Symbol.asyncIterator]();
-  const ask = async (question, secret) => {
-    process.stdout.write(question);
-    hidden = secret;
-    const { value } = await lines.next();
-    hidden = false;
-    if (secret) process.stdout.write('\n');
-    return String(value ?? '').trim();
-  };
-  if (!email) email = await ask('GHIN email: ', false);
-  if (!password) password = await ask('GHIN password: ', true);
-  rl.close();
-  return { email, password };
 }
 
 const { email, password } = await askLogin();
@@ -131,12 +107,6 @@ try {
   if (asked.length) console.log(`\nScore requests:\n  ${asked.join('\n  ')}`);
   console.log(`Score fields GHIN sent (names only): ${[...scoreFields].sort().join(', ') || '—'}`);
 } catch (err) {
-  const what = {
-    NOT_CONFIGURED: 'No email or password given.',
-    LOGIN_REFUSED: `GHIN refused the login (HTTP ${err.upstream}). Check the email and password.`,
-    GHIN_UNREACHABLE: 'GHIN could not be reached.',
-    GHIN_ERROR: `GHIN answered with an error (HTTP ${err.upstream}).`,
-  }[err.ghin];
-  console.error('\nFailed:', what || err.message);
+  console.error('\nFailed:', failureText(err));
   process.exit(1);
 }
