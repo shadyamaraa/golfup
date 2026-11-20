@@ -588,21 +588,34 @@ exports.ghinLinkByPhone = signInEndpoint((body) => ghin.linkByPhone({
 // tied where GHIN's name for the golfer bears it out (the rest stay for an
 // admin, on the Users tab as before); then every Handicap Index is read
 // afresh. An hour before the members hub rebuilds its list (03:30), so the
-// hub reads tonight's ties. Counts only go to the log — no names, no numbers.
+// hub reads tonight's ties. Last, every member's scoring record is read and
+// stored (ghinScores/{memberId}, by the same rule as ghinScores above) for
+// as long as the night's time lasts — the function has nine minutes; the
+// reading stops taking golfers after seven and a half, and who is left is
+// first the next night. Counts only go to the log — no names, no numbers.
+const GHIN_NIGHT_MS = 450 * 1000;
 exports.ghinNightly = functions
   .runWith({ ...GHIN, timeoutSeconds: 540 })
   .pubsub.schedule('30 2 * * *')
   .timeZone('Asia/Ulaanbaatar')
   .onRun(async () => {
+    const started = Date.now();
+    const db = admin.database();
     const out = await ghin.nightly({
       client: ghinClient(),
       loadUsers: loadAllUsers,
       saveLink: saveGhinLink,
-      saveAllGhin: (records) => admin.database().ref('ghin').update(records),
+      saveAllGhin: (records) => db.ref('ghin').update(records),
+      // The scoring records, last: read until the night's time is nearly up.
+      loadAllGhin: async () => (await db.ref('ghin').once('value')).val(),
+      loadAllScores: async () => (await db.ref('ghinScores').once('value')).val(),
+      loadLink: async (memberId) => (await db.ref(`ghinLink/${memberId}`).once('value')).val(),
+      saveScores: (memberId, record) => db.ref(`ghinScores/${memberId}`).set(record),
+      until: started + GHIN_NIGHT_MS,
     });
     console.log('ghinNightly', JSON.stringify({
       ok: out.ok, env: out.env, tied: out.tied.length, left: out.left,
-      refused: out.refused.length, sync: out.sync, errors: out.errors,
+      refused: out.refused.length, sync: out.sync, scores: out.scores, errors: out.errors,
     }));
     return null;
   });

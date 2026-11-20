@@ -63,7 +63,8 @@ handicap service, through the Mongolian Golf Association's login) by the
 server only — `functions/ghin.js`, secrets `GHIN_EMAIL` / `GHIN_PASSWORD`,
 functions `ghinGolfer`, `ghinSync`, `ghinSyncAll`, `ghinPhoneReport`,
 `ghinLinkByPhone`, and `ghinNightly` (a schedule, 02:30: ties new members
-found by phone whose name agrees, then reads every index) — and stored
+found by phone whose name agrees, then reads every index and every
+scoring record) — and stored
 under `ghin/{memberId}`, which members read
 and no client writes. `ghinScores` reads a member's scoring record — the
 twenty or so scores the index is worked out from, and the ones posted since
