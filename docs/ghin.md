@@ -198,7 +198,12 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
   wears the text colours. Drawn at the width it finds and again when that
   changes. Nothing is shown with fewer than two changes, or when the
   scores were kept back. The stored record is read with the page, so the
-  chart is there from the first paint and pushes nothing down.
+  chart is there from the first paint and pushes nothing down. A stored
+  record is read again from GHIN when it is more than a day old — and,
+  young as it may be, when it has scores and no history (`ghinHistoryDue`
+  in `src/ghin.js`): one stored before the server read a history, so the
+  chart does not wait a day for it. That asking is at most once in ten
+  minutes for a member, as long as the server lets an answer stand.
 - «Course Handicap» under it — the strokes the member's
   GHIN index is worth from each tee of the app's courses: a cell a tee, its
   name, the strokes, its rating and slope (`src/course-handicaps.js`).
