@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
+  ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinHistoryDue, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
   ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText, ghinScoreStats,
 } from '../src/ghin.js';
 import { ghinScoresHTML, ghinHomeStripHTML, ghinHomeBoardHTML } from '../src/ghin-scores.js';
@@ -16,6 +16,29 @@ import { ghinScoresHTML, ghinHomeStripHTML, ghinHomeBoardHTML } from '../src/ghi
 const NOW = Date.parse('2026-11-16T10:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
 const found = (number, over = {}) => ({ number, found: true, name: 'Bat Bold', club: 'UB Golf Club', hi: '12.3', hiValue: 12.3, revDate: '2026-11-10', env: 'staging', syncedAt: NOW, ...over });
+
+test('ghinHistoryDue: a young record with scores and no index history is read again — but not at every look', () => {
+  const scores = [{ date: '2026-11-01', score: 88, used: true }];
+  const rec = { number: '12345678', env: 'staging', syncedAt: NOW, visibility: 'everyone', revision: scores, recent: [] };
+  assert.equal(ghinHistoryDue(rec, undefined, NOW), true, 'stored before the server read a history');
+  assert.equal(ghinHistoryDue(rec, 0, NOW), true);
+  // With a history — as a list, or as a database gives one back — there is nothing to ask for.
+  assert.equal(ghinHistoryDue({ ...rec, history: [{ date: '2026-11-01', hi: '12.3', value: 12.3 }] }, 0, NOW), false);
+  assert.equal(ghinHistoryDue({ ...rec, history: { 0: { date: '2026-11-01', hi: '12.3', value: 12.3 } } }, 0, NOW), false);
+  assert.equal(ghinHistoryDue({ ...rec, history: [] }, 0, NOW), true);
+  // No scores: a golfer with none has no history either. The scores as a database gives them back count.
+  assert.equal(ghinHistoryDue({ ...rec, revision: [] }, 0, NOW), false);
+  assert.equal(ghinHistoryDue({ ...rec, revision: undefined }, 0, NOW), false);
+  assert.equal(ghinHistoryDue({ ...rec, revision: { 0: scores[0] } }, 0, NOW), true);
+  // Kept back by the server: its history is kept back with the scores.
+  assert.equal(ghinHistoryDue({ ...rec, withheld: true }, 0, NOW), false);
+  assert.equal(ghinHistoryDue({ ...rec, withheld: 'true' }, 0, NOW), true);
+  // Asked for a moment ago: the server would answer with the same record. Ten minutes on, again.
+  assert.equal(ghinHistoryDue(rec, NOW - 1000, NOW), false);
+  assert.equal(ghinHistoryDue(rec, NOW - 10 * 60 * 1000 + 1, NOW), false);
+  assert.equal(ghinHistoryDue(rec, NOW - 10 * 60 * 1000, NOW), true);
+  for (const none of [null, undefined, 'x', 7]) assert.equal(ghinHistoryDue(none, 0, NOW), false);
+});
 
 test('ghinVisibleTo: off, the admins\' trial, everyone', () => {
   const admin = { id: 'u_adm', role: 'admin' };

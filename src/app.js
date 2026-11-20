@@ -3,7 +3,7 @@ import { APP_CONFIG, VAPID_KEY, MTBOGD_CONFIG } from './config.js';
 import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
-import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
+import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinHistoryDue, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
 import { ghinScoresHTML, wireGhinScores, ghinHomeStripHTML, ghinHomeBoardHTML } from './ghin-scores.js';
 import { mountGhinHistory } from './ghin-history.js';
 import { courseHandicapsHTML } from './course-handicaps.js';
@@ -8945,6 +8945,9 @@ async function renderProfile() {
   }
 }
 
+// Member id → when their scoring record was last asked for its history alone.
+const ghinHistoryAsked = new Map();
+
 // A member's scoring record from GHIN — the scores their Handicap Index is
 // worked out from, and the ones posted since — drawn into `host`
 // (docs/ghin.md). What the server stored is shown at once; when there is
@@ -8970,7 +8973,12 @@ async function mountGhinScores(host, member, alive = () => true, opts = {}) {
   // Another member's is read from GHIN only for an admin: what cannot be
   // read here is a record GHIN does not show to everyone, or none yet.
   if (!mine && !admin) { if (!rec) say(t('ghinScoresHidden')); return; }
-  if (!ghinStale(rec)) return;
+  // A record young enough is read again all the same when it has no index
+  // history yet — stored before the server read one — so the chart does not
+  // wait a day for it. Not at every look: see ghinHistoryDue.
+  const forHistory = !ghinStale(rec) && ghinHistoryDue(rec, ghinHistoryAsked.get(member.id));
+  if (!ghinStale(rec) && !forHistory) return;
+  if (forHistory) ghinHistoryAsked.set(member.id, Date.now());
   try {
     const fresh = ghinFor(member, await store.ghinScoresSync(mine ? undefined : member.id));
     if (!shown()) return;
