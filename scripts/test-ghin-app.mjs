@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
-  ghinScoreRows, ghinScoreCounts, ghinDiffText,
+  ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText,
 } from '../src/ghin.js';
 import { ghinScoresHTML } from '../src/ghin-scores.js';
 
@@ -182,6 +182,14 @@ test('ghinDiffText: one decimal, nothing when GHIN gave none', () => {
   for (const none of [null, undefined, '', '12.3', NaN]) assert.equal(ghinDiffText(none), '');
 });
 
+test('ghinAdjustText: by how much GHIN adjusted a differential', () => {
+  assert.equal(ghinAdjustText({ diff: 7.4, rawDiff: 8.4 }), '−1.0');
+  assert.equal(ghinAdjustText({ diff: 2.6, rawDiff: 3.6 }), '−1.0', 'not −1.0000000000000004');
+  assert.equal(ghinAdjustText({ diff: 9.5, rawDiff: 8.5 }), '+1.0');
+  assert.equal(ghinAdjustText({ diff: 6.4, rawDiff: 8.4 }), '−2.0');
+  for (const none of [{ diff: 8.4 }, { diff: 8.4, rawDiff: 8.4 }, { diff: 0.3, rawDiff: 0.1 + 0.2 }, { rawDiff: 8.4 }, { diff: '7.4', rawDiff: 8.4 }, {}, null]) assert.equal(ghinAdjustText(none), '');
+});
+
 // The page's helpers, as plain stand-ins.
 const H = {
   t: (k) => ({ ghinScoresSub: 'best {used} of {n}', ghinScoresWaiting: '{n} waiting', ghinScoresAll: 'all ({n})', ghinStagingShort: 'trial', ghinScoresNone: 'no scores' }[k] || k),
@@ -221,6 +229,21 @@ test('ghinScoresHTML: what marks a score out — nine holes, the day\'s conditio
   assert.match(nine, /2026\.11\.01 · Blue · 71\.2\/128 · ghinScores9 · C · PCC \+1/);
   assert.match(nine, /gs-diff" title="">—</);
   assert.match(plain, /2026\.10\.01 · H · PCC -1/);
+});
+
+test('ghinScoresHTML: an exceptional score, a penalty score, an adjusted differential', () => {
+  const html = ghinScoresHTML({ revision: [
+    score('2026-11-11', 73, { diff: 2.6, rawDiff: 3.6, exceptional: true, used: true }),
+    score('2026-11-10', 82, { diff: 11.2, rawDiff: 12.2 }),
+    score('2026-11-09', 90, { diff: 18.0, penalty: true }),
+  ] }, H);
+  const [best, plain, pen] = rowsOf(html);
+  assert.match(best, /<span class="gs-tag" title="ghinScoresExceptional">E<\/span>/);
+  assert.match(best, /<i-star>2\.6<\/div>\s*<div class="gs-adj" title="ghinScoresAdjusted">−1\.0<\/div>/);
+  assert.equal(plain.includes('gs-tag'), false);
+  assert.match(plain, /class="gs-adj"[^>]*>−1\.0</);
+  assert.match(pen, /<span class="gs-tag" title="ghinScoresPenalty">P<\/span>/);
+  assert.equal(pen.includes('gs-adj'), false);
 });
 
 test('ghinScoresHTML: no scores — GHIN\'s own words when it gave any; nothing of GHIN\'s is markup', () => {

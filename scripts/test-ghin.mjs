@@ -927,6 +927,11 @@ test('trimScore: when, where, the score, the differential, whether it counts —
   // Numbers sent as text; a date with a time; a course with no display value.
   const loose = ghin.trimScore(scoreRow('2026-11-01T00:00:00Z', { adjusted_gross_score: '91', differential: '-1.2', course_display_value: null }));
   assert.deepEqual([loose.date, loose.score, loose.diff, loose.course], ['2026-11-01', 91, -1.2, 'Chinggis Khaan Golf Club - Championship']);
+  // A differential GHIN adjusted: what it was before is kept beside it — only then.
+  const adjusted = ghin.trimScore(scoreRow('2026-11-01', { differential: 7.4, unadjusted_differential: 8.4 }));
+  assert.deepEqual([adjusted.diff, adjusted.rawDiff], [7.4, 8.4]);
+  assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { differential: null, unadjusted_differential: 8.4 })), false);
+  assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { unadjusted_differential: undefined })), false);
   // A field GHIN left out is left out; `used` is only what GHIN says is.
   const bare = ghin.trimScore({ played_at: '2026-11-01', adjusted_gross_score: 90, used: 'true' });
   assert.deepEqual(bare, { date: '2026-11-01', score: 90, used: false });

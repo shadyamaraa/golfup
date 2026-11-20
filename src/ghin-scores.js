@@ -5,7 +5,7 @@
 // from src/store.js (loadGhinScores, ghinScoresSync), its shape and the
 // rows from src/ghin.js. Used on the profile and in the player's details.
 
-import { ghinScoreRows, ghinScoreCounts, ghinDiffText } from './ghin.js';
+import { ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText } from './ghin.js';
 
 // So many rows before «Бүгдийг харах».
 const FIRST = 5;
@@ -23,14 +23,25 @@ function rowHTML(s, h, hidden) {
     s.type,
     s.pcc ? `PCC ${s.pcc > 0 ? '+' : ''}${s.pcc}` : '',
   ].filter(Boolean).map(esc).join(' · ');
+  // What marks a score out, as GHIN's own app does: new, exceptional (E), a penalty score (P).
+  const tags = [
+    s.pending ? `<span class="gs-tag">${t('ghinScoresPending')}</span>` : '',
+    s.exceptional ? `<span class="gs-tag" title="${esc(t('ghinScoresExceptional'))}">E</span>` : '',
+    s.penalty ? `<span class="gs-tag" title="${esc(t('ghinScoresPenalty'))}">P</span>` : '',
+  ].join('');
+  // A differential GHIN adjusted: by how much, under it.
+  const adjust = ghinAdjustText(s);
   return `
     <div class="gs-row${s.used ? ' used' : ''}${s.pending ? ' pending' : ''}"${hidden ? ' hidden data-more' : ''}>
       <div class="gs-score">${esc(s.score)}</div>
       <div class="gs-main">
-        <div class="gs-course">${esc(s.course || '—')}${s.pending ? ` <span class="gs-tag">${t('ghinScoresPending')}</span>` : ''}</div>
+        <div class="gs-course"><span class="gs-name">${esc(s.course || '—')}</span>${tags}</div>
         <div class="gs-meta">${meta}</div>
       </div>
-      <div class="gs-diff" title="${s.used ? esc(t('ghinScoresUsed')) : ''}">${s.used ? icon('star', { size: 12 }) : ''}${esc(ghinDiffText(s.diff) || '—')}</div>
+      <div class="gs-right">
+        <div class="gs-diff" title="${s.used ? esc(t('ghinScoresUsed')) : ''}">${s.used ? icon('star', { size: 12 }) : ''}${esc(ghinDiffText(s.diff) || '—')}</div>
+        ${adjust ? `<div class="gs-adj" title="${esc(t('ghinScoresAdjusted').replace('{raw}', ghinDiffText(s.rawDiff)))}">${esc(adjust)}</div>` : ''}
+      </div>
     </div>`;
 }
 

@@ -147,7 +147,7 @@ server only; read by the member, an admin, and by others only when
   recent,     // posted since the last revision
   stats, message
 }
-// a score: { date, score, used, id, diff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
+// a score: { date, score, used, id, diff, rawDiff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
 ```
 
 Games:

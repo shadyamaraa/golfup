@@ -14,8 +14,8 @@
 //
 //   { number, env, syncedAt, visibility, revision: [score], recent: [score],
 //     stats?, message? }
-//   score: { date, score, used, id?, diff?, holes?, course?, tee?, rating?,
-//            slope?, type?, pcc?, exceptional?, penalty? }
+//   score: { date, score, used, id?, diff?, rawDiff?, holes?, course?, tee?,
+//            rating?, slope?, type?, pcc?, exceptional?, penalty? }
 //
 // `hi` is the Handicap Index as GHIN displays it ('12.3', '+1.2', 'NH');
 // `hiValue` is the number behind it, null when there is none; `env` is
@@ -94,6 +94,18 @@ export function ghinScoreCounts(record) {
 /** A differential as shown: one decimal; '' when GHIN gave none. */
 export function ghinDiffText(diff) {
   return typeof diff === 'number' && Number.isFinite(diff) ? diff.toFixed(1) : '';
+}
+
+/**
+ * By how much GHIN adjusted a score's differential — '−1.0' after an
+ * exceptional score, '+1.0' — or '' when it did not (`rawDiff` is kept only
+ * when the differential differs from it).
+ */
+export function ghinAdjustText(score) {
+  const [diff, raw] = [score?.diff, score?.rawDiff];
+  if (![diff, raw].every(n => typeof n === 'number' && Number.isFinite(n))) return '';
+  const by = Math.round((diff - raw) * 10) / 10;
+  return by ? `${by < 0 ? '−' : '+'}${Math.abs(by).toFixed(1)}` : '';
 }
 
 /** The i18n key for a refusal from the GHIN functions. */

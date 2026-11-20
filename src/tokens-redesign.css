@@ -1753,12 +1753,16 @@ div.cp-opt { cursor: default; }
 .gs-row[hidden] { display: none; }
 .gs-score { font-size: 1.15rem; font-weight: 800; color: var(--text-primary); text-align: center; font-variant-numeric: tabular-nums; }
 .gs-main { min-width: 0; }
-.gs-course { font-size: 0.86rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-course { display: flex; align-items: center; min-width: 0; font-size: 0.86rem; font-weight: 700; color: var(--text-primary); }
+.gs-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-row.used { box-shadow: inset 3px 0 0 var(--gold); }
+.gs-right { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.gs-adj { font-size: 0.66rem; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; line-height: 1; }
 .gs-meta { font-size: 0.74rem; color: var(--text-secondary); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gs-diff { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 62px; padding: 4px 8px; border-radius: 8px; font-size: 0.86rem; font-weight: 800; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .gs-row.used .gs-diff { background: var(--accent-soft); color: var(--gold-dark); }
-.gs-row.pending .gs-score, .gs-row.pending .gs-course { color: var(--text-secondary); }
-.gs-tag { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 999px; font-size: 0.64rem; font-weight: 700; background: var(--accent-soft); color: var(--gold-dark); vertical-align: 1px; }
+.gs-row.pending .gs-score, .gs-row.pending .gs-name { color: var(--text-secondary); }
+.gs-tag { flex-shrink: 0; display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 999px; font-size: 0.64rem; font-weight: 700; background: var(--accent-soft); color: var(--gold-dark); vertical-align: 1px; }
 .gs-more { display: block; width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--line2); background: none; font: inherit; font-size: 0.84rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; }
 .gs-empty { padding: 16px; border: 1px dashed var(--border-card); border-radius: 16px; font-size: 0.86rem; color: var(--text-secondary); text-align: center; }
 .gs-modal { max-width: 460px; padding: 22px 18px; max-height: 88vh; overflow-y: auto; }

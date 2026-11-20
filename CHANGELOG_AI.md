@@ -23,9 +23,13 @@ posted since.
   details (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`,
   `loadGhinScores` / `ghinScoresSync` in `src/store.js`), for whoever sees
   the GHIN parts — admins only while `GHIN_STAGE = 'admin'`.
+- The list marks what GHIN's own app marks (checked against screens of the
+  GHIN app): a bar and a star on the scores the index counts, «E» on an
+  exceptional score, «P» on a penalty score, and under a differential GHIN
+  adjusted, by how much («−1.0» — `rawDiff`, `ghinAdjustText`).
 - `docs/ghin.md`: the scoring record, and why a number in the app is not the
   number in the GHIN app (the app's own index; GHIN's staging copy).
-- Tests: `scripts/test-ghin.mjs` (70), `scripts/test-ghin-app.mjs` (17),
+- Tests: `scripts/test-ghin.mjs` (70), `scripts/test-ghin-app.mjs` (19),
   `scripts/test-rules.mjs` (58).
 
 ## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)

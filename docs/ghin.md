@@ -116,12 +116,14 @@ night's revision apart (**recent scores**) until the next one takes them in.
   message         // what GHIN says when it will not show the record; absent otherwise
 }
 // one score — a field GHIN left out is left out:
-{ date, score, used, id, diff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
+{ date, score, used, id, diff, rawDiff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
 ```
 
-`score` is the adjusted gross score, `diff` the score differential, `type`
-GHIN's own letter (H home, A away, T tournament, C combined nine-hole
-scores…). Hole-by-hole scores and everything about the golfer stay on the
+`score` is the adjusted gross score, `diff` the score differential as GHIN
+counts it, `rawDiff` what it was before an adjustment (kept only when the
+two differ — an exceptional score takes 1.0 off each of the last twenty),
+`type` GHIN's own letter (H home, A away, T tournament, C combined
+nine-hole scores…). Hole-by-hole scores and everything about the golfer stay on the
 server.
 
 GHIN side: `GET /golfers/{number}/scores.json?source_golfer_id={number}` →
@@ -144,8 +146,10 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
 
 - **Profile**: «Сүүлийн 20 оноо» under the tiles — the score, the course,
   date · tee · rating/slope · type, and the differential; the ones the index
-  counts are marked with a star; scores posted since are tagged «шинэ».
-  Five rows, then «Бүгдийг харах».
+  counts are marked with a star and a bar down the left, as in GHIN's own
+  app; scores posted since are tagged «шинэ», an exceptional score «E», a
+  penalty score «P»; an adjusted differential has the adjustment under it
+  («−1.0»). Five rows, then «Бүгдийг харах».
 - **A player's details** (Тоглогчид → a name): «GHIN оноо» opens the same
   list for that player. Only an admin's opening it reads GHIN; another
   member sees what is stored, if the record is open to everyone.

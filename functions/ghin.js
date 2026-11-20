@@ -380,8 +380,8 @@ const numberOr = (v) => {
 
 /**
  * One score as GHIN sends it, trimmed to what the app shows: when and where
- * it was played, the adjusted gross score, the differential, and whether the
- * Handicap Index counts it. A field GHIN left out is left out here too (the
+ * it was played, the adjusted gross score, the differential (and what it
+ * was before an adjustment), and whether the Handicap Index counts it. A field GHIN left out is left out here too (the
  * database keeps no nulls). A row with no date or no score is not a score.
  */
 function trimScore(row) {
@@ -395,6 +395,10 @@ function trimScore(row) {
   const put = (key, value) => { if (value != null && value !== '') out[key] = value; };
   put('id', row.id != null ? String(row.id) : null);
   put('diff', numberOr(row.differential));
+  // What the differential was before GHIN adjusted it (an exceptional score
+  // takes one off each of the last twenty) — kept only when it differs.
+  const raw = numberOr(row.unadjusted_differential);
+  if (raw != null && out.diff != null && raw !== out.diff) out.rawDiff = raw;
   put('holes', numberOr(row.number_of_holes));
   put('course', course);
   put('tee', String(row.tee_name || '').trim().slice(0, 60));
