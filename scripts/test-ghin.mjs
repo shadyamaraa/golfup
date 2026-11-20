@@ -98,8 +98,12 @@ function fakeGhin(golfers = [], over = {}) {
     }
     // Courses: a search by name, and one course with its tee sets.
     if (u.pathname.endsWith('/courses/search.json')) {
-      state.courseAsks.push(`search ${u.searchParams.get('name')} limit ${u.searchParams.get('limit')}`);
+      state.courseAsks.push(`search ${u.searchParams.get('name')} offset ${u.searchParams.get('offset')} limit ${u.searchParams.get('limit')}`);
       if (state.courseStatus) return json(state.courseStatus, { error: 'AccessDenied: You are not authorized to access this page.' });
+      // As the real one answers a limit with no offset.
+      if (u.searchParams.has('offset') !== u.searchParams.has('limit')) {
+        return json(400, { errors: { offset_and_limit: ['Offset and limit must be provided together or not at all.'] } });
+      }
       return json(200, { courses: state.courseSearch || [] });
     }
     const crs = u.pathname.match(/\/courses\/(\d+)\.json$/);
@@ -1228,7 +1232,7 @@ test('findCourses: GHIN\'s courses under a name, as a pick list', async () => {
     Address: '1 Bogd St', City: 'Ulaanbaatar', State: 'MN-1', Country: 'Mongolia', Telephone: 99119007, Email: 'club@example.mn', Ratings: [{ TeeSetRatingId: 1 }], ...over });
   const w = world([], { ghin: { courseSearch: [hit(30111), hit(555, { CourseName: 'Bogdan Hills', FacilityName: 'Bogdan Hills GC', City: 'Sofia', State: 'BG-22', Country: 'Bulgaria', CourseStatus: 'Inactive' }), { CourseName: 'no id' }, null] } });
   const found = await ghin.findCourses(w.deps.client, '  Bogd ');
-  assert.deepEqual(w.fake.state.courseAsks, ['search Bogd limit 50']);
+  assert.deepEqual(w.fake.state.courseAsks, ['search Bogd offset 0 limit 50']);
   assert.deepEqual(found, [
     { id: '30111', name: 'Mt. Bogd Golf & Country Club', facility: 'Mt. Bogd Golf & Country Club', city: 'Ulaanbaatar', state: 'MN-1', country: 'Mongolia', status: 'Active' },
     { id: '555', name: 'Bogdan Hills', facility: 'Bogdan Hills GC', city: 'Sofia', state: 'BG-22', country: 'Bulgaria', status: 'Inactive' },

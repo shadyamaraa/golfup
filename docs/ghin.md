@@ -207,9 +207,10 @@ and White 69.4 / 127, where the app has 71.5 / 130 and 69.4 / 128.
 
 GHIN side (`functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`):
 
-- `GET /courses/search.json?name=…` → `{ courses: [{ CourseID, CourseName,
-  FacilityName, City, State, Country, CourseStatus, … }] }` — a facility's
-  or a course's name, the world over.
+- `GET /courses/search.json?name=…&offset=0&limit=50` → `{ courses: [{
+  CourseID, CourseName, FacilityName, City, State, Country, CourseStatus, …
+  }] }` — a facility's or a course's name, the world over. A limit is taken
+  only with an offset (400 otherwise — seen on staging).
 - `GET /courses/{id}.json` → `{ Facility, CourseId, CourseName, TeeSets: [{
   TeeSetRatingId, TeeSetRatingName, Gender, TotalPar, Ratings: [{ RatingType:
   Total | Front | Back, CourseRating, SlopeRating, BogeyRating }], Holes: [{

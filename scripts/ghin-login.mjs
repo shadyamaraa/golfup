@@ -11,13 +11,18 @@ export async function askLogin() {
   let email = process.env.GHIN_EMAIL || '';
   let password = process.env.GHIN_PASSWORD || '';
   if (email && password) return { email, password };
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  // A terminal echoes what is typed (but for the password, below); input
+  // that is piped in is not echoed at all.
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
   let hidden = false;
   const write = rl._writeToOutput.bind(rl);
   rl._writeToOutput = (text) => { if (!hidden) write(text); };
   const lines = rl[Symbol.asyncIterator]();
+  // The question is the reader's own prompt, so a line drawn again (a
+  // paste, an arrow key) shows the question and not a bare «>».
   const ask = async (question, secret) => {
-    process.stdout.write(question);
+    rl.setPrompt(question);
+    rl.prompt();
     hidden = secret;
     const { value } = await lines.next();
     hidden = false;

@@ -44,7 +44,18 @@ if (findAt >= 0 && !findName) {
 const { email, password } = await askLogin();
 const base = ghin.baseUrlOf(process.env.GHIN_BASE_URL);
 console.log(`\nGHIN: ${base}  (${ghin.envOf(base)})`);
-const client = ghin.createClient({ fetch, email, password, baseUrl: process.env.GHIN_BASE_URL });
+// The functions' own client, saying once that the login was taken — after
+// the first request GHIN answers.
+const inner = ghin.createClient({ fetch, email, password, baseUrl: process.env.GHIN_BASE_URL });
+let answered = false;
+const client = {
+  env: inner.env,
+  get: async (path, query) => {
+    const data = await inner.get(path, query);
+    if (!answered) { answered = true; console.log('Login: OK'); }
+    return data;
+  },
+};
 
 const where = (c) => [c.city, c.state, c.country].filter(Boolean).join(', ');
 const listFound = (found) => {
@@ -56,17 +67,15 @@ const G = { M: 'men', F: 'women', '': '?' };
 try {
   if (findName) {
     const found = await ghin.findCourses(client, findName);
-    console.log(`Login: OK\n\n«${findName}» on GHIN: ${found.length}`);
+    console.log(`\n«${findName}» on GHIN: ${found.length}`);
     listFound(found);
     process.exit(0);
   }
 
-  let first = true;
   const summary = {};
   for (const [name, app] of Object.entries(COURSE_DATA)) {
     const look = LOOK[app.key] || { words: [name] };
     let id = pinned[app.key] || look.id || '';
-    if (first) { await client.get('courses/search', { name: look.words[0], limit: 1 }); console.log('Login: OK'); first = false; }
     console.log(`\n=== ${name}  (${app.key})`);
 
     if (!id) {
