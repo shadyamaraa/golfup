@@ -534,11 +534,15 @@ exports.ghinSync = signInEndpoint((body) => ghin.sync({
 
 // One member's scoring record — the scores their Handicap Index is worked
 // out from, and the ones posted since — stored under ghinScores/{memberId},
-// which only the server writes. Their own, or anyone's for an admin.
+// which only the server writes. Their own, or anyone's for an admin. A
+// record GHIN keeps to the golfer's club is given to a member only when the
+// server tied them to that golfer (ghinLink): the number on a member's
+// record is theirs to type.
 exports.ghinScores = signInEndpoint((body) => ghin.scores({
   client: ghinClient(),
   verifyIdToken,
   loadUser: loadMember,
+  loadLink: async (memberId) => (await admin.database().ref(`ghinLink/${memberId}`).once('value')).val(),
   loadScores: async (memberId) => (await admin.database().ref(`ghinScores/${memberId}`).once('value')).val(),
   saveScores: (memberId, record) => admin.database().ref(`ghinScores/${memberId}`).set(record),
 }, body), GHIN);

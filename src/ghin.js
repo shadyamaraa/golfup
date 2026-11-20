@@ -13,7 +13,9 @@
 // and a member's scoring record under ghinScores/{memberId} (ghinScoreRows):
 //
 //   { number, env, syncedAt, visibility, revision: [score], recent: [score],
-//     stats?, message? }
+//     stats?, message?, withheld? }
+//   `withheld`: the record is for the golfer's club only and the member's
+//   GHIN number is not proven theirs — the server stored no scores.
 //   score: { date, score, used, id?, diff?, rawDiff?, holes?, course?, tee?,
 //            rating?, slope?, type?, pcc?, exceptional?, penalty? }
 //

@@ -20,6 +20,12 @@ posted since.
 - **Database rules**: `ghinScores/{memberId}` — read by the member, by an
   admin, and by another member only when GHIN shows the record to everyone;
   no client writes; not readable as a whole.
+- **Whose record** (found in review): the GHIN number on a member's record
+  is theirs to type, so a member could have typed another golfer's and read
+  a scoring record GHIN keeps to that golfer's club. Such a record is now
+  stored and given to the member only where the server tied them to that
+  golfer (`ghinLink`); otherwise it is kept back (`withheld`, no scores, no
+  stats). An admin is still answered in full, with nothing of it stored.
 - **App**: «Сүүлийн 20 оноо» on the profile and «GHIN оноо» in a player's
   details (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`,
   `loadGhinScores` / `ghinScoresSync` in `src/store.js`), for whoever sees
@@ -30,7 +36,7 @@ posted since.
   adjusted, by how much («−1.0» — `rawDiff`, `ghinAdjustText`).
 - `docs/ghin.md`: the scoring record, and why a number in the app is not the
   number in the GHIN app (the app's own index; GHIN's staging copy).
-- Tests: `scripts/test-ghin.mjs` (70), `scripts/test-ghin-app.mjs` (19),
+- Tests: `scripts/test-ghin.mjs` (73), `scripts/test-ghin-app.mjs` (19),
   `scripts/test-rules.mjs` (58).
 
 ## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)

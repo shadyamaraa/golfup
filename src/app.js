@@ -8867,12 +8867,16 @@ async function mountGhinScores(host, member, alive = () => true) {
   const say = (text) => { host.innerHTML = `<div class="gs-empty">${esc(text)}</div>`; };
   say(t('ghinScoresLoading'));
   const mine = member.id === currentUser?.id;
-  const rec = ghinFor(member, await store.loadGhinScores(member.id));
+  const admin = currentUser?.role === 'admin';
+  const stored = ghinFor(member, await store.loadGhinScores(member.id));
   if (!shown()) return;
+  // A record whose scores the server kept back (the member's GHIN number is
+  // not proven theirs) is still an admin's to read: asked for afresh.
+  const rec = stored?.withheld === true && admin ? null : stored;
   if (rec) draw(rec);
   // Another member's is read from GHIN only for an admin: what cannot be
   // read here is a record GHIN does not show to everyone, or none yet.
-  if (!mine && currentUser?.role !== 'admin') { if (!rec) say(t('ghinScoresHidden')); return; }
+  if (!mine && !admin) { if (!rec) say(t('ghinScoresHidden')); return; }
   if (!ghinStale(rec)) return;
   try {
     const fresh = ghinFor(member, await store.ghinScoresSync(mine ? undefined : member.id));

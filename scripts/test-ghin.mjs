@@ -140,6 +140,7 @@ function world(golfers = [], over = {}) {
   const saved = {};
   const links = {};
   const kept = {};      // ghinScores/*
+  const ties = over.ties || {};   // ghinLink/* — how the server tied a member to a golfer
   const tokens = { 'tok-a': { memberId: 'u_a' }, 'tok-b': { memberId: 'u_b' }, 'tok-adm': { memberId: 'u_adm' }, 'tok-anon': {} };
   const deps = {
     client,
@@ -152,10 +153,11 @@ function world(golfers = [], over = {}) {
     saveGhin: async (id, record) => { saved[id] = record; },
     saveAllGhin: async (records) => { Object.assign(saved, records); },
     saveLink: async (id, tie) => { links[id] = tie; },
+    loadLink: async (id) => ties[id] || null,
     loadScores: async (id) => kept[id] || null,
     saveScores: async (id, record) => { kept[id] = record; },
   };
-  return { fake, deps, users, secrets, saved, links, kept, tick };
+  return { fake, deps, users, secrets, saved, links, kept, ties, tick };
 }
 const codeOf = (out) => out.body.error?.code;
 const PII = ['email', 'phone_number', 'date_of_birth', 'street_1', 'city', 'zip', 'first_name', 'last_name'];
@@ -912,9 +914,18 @@ const SCORING = {
     recent: [scoreRow('2026-11-14', { id: 4, adjusted_gross_score: 85, differential: 12.8, revision: false })],
     stats: { total_count: 3, lowest_score: 85, highest_score: 94, average: 89 },
   },
-  7900344: { visibility: 'club_only', revision: [scoreRow('2026-09-09', { id: 9, golfer_id: '7900344' })], recent: [] },
+  // Kept to the golfer's club.
+  7900344: {
+    visibility: 'club_only',
+    revision: [scoreRow('2026-09-09', { id: 9, golfer_id: '7900344', adjusted_gross_score: 97, course_display_value: 'Mt Bogd Golf Club' })],
+    recent: [scoreRow('2026-11-15', { id: 10, golfer_id: '7900344', adjusted_gross_score: 99, course_display_value: 'Mt Bogd Golf Club' })],
+    stats: { total_count: 2, lowest_score: 97, highest_score: 99, average: 98 },
+  },
+  23456789: { visibility: 'club_only', revision: [scoreRow('2026-08-08', { id: 11, golfer_id: '23456789' })], recent: [] },
 };
-const scoring = (over = {}) => world([row(12345678), row(7900344)], { ghin: { scoring: SCORING, ...over } });
+const scoring = (over = {}, w = {}) => world([row(12345678), row(7900344)], { ...w, ghin: { scoring: SCORING, ...over } });
+// The server tied u_b to golfer 7900344 by the phone they sign in with.
+const TIED = { ties: { u_b: { number: '7900344', by: 'phone', at: 1, auto: true } } };
 
 test('trimScore: when, where, the score, the differential, whether it counts — and nothing else', () => {
   assert.deepEqual(ghin.trimScore(scoreRow('2026-11-01', { used: true })), {
@@ -1004,11 +1015,69 @@ test('scores: GHIN shows a record to everyone only when it says so', async () =>
   assert.equal('stats' in out.body.scores, false);
 });
 
+test('scores: a record kept to the golfer\'s club is the member\'s only once the server has tied them to that golfer', async () => {
+  const none = (rec) => assert.deepEqual([rec.revision, rec.recent, rec.withheld, rec.visibility, 'stats' in rec], [[], [], true, 'club', false]);
+  // The number is only typed on the member's record: nothing of the scores is answered or stored.
+  const w = scoring();
+  const out = await ghin.scores(w.deps, { idToken: 'tok-b' });
+  assert.equal(out.status, 200);
+  none(out.body.scores);
+  none(w.kept.u_b);
+  assert.deepEqual([out.body.scores.number, out.body.scores.env, out.body.scores.syncedAt], ['7900344', 'staging', NOW]);
+  const told = JSON.stringify([out.body, w.kept]);
+  for (const leak of ['Mt Bogd', '97', '99', '2026-09-09', '2026-11-15']) assert.equal(told.includes(leak), false, leak);
+  // Tied by the server: the record is theirs.
+  const tied = scoring({}, TIED);
+  const mine = (await ghin.scores(tied.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([mine.revision.map(x => x.score), mine.recent.map(x => x.score), 'withheld' in mine, mine.visibility], [[97], [99], false, 'club']);
+  assert.deepEqual(mine.stats, { count: 2, low: 97, high: 99, average: 98 });
+  assert.deepEqual(tied.kept.u_b, mine);
+  // … however the tie spells the number; a tie to another golfer proves nothing about this one.
+  const spelled = scoring({}, { ties: { u_b: { number: '07900344', by: 'phone', at: 1 } } });
+  assert.equal((await ghin.scores(spelled.deps, { idToken: 'tok-b' })).body.scores.revision.length, 1);
+  for (const tie of [{ number: '12345678', by: 'phone', at: 1 }, { by: 'phone', at: 1 }, 'yes', true]) {
+    const other = scoring({}, { ties: { u_b: tie } });
+    none((await ghin.scores(other.deps, { idToken: 'tok-b' })).body.scores);
+  }
+});
+
+test('scores: a member who types another golfer\'s number on their record learns nothing of a record kept to the club', async () => {
+  // u_a is tied to their own golfer, then puts u_b's number on their record.
+  const w = scoring({}, { ties: { u_a: { number: '12345678', by: 'phone', at: 1 }, ...TIED.ties } });
+  w.users.u_a.ghinNumber = '7900344';
+  const out = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  assert.equal(out.body.scores.withheld, true);
+  assert.deepEqual([out.body.scores.revision, out.body.scores.recent], [[], []]);
+  assert.equal(JSON.stringify([out.body, w.kept]).includes('Mt Bogd'), false);
+  // A record GHIN shows to everyone is anyone's to see — there, and so here.
+  w.users.u_b.ghinNumber = '12345678';
+  const open = (await ghin.scores(w.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([open.revision.length, 'withheld' in open], [2, false]);
+});
+
+test('scores: an admin is answered in full — what is stored for the member still has no scores', async () => {
+  const w = scoring();
+  const full = (await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' })).body.scores;
+  assert.deepEqual([full.revision.map(x => x.score), 'withheld' in full], [[97], false]);
+  assert.deepEqual([w.kept.u_b.revision, w.kept.u_b.recent, w.kept.u_b.withheld, 'stats' in w.kept.u_b], [[], [], true, false]);
+  // What was kept back is no answer for an admin: GHIN is asked again, at once.
+  const again = (await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' })).body.scores;
+  assert.equal(again.revision.length, 1);
+  assert.equal(w.fake.state.scoreAsks.length, 2);
+  // The member, a moment later, is given what is stored — and GHIN is not asked.
+  const theirs = (await ghin.scores(w.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([theirs.revision, theirs.withheld], [[], true]);
+  assert.equal(w.fake.state.scoreAsks.length, 2);
+  // An admin's own typed number: answered, not stored.
+  const own = (await ghin.scores(w.deps, { idToken: 'tok-adm' })).body.scores;
+  assert.deepEqual([own.revision.length, w.kept.u_adm.revision, w.kept.u_adm.withheld], [1, [], true]);
+});
+
 test('scores: newest first, a revision and a few to spare', async () => {
   const day = (n) => `2026-10-${String(n).padStart(2, '0')}`;
   const many = Array.from({ length: 30 }, (_, i) => scoreRow(day(i + 1), { id: i + 1 }));
   const sameDay = [scoreRow('2026-11-05', { id: 'am' }), scoreRow('2026-11-05', { id: 'pm' })];
-  const w = world([row(12345678)], { ghin: { scoring: { 12345678: { revision: [...sameDay, ...many, { junk: true }, null], recent: many } } } });
+  const w = world([row(12345678)], { ghin: { scoring: { 12345678: { visibility: 'everyone', revision: [...sameDay, ...many, { junk: true }, null], recent: many } } } });
   const rec = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
   assert.equal(rec.revision.length, 25);
   assert.deepEqual(rec.revision.slice(0, 4).map(x => x.id), ['am', 'pm', '30', '29'], 'two on a day stay as GHIN had them');

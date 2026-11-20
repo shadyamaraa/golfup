@@ -340,7 +340,8 @@ async function sync(deps, body) {
 
 // Whose GHIN number a request is about: the caller's own, or — for an admin —
 // the member named. The number is the one on the member's record, never one
-// the caller sends. → { caller, target, number, admin } or { refused }.
+// the caller sends. `admin` says the caller is one, asking for themselves
+// included. → { caller, target, number, admin } or { refused }.
 // deps: { verifyIdToken, loadUser(id) }
 async function memberAsked(deps, body) {
   const b = body || {};
@@ -348,17 +349,16 @@ async function memberAsked(deps, body) {
   if (!caller) return { refused: fail(401, 'UNAUTHENTICATED', 'Sign in again to do this') };
   const target = String(b.memberId || caller);
   if (!/^[\w-]{1,64}$/.test(target)) return { refused: fail(404, 'USER_NOT_FOUND', 'No such member') };
-  let admin = false;
-  if (target !== caller) {
-    const me = await deps.loadUser(caller);
-    admin = !!me && me.role === 'admin';
-    if (!admin) return { refused: fail(403, 'FORBIDDEN', 'Only an admin reads another member\'s GHIN record') };
+  const isAdmin = (u) => !!u && u.role === 'admin';
+  const me = target === caller ? null : await deps.loadUser(caller);
+  if (target !== caller && !isAdmin(me)) {
+    return { refused: fail(403, 'FORBIDDEN', 'Only an admin reads another member\'s GHIN record') };
   }
   const member = await deps.loadUser(target);
   if (!member) return { refused: fail(404, 'USER_NOT_FOUND', 'No such member') };
   const number = ghinNumber(member.ghinNumber);
   if (!number) return { refused: fail(400, 'NO_GHIN', 'This member has no GHIN number') };
-  return { caller, target, number, admin };
+  return { caller, target, number, admin: isAdmin(target === caller ? member : me) };
 }
 
 // ---- Scores ----
@@ -435,7 +435,8 @@ const scoreList = (part, max) => {
  *     revision,     // the scores of the current revision, newest first
  *     recent,       // posted since — not in the Handicap Index yet
  *     stats?,       // { count, low, high, average } — GHIN's own
- *     message? }    // what GHIN says when it will not show the record
+ *     message?,     // what GHIN says when it will not show the record
+ *     withheld? }   // true: the scores are kept back — see `scores`
  *
  * One request has both lists; where GHIN refuses that one, the two lists are
  * asked for on their own (the scores posted since are then optional).
@@ -483,7 +484,20 @@ async function scoresByNumber(client, number, at) {
  * Read one member's scoring record from GHIN and store it: their own, or
  * anyone's for an admin. An answer stored a moment ago for the same number
  * is given back as it is.
- * deps: { client, verifyIdToken, loadUser(id), loadScores(memberId), saveScores(memberId, record), now? }
+ *
+ * Whose record it is: the GHIN number on a member's record is theirs to
+ * type, so by itself it proves nothing — a member could type someone
+ * else's. GHIN lets a golfer keep their scoring record to their club; such
+ * a record is stored, and given to the member, only where the server itself
+ * tied the member to that golfer (ghinLink/{memberId}, on the proof of the
+ * phone they sign in with). Otherwise the scores are kept back: what is
+ * stored and answered has none, and says so (`withheld`). An admin — who
+ * reads for the association — is still answered in full, but what is stored
+ * is the same record without scores, so the member cannot read it there.
+ * A record GHIN shows to everyone needs no proof.
+ *
+ * deps: { client, verifyIdToken, loadUser(id), loadLink(memberId),
+ *         loadScores(memberId), saveScores(memberId, record), now? }
  */
 async function scores(deps, body) {
   const now = deps.now || Date.now;
@@ -493,9 +507,9 @@ async function scores(deps, body) {
 
   const held = await deps.loadScores(target);
   const age = held && typeof held === 'object' ? now() - Number(held.syncedAt) : NaN;
-  if (age >= 0 && age < SCORES_FRESH_MS && sameKey(held.number) === sameKey(number) && held.env === deps.client.env) {
-    return { status: 200, body: { ok: true, scores: held } };
-  }
+  const fresh = age >= 0 && age < SCORES_FRESH_MS && sameKey(held.number) === sameKey(number) && held.env === deps.client.env;
+  // What was kept back from the member is still an admin's to read.
+  if (fresh && !(held.withheld === true && admin)) return { status: 200, body: { ok: true, scores: held } };
 
   let record;
   try {
@@ -503,8 +517,16 @@ async function scores(deps, body) {
   } catch (err) {
     return refusal(err, admin);
   }
-  await deps.saveScores(target, record);
-  return { status: 200, body: { ok: true, scores: record } };
+  const link = await deps.loadLink(target);
+  const proven = !!link && typeof link === 'object' && sameKey(link.number) === sameKey(number);
+  if (record.visibility === 'everyone' || proven) {
+    await deps.saveScores(target, record);
+    return { status: 200, body: { ok: true, scores: record } };
+  }
+  const { stats, ...rest } = record;   // eslint-disable-line no-unused-vars
+  const kept = { ...rest, revision: [], recent: [], withheld: true };
+  await deps.saveScores(target, kept);
+  return { status: 200, body: { ok: true, scores: admin ? record : kept } };
 }
 
 /**

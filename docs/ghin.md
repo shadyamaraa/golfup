@@ -113,7 +113,8 @@ night's revision apart (**recent scores**) until the next one takes them in.
   revision: [],   // the revision's scores, newest first (25 at most)
   recent: [],     // posted since — not in the index yet (20 at most)
   stats,          // { count, low, high, average } — GHIN's own; absent when it has none
-  message         // what GHIN says when it will not show the record; absent otherwise
+  message,        // what GHIN says when it will not show the record; absent otherwise
+  withheld        // true: the scores were kept back (below); absent otherwise
 }
 // one score — a field GHIN left out is left out:
 { date, score, used, id, diff, rawDiff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
@@ -145,6 +146,19 @@ Who reads it (database rules): the member their own, an admin anyone's,
 another member only a record whose `visibility` is `everyone` — GHIN lets a
 golfer keep their scoring record to their club (`club_only`), and the app
 keeps to that. Nobody reads the whole node at once; no client writes it.
+
+**Whose record it is.** The GHIN number on a member's record is theirs to
+type (it is on the public half, which a client writes), so it proves
+nothing: a member could type another golfer's. A record GHIN shows to
+everyone needs no proof — anyone may see it there too. A record kept to the
+golfer's club is stored, and given to the member, only where the server
+itself tied the member to that golfer (`ghinLink/{memberId}` with the same
+number — the phone they sign in with). Otherwise the scores are **kept
+back**: what is stored and answered has no scores and no `stats`, and
+`withheld: true`; the member is told their number is not verified. An admin,
+who reads for the association, is still answered in full — but what is
+stored is the record without scores, so the member cannot read it there,
+and an admin's next look asks GHIN again.
 
 In the app (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`), for
 whoever sees the GHIN parts (`GHIN_STAGE`):

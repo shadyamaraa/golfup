@@ -145,7 +145,8 @@ server only; read by the member, an admin, and by others only when
   visibility, // 'everyone' | 'club' — GHIN's own setting for the golfer
   revision,   // the scores the Handicap Index is worked out from, newest first
   recent,     // posted since the last revision
-  stats, message
+  stats, message,
+  withheld    // true: club-only and the member's GHIN number not proven theirs (ghinLink) — no scores stored
 }
 // a score: { date, score, used, id, diff, rawDiff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
 ```

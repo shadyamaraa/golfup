@@ -47,14 +47,18 @@ function rowHTML(s, h, hidden) {
 
 /**
  * The list for a stored record. `h`: { t, esc, icon }. A record with no
- * scores says so — in GHIN's own words when it gave any.
+ * scores says so — in GHIN's own words when it gave any — and one whose
+ * scores the server kept back says why.
  */
 export function ghinScoresHTML(record, h) {
   const { t, esc } = h;
   const rows = ghinScoreRows(record);
   const trial = record?.env === 'staging' ? ` · ${t('ghinStagingShort')}` : '';
   if (!rows.length) {
-    return `<div class="gs-empty">${esc(record?.message || t('ghinScoresNone'))}</div>`;
+    // Kept back by the server: the record is for the golfer's club only, and
+    // the member's GHIN number is not proven theirs (functions/ghin.js).
+    const why = record?.withheld === true ? t('ghinScoresUnproven') : t('ghinScoresNone');
+    return `<div class="gs-empty">${esc(record?.message || why)}</div>`;
   }
   const n = ghinScoreCounts(record);
   const summary = t('ghinScoresSub').replace('{n}', n.revision).replace('{used}', n.used)

@@ -250,6 +250,10 @@ test('ghinScoresHTML: no scores — GHIN\'s own words when it gave any; nothing 
   assert.match(ghinScoresHTML({ revision: [], recent: [] }, H), /<div class="gs-empty">no scores<\/div>/);
   assert.match(ghinScoresHTML(null, H), /no scores/);
   assert.match(ghinScoresHTML({ message: 'Private <b>record</b>' }, H), /<div class="gs-empty">Private &lt;b&gt;record&lt;\/b&gt;<\/div>/);
+  // Scores the server kept back: why — unless GHIN itself said something.
+  assert.match(ghinScoresHTML({ revision: [], recent: [], withheld: true }, H), /<div class="gs-empty">ghinScoresUnproven<\/div>/);
+  assert.match(ghinScoresHTML({ withheld: true, message: 'Private' }, H), /<div class="gs-empty">Private<\/div>/);
+  assert.match(ghinScoresHTML({ withheld: 'true' }, H), /no scores/);
   const html = ghinScoresHTML({ revision: [score('2026-11-01', 88, { course: '<img src=x onerror=alert(1)>', tee: '"><script>', type: '<i>' })] }, H);
   assert.equal(/<img|<script|<i>/.test(html), false);
 });
