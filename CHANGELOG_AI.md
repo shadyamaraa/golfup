@@ -1,5 +1,13 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: which index is played off — a decision, recorded)
+
+The profile shows two indexes — the app's own «HCP индекс» and «GHIN HI» —
+and they differ. The owner's decision: leave both as they are until the app
+reads GHIN's production; then games and tournaments play off the GHIN
+index, and the app's own stays only for members with no GHIN number. No
+code changes now. `docs/ghin.md` («Not done yet»), `TASKS.md`.
+
 ## 2026-11-20 (Home: the Handicap Index as one line, the board above «Eagle · Birdie»)
 
 The whole «Handicap Index» block stood first on the home screen and pushed

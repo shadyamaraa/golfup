@@ -420,7 +420,7 @@ finished. What that takes, in order:
    number is on the public half of the member record today, which any
    client can write.
 2. **Production.** Staging is a copy; nobody should play off it.
-3. **Play off the index.** WHS revises a Handicap Index once a day, after
+3. **Play off the index** (decided — see «Not done yet»). WHS revises a Handicap Index once a day, after
    the day's scores — not when a score is posted and not on a refresh — so
    the app reads it daily (`hi_changed_golfers`) and a round uses the index
    of the day it is played. A course handicap needs the tee's rating and
@@ -497,10 +497,16 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   golfer's club only could then be shown to members of that same club; today
   it is shown to the member and to admins.
 
-- **A playing handicap from GHIN.** Once the USGA grants production
-  (`GHIN_BASE_URL`), the official index can replace the app's own in games
-  and tournaments (`gamePlayingHcp` in `src/game-score.js`,
-  `src/strokeplay-admin.js`). That is a decision as much as a change.
+- **A playing handicap from GHIN — decided (the owner, 2026-11-20), to be
+  done when the app reads production.** Until then nothing changes: the
+  profile shows both «HCP индекс» (the app's own, from the rounds scored in
+  UB Golf — what games and tournaments are played off) and «GHIN HI», and
+  the two will differ. Once the USGA grants production (`GHIN_BASE_URL`):
+  games and tournaments play off the GHIN index (`gamePlayingHcp` in
+  `src/game-score.js`, `src/strokeplay-admin.js`), and the app's own index
+  stays only for a member with no GHIN number — it is no longer shown, or
+  played off, where there is a GHIN index. Not before: staging is a copy
+  from an earlier date, and nobody should play off it.
 - **A lighter daily refresh.** The night's round reads every member's
   index; GHIN has `golfers/hi_changed_golfers` to ask only for those that
   changed. Not worth it at a few hundred members.
