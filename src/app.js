@@ -5,6 +5,7 @@ import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
 import { ghinScoresHTML, wireGhinScores, ghinHomeStripHTML, ghinHomeBoardHTML } from './ghin-scores.js';
+import { courseHandicapsHTML } from './course-handicaps.js';
 import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
@@ -8857,6 +8858,7 @@ async function renderProfile() {
           <div class="stat-tile" id="ghin-tile" ${ghinRec ? '' : 'hidden'}>${ghinTileInner(ghinRec)}</div>
         </div>
         ${ghinOn() && ghinDigits(ghinMember.ghinNumber) ? `
+        <div id="ghin-ch"></div>
         <div class="section-head" style="margin-top:22px;"><h2>${t('ghinScoresTitle')}</h2></div>
         <div id="ghin-scores" class="gs-box"></div>` : ''}
 
@@ -8893,6 +8895,16 @@ async function renderProfile() {
   document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
   document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
 
+  // The member's Course Handicap from each tee, off the GHIN index — drawn
+  // again when a fresher index arrives. Nothing when there is no index.
+  const drawCourseHandicaps = (rec) => {
+    const host = document.getElementById('ghin-ch');
+    if (!host) return;
+    const html = courseHandicapsHTML(rec, gender, { t, esc });
+    host.innerHTML = html ? `<div class="section-head" style="margin-top:22px;"><h2>${t('ghinChTitle')}</h2></div>${html}` : '';
+  };
+  drawCourseHandicaps(ghinRec);
+
   const scoresHost = document.getElementById('ghin-scores');
   if (scoresHost) mountGhinScores(scoresHost, ghinMember, viewAlive());
   // Come from the home screen's Handicap Index block: the list, not the top.
@@ -8913,6 +8925,7 @@ async function renderProfile() {
       if (!alive() || !tile || !rec) return;
       tile.innerHTML = ghinTileInner(rec);
       tile.hidden = false;
+      drawCourseHandicaps(rec);
     }).catch((err) => console.warn('GHIN sync:', err?.code || err));
   }
 }

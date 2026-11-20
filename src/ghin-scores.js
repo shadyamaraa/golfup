@@ -7,7 +7,7 @@
 // and on the home screen: one line under the greeting (ghinHomeStripHTML)
 // and the scores as a board of small cells (ghinHomeBoardHTML).
 
-import { ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText, ghinHiText } from './ghin.js';
+import { ghinScoreRows, ghinScoreCounts, ghinScoreStats, ghinDiffText, ghinAdjustText, ghinHiText } from './ghin.js';
 
 // So many rows before «Бүгдийг харах».
 const FIRST = 5;
@@ -65,8 +65,14 @@ export function ghinScoresHTML(record, h) {
   const n = ghinScoreCounts(record);
   const summary = t('ghinScoresSub').replace('{n}', n.revision).replace('{used}', n.used)
     + (n.pending ? ' ' + t('ghinScoresWaiting').replace('{n}', n.pending) : '');
+  // The average, the best and the worst, in a line over the list.
+  const st = ghinScoreStats(record);
+  const stats = st ? `
+    <div class="gs-stats">${[['ghinStatAverage', st.average], ['ghinStatBest', st.low], ['ghinStatWorst', st.high]].map(([label, value]) => `
+      <span class="gs-stat"><span class="gs-stat-l">${t(label)}</span><span class="gs-stat-v">${esc(value)}</span></span>`).join('')}
+    </div>` : '';
   return `
-    <div class="gs-sub">GHIN${trial} · ${esc(summary)}</div>
+    <div class="gs-sub">GHIN${trial} · ${esc(summary)}</div>${stats}
     <div class="gs-list">
       <div class="gs-head"><span>${t('ghinScoresScore')}</span><span>${t('ghinScoresWhere')}</span><span>${t('ghinScoresDiff')}</span></div>
       ${rows.map((s, i) => rowHTML(s, h, i >= FIRST)).join('')}

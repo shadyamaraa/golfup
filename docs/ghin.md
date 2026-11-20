@@ -163,6 +163,18 @@ and an admin's next look asks GHIN again.
 In the app (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`), for
 whoever sees the GHIN parts (`GHIN_STAGE`):
 
+- **Profile**: «Course Handicap» under the tiles — the strokes the member's
+  GHIN index is worth from each tee of the app's courses: a cell a tee, its
+  name, the strokes, its rating and slope (`src/course-handicaps.js`).
+  `Handicap Index × Slope ÷ 113 + (Course Rating − Par)`, to a whole stroke;
+  the ratings are the course list's, which agrees with GHIN's, so it is the
+  number GHIN's own calculator gives. A member is shown the tees rated for
+  their gender, and every tee when the app does not know it. It is off the
+  **GHIN** index: until games play off that index too (below), a game in
+  the app can give the same member another number, off the app's own.
+- **Profile**: over the list of scores, the average, the best and the worst
+  — GHIN's own figures where it sent them, else worked out from the
+  revision's eighteen-hole scores (`ghinScoreStats`).
 - **Profile**: «Сүүлийн 20 оноо» under the tiles — the score, the course,
   date · tee · rating/slope · type, and the differential; the ones the index
   counts are marked with a star and a bar down the left, as in GHIN's own
@@ -420,7 +432,7 @@ finished. What that takes, in order:
    number is on the public half of the member record today, which any
    client can write.
 2. **Production.** Staging is a copy; nobody should play off it.
-3. **Play off the index.** WHS revises a Handicap Index once a day, after
+3. **Play off the index** (decided — see «Not done yet»). WHS revises a Handicap Index once a day, after
    the day's scores — not when a score is posted and not on a refresh — so
    the app reads it daily (`hi_changed_golfers`) and a round uses the index
    of the day it is played. A course handicap needs the tee's rating and
@@ -444,6 +456,7 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | The functions themselves | `functions/index.js` (`ghinGolfer`, `ghinSync`, `ghinSyncAll`, `ghinScores`) |
 | Which record is a member's, how it reads, what a refusal says, a scoring record's rows (pure) | `src/ghin.js` |
 | The scoring record as a list | `src/ghin-scores.js` |
+| Course Handicap from each tee | `src/course-handicaps.js`, `scripts/test-course-handicaps.mjs` |
 | The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`, `loadGhinScores`, `ghinScoresSync`) |
 | The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `renderHomeGhin`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
@@ -497,10 +510,16 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   golfer's club only could then be shown to members of that same club; today
   it is shown to the member and to admins.
 
-- **A playing handicap from GHIN.** Once the USGA grants production
-  (`GHIN_BASE_URL`), the official index can replace the app's own in games
-  and tournaments (`gamePlayingHcp` in `src/game-score.js`,
-  `src/strokeplay-admin.js`). That is a decision as much as a change.
+- **A playing handicap from GHIN — decided (the owner, 2026-11-20), to be
+  done when the app reads production.** Until then nothing changes: the
+  profile shows both «HCP индекс» (the app's own, from the rounds scored in
+  UB Golf — what games and tournaments are played off) and «GHIN HI», and
+  the two will differ. Once the USGA grants production (`GHIN_BASE_URL`):
+  games and tournaments play off the GHIN index (`gamePlayingHcp` in
+  `src/game-score.js`, `src/strokeplay-admin.js`), and the app's own index
+  stays only for a member with no GHIN number — it is no longer shown, or
+  played off, where there is a GHIN index. Not before: staging is a copy
+  from an earlier date, and nobody should play off it.
 - **A lighter daily refresh.** The night's round reads every member's
   index; GHIN has `golfers/hi_changed_golfers` to ask only for those that
   changed. Not worth it at a few hundred members.

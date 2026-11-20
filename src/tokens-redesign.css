@@ -1797,6 +1797,18 @@ html[data-theme="dark"] .ghs-item:first-child .ghs-l { color: var(--gold-light);
   .gb-s { font-size: 0.78rem; }
   .gb-x { font-size: 0.54rem; }
 }
+/* The average, the best and the worst over the list of scores. */
+.gs-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 10px; }
+.gs-stat { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; min-width: 0; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; }
+.gs-stat-l { font-size: 0.64rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-stat-v { font-size: 1.05rem; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+/* Course Handicap: a cell for each tee — its name, the strokes, its rating and slope. */
+.ch-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+.ch-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 2px 6px; min-width: 0; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 10px; }
+.ch-t { max-width: 100%; font-size: 0.66rem; font-weight: 700; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-n { font-size: 1.15rem; font-weight: 800; color: var(--text-primary); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.ch-r { font-size: 0.58rem; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 360px) { .ch-grid { gap: 4px; } .ch-r { font-size: 0.52rem; } }
 .gs-modal { max-width: 460px; padding: 22px 18px; max-height: 88vh; overflow-y: auto; }
 .gs-modal .modal-title { margin-bottom: 14px; }
 html[data-theme="dark"] .gs-row.used .gs-diff, html[data-theme="dark"] .gs-tag, html[data-theme="dark"] .gs-more { color: var(--gold-light); }

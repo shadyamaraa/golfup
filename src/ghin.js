@@ -93,6 +93,25 @@ export function ghinScoreCounts(record) {
   return { revision: revision.length, used: revision.filter(r => r.used).length, pending: rows.length - revision.length };
 }
 
+/**
+ * The average, the best and the worst of a scoring record's scores:
+ * { average, low, high, count }. GHIN's own figures where it sent them
+ * (`stats`); otherwise worked out from the revision's eighteen-hole scores —
+ * a nine-hole score is not set beside an eighteen-hole one. null when there
+ * is nothing to say.
+ */
+export function ghinScoreStats(record) {
+  const st = record?.stats;
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  if (st && num(st.average) != null && num(st.low) != null && num(st.high) != null) {
+    return { average: st.average, low: st.low, high: st.high, count: num(st.count) ?? 0 };
+  }
+  const full = scoreItems(record?.revision).filter(s => s.holes !== 9).map(s => s.score);
+  if (!full.length) return null;
+  const average = Math.round((full.reduce((a, b) => a + b, 0) / full.length) * 10) / 10;
+  return { average, low: Math.min(...full), high: Math.max(...full), count: full.length };
+}
+
 /** A differential as shown: one decimal; '' when GHIN gave none. */
 export function ghinDiffText(diff) {
   return typeof diff === 'number' && Number.isFinite(diff) ? diff.toFixed(1) : '';

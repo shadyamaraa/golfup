@@ -20,6 +20,11 @@
       statistics, historical results.
 - [ ] Casual formats phase 3: a cross-group scramble leaderboard — rank every
       team in the game by net total, not only the 2 v 2 inside each group.
+- [ ] GHIN, when the USGA grants production: games and tournaments play off
+      the GHIN index, and the app's own «HCP индекс» stays only for members
+      with no GHIN number (decided 2026-11-20; nothing changes before
+      production). Then run `scripts/ghin-courses.mjs` again to confirm the
+      course and tee-set ids. See `docs/ghin.md` («Not done yet»).
 - [ ] Coaching phase 2: payment through the club's own QPay and the club
       paying the coaches their share; then counting lessons used against a
       package, a class with a fixed timetable, lesson notes. See
