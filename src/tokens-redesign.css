@@ -1809,6 +1809,40 @@ html[data-theme="dark"] .ghs-item:first-child .ghs-l { color: var(--gold-light);
 .ch-n { font-size: 1.15rem; font-weight: 800; color: var(--text-primary); line-height: 1.15; font-variant-numeric: tabular-nums; }
 .ch-r { font-size: 0.58rem; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 360px) { .ch-grid { gap: 4px; } .ch-r { font-size: 0.52rem; } }
+/* The Handicap Index over the last year, as a chart (src/ghin-history.js).
+   The line is --gh-line in both themes: #C5780C clears 3:1 on the light card
+   and on the dark one. What is written wears the text tokens, not the line's colour. */
+.gh-card { --gh-line: #C5780C; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 16px; padding: 10px 12px 2px; }
+.gh-plot { position: relative; min-height: 176px; touch-action: pan-y; outline: none; cursor: crosshair; -webkit-tap-highlight-color: transparent; }
+.gh-plot:focus-visible { box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--gh-line); border-radius: 8px; }
+.gh-svg { display: block; overflow: visible; font-family: inherit; user-select: none; -webkit-user-select: none; }
+.gh-grid { stroke: var(--line2); stroke-width: 1; shape-rendering: crispEdges; }
+.gh-tick { font-size: 10px; font-weight: 600; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.gh-line { fill: none; stroke: var(--gh-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.gh-dot, .gh-focus { fill: var(--gh-line); stroke: var(--bg-card); stroke-width: 2; }
+.gh-lab { font-size: 11px; font-weight: 600; fill: var(--text-secondary); paint-order: stroke; stroke: var(--bg-card); stroke-width: 3px; stroke-linejoin: round; }
+.gh-lab-v { font-weight: 800; fill: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gh-lab-now { font-size: 13px; font-weight: 800; fill: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gh-cross { stroke: var(--text-muted); stroke-width: 1; shape-rendering: crispEdges; }
+.gh-cross, .gh-focus, .gh-tip { visibility: hidden; }
+.gh-plot.on .gh-cross, .gh-plot.on .gh-focus, .gh-plot.on .gh-tip { visibility: visible; }
+.gh-plot.gap .gh-focus { visibility: hidden; }
+.gh-tip {
+  position: absolute; top: -2px; left: 0; transform: translateX(-50%); display: inline-flex; align-items: baseline; gap: 7px;
+  padding: 4px 9px; white-space: nowrap; pointer-events: none; border-radius: 9px;
+  background: var(--bg-card); border: 1px solid var(--border-card); box-shadow: 0 4px 14px rgba(12,48,81,0.14);
+}
+.gh-tip-v { font-size: 0.9rem; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gh-tip-d { font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+html[data-theme="dark"] .gh-tip { box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
+.gh-more { margin: 4px -12px 0; border-top: 1px solid var(--line2); }
+.gh-more summary { padding: 10px 12px; font-size: 0.82rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; list-style: none; text-align: center; }
+.gh-more summary::-webkit-details-marker { display: none; }
+html[data-theme="dark"] .gh-more summary { color: var(--gold-light); }
+.gh-rows { max-height: 232px; overflow-y: auto; border-top: 1px solid var(--line2); }
+.gh-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 14px; font-size: 0.8rem; color: var(--text-secondary); }
+.gh-row + .gh-row { border-top: 1px solid var(--line2); }
+.gh-row-v { font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .gs-modal { max-width: 460px; padding: 22px 18px; max-height: 88vh; overflow-y: auto; }
 .gs-modal .modal-title { margin-bottom: 14px; }
 html[data-theme="dark"] .gs-row.used .gs-diff, html[data-theme="dark"] .gs-tag, html[data-theme="dark"] .gs-more { color: var(--gold-light); }
