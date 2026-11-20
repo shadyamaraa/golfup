@@ -19,8 +19,12 @@ Khaan agreed. Three of Mt. Bogd's tees did not.
   handicap by one stroke for some indexes, a differential by a tenth or two.
 - `scripts/test-ghin-course.mjs` holds what GHIN had and fails when the
   list parts from it; the script reads a course by the id on the list.
-- Not offered yet: five tee sets GHIN rates and the app lacks
-  (`docs/ghin.md`).
+- **Five tee sets GHIN rates were not offered and are now**: Mt. Bogd Red
+  for men 64.3 / 111, Blue for women 78.6 / 143, White for women 75.8 / 138;
+  Chinggis Khaan White for women 75.2 / 133, Red for men 66.1 / 108 (keys
+  `redMen`, `blueLadies`, `whiteLadies`). A colour rated for both stands
+  twice: the plain name is the men's, «(L)» the women's — so the key `red`,
+  always the women's Red, now reads «Red (L)» and «Red» is the men's.
 
 ## 2026-11-20 (GHIN: the Handicap Index and the last twenty scores on the home screen)
 

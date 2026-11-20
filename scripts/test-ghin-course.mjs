@@ -24,6 +24,10 @@ test('teeWanted: an app tee is a men\'s tee of its colour — but for the ones r
   assert.deepEqual(teeWanted('goldLadies'), { word: 'gold', gender: 'F' });
   assert.deepEqual(teeWanted('red'), { word: 'red', gender: 'F' });
   assert.deepEqual(teeWanted('lady'), { word: 'lady', gender: 'F' });
+  assert.deepEqual(teeWanted('blueLadies'), { word: 'blue', gender: 'F' });
+  assert.deepEqual(teeWanted('whiteLadies'), { word: 'white', gender: 'F' });
+  assert.deepEqual(teeWanted('redMen'), { word: 'red', gender: 'M' });
+  assert.deepEqual(teeWanted('Ladies'), { word: 'ladies', gender: 'M' }, 'a suffix alone is no colour');
   assert.deepEqual(teeWanted('Black'), { word: 'black', gender: 'M' });
   assert.deepEqual(teeWanted(null), { word: '', gender: 'M' });
   // Every tee of the app's own list has a colour to look for.
@@ -128,11 +132,12 @@ test('the app\'s courses agree with GHIN: every tee\'s rating and slope, and the
       assert.equal(app.tees[t.key].ghinTeeSetId, t.ghin.id, `${name} ${t.key}`);
     }
   }
-  // The tee sets GHIN rates that the app does not offer yet.
-  assert.deepEqual(courseDiff(SKY, ON_GHIN.sky).unmatched.map(t => `${t.name} ${t.rating}/${t.slope}`),
-    ['RED TEE - MALE 64.3/111', 'BLUE TEE - FEMALE 78.6/143', 'WHITE TEE - FEMALE 75.8/138']);
-  assert.deepEqual(courseDiff(CK, ON_GHIN.chinggis).unmatched.map(t => `${t.name} ${t.rating}/${t.slope}`),
-    ['WHITE - FEMALE 75.2/133', 'RED - MALE 66.1/108']);
+  // Every tee set GHIN rates is offered, each by a tee of its own.
+  for (const [app, ghin] of [[SKY, ON_GHIN.sky], [CK, ON_GHIN.chinggis]]) {
+    const d = courseDiff(app, ghin);
+    assert.deepEqual(d.unmatched, []);
+    assert.equal(new Set(d.tees.map(t => t.ghin.id)).size, ghin.tees.length);
+  }
 });
 
 test('the app\'s own courses are of the shape compared', () => {

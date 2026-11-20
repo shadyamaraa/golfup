@@ -11,14 +11,18 @@
 //   { id, name, facility, tees: [{ id, name, gender, par, rating, slope,
 //                                  pars, si, lengths, … }] }
 
-// The app's tee keys that are rated for women; every other key is a men's
-// tee of that colour (src/courses.js: Gold (L), Red; «lady» elsewhere).
-const LADIES = { goldLadies: 'gold', red: 'red', lady: 'lady' };
-
-/** An app tee key → the colour word and gender to look for on GHIN. */
+/**
+ * An app tee key → the colour word and gender to look for on GHIN. A key is
+ * a men's tee of its colour, unless it says otherwise (src/courses.js):
+ * `…Ladies` is the women's rating of that colour and `…Men` the men's;
+ * `red` has always been the women's Red, and «lady» is a women's tee.
+ */
 export function teeWanted(key) {
   const k = String(key || '');
-  return LADIES[k] ? { word: LADIES[k], gender: 'F' } : { word: k.toLowerCase(), gender: 'M' };
+  if (k === 'red' || k === 'lady') return { word: k, gender: 'F' };
+  const m = k.match(/^(.+)(Ladies|Men)$/);
+  if (m) return { word: m[1].toLowerCase(), gender: m[2] === 'Ladies' ? 'F' : 'M' };
+  return { word: k.toLowerCase(), gender: 'M' };
 }
 
 /**

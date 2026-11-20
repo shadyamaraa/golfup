@@ -217,19 +217,25 @@ seen on screens of GHIN's own app were the same there):
 
 | Course | GHIN id | The app's tees | What differed |
 |---|---|---|---|
-| Mt. Bogd Golf & Country Club (`sky`) | 29423 | black 443315, blue 443352, white 443353, gold 443354, goldLadies 443362, red 443363 | Blue 71.5 / 130 → **71.4 / 131**, White 69.4 / 128 → **69.4 / 127**, Gold 67.1 / 121 → **67 / 121** — the list now has GHIN's |
-| Chinggis Khaan Golf Course (`chinggis`) | 29422 | white 443288, red 443286 | nothing |
+| Mt. Bogd Golf & Country Club (`sky`) | 29423 | black 443315, blue 443352, white 443353, gold 443354, redMen 443357, blueLadies 443360, whiteLadies 443361, goldLadies 443362, red 443363 | Blue 71.5 / 130 → **71.4 / 131**, White 69.4 / 128 → **69.4 / 127**, Gold 67.1 / 121 → **67 / 121** — the list now has GHIN's |
+| Chinggis Khaan Golf Course (`chinggis`) | 29422 | white 443288, redMen 443289, whiteLadies 443285, red 443286 | nothing |
 
 Pars and stroke indexes were the same as GHIN's on every tee set. The
 change moves a course handicap by one stroke for some indexes (Blue: about
 one index in six, mostly one more; White: about one in four, one fewer;
 Gold: about one in ten, one fewer) and a differential by a tenth or two.
 
-GHIN rates tee sets the app does not offer yet — Mt. Bogd: Red for men
-64.3 / 111 (443357), Blue for women 78.6 / 143 (443360), White for women
-75.8 / 138 (443361); Chinggis Khaan: White for women 75.2 / 133 (443285),
-Red for men 66.1 / 108 (443289). A women's division playing White is rated
-quite differently from the men's White; offering these is a next step.
+**Every tee set GHIN rates is offered.** Five were missing and were added
+with GHIN's numbers — Mt. Bogd: Red for men 64.3 / 111, Blue for women
+78.6 / 143, White for women 75.8 / 138; Chinggis Khaan: White for women
+75.2 / 133, Red for men 66.1 / 108. A tee is rated apart for men and for
+women (the women's White at Mt. Bogd is 75.8 / 138, the men's 69.4 / 127),
+so a colour can stand twice in a course's list: the plain name is the men's
+rating, «(L)» the women's — Black, Blue, White, Gold, Red, Blue (L),
+White (L), Gold (L), Red (L). The key `red` has always been the women's
+Red and older records carry it: it reads «Red (L)» now, and the men's Red
+is `redMen`. A key's gender is in its name (`…Ladies`, `…Men`; `teeWanted`
+in `src/ghin-course.js`).
 
 **Games and tournaments keep their own numbers.** A game stores the rating
 and slope it was made with, and so does a tournament (`tn.rating`,
@@ -496,8 +502,6 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   morning. Doing it in the moment they sign in needs the phones of the
   club's golfers kept somewhere between nights — GHIN does not search by
   phone.
-- **The tee sets the app does not offer** (above): men's Red and women's
-  Blue and White at Mt. Bogd, women's White and men's Red at Chinggis Khaan.
 - **A course's ids on production.** They were read on staging; the script
   is to be run once more when the app reads production.
 - **Posting scores** (`scores/hbh`). Not in the first phase by agreement.
