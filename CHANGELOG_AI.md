@@ -1,5 +1,72 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Courses: Mt. Bogd's ratings are GHIN's; GHIN's ids on the course list)
+
+The owner ran `scripts/ghin-courses.mjs` against GHIN (staging). Chinggis
+Khaan agreed. Three of Mt. Bogd's tees did not.
+
+- `src/courses.js`: Mt. Bogd Blue 71.5 / 130 → 71.4 / 131, White 69.4 / 128
+  → 69.4 / 127, Gold 67.1 / 121 → 67 / 121. Each course has `ghinCourseId`,
+  each tee `ghinTeeSetId` — what a posted score names. `courseTees()` still
+  gives a tee as key, label, rating, slope.
+- **Nothing already made moves**: games and tournaments store their own
+  rating and slope. The admin's tournament form re-read a tee's numbers
+  from the list on every save — a tournament that has begun now keeps the
+  ones it is played off unless another course or tee is chosen
+  (`keepTnTees`, `src/strokeplay.js`), and its information rows show its
+  own numbers rather than the list's.
+- What it moves, for games and tournaments made from now on: a course
+  handicap by one stroke for some indexes, a differential by a tenth or two.
+- `scripts/test-ghin-course.mjs` holds what GHIN had and fails when the
+  list parts from it; the script reads a course by the id on the list.
+- **Five tee sets GHIN rates were not offered and are now**: Mt. Bogd Red
+  for men 64.3 / 111, Blue for women 78.6 / 143, White for women 75.8 / 138;
+  Chinggis Khaan White for women 75.2 / 133, Red for men 66.1 / 108 (keys
+  `redMen`, `blueLadies`, `whiteLadies`). A colour rated for both stands
+  twice: the plain name is the men's, «(L)» the women's — so the key `red`,
+  always the women's Red, now reads «Red (L)» and «Red» is the men's.
+
+## 2026-11-20 (GHIN: the Handicap Index and the last twenty scores on the home screen)
+
+The index and its scores were two taps away, on the profile. GHIN's own app
+opens on them.
+
+- Home, first thing under the greeting, for whoever sees the GHIN parts and
+  has a GHIN number: «Handicap Index» — tiles for the index, the low index
+  and the latest score, then the revision's scores as a board of cells (day,
+  score, differential), two rows of ten, the counted ones filled in — in
+  the manner of the «Eagle · Birdie» block (`ghinHomeHTML` in
+  `src/ghin-scores.js`, `renderHomeGhin` in `src/app.js`).
+- A score posted since the last revision is the latest-score tile and is
+  counted in the board's heading; it is not on the board.
+- «Бүгд» and the board lead to the full list on the profile, which is
+  brought into view.
+- What the server stored is shown at once and read again in the background
+  when a day old, as on the profile. No new function, no rules change.
+- Tests: `scripts/test-ghin-app.mjs` (24).
+
+## 2026-11-20 (GHIN: the app's courses against GHIN's — a comparison to run)
+
+A differential agrees with GHIN's only when it is worked out from GHIN's
+rating and slope, and a score is posted under GHIN's course and tee-set
+ids. The app's course list is typed from the clubs' scorecards and differs
+from GHIN's in places (Mt. Bogd Blue and White, by screens of GHIN's app).
+
+- `functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`,
+  `trimTeeSet` — a course as GHIN keeps it: tee sets with their ids, gender,
+  ratings (eighteen and each nine), par and stroke allocation by hole. No
+  new function is deployed.
+- `src/ghin-course.js` (pure): `courseDiff` — each app tee against the GHIN
+  tee set of its colour and gender, tees GHIN lacks, holes whose par or
+  stroke index differ.
+- `scripts/ghin-courses.mjs`: run from the owner's terminal, prints the
+  comparison and GHIN's ids. `scripts/ghin-login.mjs` is the login prompt it
+  shares with `scripts/ghin-smoke.mjs`.
+- Nothing in the app changes yet: `src/courses.js` is untouched until the
+  comparison has been read. Written from GHIN's spec — the course requests
+  are untried with the association's login.
+- Tests: `scripts/test-ghin.mjs` (77), `scripts/test-ghin-course.mjs` (6).
+
 ## 2026-11-20 (GHIN: a member's last twenty scores)
 
 The profile showed a Handicap Index from GHIN and nothing of what it is made

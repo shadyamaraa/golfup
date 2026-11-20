@@ -30,7 +30,7 @@ const row = (ghinNo, over = {}) => ({
 
 // A fake GHIN. `golfers` are the rows it holds; everything asked is logged.
 function fakeGhin(golfers = [], over = {}) {
-  const state = { logins: 0, searches: [], listings: [], scoreAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
+  const state = { logins: 0, searches: [], listings: [], scoreAsks: [], courseAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
   const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -95,6 +95,23 @@ function fakeGhin(golfers = [], over = {}) {
       // eslint-disable-next-line no-unused-vars
       const out = all.slice((page - 1) * per, page * per).map(({ _for, ...g }) => g);
       return json(200, { golfers: out });
+    }
+    // Courses: a search by name, and one course with its tee sets.
+    if (u.pathname.endsWith('/courses/search.json')) {
+      state.courseAsks.push(`search ${u.searchParams.get('name')} offset ${u.searchParams.get('offset')} limit ${u.searchParams.get('limit')}`);
+      if (state.courseStatus) return json(state.courseStatus, { error: 'AccessDenied: You are not authorized to access this page.' });
+      // As the real one answers a limit with no offset.
+      if (u.searchParams.has('offset') !== u.searchParams.has('limit')) {
+        return json(400, { errors: { offset_and_limit: ['Offset and limit must be provided together or not at all.'] } });
+      }
+      return json(200, { courses: state.courseSearch || [] });
+    }
+    const crs = u.pathname.match(/\/courses\/(\d+)\.json$/);
+    if (crs) {
+      state.courseAsks.push(`course ${crs[1]}`);
+      if (state.courseStatus) return json(state.courseStatus, { error: 'Service Unavailable' });
+      const c = (state.courses || {})[crs[1]];
+      return c ? json(200, c) : json(404, { error: 'Not Found' });
     }
     // A golfer's scoring record: both lists in one answer, or each on its own.
     const sc = u.pathname.match(/\/golfers\/(\d+)\/(scores|revision_scores|recent_scores)\.json$/);
@@ -1152,4 +1169,91 @@ test('scores: nothing personal, and no hole-by-hole, in what is answered or stor
   for (const k of [...PII, 'golfer_id', 'gender', 'hole_details', 'posted_at', 'tee_set_id']) assert.equal(text.includes(`"${k}"`), false, k);
   assert.equal(text.includes('bat@example.mn'), false);
   assert.equal(text.includes('99119007'), false);
+});
+
+// ---- Courses ----
+
+// A tee set as GHIN's own example has it.
+const teeSet = (id, name, gender, rating, slope, over = {}) => ({
+  TeeSetRatingId: id, TeeSetRatingName: name, Gender: gender, HolesNumber: 18, TotalYardage: 6126, TotalMeters: 5581,
+  StrokeAllocation: true, TotalPar: 72,
+  Ratings: [
+    { RatingType: 'Total', CourseRating: rating, SlopeRating: slope, BogeyRating: 98 },
+    { RatingType: 'Front', CourseRating: 34.6, SlopeRating: 118, BogeyRating: 47.1 },
+    { RatingType: 'Back', CourseRating: 34.6, SlopeRating: 120, BogeyRating: 47.9 },
+  ],
+  Holes: Array.from({ length: 18 }, (_, i) => ({ Number: i + 1, HoleId: 1266518 + i, Length: 339 + i, Par: i % 3 === 0 ? 5 : 4, Allocation: 18 - i })),
+  ...over,
+});
+const COURSE = {
+  Facility: { FacilityId: 2964, FacilityStatus: 'Active', FacilityName: 'Chinggis Khaan Golf Course', FacilityNumber: '56390' },
+  Season: { SeasonName: 'Active Season', SeasonStartDate: '04/01', SeasonEndDate: '11/14', IsAllYear: false },
+  TeeSets: [teeSet(134949, ' WHITE ', 'Male', 69.2, 119), teeSet(134950, 'RED', 'Female', 71.2, 127)],
+  CourseId: 29422, CourseName: 'Chinggis Khaan Golf Course', CourseStatus: 'Active', CourseNumber: 123, CourseCity: 'Ulaanbaatar', CourseState: 'MN-1',
+};
+
+test('trimTeeSet: the ids, who it is rated for, the ratings, and each hole', () => {
+  const t = ghin.trimTeeSet(teeSet(134949, ' WHITE ', 'Male', 69.2, 119));
+  assert.deepEqual({ ...t, pars: null, si: null, lengths: null }, {
+    id: '134949', name: 'WHITE', gender: 'M', rating: 69.2, slope: 119, bogey: 98, par: 72, holes: 18, yards: 6126, meters: 5581,
+    front: { rating: 34.6, slope: 118, bogey: 47.1 }, back: { rating: 34.6, slope: 120, bogey: 47.9 },
+    pars: null, si: null, lengths: null,
+  });
+  assert.deepEqual([t.pars[1], t.pars[2], t.si[1], t.si[18], t.lengths[18], Object.keys(t.pars).length], [5, 4, 18, 1, 356, 18]);
+  assert.equal(ghin.trimTeeSet(teeSet(1, 'RED', 'Female', 71.2, 127)).gender, 'F');
+  assert.equal(ghin.trimTeeSet(teeSet(1, 'X', 'Mixed', 70, 120)).gender, '');
+  // Numbers sent as text; a hole that is not one is passed over; no nine-hole ratings.
+  const loose = ghin.trimTeeSet(teeSet(7, 'BLUE', 'male', '71.4', '131', {
+    Ratings: [{ RatingType: 'total', CourseRating: '71.4', SlopeRating: '131' }],
+    Holes: [{ Number: 1, Par: '4', Allocation: '9' }, { Number: 19, Par: 4 }, { Number: 0, Par: 4 }, { Number: 2.5, Par: 4 }, null, { Par: 3 }],
+  }));
+  assert.deepEqual([loose.rating, loose.slope, 'bogey' in loose, 'front' in loose, loose.pars, loose.si, loose.lengths], [71.4, 131, false, false, { 1: 4 }, { 1: 9 }, {}]);
+  // Not a tee set a score is posted from: no id, or no eighteen-hole rating.
+  for (const bad of [null, 'x', {}, teeSet(undefined, 'W', 'Male', 69, 119), teeSet(1, 'W', 'Male', 69, 119, { Ratings: [{ RatingType: 'Front', CourseRating: 34, SlopeRating: 118 }] }),
+    teeSet(1, 'W', 'Male', null, 119), teeSet(1, 'W', 'Male', 69, null), teeSet(1, 'W', 'Male', 69, 119, { Ratings: 'none' })]) {
+    assert.equal(ghin.trimTeeSet(bad), null);
+  }
+});
+
+test('trimCourse: the course, its facility, and the tee sets that are rated', () => {
+  const c = ghin.trimCourse({ ...COURSE, TeeSets: [...COURSE.TeeSets, { TeeSetRatingId: 9, TeeSetRatingName: 'Unrated', Ratings: [] }, null] }, '29422');
+  assert.deepEqual({ ...c, tees: c.tees.map(t => [t.id, t.name, t.gender, t.rating, t.slope]) }, {
+    id: '29422', name: 'Chinggis Khaan Golf Course', facility: 'Chinggis Khaan Golf Course', facilityId: '2964',
+    city: 'Ulaanbaatar', state: 'MN-1', status: 'Active',
+    tees: [['134949', 'WHITE', 'M', 69.2, 119], ['134950', 'RED', 'F', 71.2, 127]],
+  });
+  // What GHIN leaves out is empty, not a failure; the id asked for stands in for its own.
+  assert.deepEqual(ghin.trimCourse({}, '77'), { id: '77', name: '', facility: '', city: '', state: '', status: '', tees: [] });
+  assert.deepEqual(ghin.trimCourse(null, '77').tees, []);
+});
+
+test('findCourses: GHIN\'s courses under a name, as a pick list', async () => {
+  const hit = (id, over = {}) => ({ CourseID: id, CourseStatus: 'Active', CourseName: 'Mt. Bogd Golf & Country Club', FacilityID: 9754, FacilityName: 'Mt. Bogd Golf & Country Club',
+    Address: '1 Bogd St', City: 'Ulaanbaatar', State: 'MN-1', Country: 'Mongolia', Telephone: 99119007, Email: 'club@example.mn', Ratings: [{ TeeSetRatingId: 1 }], ...over });
+  const w = world([], { ghin: { courseSearch: [hit(30111), hit(555, { CourseName: 'Bogdan Hills', FacilityName: 'Bogdan Hills GC', City: 'Sofia', State: 'BG-22', Country: 'Bulgaria', CourseStatus: 'Inactive' }), { CourseName: 'no id' }, null] } });
+  const found = await ghin.findCourses(w.deps.client, '  Bogd ');
+  assert.deepEqual(w.fake.state.courseAsks, ['search Bogd offset 0 limit 50']);
+  assert.deepEqual(found, [
+    { id: '30111', name: 'Mt. Bogd Golf & Country Club', facility: 'Mt. Bogd Golf & Country Club', city: 'Ulaanbaatar', state: 'MN-1', country: 'Mongolia', status: 'Active' },
+    { id: '555', name: 'Bogdan Hills', facility: 'Bogdan Hills GC', city: 'Sofia', state: 'BG-22', country: 'Bulgaria', status: 'Inactive' },
+  ]);
+  assert.deepEqual(await ghin.findCourses(world([]).deps.client, 'Nowhere'), []);
+  // What GHIN refuses is told, with its own words.
+  const no = world([], { ghin: { courseStatus: 403 } });
+  await assert.rejects(ghin.findCourses(no.deps.client, 'Bogd'), (e) => e.ghin === 'GHIN_ERROR' && e.upstream === 403 && /AccessDenied/.test(e.detail));
+});
+
+test('courseById: one course with its tee sets — or none', async () => {
+  const w = world([], { ghin: { courses: { 29422: COURSE } } });
+  const c = await ghin.courseById(w.deps.client, 29422);
+  assert.deepEqual([c.id, c.name, c.tees.length, c.tees[0].id], ['29422', 'Chinggis Khaan Golf Course', 2, '134949']);
+  assert.equal((await ghin.courseById(w.deps.client, ' 29422 ')).id, '29422');
+  assert.equal(await ghin.courseById(w.deps.client, '11111'), null, 'GHIN has none under the id');
+  assert.deepEqual(w.fake.state.courseAsks, ['course 29422', 'course 29422', 'course 11111']);
+  // Not an id: GHIN is not asked.
+  for (const bad of ['', null, undefined, 'abc', '29422/tee_set_ratings', '../golfers/1', '1234567890']) assert.equal(await ghin.courseById(w.deps.client, bad), null);
+  assert.equal(w.fake.state.courseAsks.length, 3);
+  // A failure is not "no such course".
+  const down = world([], { ghin: { courseStatus: 503, courses: { 29422: COURSE } } });
+  await assert.rejects(ghin.courseById(down.deps.client, 29422), (e) => e.ghin === 'GHIN_ERROR' && e.upstream === 503);
 });

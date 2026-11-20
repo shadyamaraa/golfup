@@ -169,6 +169,15 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
   app; scores posted since are tagged «шинэ», an exceptional score «E», a
   penalty score «P»; an adjusted differential has the adjustment under it
   («−1.0»). Five rows, then «Бүгдийг харах».
+- **Home screen**: first thing under the greeting, as GHIN's own app opens
+  — «Handicap Index»: the index, the low index and the latest score as
+  tiles, then the revision's scores as a board of cells (the day, the
+  score, the differential), two rows of ten, the ones the index counts
+  filled in (`ghinHomeHTML`, `renderHomeGhin`). A score posted since is not
+  on the board — it is not in the index yet — but is the latest-score tile
+  and is counted in the board's heading («+1 шинэ»). «Бүгд» and the board
+  lead to the full list on the profile. Not there for a member with no GHIN
+  number.
 - **A player's details** (Тоглогчид → a name): «GHIN оноо» opens the same
   list for that player. Only an admin's opening it reads GHIN; another
   member sees what is stored, if the record is open to everyone.
@@ -194,6 +203,83 @@ Two different things can be meant:
   is not there, and the index has not moved with it. The revision date on
   the GHIN tile and the dates in the list say how old the copy is. Only
   production access from the USGA (`GHIN_BASE_URL`) makes the two agree.
+
+## Courses — the app's list against GHIN's
+
+A score differential is `(113 / slope) × (score − rating)`: it agrees with
+GHIN's only when it is worked out from GHIN's rating and slope for the tee
+played. And a score is posted under GHIN's own course id and tee-set id,
+not a name. So the app's course list (`src/courses.js`) agrees with the
+course as GHIN keeps it, and carries GHIN's ids.
+
+**As read on 2026-11-20** (staging — a copy of the real data; the two tees
+seen on screens of GHIN's own app were the same there):
+
+| Course | GHIN id | The app's tees | What differed |
+|---|---|---|---|
+| Mt. Bogd Golf & Country Club (`sky`) | 29423 | black 443315, blue 443352, white 443353, gold 443354, redMen 443357, blueLadies 443360, whiteLadies 443361, goldLadies 443362, red 443363 | Blue 71.5 / 130 → **71.4 / 131**, White 69.4 / 128 → **69.4 / 127**, Gold 67.1 / 121 → **67 / 121** — the list now has GHIN's |
+| Chinggis Khaan Golf Course (`chinggis`) | 29422 | white 443288, redMen 443289, whiteLadies 443285, red 443286 | nothing |
+
+Pars and stroke indexes were the same as GHIN's on every tee set. The
+change moves a course handicap by one stroke for some indexes (Blue: about
+one index in six, mostly one more; White: about one in four, one fewer;
+Gold: about one in ten, one fewer) and a differential by a tenth or two.
+
+**Every tee set GHIN rates is offered.** Five were missing and were added
+with GHIN's numbers — Mt. Bogd: Red for men 64.3 / 111, Blue for women
+78.6 / 143, White for women 75.8 / 138; Chinggis Khaan: White for women
+75.2 / 133, Red for men 66.1 / 108. A tee is rated apart for men and for
+women (the women's White at Mt. Bogd is 75.8 / 138, the men's 69.4 / 127),
+so a colour can stand twice in a course's list: the plain name is the men's
+rating, «(L)» the women's — Black, Blue, White, Gold, Red, Blue (L),
+White (L), Gold (L), Red (L). The key `red` has always been the women's
+Red and older records carry it: it reads «Red (L)» now, and the men's Red
+is `redMen`. A key's gender is in its name (`…Ladies`, `…Men`; `teeWanted`
+in `src/ghin-course.js`).
+
+**Games and tournaments keep their own numbers.** A game stores the rating
+and slope it was made with, and so does a tournament (`tn.rating`,
+`tn.slope`, `womenRating`, `womenSlope`), so a change to the list reaches
+only what is made, or has its tee chosen, afterwards. The admin's
+tournament form reads a tee's numbers off the list whenever it is saved; a
+tournament that has begun — live or over — keeps the numbers it is played
+off unless another course or tee is chosen (`keepTnTees` in
+`src/strokeplay.js`), and its information rows show its own numbers.
+
+GHIN side (`functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`):
+
+- `GET /courses/search.json?name=…&offset=0&limit=50` → `{ courses: [{
+  CourseID, CourseName, FacilityName, City, State, Country, CourseStatus, …
+  }] }` — a facility's or a course's name, the world over. A limit is taken
+  only with an offset (400 otherwise — seen on staging).
+- `GET /courses/{id}.json` → `{ Facility, CourseId, CourseName, TeeSets: [{
+  TeeSetRatingId, TeeSetRatingName, Gender, TotalPar, Ratings: [{ RatingType:
+  Total | Front | Back, CourseRating, SlopeRating, BogeyRating }], Holes: [{
+  Number, Par, Allocation, Length }] }] }` — a tee set is rated for men or
+  for women; par and stroke allocation come with each tee set.
+
+**The comparison** is read from your own terminal — it only reads, and
+nothing in it is personal:
+
+```bash
+node scripts/ghin-courses.mjs
+```
+
+For each course of the app it finds the GHIN course (Chinggis Khaan by its
+id, 29422; Mt. Bogd by a search — when a search finds several it lists them
+and asks for `sky=<id>`), prints every tee set GHIN has with its id, rating
+and slope, and what differs from the app (`src/ghin-course.js`,
+`courseDiff`): a tee's rating or slope, a tee GHIN has no rating for, a
+hole's par or stroke index — men's and women's cards apart. An app tee is
+matched to the GHIN tee set of its colour rated for its gender (`gold` is
+men's, `goldLadies` and `red` women's); a rating is not carried from one
+gender to the other. `--find "name"` only searches.
+
+A course that carries `ghinCourseId` is read by it; the script also says
+when a tee's `ghinTeeSetId` is no longer the one GHIN has. Run it again when
+the app moves to production, and whenever a club is re-rated:
+`scripts/test-ghin-course.mjs` holds what GHIN had, so the list and that
+record are changed together.
 
 ## Tying a member to their golfer — the phone trial
 
@@ -353,9 +439,11 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | Which record is a member's, how it reads, what a refusal says, a scoring record's rows (pure) | `src/ghin.js` |
 | The scoring record as a list | `src/ghin-scores.js` |
 | The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`, `loadGhinScores`, `ghinScoresSync`) |
-| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `mountGhinScores`, `ghinAdminHTML`) |
+| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `renderHomeGhin`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
 | A live check from your own terminal | `scripts/ghin-smoke.mjs` |
+| The app's courses against GHIN's, from your own terminal | `scripts/ghin-courses.mjs`, `src/ghin-course.js` (pure), `scripts/test-ghin-course.mjs` |
+| The login prompt the two scripts share | `scripts/ghin-login.mjs` |
 
 ## Setup — once
 
@@ -414,10 +502,8 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   morning. Doing it in the moment they sign in needs the phones of the
   club's golfers kept somewhere between nights — GHIN does not search by
   phone.
-- **Course data** — ratings, slopes, pars and stroke indexes from
-  `courses/search` and `Courses/{id}/TeeSetRatings`. Chinggis Khaan is on
-  GHIN (CourseID 29422) and matched the club's card; its coordinates are
-  wrong there and it has no women's tee set — both for MGA to fix.
+- **A course's ids on production.** They were read on staging; the script
+  is to be run once more when the app reads production.
 - **Posting scores** (`scores/hbh`). Not in the first phase by agreement.
   `rounds/{ghinNumber}/{gameId}` is already kept in a shape that posts
   (`toGhinScorePayload`).

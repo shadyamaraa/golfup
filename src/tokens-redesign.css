@@ -1765,6 +1765,28 @@ div.cp-opt { cursor: default; }
 .gs-tag { flex-shrink: 0; display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 999px; font-size: 0.64rem; font-weight: 700; background: var(--accent-soft); color: var(--gold-dark); vertical-align: 1px; }
 .gs-more { display: block; width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--line2); background: none; font: inherit; font-size: 0.84rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; }
 .gs-empty { padding: 16px; border: 1px dashed var(--border-card); border-radius: 16px; font-size: 0.86rem; color: var(--text-secondary); text-align: center; }
+/* The home screen's board: the scores the index is worked out from, a cell each. */
+.home-ghin { margin-bottom: 18px; }
+.home-ghin .section-head { margin-top: 20px; }
+.home-ghin .stat-tile { min-width: 0; }
+.home-ghin .st-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-board { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 8px; text-decoration: none; }
+.gb-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; min-width: 0;
+  border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border-card);
+}
+.gb-cell.used { background: rgba(221,137,16,0.42); border-color: rgba(221,137,16,0.55); }
+.gb-d { font-size: 0.56rem; font-weight: 700; color: var(--text-muted); letter-spacing: -0.02em; }
+.gb-s { font-size: 0.9rem; font-weight: 800; color: var(--text-primary); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.gb-x { font-size: 0.6rem; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.gb-cell.used .gb-d, .gb-cell.used .gb-x { color: var(--text-primary); opacity: 0.75; }
+@media (max-width: 360px) {
+  .gs-board { gap: 3px; }
+  .gb-d { font-size: 0.5rem; }
+  .gb-s { font-size: 0.78rem; }
+  .gb-x { font-size: 0.54rem; }
+}
 .gs-modal { max-width: 460px; padding: 22px 18px; max-height: 88vh; overflow-y: auto; }
 .gs-modal .modal-title { margin-bottom: 14px; }
 html[data-theme="dark"] .gs-row.used .gs-diff, html[data-theme="dark"] .gs-tag, html[data-theme="dark"] .gs-more { color: var(--gold-light); }
+.profile-page .section-head { scroll-margin-top: 76px; }

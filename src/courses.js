@@ -5,25 +5,36 @@
 // stored under either spelling keep resolving.
 //
 // Sky Resort is Mt. Bogd Golf Club's course (MTBOGD_CONFIG.locationName in
-// src/config.js), so its numbers come straight from the club's official
-// scorecard: par and stroke index per hole, and rating/slope per tee. A
-// location without an entry simply has no per-hole data — the scorer and
-// standings fall back to totals-only display.
+// src/config.js). Par and stroke index per hole are the club's official
+// scorecard's. Rating and slope per tee are GHIN's — the course as the
+// association rated it — so that a differential worked out here is the one
+// GHIN works out: read with scripts/ghin-courses.mjs (2026-11-20; three of
+// Mt. Bogd's tees differed from the card by a tenth or a slope point).
+// `ghinCourseId` and each tee's `ghinTeeSetId` are GHIN's own ids, which a
+// posted score names (docs/ghin.md); scripts/test-ghin-course.mjs holds what
+// GHIN had, so a change here that parts from it is noticed. A location
+// without an entry simply has no per-hole data — the scorer and standings
+// fall back to totals-only display.
 
 export const COURSE_DATA = {
   'Sky Resort Golf Club': {   // Mt. Bogd Golf Club official scorecard
     key: 'sky',
     city: 'Ulaanbaatar',
+    ghinCourseId: '29423',   // Mt. Bogd Golf & Country Club
     par: 72,
     pars: { 1: 5, 2: 4, 3: 4, 4: 3, 5: 5, 6: 4, 7: 4, 8: 3, 9: 4, 10: 4, 11: 4, 12: 5, 13: 3, 14: 4, 15: 4, 16: 4, 17: 3, 18: 5 },
     si:   { 1: 5, 2: 3, 3: 9, 4: 11, 5: 7, 6: 15, 7: 13, 8: 17, 9: 1, 10: 18, 11: 10, 12: 2, 13: 12, 14: 16, 15: 4, 16: 6, 17: 14, 18: 8 },
+    // Every tee set GHIN rates: the men's, then the women's.
     tees: {
-      black: { rating: 73.8, slope: 132 },
-      blue: { rating: 71.5, slope: 130 },
-      white: { rating: 69.4, slope: 128 },
-      gold: { rating: 67.1, slope: 121 },
-      goldLadies: { rating: 72.8, slope: 134 },
-      red: { rating: 69.1, slope: 122 },
+      black: { rating: 73.8, slope: 132, ghinTeeSetId: '443315' },
+      blue: { rating: 71.4, slope: 131, ghinTeeSetId: '443352' },
+      white: { rating: 69.4, slope: 127, ghinTeeSetId: '443353' },
+      gold: { rating: 67, slope: 121, ghinTeeSetId: '443354' },
+      redMen: { rating: 64.3, slope: 111, ghinTeeSetId: '443357' },
+      blueLadies: { rating: 78.6, slope: 143, ghinTeeSetId: '443360' },
+      whiteLadies: { rating: 75.8, slope: 138, ghinTeeSetId: '443361' },
+      goldLadies: { rating: 72.8, slope: 134, ghinTeeSetId: '443362' },
+      red: { rating: 69.1, slope: 122, ghinTeeSetId: '443363' },
     },
   },
   // The course's own scorecard (MGA, mga.mn): out 35, in 37. The pars and
@@ -34,13 +45,16 @@ export const COURSE_DATA = {
   'Chinggis Khaan Golf Course': {
     key: 'chinggis',
     city: 'Ulaanbaatar',
+    ghinCourseId: '29422',
     par: 72,
     pars: { 1: 4, 2: 4, 3: 4, 4: 4, 5: 5, 6: 3, 7: 4, 8: 4, 9: 3, 10: 4, 11: 5, 12: 4, 13: 5, 14: 3, 15: 4, 16: 3, 17: 5, 18: 4 },
     si:   { 1: 9, 2: 1, 3: 11, 4: 7, 5: 15, 6: 13, 7: 3, 8: 5, 9: 17, 10: 6, 11: 16, 12: 8, 13: 12, 14: 14, 15: 4, 16: 10, 17: 18, 18: 2 },
-    // The card rates White for men and Red for ladies.
+    // The card rates White for men and Red for ladies; GHIN rates both for both.
     tees: {
-      white: { rating: 69.2, slope: 119 },
-      red: { rating: 71.2, slope: 127 },
+      white: { rating: 69.2, slope: 119, ghinTeeSetId: '443288' },
+      redMen: { rating: 66.1, slope: 108, ghinTeeSetId: '443289' },
+      whiteLadies: { rating: 75.2, slope: 133, ghinTeeSetId: '443285' },
+      red: { rating: 71.2, slope: 127, ghinTeeSetId: '443286' },
     },
   },
 };
@@ -59,9 +73,13 @@ const COURSE_ALIASES = {
   'Riverside Golf Club': 'Chinggis Khaan Golf Course',
 };
 
+// A tee is rated apart for men and for women, so a colour can stand twice in
+// a course's list: the plain name is the men's rating, «(L)» the women's.
+// The key `red` has always been the women's Red (older records carry it), so
+// it reads «Red (L)» now that the men's Red — `redMen` — is offered too.
 const TEE_LABELS = {
-  black: 'Black', blue: 'Blue', white: 'White', gold: 'Gold',
-  goldLadies: 'Gold (L)', red: 'Red',
+  black: 'Black', blue: 'Blue', white: 'White', gold: 'Gold', redMen: 'Red',
+  blueLadies: 'Blue (L)', whiteLadies: 'White (L)', goldLadies: 'Gold (L)', red: 'Red (L)',
   professional: 'Professional', regular: 'Regular', senior: 'Senior', lady: 'Lady',
 };
 

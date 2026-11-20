@@ -23,6 +23,9 @@
 //              they sign in with? Counts, and who was found.
 //   linkByPhone — an admin ties the members found that way to their golfers.
 //              The server checks the phone again for each before it writes.
+//   findCourses, courseById — a course as GHIN keeps it: tee sets, ratings,
+//              pars. Not a function yet: read from the owner's terminal
+//              (scripts/ghin-courses.mjs) to set the app's course list by.
 //   nightly  — the server on its own, every night: ties the members found by
 //              phone whose name GHIN's also bears out, then reads every
 //              Handicap Index afresh. No admin, no browser.
@@ -830,6 +833,120 @@ async function linkNow(deps, asked, who) {
   return { status: 200, body: { ok: true, env: deps.client.env, linked, refused } };
 }
 
+// ---- Courses ----
+// A course as GHIN keeps it: its tee sets, each rated for men or for women,
+// with the rating and slope a score differential is worked out from, and
+// par and stroke allocation hole by hole. Posting a score names the course
+// and the tee set by GHIN's own ids, and a differential agrees with GHIN's
+// only when it is worked out from GHIN's rating — so the app's own course
+// list is to agree with this (scripts/ghin-courses.mjs, docs/ghin.md).
+// Nothing here is personal.
+
+const ratingOf = (list, type) => {
+  const r = (Array.isArray(list) ? list : []).find(x => x && String(x.RatingType).toLowerCase() === type);
+  if (!r) return null;
+  const out = {};
+  for (const [key, from] of [['rating', 'CourseRating'], ['slope', 'SlopeRating'], ['bogey', 'BogeyRating']]) {
+    const n = numberOr(r[from]);
+    if (n != null) out[key] = n;
+  }
+  return out.rating != null && out.slope != null ? out : null;
+};
+
+/**
+ * One tee set, trimmed: { id, name, gender ('M' | 'F' | ''), par, holes,
+ * yards?, meters?, rating, slope, bogey?, front?, back?, pars, si, lengths }.
+ * `front` / `back` are the nine-hole ratings; `pars`, `si` (stroke
+ * allocation) and `lengths` are keyed by hole number. A tee set with no
+ * eighteen-hole rating is not one a score can be posted from: null.
+ */
+function trimTeeSet(row) {
+  if (!row || typeof row !== 'object' || row.TeeSetRatingId == null) return null;
+  const total = ratingOf(row.Ratings, 'total');
+  if (!total) return null;
+  const g = String(row.Gender || '').toLowerCase();
+  const out = {
+    id: String(row.TeeSetRatingId),
+    name: String(row.TeeSetRatingName || '').trim(),
+    gender: g === 'male' || g === 'm' ? 'M' : g === 'female' || g === 'f' ? 'F' : '',
+    ...total,
+    pars: {}, si: {}, lengths: {},
+  };
+  for (const [key, from] of [['par', 'TotalPar'], ['holes', 'HolesNumber'], ['yards', 'TotalYardage'], ['meters', 'TotalMeters']]) {
+    const n = numberOr(row[from]);
+    if (n != null) out[key] = n;
+  }
+  for (const [key, type] of [['front', 'front'], ['back', 'back']]) {
+    const nine = ratingOf(row.Ratings, type);
+    if (nine) out[key] = nine;
+  }
+  for (const h of Array.isArray(row.Holes) ? row.Holes : []) {
+    const n = h && numberOr(h.Number);
+    if (!n || n < 1 || n > 18 || !Number.isInteger(n)) continue;
+    for (const [key, from] of [['pars', 'Par'], ['si', 'Allocation'], ['lengths', 'Length']]) {
+      const v = numberOr(h[from]);
+      if (v != null) out[key][n] = v;
+    }
+  }
+  return out;
+}
+
+/** courses/{id} as GHIN sends it → { id, name, facility, facilityId?, city, state, status, tees }. */
+function trimCourse(data, id) {
+  const d = data && typeof data === 'object' ? data : {};
+  const facility = d.Facility && typeof d.Facility === 'object' ? d.Facility : {};
+  const out = {
+    id: String(d.CourseId != null ? d.CourseId : id),
+    name: String(d.CourseName || '').trim(),
+    facility: String(facility.FacilityName || '').trim(),
+    city: String(d.CourseCity || '').trim(),
+    state: String(d.CourseState || '').trim(),
+    status: String(d.CourseStatus || '').trim(),
+    tees: (Array.isArray(d.TeeSets) ? d.TeeSets : []).map(trimTeeSet).filter(Boolean),
+  };
+  if (facility.FacilityId != null) out.facilityId = String(facility.FacilityId);
+  return out;
+}
+
+// So many courses of a search are looked at: a name is searched the world over.
+const COURSE_SEARCH_LIMIT = 50;
+
+/**
+ * The courses GHIN has under a name (a facility's or a course's), as a pick
+ * list: [{ id, name, facility, city, state, country, status }].
+ */
+async function findCourses(client, name) {
+  // GHIN takes a limit only with an offset ("Offset and limit must be
+  // provided together or not at all" — staging, 2026-11-20).
+  const data = await client.get('courses/search', { name: String(name || '').trim(), offset: 0, limit: COURSE_SEARCH_LIMIT });
+  return (Array.isArray(data.courses) ? data.courses : [])
+    .filter(c => c && typeof c === 'object' && c.CourseID != null)
+    .map(c => ({
+      id: String(c.CourseID),
+      name: String(c.CourseName || '').trim(),
+      facility: String(c.FacilityName || '').trim(),
+      city: String(c.City || '').trim(),
+      state: String(c.State || '').trim(),
+      country: String(c.Country || '').trim(),
+      status: String(c.CourseStatus || '').trim(),
+    }));
+}
+
+/** One course with its tee sets, by GHIN's course id; null when GHIN has none under it. */
+async function courseById(client, id) {
+  const key = String(id == null ? '' : id).trim();
+  if (!/^\d{1,9}$/.test(key)) return null;
+  let data;
+  try {
+    data = await client.get(`courses/${key}`);
+  } catch (err) {
+    if (err && err.ghin === 'GHIN_ERROR' && err.upstream === 404) return null;
+    throw err;
+  }
+  const course = trimCourse(data, key);
+  return course.name || course.tees.length ? course : null;
+}
+
 // ---- Names ----
 // A member's name and GHIN's name for a golfer are rarely written alike: one
 // in Cyrillic, one in some Latin spelling, in either order. Both are folded
@@ -930,5 +1047,6 @@ module.exports = {
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
   lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS, nameWords, nameAgrees, nightly,
   trimScore, scoresByNumber, scores, SCORES_FRESH_MS,
+  trimTeeSet, trimCourse, findCourses, courseById,
   _resetTokens: () => tokens.clear(),
 };

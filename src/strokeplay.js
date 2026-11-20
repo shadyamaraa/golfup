@@ -157,6 +157,30 @@ export function tnTeeFor(tn, division) {
   return { tee: tn.womenTee ?? null, rating: tn.womenRating, slope: tn.womenSlope };
 }
 
+/**
+ * What a saved tournament form may change of the tees. The form reads a
+ * tee's rating and slope off the course list as it stands today, and the
+ * list's numbers can change (they did once, to agree with GHIN's). A
+ * tournament that has begun — live, or over — keeps the numbers it is being
+ * played off: saving the form for anything else, the status or the round,
+ * must not move a playing handicap in the middle of it. Choosing another
+ * course or another tee takes that one's numbers; a tournament still to
+ * come takes today's.
+ */
+export function keepTnTees(tn, data, started) {
+  const out = { ...data };
+  if (!started || !tn || (data.course ?? '') !== (tn.course ?? '')) return out;
+  if (data.tee && data.tee === tn.tee && tn.rating && tn.slope) {
+    out.rating = tn.rating;
+    out.slope = tn.slope;
+  }
+  if (data.womenTee && data.womenTee === tn.womenTee && tn.womenRating && tn.womenSlope) {
+    out.womenRating = tn.womenRating;
+    out.womenSlope = tn.womenSlope;
+  }
+  return out;
+}
+
 // Fourball: a team's round, derived from its members' own cards. On every hole
 // the team scores its BEST ball — best gross for the gross reading, best net
 // with each member off their FULL playing handicap by stroke index (the same
