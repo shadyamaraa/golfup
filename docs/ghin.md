@@ -209,10 +209,36 @@ Two different things can be meant:
 A score differential is `(113 / slope) × (score − rating)`: it agrees with
 GHIN's only when it is worked out from GHIN's rating and slope for the tee
 played. And a score is posted under GHIN's own course id and tee-set id,
-not a name. So the app's course list (`src/courses.js`, typed from the
-clubs' scorecards) has to agree with the course as GHIN keeps it. It does
-not everywhere: on screens of GHIN's own app Mt. Bogd is Blue 71.4 / 131
-and White 69.4 / 127, where the app has 71.5 / 130 and 69.4 / 128.
+not a name. So the app's course list (`src/courses.js`) agrees with the
+course as GHIN keeps it, and carries GHIN's ids.
+
+**As read on 2026-11-20** (staging — a copy of the real data; the two tees
+seen on screens of GHIN's own app were the same there):
+
+| Course | GHIN id | The app's tees | What differed |
+|---|---|---|---|
+| Mt. Bogd Golf & Country Club (`sky`) | 29423 | black 443315, blue 443352, white 443353, gold 443354, goldLadies 443362, red 443363 | Blue 71.5 / 130 → **71.4 / 131**, White 69.4 / 128 → **69.4 / 127**, Gold 67.1 / 121 → **67 / 121** — the list now has GHIN's |
+| Chinggis Khaan Golf Course (`chinggis`) | 29422 | white 443288, red 443286 | nothing |
+
+Pars and stroke indexes were the same as GHIN's on every tee set. The
+change moves a course handicap by one stroke for some indexes (Blue: about
+one index in six, mostly one more; White: about one in four, one fewer;
+Gold: about one in ten, one fewer) and a differential by a tenth or two.
+
+GHIN rates tee sets the app does not offer yet — Mt. Bogd: Red for men
+64.3 / 111 (443357), Blue for women 78.6 / 143 (443360), White for women
+75.8 / 138 (443361); Chinggis Khaan: White for women 75.2 / 133 (443285),
+Red for men 66.1 / 108 (443289). A women's division playing White is rated
+quite differently from the men's White; offering these is a next step.
+
+**Games and tournaments keep their own numbers.** A game stores the rating
+and slope it was made with, and so does a tournament (`tn.rating`,
+`tn.slope`, `womenRating`, `womenSlope`), so a change to the list reaches
+only what is made, or has its tee chosen, afterwards. The admin's
+tournament form reads a tee's numbers off the list whenever it is saved; a
+tournament that has begun — live or over — keeps the numbers it is played
+off unless another course or tee is chosen (`keepTnTees` in
+`src/strokeplay.js`), and its information rows show its own numbers.
 
 GHIN side (`functions/ghin.js`: `findCourses`, `courseById`, `trimCourse`):
 
@@ -243,10 +269,11 @@ matched to the GHIN tee set of its colour rated for its gender (`gold` is
 men's, `goldLadies` and `red` women's); a rating is not carried from one
 gender to the other. `--find "name"` only searches.
 
-Written from GHIN's spec; the course requests have not been tried with the
-association's login yet. What follows once they are: `src/courses.js` takes
-GHIN's numbers where they differ (a decision — a playing handicap moves with
-them) and carries the GHIN course and tee-set ids a posted score needs.
+A course that carries `ghinCourseId` is read by it; the script also says
+when a tee's `ghinTeeSetId` is no longer the one GHIN has. Run it again when
+the app moves to production, and whenever a club is re-rated:
+`scripts/test-ghin-course.mjs` holds what GHIN had, so the list and that
+record are changed together.
 
 ## Tying a member to their golfer — the phone trial
 
@@ -469,11 +496,10 @@ adjustments stay with the association, in GHIN's own Admin Portal.
   morning. Doing it in the moment they sign in needs the phones of the
   club's golfers kept somewhere between nights — GHIN does not search by
   phone.
-- **Course data in the app.** `scripts/ghin-courses.mjs` reads the courses
-  and says what differs (above); `src/courses.js` has not been changed by it
-  yet. Chinggis Khaan is on GHIN (CourseID 29422) and matched the club's
-  card; its coordinates are wrong there and it has no women's tee set —
-  both for MGA to fix.
+- **The tee sets the app does not offer** (above): men's Red and women's
+  Blue and White at Mt. Bogd, women's White and men's Red at Chinggis Khaan.
+- **A course's ids on production.** They were read on staging; the script
+  is to be run once more when the app reads production.
 - **Posting scores** (`scores/hbh`). Not in the first phase by agreement.
   `rounds/{ghinNumber}/{gameId}` is already kept in a shape that posts
   (`toGhinScorePayload`).

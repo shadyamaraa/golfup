@@ -52,7 +52,9 @@ test('the registry answers by key, name and legacy alias alike', () => {
   for (let h = 10; h <= 18; h++) assert.equal(ck.si[h] % 2, 0);
   assert.deepEqual(courseTees('chinggis').map(x => [x.key, x.rating, x.slope]), [['white', 69.2, 119], ['red', 71.2, 127]]);
   assert.deepEqual(courseTees('sky'), courseTees('Sky Resort Golf Club'));
-  assert.ok(courseTees('sky').some(x => x.key === 'blue' && x.rating === 71.5 && x.slope === 130));
+  assert.ok(courseTees('sky').some(x => x.key === 'blue' && x.rating === 71.4 && x.slope === 131));
+  // A tee as the forms take it: its key, its name, the two numbers — GHIN's id is not part of it.
+  assert.deepEqual(Object.keys(courseTees('sky')[0]), ['key', 'label', 'rating', 'slope']);
   assert.equal(resolveCourse(''), null);
   assert.equal(coursePars('custom-course'), null);
 });

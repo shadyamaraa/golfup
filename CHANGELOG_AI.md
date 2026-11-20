@@ -1,5 +1,27 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Courses: Mt. Bogd's ratings are GHIN's; GHIN's ids on the course list)
+
+The owner ran `scripts/ghin-courses.mjs` against GHIN (staging). Chinggis
+Khaan agreed. Three of Mt. Bogd's tees did not.
+
+- `src/courses.js`: Mt. Bogd Blue 71.5 / 130 → 71.4 / 131, White 69.4 / 128
+  → 69.4 / 127, Gold 67.1 / 121 → 67 / 121. Each course has `ghinCourseId`,
+  each tee `ghinTeeSetId` — what a posted score names. `courseTees()` still
+  gives a tee as key, label, rating, slope.
+- **Nothing already made moves**: games and tournaments store their own
+  rating and slope. The admin's tournament form re-read a tee's numbers
+  from the list on every save — a tournament that has begun now keeps the
+  ones it is played off unless another course or tee is chosen
+  (`keepTnTees`, `src/strokeplay.js`), and its information rows show its
+  own numbers rather than the list's.
+- What it moves, for games and tournaments made from now on: a course
+  handicap by one stroke for some indexes, a differential by a tenth or two.
+- `scripts/test-ghin-course.mjs` holds what GHIN had and fails when the
+  list parts from it; the script reads a course by the id on the list.
+- Not offered yet: five tee sets GHIN rates and the app lacks
+  (`docs/ghin.md`).
+
 ## 2026-11-20 (GHIN: the Handicap Index and the last twenty scores on the home screen)
 
 The index and its scores were two taps away, on the profile. GHIN's own app

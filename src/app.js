@@ -14,7 +14,7 @@ import { tnWriteError, tnAccessBannerHTML } from './tn-errors.js';
 import { mountTnWizard } from './tournament-wizard.js';
 import { renderScorerPage, canScore } from './matchplay-score.js';
 import { GENDERS, isGender, genderKey } from './gender.js';
-import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs, spTodayRound, spFieldComplete } from './strokeplay.js';
+import { COURSES, courseByKey, spEntries, spActive, spHasHcp, canScoreSp, spGroupList, spPlayerGroup, SP_HOLES, tnPars, tnScoring, tnHigherWins, spMetricFor, tnIsTeam, tnTeamSize, tnTeamRank, spFlightMatch, tnHasDivisions, entryDivision, tnTeeFor, spRoundDate, spTeeOffMs, spTodayRound, spFieldComplete , keepTnTees } from './strokeplay.js';
 import { mountSpAdmin, discardSpDraft } from './strokeplay-admin.js';
 import {
   mountTnMedia, discardTnMediaDraft, tnLogo, tnSponsorsHTML, tnHasGuide, openTnGuide, mountSponsorCarousel
@@ -2639,7 +2639,12 @@ function tnInfoHTML(tn) {
   // The same rows for every kind: where, when, the course and its tee, PAR,
   // then what the kind adds — holes and the cut for stroke play, the team
   // shape for a team event — and the size of the field wherever it is kept.
-  const teeText = (x) => (x ? `${x.label} · ${x.rating}/${x.slope}` : '');
+  // The tee's name from the course list, its numbers the tournament's own
+  // where it has them — the ones it is played off, whatever the list says now.
+  const teeText = (x, rating, slope) => {
+    const numbers = rating && slope ? `${rating}/${slope}` : x ? `${x.rating}/${x.slope}` : '';
+    return [x?.label, numbers].filter(Boolean).join(' · ');
+  };
   const tee = courseTees(tn.course).find(x => x.key === tn.tee);
   const womenTee = courseTees(tn.course).find(x => x.key === tn.womenTee);
   const count = tnRosterCount(tn);
@@ -2648,8 +2653,8 @@ function tnInfoHTML(tn) {
     [t('date'), tnDatesText(tn)],
     [t('gameFormat'), tnFormatText(tn)],
     [t('spCourse'), courseByKey(tn.course)?.name || ''],
-    [t('spTee'), teeText(tee) || (tn.rating && tn.slope ? `${tn.rating}/${tn.slope}` : '')],
-    tnHasDivisions(tn) ? [t('spWomenTee'), teeText(womenTee) || t('spWomenTeeSame')] : ['', ''],
+    [t('spTee'), teeText(tee, tn.rating, tn.slope)],
+    tnHasDivisions(tn) ? [t('spWomenTee'), (womenTee ? teeText(womenTee, tn.womenRating, tn.womenSlope) : '') || t('spWomenTeeSame')] : ['', ''],
     [t('tnFPar'), tn.par],
     tnKind(tn) === 'stroke'
       ? [t('tnHoles'), tn.rounds ? tn.rounds * SP_HOLES : null]
@@ -10947,7 +10952,8 @@ async function renderAdminTournamentsTab() {
   el.querySelectorAll('.tn-adm-save').forEach(b => b.onclick = async () => {
     const tn = list.find(x => x.id === b.dataset.tn);
     if (!tn) return;
-    const data = tnAdminReadForm(`tn-e-${tn.id}`);
+    // A tournament that has begun keeps the rating and slope it is played off.
+    const data = keepTnTees(tn, tnAdminReadForm(`tn-e-${tn.id}`), tnStatus(tn) !== 'upcoming');
     if (!data.name) { showToast(t('tnNameRequired'), 'warning'); return; }
     // Partial update on purpose: a whole-record set would silently overwrite
     // whatever a scorer wrote under mp/ or sp/ while this form was open.

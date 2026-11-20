@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DIVISIONS, tnHasDivisions, entryDivisionInfo, entryDivision, tnTeeFor,
+  DIVISIONS, tnHasDivisions, entryDivisionInfo, entryDivision, tnTeeFor, keepTnTees,
   spEntries, drawGroups, spPlayerStats, SP_HOLES
 } from '../src/strokeplay.js';
 import { rankEntries, rankByDivision, winners } from '../src/tournament-sheet.js';
@@ -273,4 +273,55 @@ test('a WHS round posted on the women’s tee carries that tee’s rating and sl
   // scoreDifferential rounds to a tenth, as WHS does.
   assert.equal(rec.differential, Math.round((113 / 134) * (72 - 72.8) * 10) / 10);
   assert.equal(blue.differential, Math.round((113 / 130) * (72 - 71.5) * 10) / 10);
+});
+
+// ---- A tournament in play keeps the numbers it is played off ----
+
+test('keepTnTees: a tournament that has begun keeps its rating and slope when the form is saved for something else', () => {
+  // Set up when the course list had Blue at 71.5 / 130; the list has since moved to GHIN's 71.4 / 131.
+  const tn = { course: 'sky', tee: 'blue', rating: 71.5, slope: 130, womenTee: 'goldLadies', womenRating: 72.9, womenSlope: 133 };
+  const form = { name: 'M Cup', status: 'final', course: 'sky', tee: 'blue', rating: 71.4, slope: 131, womenTee: 'goldLadies', womenRating: 72.8, womenSlope: 134 };
+  const kept = keepTnTees(tn, form, true);
+  assert.deepEqual([kept.rating, kept.slope, kept.womenRating, kept.womenSlope], [71.5, 130, 72.9, 133]);
+  assert.deepEqual([kept.name, kept.status, kept.tee, kept.womenTee], ['M Cup', 'final', 'blue', 'goldLadies'], 'the rest is the form\'s');
+  assert.equal(form.rating, 71.4, 'the form\'s own values are not written over');
+  // Still to come: today's numbers.
+  const coming = keepTnTees(tn, form, false);
+  assert.deepEqual([coming.rating, coming.slope, coming.womenRating, coming.womenSlope], [71.4, 131, 72.8, 134]);
+});
+
+test('keepTnTees: another course or another tee takes that one\'s numbers', () => {
+  const tn = { course: 'sky', tee: 'blue', rating: 71.5, slope: 130, womenTee: 'goldLadies', womenRating: 72.9, womenSlope: 133 };
+  // Another tee for the men; the women's stays.
+  const white = keepTnTees(tn, { course: 'sky', tee: 'white', rating: 69.4, slope: 127, womenTee: 'goldLadies', womenRating: 72.8, womenSlope: 134 }, true);
+  assert.deepEqual([white.rating, white.slope, white.womenRating, white.womenSlope], [69.4, 127, 72.9, 133]);
+  // Another tee for the women; the men's stays.
+  const red = keepTnTees(tn, { course: 'sky', tee: 'blue', rating: 71.4, slope: 131, womenTee: 'red', womenRating: 69.1, womenSlope: 122 }, true);
+  assert.deepEqual([red.rating, red.slope, red.womenRating, red.womenSlope], [71.5, 130, 69.1, 122]);
+  // Another course, the same tee name.
+  const moved = keepTnTees(tn, { course: 'chinggis', tee: 'white', rating: 69.2, slope: 119, womenTee: null, womenRating: null, womenSlope: null }, true);
+  assert.deepEqual([moved.rating, moved.slope, moved.womenRating], [69.2, 119, null]);
+  const sameKey = keepTnTees({ ...tn, tee: 'white', rating: 69.4, slope: 128 }, { course: 'chinggis', tee: 'white', rating: 69.2, slope: 119 }, true);
+  assert.deepEqual([sameKey.rating, sameKey.slope], [69.2, 119]);
+  // The tee taken off: its nulls are written.
+  const off = keepTnTees(tn, { course: 'sky', tee: null, rating: null, slope: null, womenTee: null, womenRating: null, womenSlope: null }, true);
+  assert.deepEqual([off.tee, off.rating, off.slope, off.womenRating], [null, null, null, null]);
+});
+
+test('keepTnTees: a tournament with no numbers of its own has none to keep; a form that says nothing of tees is left alone', () => {
+  // Set up with a tee and no numbers (an older record): the list's are taken.
+  const bare = keepTnTees({ course: 'sky', tee: 'blue' }, { course: 'sky', tee: 'blue', rating: 71.4, slope: 131 }, true);
+  assert.deepEqual([bare.rating, bare.slope], [71.4, 131]);
+  const half = keepTnTees({ course: 'sky', tee: 'blue', rating: 71.5 }, { course: 'sky', tee: 'blue', rating: 71.4, slope: 131 }, true);
+  assert.deepEqual([half.rating, half.slope], [71.4, 131]);
+  // A match play form has no women's tee: nothing is added.
+  const mp = keepTnTees({ course: 'sky', tee: 'blue', rating: 71.5, slope: 130, womenTee: 'red', womenRating: 69.1, womenSlope: 122 }, { name: 'x', course: 'sky', tee: 'blue', rating: 71.4, slope: 131 }, true);
+  assert.deepEqual(mp, { name: 'x', course: 'sky', tee: 'blue', rating: 71.5, slope: 130 });
+  // No tee on the form, as before on the record: the form's nulls stand, as they always did.
+  const none = keepTnTees({ course: 'sky', tee: null, rating: 70, slope: 120 }, { course: 'sky', tee: null, rating: null, slope: null }, true);
+  assert.deepEqual([none.rating, none.slope], [null, null]);
+  // No tournament to keep from; a custom course with no key on either side.
+  assert.deepEqual(keepTnTees(null, { course: 'sky', tee: 'blue', rating: 71.4, slope: 131 }, true), { course: 'sky', tee: 'blue', rating: 71.4, slope: 131 });
+  const custom = keepTnTees({ tee: 'blue', rating: 70, slope: 120 }, { course: '', tee: 'blue', rating: 71.4, slope: 131 }, true);
+  assert.deepEqual([custom.rating, custom.slope], [70, 120]);
 });
