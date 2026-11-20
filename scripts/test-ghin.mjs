@@ -30,7 +30,7 @@ const row = (ghinNo, over = {}) => ({
 
 // A fake GHIN. `golfers` are the rows it holds; everything asked is logged.
 function fakeGhin(golfers = [], over = {}) {
-  const state = { logins: 0, searches: [], listings: [], scoreAsks: [], courseAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
+  const state = { logins: 0, searches: [], listings: [], scoreAsks: [], historyAsks: [], courseAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
   const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -112,6 +112,14 @@ function fakeGhin(golfers = [], over = {}) {
       if (state.courseStatus) return json(state.courseStatus, { error: 'Service Unavailable' });
       const c = (state.courses || {})[crs[1]];
       return c ? json(200, c) : json(404, { error: 'Not Found' });
+    }
+    // A golfer's Handicap Index over the last year: its revisions, the latest first.
+    const hist = u.pathname.match(/\/golfers\/(\d+)\/handicap_history_last_year\.json$/);
+    if (hist) {
+      state.historyAsks.push(hist[1]);
+      if (state.historyStatus === 'down') throw new TypeError('fetch failed');
+      if (state.historyStatus) return json(state.historyStatus, { error: 'AccessDenied: You are not authorized to access this page.' });
+      return json(200, { handicap_revisions: (state.history || {})[hist[1]] || [] });
     }
     // A golfer's scoring record: both lists in one answer, or each on its own.
     const sc = u.pathname.match(/\/golfers\/(\d+)\/(scores|revision_scores|recent_scores)\.json$/);
@@ -1256,4 +1264,92 @@ test('courseById: one course with its tee sets — or none', async () => {
   // A failure is not "no such course".
   const down = world([], { ghin: { courseStatus: 503, courses: { 29422: COURSE } } });
   await assert.rejects(ghin.courseById(down.deps.client, 29422), (e) => e.ghin === 'GHIN_ERROR' && e.upstream === 503);
+});
+
+// ---- The index over time ----
+
+// A revision as GHIN's own example has it.
+const revision = (day, display, over = {}) => ({
+  ID: 123456, GHINNumber: 12345678, Assoc: 188, AssociationName: 'Mongolian Golf Association', Club: 5001, ClubName: 'UB Golf Club',
+  Service: 0, RevDate: `${day}T00:00:00`, Display: display, Value: typeof display === 'number' ? display : Number(display),
+  MessageClubAuthorized: null, LowHIDisplay: 9.7, LowHI: 9.7, Hard_Soft_Cap: 'N', Hard_Cap: 'N', Soft_Cap: 'N',
+  HIBeforeSoftCapDisplay: display, HIBeforeSoftCap: display, HIBeforeHardCapDisplay: display, HIBeforeHardCap: display, Hidden: false,
+  ...over,
+});
+// The latest first, as GHIN lists them: 12.4 in September, 11.9, 11.9 again, 10.8 in November.
+const HISTORY = [revision('2026-11-11', 10.8), revision('2026-10-30', 11.9), revision('2026-10-14', 11.9), revision('2026-09-21', 12.4)];
+const withHistory = (over = {}, w = {}) => scoring({ history: { 12345678: HISTORY, 7900344: [revision('2026-09-09', 20.1)] }, ...over }, w);
+
+test('trimRevision: the day, the index as GHIN displays it, the number behind it — nothing else', () => {
+  assert.deepEqual(ghin.trimRevision(revision('2026-11-11', 10.8)), { date: '2026-11-11', hi: '10.8', value: 10.8 });
+  // A plus handicap: displayed with its plus, the number below zero.
+  assert.deepEqual(ghin.trimRevision(revision('2026-11-11', '+1.2', { Value: -1.2 })), { date: '2026-11-11', hi: '+1.2', value: -1.2 });
+  // No Handicap Index: GHIN's 999 is not a number to plot.
+  assert.deepEqual(ghin.trimRevision(revision('2026-11-11', 'NH', { Value: 999 })), { date: '2026-11-11', hi: 'NH' });
+  assert.deepEqual(ghin.trimRevision({ RevDate: '2026-11-11', Display: ' 8.3 ', Value: '8.3' }), { date: '2026-11-11', hi: '8.3', value: 8.3 });
+  assert.deepEqual(ghin.trimRevision({ RevDate: '2026-11-11', Display: 0, Value: 0 }), { date: '2026-11-11', hi: '0', value: 0 }, 'scratch is an index');
+  for (const bad of [null, 'x', {}, { RevDate: '2026-11-11' }, { Display: 10.8 }, { RevDate: 'soon', Display: 10.8 }, { RevDate: '2026-11-11', Display: '' }]) {
+    assert.equal(ghin.trimRevision(bad), null);
+  }
+});
+
+test('historyList: oldest first, one entry each time the index changed', () => {
+  assert.deepEqual(ghin.historyList({ handicap_revisions: HISTORY }), [
+    { date: '2026-09-21', hi: '12.4', value: 12.4 },
+    { date: '2026-10-14', hi: '11.9', value: 11.9 },          // the day it became 11.9 — not the day it was left so
+    { date: '2026-11-11', hi: '10.8', value: 10.8 },
+  ]);
+  // However GHIN orders them.
+  assert.deepEqual(ghin.historyList({ handicap_revisions: [...HISTORY].reverse() }).map(r => r.date), ['2026-09-21', '2026-10-14', '2026-11-11']);
+  // A day revised twice keeps the one GHIN lists first — its latest; a hidden revision is not shown.
+  const twice = [revision('2026-11-11', 10.8), revision('2026-11-11', 11.0), revision('2026-11-10', 11.5, { Hidden: true }), revision('2026-11-01', 11.9)];
+  assert.deepEqual(ghin.historyList({ handicap_revisions: twice }).map(r => [r.date, r.hi]), [['2026-11-01', '11.9'], ['2026-11-11', '10.8']]);
+  // Back to an earlier value is a change.
+  const back = [revision('2026-11-03', 12), revision('2026-11-02', 11), revision('2026-11-01', 12)];
+  assert.deepEqual(ghin.historyList({ handicap_revisions: back }).map(r => r.hi), ['12', '11', '12']);
+  // The latest are kept when there are too many.
+  const many = Array.from({ length: 200 }, (_, i) => revision(new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10), 20 + (i % 2)));
+  const kept = ghin.historyList({ handicap_revisions: many });
+  assert.deepEqual([kept.length, kept.at(-1).date, kept[0].date], [150, '2026-07-19', '2026-02-20']);
+  for (const none of [null, undefined, {}, { handicap_revisions: 'x' }, { handicap_revisions: [null, {}, 'x'] }]) assert.deepEqual(ghin.historyList(none), []);
+});
+
+test('scores: the index over the last year comes with the scoring record', async () => {
+  const w = withHistory();
+  const rec = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
+  assert.deepEqual(rec.history, [
+    { date: '2026-09-21', hi: '12.4', value: 12.4 }, { date: '2026-10-14', hi: '11.9', value: 11.9 }, { date: '2026-11-11', hi: '10.8', value: 10.8 },
+  ]);
+  assert.deepEqual(w.fake.state.historyAsks, ['12345678'], 'by the number on the member\'s record, once');
+  assert.deepEqual(w.kept.u_a.history, rec.history);
+  assert.equal(rec.revision.length, 2, 'the scores as before');
+  // GHIN has no revisions: no history, not an empty one.
+  const none = scoring();
+  assert.equal('history' in (await ghin.scores(none.deps, { idToken: 'tok-a' })).body.scores, false);
+  // Nothing of the golfer or their club.
+  const told = JSON.stringify([rec, w.kept]);
+  for (const k of ['GHINNumber', 'ClubName', 'AssociationName', 'LowHI', 'Hard_Cap']) assert.equal(told.includes(k), false, k);
+});
+
+test('scores: the history refused — the scores stand without it; GHIN gone quiet — nothing is stored', async () => {
+  const refused = withHistory({ historyStatus: 403 });
+  const out = await ghin.scores(refused.deps, { idToken: 'tok-a' });
+  assert.equal(out.status, 200);
+  assert.deepEqual([out.body.scores.revision.length, 'history' in out.body.scores, 'history' in refused.kept.u_a], [2, false, false]);
+  const down = withHistory({ historyStatus: 'down' });
+  assert.equal(codeOf(await ghin.scores(down.deps, { idToken: 'tok-a' })), 'GHIN_UNREACHABLE');
+  assert.deepEqual(down.kept, {});
+});
+
+test('scores: a record kept back keeps its history back too — an admin is still answered with it', async () => {
+  const w = withHistory();
+  const mine = (await ghin.scores(w.deps, { idToken: 'tok-b' })).body.scores;      // club only, the number only typed
+  assert.deepEqual([mine.withheld, 'history' in mine, 'history' in w.kept.u_b], [true, false, false]);
+  assert.equal(JSON.stringify([mine, w.kept]).includes('20.1'), false);
+  const admin = (await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' })).body.scores;
+  assert.deepEqual([admin.history.map(r => r.hi), 'history' in w.kept.u_b], [['20.1'], false]);
+  // Tied by the server: theirs.
+  const tied = withHistory({}, TIED);
+  assert.deepEqual((await ghin.scores(tied.deps, { idToken: 'tok-b' })).body.scores.history.map(r => r.hi), ['20.1']);
+  assert.deepEqual(tied.kept.u_b.history.map(r => r.hi), ['20.1']);
 });

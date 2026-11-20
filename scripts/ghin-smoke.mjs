@@ -16,7 +16,9 @@
 // so the mapping can be checked without anyone's personal details leaving
 // your screen. Then the golfer's scoring record as the ghinScores function
 // would keep it: how many scores, how many count, the newest three, and
-// which request GHIN answered — or what it said in refusing.
+// which request GHIN answered — or what it said in refusing — and the
+// Handicap Index over the last year: how many times it changed, and the
+// latest few.
 
 import { createRequire } from 'node:module';
 import { askLogin, failureText } from './ghin-login.mjs';
@@ -72,6 +74,8 @@ try {
   // The scoring record, the way the ghinScores function reads it.
   const asked = [];
   const scoreFields = new Set();
+  const revisionFields = new Set();
+  let revisionRows = 0;
   const scoreClient = {
     env: inner.env,
     get: async (path, query) => {
@@ -80,6 +84,10 @@ try {
         asked.push(`${path}: OK`);
         for (const part of [data, data.revision_scores, data.recent_scores]) {
           for (const row of Array.isArray(part?.scores) ? part.scores : []) Object.keys(row || {}).forEach(k => scoreFields.add(k));
+        }
+        for (const row of Array.isArray(data.handicap_revisions) ? data.handicap_revisions : []) {
+          revisionRows++;
+          Object.keys(row || {}).forEach(k => revisionFields.add(k));
         }
         return data;
       } catch (err) {
@@ -100,12 +108,19 @@ try {
       for (const s of [...rec.recent, ...rec.revision].slice(0, 3)) {
         console.log(`    ${s.date}  ${String(s.score).padStart(3)}  ${s.diff == null ? '   —' : s.diff.toFixed(1).padStart(5)}${s.used ? ' *' : '  '}  ${s.course || ''}`);
       }
+      // The Handicap Index over the last year: each day it changed.
+      const h = rec.history || [];
+      const values = h.map(r => r.value).filter(v => typeof v === 'number');
+      console.log(`  index over the last year: ${h.length ? `${h.length} change(s), ${h[0].date} … ${h.at(-1).date}${values.length ? `, lowest ${Math.min(...values)}, highest ${Math.max(...values)}` : ''}` : 'none read'}`);
+      for (const r of h.slice(-6)) console.log(`    ${r.date}  ${r.hi}`);
     } catch (err) {
       console.log(`\n${n}: the scoring record could not be read (${err.ghin || err.message}).`);
     }
   }
   if (asked.length) console.log(`\nScore requests:\n  ${asked.join('\n  ')}`);
   console.log(`Score fields GHIN sent (names only): ${[...scoreFields].sort().join(', ') || '—'}`);
+  console.log(`Index revisions GHIN sent: ${revisionRows}`);
+  console.log(`Revision fields GHIN sent (names only): ${[...revisionFields].sort().join(', ') || '—'}`);
 } catch (err) {
   console.error('\nFailed:', failureText(err));
   process.exit(1);

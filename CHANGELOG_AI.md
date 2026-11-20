@@ -1,5 +1,22 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: the Handicap Index over the last year — read, not shown yet)
+
+The first half of a chart of how a member's index moved.
+
+- `functions/ghin.js`: the scoring record now carries `history` — the index
+  over the last year, oldest first, one entry each time it changed
+  (`trimRevision`, `historyList`, `historyByNumber`;
+  `golfers/{n}/handicap_history_last_year`). One more request when the
+  record is read, optional (the scores stand without it where GHIN refuses
+  it), and kept back with the scores when they are. Same function
+  (`ghinScores`), same node, same rules — **the function is to be deployed
+  again** before the app can show it.
+- `scripts/ghin-smoke.mjs` reads it and says whether GHIN answered. Written
+  from GHIN's spec; untried with the association's login.
+- Nothing in the app shows it yet: where and how is to be agreed first.
+- Tests: `scripts/test-ghin.mjs` (82).
+
 ## 2026-11-20 (Profile: Course Handicap from each tee; the average, best and worst score)
 
 Two of the things GHIN's own app does that needed nothing new from GHIN.

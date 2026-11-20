@@ -113,6 +113,7 @@ night's revision apart (**recent scores**) until the next one takes them in.
   revision: [],   // the revision's scores, newest first (25 at most)
   recent: [],     // posted since — not in the index yet (20 at most)
   stats,          // { count, low, high, average } — GHIN's own; absent when it has none
+  history,        // the Handicap Index over the last year, oldest first; absent when not read
   message,        // what GHIN says when it will not show the record; absent otherwise
   withheld        // true: the scores were kept back (below); absent otherwise
 }
@@ -141,6 +142,19 @@ then optional). Tried against staging from the owner's terminal
 association's login — twenty revision scores, eight counted, the record
 shown to everyone. The same golfer in the GHIN app had two newer rounds and
 another index: staging's copy ended the day before them.
+
+**The index over the last year** rides with the scoring record:
+`history: [{ date, hi, value }]`, oldest first, one entry each time the
+index changed — the day it became that value (`hi` as GHIN displays it,
+`value` the number behind it, absent for «NH»). GHIN side:
+`GET /golfers/{number}/handicap_history_last_year.json` → `{
+handicap_revisions: [{ RevDate, Display, Value, Hidden, … }] }`; a day
+revised twice keeps its latest, a revision that left the index as it was is
+passed over, a hidden one is not shown. It is one more request when the
+record is read, and optional: where GHIN refuses it the scores stand
+without it. It is kept back with the scores when they are. Written from
+GHIN's spec — `scripts/ghin-smoke.mjs` reads it too and says whether GHIN
+answered. **Not shown in the app yet.**
 
 Who reads it (database rules): the member their own, an admin anyone's,
 another member only a record whose `visibility` is `everyone` — GHIN lets a

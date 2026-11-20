@@ -438,11 +438,15 @@ const scoreList = (part, max) => {
  *     revision,     // the scores of the current revision, newest first
  *     recent,       // posted since — not in the Handicap Index yet
  *     stats?,       // { count, low, high, average } — GHIN's own
+ *     history?,     // the Handicap Index over the last year, oldest first:
+ *                   // [{ date, hi, value? }] — one entry each time it changed
  *     message?,     // what GHIN says when it will not show the record
  *     withheld? }   // true: the scores are kept back — see `scores`
  *
  * One request has both lists; where GHIN refuses that one, the two lists are
- * asked for on their own (the scores posted since are then optional).
+ * asked for on their own (the scores posted since are then optional). The
+ * index over the last year is one more request, and optional too: where
+ * GHIN refuses it the scores stand without it.
  */
 async function scoresByNumber(client, number, at) {
   const query = { source_golfer_id: number };
@@ -480,7 +484,62 @@ async function scoresByNumber(client, number, at) {
   }
   const message = String(data.scoring_record_visibility_message || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   if (message) record.message = message;
+  try {
+    const history = await historyByNumber(client, number);
+    if (history.length) record.history = history;
+  } catch (err) {
+    if (!err || err.ghin !== 'GHIN_ERROR') throw err;
+  }
   return record;
+}
+
+// ---- The index over time ----
+// GHIN keeps a revision each time it works a golfer's Handicap Index out.
+// What the app shows is how the index moved: the day it became each value.
+
+// A year of changes and to spare; the oldest are let go.
+const MAX_HISTORY = 150;
+
+/**
+ * One revision as GHIN sends it → { date, hi, value? }: the day, the index
+ * as GHIN displays it ('12.3', '+1.2', 'NH'), and the number behind it — a
+ * plus handicap below zero, absent when there is no index. Nothing of the
+ * golfer or their club. A row with no day or no index is not a revision.
+ */
+function trimRevision(row) {
+  if (!row || typeof row !== 'object') return null;
+  const date = /^\d{4}-\d{2}-\d{2}/.test(String(row.RevDate || '')) ? String(row.RevDate).slice(0, 10) : null;
+  const hi = row.Display != null && row.Display !== '' ? String(row.Display).trim() : '';
+  if (!date || !hi) return null;
+  const out = { date, hi };
+  // GHIN writes "no Handicap Index" as 999.
+  const value = numberOr(row.Value);
+  if (value != null && value < 99) out.value = value;
+  return out;
+}
+
+/**
+ * The revisions of an answer, oldest first, one for each time the index
+ * changed: a day revised twice keeps its last, and a revision that left the
+ * index as it was is passed over.
+ */
+function historyList(data) {
+  const rows = Array.isArray(data && data.handicap_revisions) ? data.handicap_revisions : [];
+  const byDay = new Map();
+  for (const row of rows) {
+    if (row && row.Hidden === true) continue;
+    const r = trimRevision(row);
+    if (r && !byDay.has(r.date)) byDay.set(r.date, r);     // GHIN lists the latest first
+  }
+  const days = [...byDay.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const out = [];
+  for (const r of days) if (!out.length || out[out.length - 1].hi !== r.hi) out.push(r);
+  return out.slice(-MAX_HISTORY);
+}
+
+/** A golfer's Handicap Index over the last year: [{ date, hi, value? }], oldest first. */
+async function historyByNumber(client, number) {
+  return historyList(await client.get(`golfers/${number}/handicap_history_last_year`));
 }
 
 /**
@@ -494,7 +553,8 @@ async function scoresByNumber(client, number, at) {
  * a record is stored, and given to the member, only where the server itself
  * tied the member to that golfer (ghinLink/{memberId}, on the proof of the
  * phone they sign in with). Otherwise the scores are kept back: what is
- * stored and answered has none, and says so (`withheld`). An admin — who
+ * stored and answered has none — nor the figures and the history made of
+ * them — and says so (`withheld`). An admin — who
  * reads for the association — is still answered in full, but what is stored
  * is the same record without scores, so the member cannot read it there.
  * A record GHIN shows to everyone needs no proof.
@@ -526,7 +586,7 @@ async function scores(deps, body) {
     await deps.saveScores(target, record);
     return { status: 200, body: { ok: true, scores: record } };
   }
-  const { stats, ...rest } = record;   // eslint-disable-line no-unused-vars
+  const { stats, history, ...rest } = record;   // eslint-disable-line no-unused-vars
   const kept = { ...rest, revision: [], recent: [], withheld: true };
   await deps.saveScores(target, kept);
   return { status: 200, body: { ok: true, scores: admin ? record : kept } };
@@ -1046,7 +1106,7 @@ module.exports = {
   UAT_BASE, TOKEN_TTL_MS, LOOKUPS_PER_HOUR, BATCH, PER_PAGE,
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
   lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS, nameWords, nameAgrees, nightly,
-  trimScore, scoresByNumber, scores, SCORES_FRESH_MS,
+  trimScore, scoresByNumber, scores, SCORES_FRESH_MS, trimRevision, historyList, historyByNumber,
   trimTeeSet, trimCourse, findCourses, courseById,
   _resetTokens: () => tokens.clear(),
 };
