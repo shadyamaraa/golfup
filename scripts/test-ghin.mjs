@@ -30,7 +30,7 @@ const row = (ghinNo, over = {}) => ({
 
 // A fake GHIN. `golfers` are the rows it holds; everything asked is logged.
 function fakeGhin(golfers = [], over = {}) {
-  const state = { logins: 0, searches: [], listings: [], asked: [], tokens: new Set(), n: 0, ...over };
+  const state = { logins: 0, searches: [], listings: [], scoreAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
   const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -96,6 +96,23 @@ function fakeGhin(golfers = [], over = {}) {
       const out = all.slice((page - 1) * per, page * per).map(({ _for, ...g }) => g);
       return json(200, { golfers: out });
     }
+    // A golfer's scoring record: both lists in one answer, or each on its own.
+    const sc = u.pathname.match(/\/golfers\/(\d+)\/(scores|revision_scores|recent_scores)\.json$/);
+    if (sc) {
+      state.scoreAsks.push(`${sc[2]} ${sc[1]} for ${u.searchParams.get('source_golfer_id')}`);
+      if (state.scoreStatus?.[sc[2]] === 'down') throw new TypeError('fetch failed');
+      if (state.scoreStatus?.[sc[2]]) return json(state.scoreStatus[sc[2]], { error: 'AccessDenied: You are not authorized to access this page.' });
+      const rec = (state.scoring || {})[sc[1]] || {};
+      const vis = { scoring_record_visibility: rec.visibility, scoring_record_visibility_message: rec.message || '' };
+      if (sc[2] === 'scores') {
+        return json(200, {
+          recent_scores: { scores: rec.recent || [] }, revision_scores: { scores: rec.revision || [] },
+          '9_hole_score': { scores: [] }, score_history_stats: rec.stats, ...vis,
+        });
+      }
+      if (sc[2] === 'revision_scores') return json(200, { total_differential: 31.8, scores: rec.revision || [], ...vis });
+      return json(200, { scores: rec.recent || [], ...vis });
+    }
     return json(404, {});
   };
   return { state, fetch };
@@ -122,6 +139,8 @@ function world(golfers = [], over = {}) {
   const secrets = {};
   const saved = {};
   const links = {};
+  const kept = {};      // ghinScores/*
+  const ties = over.ties || {};   // ghinLink/* — how the server tied a member to a golfer
   const tokens = { 'tok-a': { memberId: 'u_a' }, 'tok-b': { memberId: 'u_b' }, 'tok-adm': { memberId: 'u_adm' }, 'tok-anon': {} };
   const deps = {
     client,
@@ -134,8 +153,11 @@ function world(golfers = [], over = {}) {
     saveGhin: async (id, record) => { saved[id] = record; },
     saveAllGhin: async (records) => { Object.assign(saved, records); },
     saveLink: async (id, tie) => { links[id] = tie; },
+    loadLink: async (id) => ties[id] || null,
+    loadScores: async (id) => kept[id] || null,
+    saveScores: async (id, record) => { kept[id] = record; },
   };
-  return { fake, deps, users, secrets, saved, links, tick };
+  return { fake, deps, users, secrets, saved, links, kept, ties, tick };
 }
 const codeOf = (out) => out.body.error?.code;
 const PII = ['email', 'phone_number', 'date_of_birth', 'street_1', 'city', 'zip', 'first_name', 'last_name'];
@@ -868,4 +890,266 @@ test('an admin\'s tie still carries the admin; the night\'s does not', async () 
   await ghin.linkByPhone(w.deps, { idToken: 'tok-adm', links: [{ memberId: 'n_one', number: '67890123' }] });
   assert.deepEqual(w.links.n_one.link, { number: '67890123', by: 'phone', at: NOW, admin: 'u_adm' });
   assert.equal('auto' in w.links.n_one.link, false);
+});
+
+// ---- Scores ----
+
+// One score as GHIN's own example has it.
+const scoreRow = (played, over = {}) => ({
+  id: 601, order_number: 256, score_day_order: 43, gender: 'M', status: 'Validated', is_manual: false,
+  number_of_holes: 18, number_of_played_holes: 18, golfer_id: '12345678', course_id: '9085',
+  course_name: 'Championship', facility_name: 'Chinggis Khaan Golf Club', played_at: played,
+  adjusted_gross_score: 88, front9_adjusted: 45, back9_adjusted: 43, posted_on_home_course: true,
+  differential: 15.4, unadjusted_differential: 15.4, score_type: 'H', tee_name: 'Blue', tee_set_id: '341107',
+  course_rating: 71.2, slope_rating: 128, penalty: false, score_type_display_full: 'Home', score_type_display_short: 'H',
+  posted_at: '2026-11-02T11:46:43.342Z', course_display_value: 'Chinggis Khaan Golf Club - Championship',
+  ghin_course_name_display: 'Chinggis Khaan Golf Club - Championship / Blue', used: false, revision: true, pcc: 0,
+  adjustments: [], hole_details: [{ hole_number: 1, raw_score: 5 }], exceptional: false, short_course: false,
+  ...over,
+});
+const SCORING = {
+  12345678: {
+    visibility: 'everyone',
+    revision: [scoreRow('2026-11-01', { id: 3, used: true }), scoreRow('2026-10-20', { id: 2, adjusted_gross_score: 94, differential: 20.7 })],
+    recent: [scoreRow('2026-11-14', { id: 4, adjusted_gross_score: 85, differential: 12.8, revision: false })],
+    stats: { total_count: 3, lowest_score: 85, highest_score: 94, average: 89 },
+  },
+  // Kept to the golfer's club.
+  7900344: {
+    visibility: 'club_only',
+    revision: [scoreRow('2026-09-09', { id: 9, golfer_id: '7900344', adjusted_gross_score: 97, course_display_value: 'Mt Bogd Golf Club' })],
+    recent: [scoreRow('2026-11-15', { id: 10, golfer_id: '7900344', adjusted_gross_score: 99, course_display_value: 'Mt Bogd Golf Club' })],
+    stats: { total_count: 2, lowest_score: 97, highest_score: 99, average: 98 },
+  },
+  23456789: { visibility: 'club_only', revision: [scoreRow('2026-08-08', { id: 11, golfer_id: '23456789' })], recent: [] },
+};
+const scoring = (over = {}, w = {}) => world([row(12345678), row(7900344)], { ...w, ghin: { scoring: SCORING, ...over } });
+// The server tied u_b to golfer 7900344 by the phone they sign in with.
+const TIED = { ties: { u_b: { number: '7900344', by: 'phone', at: 1, auto: true } } };
+
+test('trimScore: when, where, the score, the differential, whether it counts — and nothing else', () => {
+  assert.deepEqual(ghin.trimScore(scoreRow('2026-11-01', { used: true })), {
+    date: '2026-11-01', score: 88, used: true, id: '601', diff: 15.4, holes: 18,
+    course: 'Chinggis Khaan Golf Club - Championship', tee: 'Blue', rating: 71.2, slope: 128, type: 'H',
+  });
+  // What marks a score out is kept only when it is so.
+  const marked = ghin.trimScore(scoreRow('2026-11-01', { pcc: 1, exceptional: true, penalty: true, score_type_display_short: 'C', number_of_holes: 9 }));
+  assert.deepEqual([marked.pcc, marked.exceptional, marked.penalty, marked.type, marked.holes], [1, true, true, 'C', 9]);
+  // Numbers sent as text; a date with a time; a course with no display value.
+  const loose = ghin.trimScore(scoreRow('2026-11-01T00:00:00Z', { adjusted_gross_score: '91', differential: '-1.2', course_display_value: null }));
+  assert.deepEqual([loose.date, loose.score, loose.diff, loose.course], ['2026-11-01', 91, -1.2, 'Chinggis Khaan Golf Club - Championship']);
+  // A differential GHIN adjusted: what it was before is kept beside it — only then.
+  const adjusted = ghin.trimScore(scoreRow('2026-11-01', { differential: 7.4, unadjusted_differential: 8.4 }));
+  assert.deepEqual([adjusted.diff, adjusted.rawDiff], [7.4, 8.4]);
+  assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { differential: null, unadjusted_differential: 8.4 })), false);
+  assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { unadjusted_differential: undefined })), false);
+  // Nine holes: the eighteen-hole differential GHIN made of it, where it sends one.
+  const nine = { number_of_holes: 9, number_of_played_holes: 9, adjusted_gross_score: 44, differential: 6.1, unadjusted_differential: 6.1 };
+  const scaledUp = ghin.trimScore(scoreRow('2026-11-01', { ...nine, scaled_up_differential: 13.9, adjusted_scaled_up_differential: 12.9 }));
+  assert.deepEqual([scaledUp.score, scaledUp.holes, scaledUp.diff, scaledUp.rawDiff], [44, 9, 12.9, 13.9]);
+  const unscaled = ghin.trimScore(scoreRow('2026-11-01', { ...nine, scaled_up_differential: null, adjusted_scaled_up_differential: null }));
+  assert.deepEqual([unscaled.diff, 'rawDiff' in unscaled], [6.1, false]);
+  // … and only for nine holes: an eighteen-hole score's differential is its own.
+  const full = ghin.trimScore(scoreRow('2026-11-01', { scaled_up_differential: 30.1, adjusted_scaled_up_differential: 29.1 }));
+  assert.deepEqual([full.diff, 'rawDiff' in full], [15.4, false]);
+  // A field GHIN left out is left out; `used` is only what GHIN says is.
+  const bare = ghin.trimScore({ played_at: '2026-11-01', adjusted_gross_score: 90, used: 'true' });
+  assert.deepEqual(bare, { date: '2026-11-01', score: 90, used: false });
+  // Not a score.
+  for (const bad of [null, 'x', {}, { played_at: '2026-11-01' }, { adjusted_gross_score: 90 }, { played_at: 'soon', adjusted_gross_score: 90 }, { played_at: '2026-11-01', adjusted_gross_score: '' }]) {
+    assert.equal(ghin.trimScore(bad), null);
+  }
+});
+
+test('scores: a member\'s own scoring record — one request, by the number on their record', async () => {
+  const w = scoring();
+  const out = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  assert.equal(out.status, 200);
+  const rec = out.body.scores;
+  assert.deepEqual(w.fake.state.scoreAsks, ['scores 12345678 for 12345678']);
+  assert.deepEqual({ number: rec.number, env: rec.env, syncedAt: rec.syncedAt, visibility: rec.visibility }, { number: '12345678', env: 'staging', syncedAt: NOW, visibility: 'everyone' });
+  assert.deepEqual(rec.revision.map(x => [x.date, x.score, x.diff, x.used]), [['2026-11-01', 88, 15.4, true], ['2026-10-20', 94, 20.7, false]]);
+  assert.deepEqual(rec.recent.map(x => [x.date, x.score, x.diff]), [['2026-11-14', 85, 12.8]]);
+  assert.deepEqual(rec.stats, { count: 3, low: 85, high: 94, average: 89 });
+  assert.equal('message' in rec, false);
+  assert.deepEqual(w.kept, { u_a: rec }, 'stored as answered');
+});
+
+test('scores: the number a caller sends is not the one read; another member\'s is an admin\'s', async () => {
+  const w = scoring();
+  await ghin.scores(w.deps, { idToken: 'tok-a', ghin: '7900344', number: '7900344' });
+  assert.equal(w.kept.u_a.number, '12345678');
+  const no = await ghin.scores(w.deps, { idToken: 'tok-a', memberId: 'u_b' });
+  assert.equal(no.status, 403);
+  assert.equal(codeOf(no), 'FORBIDDEN');
+  assert.equal('u_b' in w.kept, false);
+  const yes = await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' });
+  assert.equal(yes.status, 200);
+  assert.equal(w.kept.u_b.number, '7900344');
+  assert.equal(w.fake.state.scoreAsks.at(-1), 'scores 7900344 for 7900344');
+});
+
+test('scores: who it cannot be done for', async () => {
+  const w = scoring();
+  assert.equal(codeOf(await ghin.scores(w.deps, {})), 'UNAUTHENTICATED');
+  assert.equal(codeOf(await ghin.scores(w.deps, { idToken: 'tok-anon' })), 'UNAUTHENTICATED');
+  assert.equal(codeOf(await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_gone' })), 'USER_NOT_FOUND');
+  assert.equal(codeOf(await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'ghinScores/u_a' })), 'USER_NOT_FOUND');
+  assert.equal(codeOf(await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_n' })), 'NO_GHIN');
+  assert.deepEqual(w.kept, {});
+  assert.deepEqual(w.fake.state.scoreAsks, []);
+});
+
+test('scores: GHIN shows a record to everyone only when it says so', async () => {
+  const w = scoring();
+  await ghin.scores(w.deps, { idToken: 'tok-b' });
+  assert.equal(w.kept.u_b.visibility, 'club', 'club_only');
+  const none = world([row(12345678)], { ghin: { scoring: { 12345678: { revision: [scoreRow('2026-11-01')] } } } });
+  await ghin.scores(none.deps, { idToken: 'tok-a' });
+  assert.equal(none.kept.u_a.visibility, 'club', 'not said');
+  // A record GHIN will not show: no scores, and its own words why.
+  const zeroed = { total_count: 0, lowest_score: 0, highest_score: 0, average: 0 };
+  const hidden = world([row(12345678)], { ghin: { scoring: { 12345678: { visibility: 'club_only', stats: zeroed, message: '  This golfer\'s scoring record\n is private. ' } } } });
+  const out = await ghin.scores(hidden.deps, { idToken: 'tok-a' });
+  assert.deepEqual([out.body.scores.revision, out.body.scores.recent, out.body.scores.message], [[], [], 'This golfer\'s scoring record is private.']);
+  assert.equal('stats' in out.body.scores, false);
+});
+
+test('scores: a record kept to the golfer\'s club is the member\'s only once the server has tied them to that golfer', async () => {
+  const none = (rec) => assert.deepEqual([rec.revision, rec.recent, rec.withheld, rec.visibility, 'stats' in rec], [[], [], true, 'club', false]);
+  // The number is only typed on the member's record: nothing of the scores is answered or stored.
+  const w = scoring();
+  const out = await ghin.scores(w.deps, { idToken: 'tok-b' });
+  assert.equal(out.status, 200);
+  none(out.body.scores);
+  none(w.kept.u_b);
+  assert.deepEqual([out.body.scores.number, out.body.scores.env, out.body.scores.syncedAt], ['7900344', 'staging', NOW]);
+  const told = JSON.stringify([out.body, w.kept]);
+  for (const leak of ['Mt Bogd', '97', '99', '2026-09-09', '2026-11-15']) assert.equal(told.includes(leak), false, leak);
+  // Tied by the server: the record is theirs.
+  const tied = scoring({}, TIED);
+  const mine = (await ghin.scores(tied.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([mine.revision.map(x => x.score), mine.recent.map(x => x.score), 'withheld' in mine, mine.visibility], [[97], [99], false, 'club']);
+  assert.deepEqual(mine.stats, { count: 2, low: 97, high: 99, average: 98 });
+  assert.deepEqual(tied.kept.u_b, mine);
+  // … however the tie spells the number; a tie to another golfer proves nothing about this one.
+  const spelled = scoring({}, { ties: { u_b: { number: '07900344', by: 'phone', at: 1 } } });
+  assert.equal((await ghin.scores(spelled.deps, { idToken: 'tok-b' })).body.scores.revision.length, 1);
+  for (const tie of [{ number: '12345678', by: 'phone', at: 1 }, { by: 'phone', at: 1 }, 'yes', true]) {
+    const other = scoring({}, { ties: { u_b: tie } });
+    none((await ghin.scores(other.deps, { idToken: 'tok-b' })).body.scores);
+  }
+});
+
+test('scores: a member who types another golfer\'s number on their record learns nothing of a record kept to the club', async () => {
+  // u_a is tied to their own golfer, then puts u_b's number on their record.
+  const w = scoring({}, { ties: { u_a: { number: '12345678', by: 'phone', at: 1 }, ...TIED.ties } });
+  w.users.u_a.ghinNumber = '7900344';
+  const out = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  assert.equal(out.body.scores.withheld, true);
+  assert.deepEqual([out.body.scores.revision, out.body.scores.recent], [[], []]);
+  assert.equal(JSON.stringify([out.body, w.kept]).includes('Mt Bogd'), false);
+  // A record GHIN shows to everyone is anyone's to see — there, and so here.
+  w.users.u_b.ghinNumber = '12345678';
+  const open = (await ghin.scores(w.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([open.revision.length, 'withheld' in open], [2, false]);
+});
+
+test('scores: an admin is answered in full — what is stored for the member still has no scores', async () => {
+  const w = scoring();
+  const full = (await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' })).body.scores;
+  assert.deepEqual([full.revision.map(x => x.score), 'withheld' in full], [[97], false]);
+  assert.deepEqual([w.kept.u_b.revision, w.kept.u_b.recent, w.kept.u_b.withheld, 'stats' in w.kept.u_b], [[], [], true, false]);
+  // What was kept back is no answer for an admin: GHIN is asked again, at once.
+  const again = (await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' })).body.scores;
+  assert.equal(again.revision.length, 1);
+  assert.equal(w.fake.state.scoreAsks.length, 2);
+  // The member, a moment later, is given what is stored — and GHIN is not asked.
+  const theirs = (await ghin.scores(w.deps, { idToken: 'tok-b' })).body.scores;
+  assert.deepEqual([theirs.revision, theirs.withheld], [[], true]);
+  assert.equal(w.fake.state.scoreAsks.length, 2);
+  // An admin's own typed number: answered, not stored.
+  const own = (await ghin.scores(w.deps, { idToken: 'tok-adm' })).body.scores;
+  assert.deepEqual([own.revision.length, w.kept.u_adm.revision, w.kept.u_adm.withheld], [1, [], true]);
+});
+
+test('scores: newest first, a revision and a few to spare', async () => {
+  const day = (n) => `2026-10-${String(n).padStart(2, '0')}`;
+  const many = Array.from({ length: 30 }, (_, i) => scoreRow(day(i + 1), { id: i + 1 }));
+  const sameDay = [scoreRow('2026-11-05', { id: 'am' }), scoreRow('2026-11-05', { id: 'pm' })];
+  const w = world([row(12345678)], { ghin: { scoring: { 12345678: { visibility: 'everyone', revision: [...sameDay, ...many, { junk: true }, null], recent: many } } } });
+  const rec = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
+  assert.equal(rec.revision.length, 25);
+  assert.deepEqual(rec.revision.slice(0, 4).map(x => x.id), ['am', 'pm', '30', '29'], 'two on a day stay as GHIN had them');
+  assert.equal(rec.recent.length, 20);
+  assert.equal(rec.recent[0].date, '2026-10-30');
+});
+
+test('scores: an answer a moment old stands — GHIN is not asked again', async () => {
+  const w = scoring();
+  const first = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
+  w.tick(ghin.SCORES_FRESH_MS - 1);
+  const again = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  assert.deepEqual(again.body, { ok: true, scores: first });
+  assert.equal(w.fake.state.scoreAsks.length, 1);
+  w.tick(1);
+  const later = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
+  assert.equal(w.fake.state.scoreAsks.length, 2);
+  assert.equal(later.syncedAt, NOW + ghin.SCORES_FRESH_MS);
+  // Kept for another number (the member's was corrected), from another
+  // environment, or stamped in the future: not theirs to be given.
+  for (const stale of [{ number: '7900344' }, { env: 'production' }, { syncedAt: NOW + 2 * ghin.SCORES_FRESH_MS }, { syncedAt: 'x' }]) {
+    const asks = w.fake.state.scoreAsks.length;
+    w.kept.u_a = { ...later, ...stale };
+    await ghin.scores(w.deps, { idToken: 'tok-a' });
+    assert.equal(w.fake.state.scoreAsks.length, asks + 1, JSON.stringify(stale));
+  }
+});
+
+test('scores: the one request refused — the two lists are asked for on their own', async () => {
+  const w = scoring({ scoreStatus: { scores: 404 } });
+  const rec = (await ghin.scores(w.deps, { idToken: 'tok-a' })).body.scores;
+  assert.deepEqual(w.fake.state.scoreAsks, ['scores 12345678 for 12345678', 'revision_scores 12345678 for 12345678', 'recent_scores 12345678 for 12345678']);
+  assert.deepEqual([rec.revision.length, rec.recent.length, rec.visibility], [2, 1, 'everyone']);
+  assert.equal('stats' in rec, false);
+  // The scores posted since cannot be read: the revision alone still stands.
+  const half = scoring({ scoreStatus: { scores: 403, recent_scores: 403 } });
+  const out = await ghin.scores(half.deps, { idToken: 'tok-a' });
+  assert.equal(out.status, 200);
+  assert.deepEqual([out.body.scores.revision.length, out.body.scores.recent], [2, []]);
+  // GHIN gone quiet halfway is not "none posted since": nothing is stored.
+  const cut = scoring({ scoreStatus: { scores: 404, recent_scores: 'down' } });
+  assert.equal(codeOf(await ghin.scores(cut.deps, { idToken: 'tok-a' })), 'GHIN_UNREACHABLE');
+  assert.deepEqual(cut.kept, {});
+});
+
+test('scores: when GHIN fails nothing is stored over what was there', async () => {
+  const w = scoring({ scoreStatus: { scores: 403, revision_scores: 403 } });
+  w.kept.u_a = { number: '12345678', env: 'staging', syncedAt: NOW - 3 * 24 * 3600 * 1000, revision: [{ date: '2026-10-01', score: 90, used: true }] };
+  const before = JSON.stringify(w.kept.u_a);
+  const out = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  assert.equal(out.status, 502);
+  assert.equal(codeOf(out), 'GHIN_ERROR');
+  assert.equal('detail' in out.body.error, false, 'a member is not passed GHIN\'s own words');
+  assert.equal(JSON.stringify(w.kept.u_a), before);
+  // An admin reading another member's is told what GHIN said.
+  const adm = await ghin.scores(w.deps, { idToken: 'tok-adm', memberId: 'u_b' });
+  assert.match(adm.body.error.detail, /AccessDenied/);
+  // GHIN down, or the login refused: the same, and no second asking.
+  const down = scoring({ down: true });
+  assert.equal(codeOf(await ghin.scores(down.deps, { idToken: 'tok-a' })), 'GHIN_UNREACHABLE');
+  assert.deepEqual(down.kept, {});
+  assert.equal(down.fake.state.asked.length, 1, 'asked once');
+  const refused = scoring({ loginStatus: 401 });
+  assert.equal(codeOf(await ghin.scores(refused.deps, { idToken: 'tok-a' })), 'LOGIN_REFUSED');
+  assert.equal(refused.fake.state.logins, 1, 'one login tried');
+});
+
+test('scores: nothing personal, and no hole-by-hole, in what is answered or stored', async () => {
+  const w = scoring();
+  const out = await ghin.scores(w.deps, { idToken: 'tok-a' });
+  const text = JSON.stringify([out.body, w.kept]);
+  for (const k of [...PII, 'golfer_id', 'gender', 'hole_details', 'posted_at', 'tee_set_id']) assert.equal(text.includes(`"${k}"`), false, k);
+  assert.equal(text.includes('bat@example.mn'), false);
+  assert.equal(text.includes('99119007'), false);
 });

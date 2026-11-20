@@ -36,6 +36,12 @@
       ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
       ".write": false
     },
+    "ghinScores": {
+      "$memberId": {
+        ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold' && (auth.token.memberId === $memberId || root.child('users').child(auth.token.memberId).child('role').val() === 'admin' || data.child('visibility').val() === 'everyone')"
+      },
+      ".write": false
+    },
     "ghinLink": {
       ".read": "auth != null && auth.token.memberId != null && root.child('users').child(auth.token.memberId).exists() && root.child('users').child(auth.token.memberId).child('status').val() !== 'hold'",
       ".write": false

@@ -14,7 +14,9 @@
 // What it prints: for each number, the name, club and Handicap Index the app
 // would keep — and the NAMES of the fields GHIN sent, without their values,
 // so the mapping can be checked without anyone's personal details leaving
-// your screen.
+// your screen. Then the golfer's scoring record as the ghinScores function
+// would keep it: how many scores, how many count, the newest three, and
+// which request GHIN answered — or what it said in refusing.
 
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
@@ -90,6 +92,44 @@ try {
   }
   console.log(`\nRows GHIN sent: ${rowCount}${masked ? `  (${masked} with a masked number)` : ''}`);
   console.log(`Fields GHIN sent (names only): ${[...fields].sort().join(', ') || '—'}`);
+
+  // The scoring record, the way the ghinScores function reads it.
+  const asked = [];
+  const scoreFields = new Set();
+  const scoreClient = {
+    env: inner.env,
+    get: async (path, query) => {
+      try {
+        const data = await inner.get(path, query);
+        asked.push(`${path}: OK`);
+        for (const part of [data, data.revision_scores, data.recent_scores]) {
+          for (const row of Array.isArray(part?.scores) ? part.scores : []) Object.keys(row || {}).forEach(k => scoreFields.add(k));
+        }
+        return data;
+      } catch (err) {
+        asked.push(`${path}: ${err.ghin || err.message}${err.upstream ? ` (HTTP ${err.upstream})` : ''}${err.detail ? ` — ${err.detail}` : ''}`);
+        throw err;
+      }
+    },
+  };
+  for (const n of numbers) {
+    if (!found.get(n)) continue;
+    try {
+      const rec = await ghin.scoresByNumber(scoreClient, n, Date.now());
+      const used = rec.revision.filter(s => s.used).length;
+      console.log(`\n${n}: scoring record`);
+      console.log(`  revision scores: ${rec.revision.length}  (${used} counted)${rec.revision.length ? `   ${rec.revision.at(-1).date} … ${rec.revision[0].date}` : ''}`);
+      console.log(`  posted since:    ${rec.recent.length}`);
+      console.log(`  shown to:        ${rec.visibility}${rec.message ? `  — ${rec.message}` : ''}`);
+      for (const s of [...rec.recent, ...rec.revision].slice(0, 3)) {
+        console.log(`    ${s.date}  ${String(s.score).padStart(3)}  ${s.diff == null ? '   —' : s.diff.toFixed(1).padStart(5)}${s.used ? ' *' : '  '}  ${s.course || ''}`);
+      }
+    } catch (err) {
+      console.log(`\n${n}: the scoring record could not be read (${err.ghin || err.message}).`);
+    }
+  }
+  if (asked.length) console.log(`\nScore requests:\n  ${asked.join('\n  ')}`);
+  console.log(`Score fields GHIN sent (names only): ${[...scoreFields].sort().join(', ') || '—'}`);
 } catch (err) {
   const what = {
     NOT_CONFIGURED: 'No email or password given.',

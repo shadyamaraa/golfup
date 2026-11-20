@@ -15,6 +15,10 @@
 //              record and stored under ghin/{memberId}: their own, or anyone's
 //              for an admin.
 //   syncAll  — every member with a GHIN number, in batches. Admins only.
+//   scores   — one member's scoring record: the scores their Handicap Index
+//              is worked out from (usually twenty) and the ones posted
+//              since, stored under ghinScores/{memberId}. Their own, or
+//              anyone's for an admin.
 //   phoneReport — for admins: who can be found on GHIN by the phone number
 //              they sign in with? Counts, and who was found.
 //   linkByPhone — an admin ties the members found that way to their golfers.
@@ -23,8 +27,9 @@
 //              phone whose name GHIN's also bears out, then reads every
 //              Handicap Index afresh. No admin, no browser.
 //
-// ghin/{memberId} is written only here (the database rules give no client
-// write access to it), so what it holds is what GHIN said.
+// ghin/{memberId} and ghinScores/{memberId} are written only here (the
+// database rules give no client write access to them), so what they hold is
+// what GHIN said.
 //
 // The base URL defaults to GHIN's staging (UAT) environment; GHIN_BASE_URL
 // switches to production once the USGA grants it. Spec:
@@ -318,19 +323,9 @@ async function lookup(deps, body) {
  */
 async function sync(deps, body) {
   const now = deps.now || Date.now;
-  const b = body || {};
-  const caller = await callerOf(deps, b.idToken);
-  if (!caller) return fail(401, 'UNAUTHENTICATED', 'Sign in again to do this');
-  const target = String(b.memberId || caller);
-  if (!/^[\w-]{1,64}$/.test(target)) return fail(404, 'USER_NOT_FOUND', 'No such member');
-  if (target !== caller) {
-    const me = await deps.loadUser(caller);
-    if (!me || me.role !== 'admin') return fail(403, 'FORBIDDEN', 'Only an admin reads another member\'s Handicap Index');
-  }
-  const member = await deps.loadUser(target);
-  if (!member) return fail(404, 'USER_NOT_FOUND', 'No such member');
-  const number = ghinNumber(member.ghinNumber);
-  if (!number) return fail(400, 'NO_GHIN', 'This member has no GHIN number');
+  const asked = await memberAsked(deps, body);
+  if (asked.refused) return asked.refused;
+  const { target, number } = asked;
 
   let golfer;
   try {
@@ -341,6 +336,197 @@ async function sync(deps, body) {
   const record = recordOf(golfer, number, deps.client.env, now());
   await deps.saveGhin(target, record);
   return { status: 200, body: { ok: true, ghin: record } };
+}
+
+// Whose GHIN number a request is about: the caller's own, or — for an admin —
+// the member named. The number is the one on the member's record, never one
+// the caller sends. `admin` says the caller is one, asking for themselves
+// included. → { caller, target, number, admin } or { refused }.
+// deps: { verifyIdToken, loadUser(id) }
+async function memberAsked(deps, body) {
+  const b = body || {};
+  const caller = await callerOf(deps, b.idToken);
+  if (!caller) return { refused: fail(401, 'UNAUTHENTICATED', 'Sign in again to do this') };
+  const target = String(b.memberId || caller);
+  if (!/^[\w-]{1,64}$/.test(target)) return { refused: fail(404, 'USER_NOT_FOUND', 'No such member') };
+  const isAdmin = (u) => !!u && u.role === 'admin';
+  const me = target === caller ? null : await deps.loadUser(caller);
+  if (target !== caller && !isAdmin(me)) {
+    return { refused: fail(403, 'FORBIDDEN', 'Only an admin reads another member\'s GHIN record') };
+  }
+  const member = await deps.loadUser(target);
+  if (!member) return { refused: fail(404, 'USER_NOT_FOUND', 'No such member') };
+  const number = ghinNumber(member.ghinNumber);
+  if (!number) return { refused: fail(400, 'NO_GHIN', 'This member has no GHIN number') };
+  return { caller, target, number, admin: isAdmin(target === caller ? member : me) };
+}
+
+// ---- Scores ----
+// A golfer's scoring record as GHIN keeps it: the scores of the current
+// revision — usually twenty, the ones the Handicap Index is worked out from,
+// the best of them marked `used` — and the scores posted since, which the
+// next night's revision takes in.
+
+// An answer this fresh stands: opening the page again does not ask GHIN again.
+const SCORES_FRESH_MS = 10 * 60 * 1000;
+// A revision is twenty scores; a few to spare, and as many posted since.
+const MAX_REVISION = 25;
+const MAX_RECENT = 20;
+
+const numberOr = (v) => {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+
+/**
+ * One score as GHIN sends it, trimmed to what the app shows: when and where
+ * it was played, the adjusted gross score, the differential (and what it
+ * was before an adjustment), and whether the Handicap Index counts it. A field GHIN left out is left out here too (the
+ * database keeps no nulls). A row with no date or no score is not a score.
+ */
+function trimScore(row) {
+  if (!row || typeof row !== 'object') return null;
+  const date = /^\d{4}-\d{2}-\d{2}/.test(String(row.played_at || '')) ? String(row.played_at).slice(0, 10) : null;
+  const score = numberOr(row.adjusted_gross_score);
+  if (!date || score == null) return null;
+  const course = String(row.course_display_value
+    || [row.facility_name, row.course_name].filter(Boolean).join(' - ') || '').trim().slice(0, 120);
+  const out = { date, score, used: row.used === true };
+  const put = (key, value) => { if (value != null && value !== '') out[key] = value; };
+  put('id', row.id != null ? String(row.id) : null);
+  // A nine-hole score counts toward the index as the eighteen-hole
+  // differential GHIN works out from it ("scaled up"): that is the one
+  // shown, where GHIN sends it.
+  const nine = numberOr(row.number_of_played_holes) === 9 || numberOr(row.number_of_holes) === 9;
+  const scaled = nine ? numberOr(row.adjusted_scaled_up_differential) : null;
+  put('diff', scaled != null ? scaled : numberOr(row.differential));
+  // What the differential was before GHIN adjusted it (an exceptional score
+  // takes one off each of the last twenty) — kept only when it differs.
+  const raw = numberOr(scaled != null ? row.scaled_up_differential : row.unadjusted_differential);
+  if (raw != null && out.diff != null && raw !== out.diff) out.rawDiff = raw;
+  put('holes', numberOr(row.number_of_holes));
+  put('course', course);
+  put('tee', String(row.tee_name || '').trim().slice(0, 60));
+  put('rating', numberOr(row.course_rating));
+  put('slope', numberOr(row.slope_rating));
+  put('type', String(row.score_type_display_short || row.score_type || '').trim().slice(0, 4));
+  const pcc = numberOr(row.pcc);
+  if (pcc) out.pcc = pcc;
+  if (row.exceptional === true) out.exceptional = true;
+  if (row.penalty === true) out.penalty = true;
+  return out;
+}
+
+// GHIN lists scores newest first; kept so, and put so if it did not (the
+// order within a day is GHIN's).
+const scoreList = (part, max) => {
+  const rows = Array.isArray(part && part.scores) ? part.scores : Array.isArray(part) ? part : [];
+  return rows.map(trimScore).filter(Boolean)
+    .map((s, i) => ({ s, i })).sort((a, b) => (a.s.date < b.s.date ? 1 : a.s.date > b.s.date ? -1 : a.i - b.i))
+    .map(x => x.s).slice(0, max);
+};
+
+/**
+ * The scoring record GHIN has under a number, as stored under
+ * ghinScores/{memberId}:
+ *
+ *   { number, env, syncedAt,
+ *     visibility,   // 'everyone' when GHIN says anyone may see it, else 'club'
+ *     revision,     // the scores of the current revision, newest first
+ *     recent,       // posted since — not in the Handicap Index yet
+ *     stats?,       // { count, low, high, average } — GHIN's own
+ *     message?,     // what GHIN says when it will not show the record
+ *     withheld? }   // true: the scores are kept back — see `scores`
+ *
+ * One request has both lists; where GHIN refuses that one, the two lists are
+ * asked for on their own (the scores posted since are then optional).
+ */
+async function scoresByNumber(client, number, at) {
+  const query = { source_golfer_id: number };
+  let data;
+  try {
+    data = await client.get(`golfers/${number}/scores`, query);
+  } catch (err) {
+    if (!err || err.ghin !== 'GHIN_ERROR') throw err;
+    const revision = await client.get(`golfers/${number}/revision_scores`, query);
+    let recent = {};
+    try {
+      recent = await client.get(`golfers/${number}/recent_scores`, query);
+    } catch (e) {
+      if (!e || e.ghin !== 'GHIN_ERROR') throw e;
+    }
+    data = {
+      revision_scores: revision, recent_scores: recent,
+      scoring_record_visibility: revision.scoring_record_visibility,
+      scoring_record_visibility_message: revision.scoring_record_visibility_message,
+    };
+  }
+  const record = {
+    number: String(number), env: client.env, syncedAt: at,
+    visibility: data.scoring_record_visibility === 'everyone' ? 'everyone' : 'club',
+    revision: scoreList(data.revision_scores, MAX_REVISION),
+    recent: scoreList(data.recent_scores, MAX_RECENT),
+  };
+  const st = data.score_history_stats;
+  if (st && typeof st === 'object' && numberOr(st.total_count)) {
+    record.stats = { count: numberOr(st.total_count) };
+    for (const [key, from] of [['low', 'lowest_score'], ['high', 'highest_score'], ['average', 'average']]) {
+      const n = numberOr(st[from]);
+      if (n != null) record.stats[key] = n;
+    }
+  }
+  const message = String(data.scoring_record_visibility_message || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (message) record.message = message;
+  return record;
+}
+
+/**
+ * Read one member's scoring record from GHIN and store it: their own, or
+ * anyone's for an admin. An answer stored a moment ago for the same number
+ * is given back as it is.
+ *
+ * Whose record it is: the GHIN number on a member's record is theirs to
+ * type, so by itself it proves nothing — a member could type someone
+ * else's. GHIN lets a golfer keep their scoring record to their club; such
+ * a record is stored, and given to the member, only where the server itself
+ * tied the member to that golfer (ghinLink/{memberId}, on the proof of the
+ * phone they sign in with). Otherwise the scores are kept back: what is
+ * stored and answered has none, and says so (`withheld`). An admin — who
+ * reads for the association — is still answered in full, but what is stored
+ * is the same record without scores, so the member cannot read it there.
+ * A record GHIN shows to everyone needs no proof.
+ *
+ * deps: { client, verifyIdToken, loadUser(id), loadLink(memberId),
+ *         loadScores(memberId), saveScores(memberId, record), now? }
+ */
+async function scores(deps, body) {
+  const now = deps.now || Date.now;
+  const asked = await memberAsked(deps, body);
+  if (asked.refused) return asked.refused;
+  const { target, number, admin } = asked;
+
+  const held = await deps.loadScores(target);
+  const age = held && typeof held === 'object' ? now() - Number(held.syncedAt) : NaN;
+  const fresh = age >= 0 && age < SCORES_FRESH_MS && sameKey(held.number) === sameKey(number) && held.env === deps.client.env;
+  // What was kept back from the member is still an admin's to read.
+  if (fresh && !(held.withheld === true && admin)) return { status: 200, body: { ok: true, scores: held } };
+
+  let record;
+  try {
+    record = await scoresByNumber(deps.client, number, now());
+  } catch (err) {
+    return refusal(err, admin);
+  }
+  const link = await deps.loadLink(target);
+  const proven = !!link && typeof link === 'object' && sameKey(link.number) === sameKey(number);
+  if (record.visibility === 'everyone' || proven) {
+    await deps.saveScores(target, record);
+    return { status: 200, body: { ok: true, scores: record } };
+  }
+  const { stats, ...rest } = record;   // eslint-disable-line no-unused-vars
+  const kept = { ...rest, revision: [], recent: [], withheld: true };
+  await deps.saveScores(target, kept);
+  return { status: 200, body: { ok: true, scores: admin ? record : kept } };
 }
 
 /**
@@ -743,5 +929,6 @@ module.exports = {
   UAT_BASE, TOKEN_TTL_MS, LOOKUPS_PER_HOUR, BATCH, PER_PAGE,
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
   lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS, nameWords, nameAgrees, nightly,
+  trimScore, scoresByNumber, scores, SCORES_FRESH_MS,
   _resetTokens: () => tokens.clear(),
 };

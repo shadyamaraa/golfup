@@ -19,6 +19,9 @@ This is the first step, **reading only**:
   as its own tile beside the app's own index.
 - An admin can read every member's at once and see the list: Admin →
   Тоглогчид, «GHIN-ээс татах».
+- The member's **scoring record** is read and shown on the profile as
+  «Сүүлийн 20 оноо»: the scores the Handicap Index is worked out from, the
+  ones it counts marked, and above them the scores posted since (below).
 
 It is a **trial**, on GHIN's **staging** environment:
 
@@ -55,6 +58,7 @@ hosting rewrite.
 | `ghinGolfer { idToken, ghin }` | any member | Who GHIN has under a number. Nothing is stored. Thirty an hour for each member. |
 | `ghinSync { idToken, memberId? }` | a member for themselves, an admin for anyone | Reads the Handicap Index for the GHIN number **on the member's record** and stores it under `ghin/{memberId}`. |
 | `ghinSyncAll { idToken }` | admins | The same for every member with a GHIN number — `golfers/search` takes fifty numbers a request. |
+| `ghinScores { idToken, memberId? }` | a member for themselves, an admin for anyone | Reads the scoring record for the GHIN number on the member's record and stores it under `ghinScores/{memberId}`. An answer less than ten minutes old is given back without asking GHIN again. |
 | `ghinPhoneReport { idToken }` | admins | Who can be found on GHIN by the phone they sign in with (below). Counts and candidates; nothing stored. |
 | `ghinLinkByPhone { idToken, links: [{ memberId, number }] }` | admins | Ties the members found that way to their golfers. The server reads each golfer's phone again and ties only where it is the member's own. |
 | `ghinNightly` | no one — a schedule, 02:30 in Ulaanbaatar | The night's round (below): ties the new members found by phone whose name GHIN's also bears out, then reads every Handicap Index afresh. |
@@ -92,6 +96,104 @@ GHIN side, from the spec
   club's row is the one read. A row for a club the login has no rights to
   has its number masked (`7*****4`): among several numbers it cannot be
   told whose it is, so those are asked for again one at a time.
+
+## The scoring record — «Сүүлийн 20 оноо»
+
+A Handicap Index is the average of the best eight of a golfer's last twenty
+score differentials. GHIN calls those twenty the **revision scores**, marks
+the ones that count (`used`), and keeps the scores posted since the last
+night's revision apart (**recent scores**) until the next one takes them in.
+
+`ghinScores/{memberId}`:
+
+```js
+{
+  number, env, syncedAt,
+  visibility,     // 'everyone' when GHIN says anyone may see the record, else 'club'
+  revision: [],   // the revision's scores, newest first (25 at most)
+  recent: [],     // posted since — not in the index yet (20 at most)
+  stats,          // { count, low, high, average } — GHIN's own; absent when it has none
+  message,        // what GHIN says when it will not show the record; absent otherwise
+  withheld        // true: the scores were kept back (below); absent otherwise
+}
+// one score — a field GHIN left out is left out:
+{ date, score, used, id, diff, rawDiff, holes, course, tee, rating, slope, type, pcc, exceptional, penalty }
+```
+
+`score` is the adjusted gross score, `diff` the score differential as GHIN
+counts it, `rawDiff` what it was before an adjustment (kept only when the
+two differ — an exceptional score takes 1.0 off each of the last twenty),
+`type` GHIN's own letter (H home, A away, T tournament, C combined
+nine-hole scores…). For a nine-hole score `diff` is the eighteen-hole
+differential GHIN makes of it (`adjusted_scaled_up_differential`) where it
+sends one — read off the field names; not yet seen on a real nine-hole
+score. Hole-by-hole scores and everything about the golfer stay on the
+server.
+
+GHIN side: `GET /golfers/{number}/scores.json?source_golfer_id={number}` →
+`{ revision_scores: { scores }, recent_scores: { scores },
+score_history_stats, scoring_record_visibility,
+scoring_record_visibility_message }` — both lists in one request. Where
+GHIN refuses that one, the lists are asked for on their own
+(`golfers/{number}/revision_scores`, `…/recent_scores`; the recent ones are
+then optional). Tried against staging from the owner's terminal
+(2026-11-20, `scripts/ghin-smoke.mjs`): the one request answers for the
+association's login — twenty revision scores, eight counted, the record
+shown to everyone. The same golfer in the GHIN app had two newer rounds and
+another index: staging's copy ended the day before them.
+
+Who reads it (database rules): the member their own, an admin anyone's,
+another member only a record whose `visibility` is `everyone` — GHIN lets a
+golfer keep their scoring record to their club (`club_only`), and the app
+keeps to that. Nobody reads the whole node at once; no client writes it.
+
+**Whose record it is.** The GHIN number on a member's record is theirs to
+type (it is on the public half, which a client writes), so it proves
+nothing: a member could type another golfer's. A record GHIN shows to
+everyone needs no proof — anyone may see it there too. A record kept to the
+golfer's club is stored, and given to the member, only where the server
+itself tied the member to that golfer (`ghinLink/{memberId}` with the same
+number — the phone they sign in with). Otherwise the scores are **kept
+back**: what is stored and answered has no scores and no `stats`, and
+`withheld: true`; the member is told their number is not verified. An admin,
+who reads for the association, is still answered in full — but what is
+stored is the record without scores, so the member cannot read it there,
+and an admin's next look asks GHIN again.
+
+In the app (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`), for
+whoever sees the GHIN parts (`GHIN_STAGE`):
+
+- **Profile**: «Сүүлийн 20 оноо» under the tiles — the score, the course,
+  date · tee · rating/slope · type, and the differential; the ones the index
+  counts are marked with a star and a bar down the left, as in GHIN's own
+  app; scores posted since are tagged «шинэ», an exceptional score «E», a
+  penalty score «P»; an adjusted differential has the adjustment under it
+  («−1.0»). Five rows, then «Бүгдийг харах».
+- **A player's details** (Тоглогчид → a name): «GHIN оноо» opens the same
+  list for that player. Only an admin's opening it reads GHIN; another
+  member sees what is stored, if the record is open to everyone.
+- What is stored is shown at once; when it is more than a day old it is
+  read again in the background.
+
+Not in the night's round: a record is read when its member opens their
+profile, or an admin opens it. Before the list is shown to every member
+(`GHIN_STAGE = 'all'`) the night's round should read them all.
+
+### Why a number here is not the number in the GHIN app
+
+Two different things can be meant:
+
+- **«HCP индекс»** on the profile is the app's own index, worked out from
+  the rounds scored *in UB Golf* (`users/{id}/hcpIndex`, `src/handicap.js`).
+  It has nothing to do with GHIN and will differ from it for anyone who
+  posts scores to GHIN that were not played through the app, or the other
+  way round.
+- **«GHIN HI»** and «Сүүлийн 20 оноо» come from GHIN's **staging**
+  environment while they are marked «туршилт»: a copy of the real data
+  taken on some earlier date. A score posted in the GHIN app since that copy
+  is not there, and the index has not moved with it. The revision date on
+  the GHIN tile and the dates in the list say how old the copy is. Only
+  production access from the USGA (`GHIN_BASE_URL`) makes the two agree.
 
 ## Tying a member to their golfer — the phone trial
 
@@ -247,10 +349,11 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | Part | File |
 |---|---|
 | The GHIN client, trimming, the three functions' logic | `functions/ghin.js` |
-| The functions themselves | `functions/index.js` (`ghinGolfer`, `ghinSync`, `ghinSyncAll`) |
-| Which record is a member's, how it reads, what a refusal says (pure) | `src/ghin.js` |
-| The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`) |
-| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `ghinAdminHTML`) |
+| The functions themselves | `functions/index.js` (`ghinGolfer`, `ghinSync`, `ghinSyncAll`, `ghinScores`) |
+| Which record is a member's, how it reads, what a refusal says, a scoring record's rows (pure) | `src/ghin.js` |
+| The scoring record as a list | `src/ghin-scores.js` |
+| The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`, `loadGhinScores`, `ghinScoresSync`) |
+| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
 | A live check from your own terminal | `scripts/ghin-smoke.mjs` |
 
@@ -264,7 +367,9 @@ adjustments stay with the association, in GHIN's own Admin Portal.
    node scripts/ghin-smoke.mjs 12345678
    ```
    with your own GHIN number. It prints the name, club and Handicap Index,
-   and the names of the fields GHIN sent — no one's personal details.
+   and the names of the fields GHIN sent — no one's personal details. Then
+   the scoring record: how many scores, how many count, the newest three,
+   and which request GHIN answered.
 2. **The login, as secrets** (typed into the terminal, never into a file or
    a chat):
    ```bash
@@ -274,6 +379,10 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 3. **Deploy the three functions**:
    ```bash
    firebase deploy --only functions:ghinGolfer,functions:ghinSync,functions:ghinSyncAll,functions:ghinPhoneReport --project golfup-app
+   ```
+   and, for «Сүүлийн 20 оноо»:
+   ```bash
+   firebase deploy --only functions:ghinScores --project golfup-app
    ```
 4. **Try it**, signed in as an admin: Profile → edit → «GHIN шалгах»; the
    profile's GHIN tile; Admin → Тоглогчид → «GHIN-ээс татах» and the list.
@@ -287,6 +396,12 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | A name in the admin's list that is not the member's | The member's GHIN number is somebody else's |
 
 ## Not done yet
+
+- **Every member's scoring record, every night** — needed before the list
+  is opened to all members (`GHIN_STAGE = 'all'`), so that a record is there
+  without its member having opened their profile. And a record open to the
+  golfer's club only could then be shown to members of that same club; today
+  it is shown to the member and to admins.
 
 - **A playing handicap from GHIN.** Once the USGA grants production
   (`GHIN_BASE_URL`), the official index can replace the app's own in games

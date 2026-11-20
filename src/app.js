@@ -4,6 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
+import { ghinScoresHTML, wireGhinScores } from './ghin-scores.js';
 import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
@@ -7160,12 +7161,14 @@ function showUserDetailsModal(user) {
         ${user.bankIban ? `<button class="btn btn-sm btn-outline ud-copy-btn" data-copy="${esc(user.bankIban)}">${t('copyShort')}</button>` : ''}
       </div>
       <div class="modal-actions" style="margin-top: 20px;">
+        ${ghinOn() && ghinDigits(user.ghinNumber) ? `<button class="btn btn-outline" id="ud-ghin-scores">${t('ghinScoresBtn')}</button>` : ''}
         ${(user.bankAccount && user.bankIban) ? `<button class="btn btn-primary" id="ud-copy-both">Данс + IBAN хуулах</button>` : ''}
         <button class="btn btn-ghost" id="user-detail-close">Хаах</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
   modal.querySelector('#user-detail-close').onclick = () => modal.remove();
+  modal.querySelector('#ud-ghin-scores')?.addEventListener('click', () => { modal.remove(); showGhinScoresModal(user); });
   modal.querySelectorAll('.ud-copy-btn').forEach(btn => {
     btn.onclick = () => {
       navigator.clipboard.writeText(btn.dataset.copy).then(() => showToast(t('copied'), 'success'));
@@ -8796,6 +8799,9 @@ async function renderProfile() {
           ${hcpIndex !== null ? `<div class="stat-tile"><div class="st-label">${t('gsHcpIndex')}</div><div class="st-value">${hcpIndex}</div></div>` : ''}
           <div class="stat-tile" id="ghin-tile" ${ghinRec ? '' : 'hidden'}>${ghinTileInner(ghinRec)}</div>
         </div>
+        ${ghinOn() && ghinDigits(ghinMember.ghinNumber) ? `
+        <div class="section-head" style="margin-top:22px;"><h2>${t('ghinScoresTitle')}</h2></div>
+        <div id="ghin-scores" class="gs-box"></div>` : ''}
 
         <div class="section-head" style="margin-top:22px;"><h2>${t('pfStats')}</h2></div>
         <div class="stat-grid">
@@ -8830,6 +8836,9 @@ async function renderProfile() {
   document.getElementById('profile-edit-btn')?.addEventListener('click', openEdit);
   document.getElementById('profile-edit-btn2')?.addEventListener('click', openEdit);
 
+  const scoresHost = document.getElementById('ghin-scores');
+  if (scoresHost) mountGhinScores(scoresHost, ghinMember, viewAlive());
+
   // A Handicap Index read more than a day ago, or never, is read again in
   // the background and the tile filled when it arrives. A failure — GHIN
   // down, the functions not deployed — leaves the page as it is.
@@ -8843,6 +8852,58 @@ async function renderProfile() {
       tile.hidden = false;
     }).catch((err) => console.warn('GHIN sync:', err?.code || err));
   }
+}
+
+// A member's scoring record from GHIN — the scores their Handicap Index is
+// worked out from, and the ones posted since — drawn into `host`
+// (docs/ghin.md). What the server stored is shown at once; when there is
+// none, or it is more than a day old, it is read again — the member's own,
+// or anyone's for an admin — and the list drawn anew when it arrives. A
+// failure leaves what was there, or says why when there was nothing.
+async function mountGhinScores(host, member, alive = () => true) {
+  const h = { t, esc, icon };
+  const shown = () => alive() && host.isConnected;
+  const draw = (rec) => { host.innerHTML = ghinScoresHTML(rec, h); wireGhinScores(host, h); };
+  const say = (text) => { host.innerHTML = `<div class="gs-empty">${esc(text)}</div>`; };
+  say(t('ghinScoresLoading'));
+  const mine = member.id === currentUser?.id;
+  const admin = currentUser?.role === 'admin';
+  const stored = ghinFor(member, await store.loadGhinScores(member.id));
+  if (!shown()) return;
+  // A record whose scores the server kept back (the member's GHIN number is
+  // not proven theirs) is still an admin's to read: asked for afresh.
+  const rec = stored?.withheld === true && admin ? null : stored;
+  if (rec) draw(rec);
+  // Another member's is read from GHIN only for an admin: what cannot be
+  // read here is a record GHIN does not show to everyone, or none yet.
+  if (!mine && !admin) { if (!rec) say(t('ghinScoresHidden')); return; }
+  if (!ghinStale(rec)) return;
+  try {
+    const fresh = ghinFor(member, await store.ghinScoresSync(mine ? undefined : member.id));
+    if (!shown()) return;
+    if (fresh) draw(fresh); else if (!rec) say(t('ghinScoresNone'));
+  } catch (err) {
+    console.warn('GHIN scores:', err?.code || err);
+    if (shown() && !rec) say(t(ghinErrorKey(err)));
+  }
+}
+
+// «GHIN оноо» from a player's details: the same list, for that player.
+function showGhinScoresModal(user) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay fade-in';
+  modal.innerHTML = `
+    <div class="modal-content glass-card gs-modal">
+      <h3 class="modal-title">${esc(displayUsername(user))} · ${t('ghinScoresTitle')}</h3>
+      <div class="gs-box"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn btn-ghost" id="gs-close">${t('close')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#gs-close').onclick = () => modal.remove();
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  mountGhinScores(modal.querySelector('.gs-box'), user);
 }
 
 // The profile's GHIN tile: the Handicap Index as GHIN displays it, whose it

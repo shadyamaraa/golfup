@@ -604,6 +604,42 @@ export async function loadAllGhin() {
   return localGhin();
 }
 
+// A member's scoring record on GHIN — the scores their Handicap Index is
+// worked out from, and the ones posted since — as the server stored it under
+// ghinScores/{memberId} (src/ghin.js has the shape). Their own, an admin
+// reads anyone's, another member only a record GHIN shows to everyone: one
+// that may not be read is null here, like one that is not there.
+function localGhinScores() {
+  try { return JSON.parse(localStorage.getItem('golfup_ghin_scores') || '{}') || {}; } catch (_) { return {}; }
+}
+
+export async function loadGhinScores(memberId) {
+  if (!memberId) return null;
+  if (useFirebase && db) {
+    try {
+      const snap = await get(ref(db, 'ghinScores/' + memberId));
+      return snap.exists() ? snap.val() : null;
+    } catch (e) {
+      console.warn('GHIN scores not readable:', e?.message || e);
+      return null;
+    }
+  }
+  return localGhinScores()[memberId] || null;
+}
+
+/**
+ * Read a member's scoring record from GHIN and store it: one's own, or any
+ * member's for an admin. Resolves to the stored record.
+ */
+export async function ghinScoresSync(memberId) {
+  const out = await callAsMember('ghinScores', memberId ? { memberId } : {});
+  const id = memberId || getUser()?.id;
+  if (!useFirebase && id && out.scores) {
+    try { localStorage.setItem('golfup_ghin_scores', JSON.stringify({ ...localGhinScores(), [id]: out.scores })); } catch (_) { /* storage is off */ }
+  }
+  return out.scores;
+}
+
 /**
  * The system admin's sign-in: true when the password was right. The server
  * sends a token that makes this browser the system admin for the database

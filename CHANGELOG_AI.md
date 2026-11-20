@@ -1,5 +1,44 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: a member's last twenty scores)
+
+The profile showed a Handicap Index from GHIN and nothing of what it is made
+of. Now it shows the scoring record GHIN keeps: the scores of the current
+revision (usually twenty), the ones the index counts marked, and the scores
+posted since.
+
+- **Server**: `ghinScores` (`functions/ghin.js` `scores`, `scoresByNumber`,
+  `trimScore`; exported in `functions/index.js`) — a member for themselves,
+  an admin for anyone; `GET golfers/{n}/scores`, falling back to
+  `revision_scores` + `recent_scores`; stored under `ghinScores/{memberId}`;
+  an answer under ten minutes old is not asked for again. Nothing personal
+  and no hole-by-hole is kept. `sync` and `scores` share `memberAsked`.
+  **A new function — deploy it by hand.** `scripts/ghin-smoke.mjs` now reads
+  a scoring record too and says which request answered; run by the owner
+  against staging (2026-11-20), the one request answers. A nine-hole score
+  shows the eighteen-hole differential GHIN makes of it, where it sends one.
+- **Database rules**: `ghinScores/{memberId}` — read by the member, by an
+  admin, and by another member only when GHIN shows the record to everyone;
+  no client writes; not readable as a whole.
+- **Whose record** (found in review): the GHIN number on a member's record
+  is theirs to type, so a member could have typed another golfer's and read
+  a scoring record GHIN keeps to that golfer's club. Such a record is now
+  stored and given to the member only where the server tied them to that
+  golfer (`ghinLink`); otherwise it is kept back (`withheld`, no scores, no
+  stats). An admin is still answered in full, with nothing of it stored.
+- **App**: «Сүүлийн 20 оноо» on the profile and «GHIN оноо» in a player's
+  details (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`,
+  `loadGhinScores` / `ghinScoresSync` in `src/store.js`), for whoever sees
+  the GHIN parts — admins only while `GHIN_STAGE = 'admin'`.
+- The list marks what GHIN's own app marks (checked against screens of the
+  GHIN app): a bar and a star on the scores the index counts, «E» on an
+  exceptional score, «P» on a penalty score, and under a differential GHIN
+  adjusted, by how much («−1.0» — `rawDiff`, `ghinAdjustText`).
+- `docs/ghin.md`: the scoring record, and why a number in the app is not the
+  number in the GHIN app (the app's own index; GHIN's staging copy).
+- Tests: `scripts/test-ghin.mjs` (73), `scripts/test-ghin-app.mjs` (19),
+  `scripts/test-rules.mjs` (58).
+
 ## 2026-11-18 (Coaching: a granted change of time cannot put a coach in two places)
 
 Found in review of the pull request. Granting a request made a slot for the
