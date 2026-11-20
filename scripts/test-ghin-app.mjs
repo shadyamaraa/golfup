@@ -11,7 +11,7 @@ import {
   ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
   ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText,
 } from '../src/ghin.js';
-import { ghinScoresHTML, ghinHomeHTML } from '../src/ghin-scores.js';
+import { ghinScoresHTML, ghinHomeStripHTML, ghinHomeBoardHTML } from '../src/ghin-scores.js';
 
 const NOW = Date.parse('2026-11-16T10:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -258,67 +258,88 @@ test('ghinScoresHTML: no scores — GHIN\'s own words when it gave any; nothing 
   assert.equal(/<img|<script|<i>/.test(html), false);
 });
 
-// ---- The home screen's block ----
+// ---- The home screen: a line under the greeting, a board above «Eagle · Birdie» ----
 
 const HI = found('12345678', { hi: '10.2', lowHi: '9.7', revDate: '2026-11-15' });
 const TWENTY = { ...RECORD, recent: [], revision: Array.from({ length: 20 }, (_, i) => score(`2026-10-${String(28 - i).padStart(2, '0')}`, 80 + i, { used: i < 8, diff: 8.4 + i })) };
+const NEW = { ...TWENTY, recent: [score('2026-11-14', 76, { diff: 6.5, used: true })] };
 const cellsOf = (html) => html.split('<span class="gb-cell').slice(1);
-// Each tile as 'navy:label value sub' (':label value' for a plain one with no sub-line).
-const tilesOf = (html) => [...html.matchAll(/<div class="stat-tile([^"]*)"><div class="st-label">(.*?)<\/div><div class="st-value">(.*?)<\/div>(?:<div class="st-sub"[^>]*>(.*?)<\/div>)?<\/div>/g)]
-  .map(m => `${m[1].trim()}:${[m[2], m[3], m[4]].filter(x => x != null).join(' ')}`);
+// The strip's items as 'label value'.
+const itemsOf = (html) => [...html.matchAll(/<span class="ghs-l">(.*?)<\/span><span class="ghs-v">(.*?)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
 
-test('ghinHomeHTML: the index, the low index, the latest score — then the twenty on a board', () => {
-  const html = ghinHomeHTML(HI, TWENTY, H);
-  assert.deepEqual(tilesOf(html), ['navy:H.I 10.2 trial · 11.15', 'navy:ghinLowHi 9.7', ':ghinLastScore 80 10.28 · Chinggis Khaan Golf Club']);
+test('ghinHomeStripHTML: one line — the index, the low index, the latest score — leading down to the board', () => {
+  const html = ghinHomeStripHTML(HI, TWENTY, H);
+  assert.deepEqual(itemsOf(html), ['H.I 10.2', 'ghinLowHi 9.7', 'ghinLastScore 80']);
+  assert.match(html, /<a class="ghin-strip" href="#\/profile" data-ghin-board>/);
+  assert.match(html, /<i-next>/);
+  // The latest score is the one posted since, when there is one.
+  assert.deepEqual(itemsOf(ghinHomeStripHTML(HI, NEW, H))[2], 'ghinLastScore 76');
+  // Room for the three numbers and no more: no trial mark, no tag.
+  assert.equal(/trial|gs-tag|ghinScoresPending/.test(ghinHomeStripHTML(HI, NEW, H)), false);
+});
+
+test('ghinHomeStripHTML: either part alone — with no board to lead to, it leads to the full list; with neither, nothing', () => {
+  // The index, the scores not read yet (or none, or kept back): two items, and the list.
+  for (const sc of [null, undefined, { revision: [], recent: [] }, { revision: [], recent: [], withheld: true }]) {
+    const html = ghinHomeStripHTML(HI, sc, H);
+    assert.deepEqual(itemsOf(html), ['H.I 10.2', 'ghinLowHi 9.7']);
+    assert.match(html, /href="#\/profile" data-ghin-all>/);
+  }
+  // Only a score posted since, no revision yet: it is the latest score, and there is still no board.
+  const fresh = ghinHomeStripHTML(HI, { revision: [], recent: [score('2026-11-14', 76)] }, H);
+  assert.deepEqual([itemsOf(fresh)[2], fresh.includes('data-ghin-all'), fresh.includes('data-ghin-board')], ['ghinLastScore 76', true, false]);
+  // Scores and no index record (GHIN has no golfer under the number), or one with no low index: dashes.
+  for (const none of [null, undefined, { number: '12345678', found: false, env: 'staging' }]) {
+    assert.deepEqual(itemsOf(ghinHomeStripHTML(none, TWENTY, H)).slice(0, 2), ['H.I —', 'ghinLowHi —']);
+  }
+  assert.equal(itemsOf(ghinHomeStripHTML({ ...HI, lowHi: null }, TWENTY, H))[1], 'ghinLowHi —');
+  // Neither: no line.
+  for (const [hi, sc] of [[null, null], [undefined, undefined], [{ found: false }, null], [null, { revision: [], recent: [] }], [{ found: false }, { withheld: true }]]) {
+    assert.equal(ghinHomeStripHTML(hi, sc, H), '');
+  }
+});
+
+test('ghinHomeBoardHTML: the twenty on a board — day, score, differential — the counted ones filled in', () => {
+  const html = ghinHomeBoardHTML(HI, TWENTY, H);
   const cells = cellsOf(html);
   assert.equal(cells.length, 20);
   assert.equal(cells.filter(c => c.startsWith(' used"')).length, 8);
   assert.match(cells[0], /gb-d">10\.28<[\s\S]*gb-s">80<[\s\S]*gb-x">8\.4</);
   assert.match(cells[0], /title="2026\.10\.28 · Chinggis Khaan Golf Club · Blue · ghinScoresUsed"/);
   assert.match(cells[19], /^" title="2026\.10\.09 · Chinggis Khaan Golf Club · Blue">/);
+  // Its head: the title and the way to the full list; then the index it is the making of.
+  assert.match(html, /<h2>ghinScoresTitle<\/h2>\s*<a href="#\/profile" class="view-all" data-ghin-all>/);
+  assert.match(html, /hole-course-name">H\.I 10\.2 · trial</);
   assert.match(html, /hole-course-sub">ghinBoardSub</);
-  // Both the head's link and the board lead to the full list.
-  assert.equal(html.split('data-ghin-all').length - 1, 2);
   assert.match(html, /<a class="gs-board" href="#\/profile" data-ghin-all>/);
+  assert.equal(html.split('data-ghin-all').length - 1, 2);
+  // Production is not marked a trial; no index record is a dash.
+  assert.match(ghinHomeBoardHTML({ ...HI, env: 'production' }, { ...TWENTY, env: 'production' }, H), /hole-course-name">H\.I 10\.2</);
+  assert.match(ghinHomeBoardHTML(null, { ...TWENTY, env: 'production' }, H), /hole-course-name">H\.I —</);
+  // No differential on a score: a dash in its cell.
+  assert.match(cellsOf(ghinHomeBoardHTML(HI, { revision: [score('2026-11-01', 88, { diff: undefined })] }, H))[0], /gb-x">—</);
 });
 
-test('ghinHomeHTML: a score posted since is the latest-score tile — not on the board, counted in its heading', () => {
+test('ghinHomeBoardHTML: a score posted since is not on the board — it is counted in its heading', () => {
   const h = { ...H, t: (k) => ({ ghinBoardSub: '{n} scores · {used} counted', ghinScoresPending: 'new', ghinStagingShort: 'trial' }[k] || k) };
-  const html = ghinHomeHTML(HI, { ...TWENTY, recent: [score('2026-11-14', 76, { diff: 6.5, used: true })] }, h);
+  const html = ghinHomeBoardHTML(HI, NEW, h);
   assert.equal(cellsOf(html).length, 20);
   assert.equal(html.includes('gb-s">76<'), false);
-  assert.equal(tilesOf(html)[2], ':ghinLastScore 76 11.14 · new');
   assert.match(html, /hole-course-sub">20 scores · 8 counted · \+1 new</);
-  assert.match(ghinHomeHTML(HI, TWENTY, h), /hole-course-sub">20 scores · 8 counted</);
+  assert.match(ghinHomeBoardHTML(HI, TWENTY, h), /hole-course-sub">20 scores · 8 counted</);
 });
 
-test('ghinHomeHTML: production is not marked a trial; what GHIN leaves out is a dash', () => {
-  const html = ghinHomeHTML({ ...HI, env: 'production', lowHi: null, revDate: null }, { ...TWENTY, env: 'production' }, H);
-  assert.deepEqual(tilesOf(html).slice(0, 2), ['navy:H.I 10.2', 'navy:ghinLowHi —']);
-  // No differential on a score: a dash in its cell.
-  assert.match(cellsOf(ghinHomeHTML(HI, { revision: [score('2026-11-01', 88, { diff: undefined })] }, H))[0], /gb-x">—</);
-});
-
-test('ghinHomeHTML: either part alone — and with neither, nothing', () => {
-  // The index, the scores not read yet.
-  const hiOnly = ghinHomeHTML(HI, null, H);
-  assert.deepEqual([tilesOf(hiOnly).length, hiOnly.includes('gs-board'), hiOnly.includes('gs-empty')], [2, false, false]);
-  // The scores read: none on GHIN, or kept back — said under the tiles.
-  assert.match(ghinHomeHTML(HI, { revision: [], recent: [] }, H), /gs-empty[^>]*>no scores</);
-  assert.match(ghinHomeHTML(HI, { revision: [], recent: [], withheld: true }, H), /gs-empty[^>]*>ghinScoresUnproven</);
-  assert.match(ghinHomeHTML(HI, { message: 'Private <b>' }, H), /gs-empty[^>]*>Private &lt;b&gt;</);
-  // Scores and no index record (GHIN has no golfer under the number): the index is a dash.
-  for (const none of [null, undefined, { number: '12345678', found: false, env: 'staging' }]) {
-    const t = tilesOf(ghinHomeHTML(none, TWENTY, H));
-    assert.deepEqual([t[0].replace(' trial', ''), t[1]], ['navy:H.I —', 'navy:ghinLowHi —']);
-  }
-  // Neither: the home screen has no block.
-  for (const [hi, sc] of [[null, null], [undefined, undefined], [{ found: false }, null], [null, { revision: [], recent: [] }], [{ found: false }, { withheld: true }]]) {
-    assert.equal(ghinHomeHTML(hi, sc, H), '');
+test('ghinHomeBoardHTML: no scores in the revision — no board', () => {
+  for (const sc of [null, undefined, {}, { revision: [], recent: [] }, { revision: [], recent: [], withheld: true }, { message: 'Private' }, { revision: [], recent: [score('2026-11-14', 76)] }]) {
+    assert.equal(ghinHomeBoardHTML(HI, sc, H), '');
   }
 });
 
-test('ghinHomeHTML: nothing of GHIN\'s is markup', () => {
-  const html = ghinHomeHTML({ ...HI, hi: '<b>1</b>', lowHi: '"><i>', revDate: '<u>' }, { revision: [score('2026-11-01', 88, { course: '<img src=x onerror=alert(1)>', tee: '"><script>' })] }, H);
-  assert.equal(/<b>|<i>|<u>|<img|<script/.test(html), false);
+test('the home screen: nothing of GHIN\'s is markup', () => {
+  const hi = { ...HI, hi: '<b>1</b>', lowHi: '"><i>', revDate: '<u>' };
+  const sc = { revision: [score('2026-11-01', 88, { course: '<img src=x onerror=alert(1)>', tee: '"><script>' })] };
+  for (const html of [ghinHomeStripHTML(hi, sc, H), ghinHomeBoardHTML(hi, sc, H)]) {
+    assert.ok(html.length > 0);
+    assert.equal(/<b>|<i>|<u>|<img|<script/.test(html), false);
+  }
 });

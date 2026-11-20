@@ -169,15 +169,21 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
   app; scores posted since are tagged «шинэ», an exceptional score «E», a
   penalty score «P»; an adjusted differential has the adjustment under it
   («−1.0»). Five rows, then «Бүгдийг харах».
-- **Home screen**: first thing under the greeting, as GHIN's own app opens
-  — «Handicap Index»: the index, the low index and the latest score as
-  tiles, then the revision's scores as a board of cells (the day, the
-  score, the differential), two rows of ten, the ones the index counts
-  filled in (`ghinHomeHTML`, `renderHomeGhin`). A score posted since is not
-  on the board — it is not in the index yet — but is the latest-score tile
-  and is counted in the board's heading («+1 шинэ»). «Бүгд» and the board
-  lead to the full list on the profile. Not there for a member with no GHIN
-  number.
+- **Home screen**, in two places (`renderHomeGhin`):
+  - under the greeting, **one line** — «H.I 10.2 · Low 9.7 · Сүүлийн 76»:
+    the index, the low index, the latest score (`ghinHomeStripHTML`). It
+    leads down to the board; with no board, to the full list.
+  - above «Eagle · Birdie», in its manner, **«Сүүлийн 20 оноо»**: the
+    revision's scores as a board of cells (the day, the score, the
+    differential), two rows of ten, the ones the index counts filled in
+    (`ghinHomeBoardHTML`). A score posted since is not on the board — it is
+    not in the index yet — but is the line's latest score and is counted in
+    the board's heading («+1 шинэ»). «Бүгд» and the board lead to the full
+    list on the profile.
+
+  Neither is there for a member with no GHIN number. (First the whole block
+  stood under the greeting; the owner wanted the top of the home screen
+  kept for the day's play and the board beside «Eagle · Birdie».)
 - **A player's details** (Тоглогчид → a name): «GHIN оноо» opens the same
   list for that player. Only an admin's opening it reads GHIN; another
   member sees what is stored, if the record is open to everyone.
