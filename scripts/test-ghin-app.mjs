@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey, toGhinScorePayload,
-  ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText,
+  ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText, ghinScoreStats,
 } from '../src/ghin.js';
 import { ghinScoresHTML, ghinHomeStripHTML, ghinHomeBoardHTML } from '../src/ghin-scores.js';
 
@@ -190,6 +190,22 @@ test('ghinAdjustText: by how much GHIN adjusted a differential', () => {
   for (const none of [{ diff: 8.4 }, { diff: 8.4, rawDiff: 8.4 }, { diff: 0.3, rawDiff: 0.1 + 0.2 }, { rawDiff: 8.4 }, { diff: '7.4', rawDiff: 8.4 }, {}, null]) assert.equal(ghinAdjustText(none), '');
 });
 
+test('ghinScoreStats: the average, the best and the worst — GHIN\'s own, or worked out from the eighteen-hole scores', () => {
+  // GHIN's figures where it sent them, as they are.
+  assert.deepEqual(ghinScoreStats({ ...RECORD, stats: { count: 21, low: 78, high: 102, average: 89 } }), { average: 89, low: 78, high: 102, count: 21 });
+  // None sent: from the revision's scores — 88, 94, 85.
+  assert.deepEqual(ghinScoreStats(RECORD), { average: 89, low: 85, high: 94, count: 3 });
+  assert.equal(ghinScoreStats({ revision: [score('2026-11-01', 80), score('2026-10-01', 81), score('2026-09-01', 81)] }).average, 80.7, 'to a tenth');
+  // A nine-hole score is not set beside an eighteen-hole one; a score posted since is not in it.
+  const mixed = { revision: [score('2026-11-01', 90), score('2026-10-20', 44, { holes: 9 }), score('2026-10-02', 80)], recent: [score('2026-11-14', 70)] };
+  assert.deepEqual(ghinScoreStats(mixed), { average: 85, low: 80, high: 90, count: 2 });
+  // Half a set of figures is none: worked out instead.
+  assert.deepEqual(ghinScoreStats({ ...RECORD, stats: { count: 3, low: 85 } }), { average: 89, low: 85, high: 94, count: 3 });
+  assert.equal(ghinScoreStats({ ...RECORD, stats: { low: 85, high: 94, average: 89 } }).count, 0, 'a count GHIN left out');
+  // Nothing to say.
+  for (const none of [null, undefined, {}, { revision: [] }, { revision: [score('2026-11-01', 44, { holes: 9 })] }, { recent: [score('2026-11-14', 70)] }]) assert.equal(ghinScoreStats(none), null);
+});
+
 // The page's helpers, as plain stand-ins.
 const H = {
   t: (k) => ({ ghinScoresSub: 'best {used} of {n}', ghinScoresWaiting: '{n} waiting', ghinScoresAll: 'all ({n})', ghinStagingShort: 'trial', ghinScoresNone: 'no scores' }[k] || k),
@@ -214,6 +230,16 @@ test('ghinScoresHTML: the list, the scores that count marked, the first five sho
   assert.match(rows[1], /gs-score">80</);
   assert.match(rows[1], /2026\.10\.28 · Blue · 71\.2\/128 · H/);
   assert.match(rows[1], /<i-star>8\.0</);
+});
+
+test('ghinScoresHTML: the average, the best and the worst in a line over the list', () => {
+  const statsOf = (html) => [...html.matchAll(/gs-stat-l">(.*?)<\/span><span class="gs-stat-v">(.*?)<\/span>/g)].map(m => `${m[1]} ${m[2]}`);
+  assert.deepEqual(statsOf(ghinScoresHTML(RECORD, H)), ['ghinStatAverage 89', 'ghinStatBest 85', 'ghinStatWorst 94']);
+  assert.deepEqual(statsOf(ghinScoresHTML({ ...RECORD, stats: { count: 40, low: 71, high: 110, average: 86.4 } }, H)), ['ghinStatAverage 86.4', 'ghinStatBest 71', 'ghinStatWorst 110']);
+  // Over the list, under its heading; none when there is nothing to work it out from.
+  assert.ok(ghinScoresHTML(RECORD, H).indexOf('gs-stats') < ghinScoresHTML(RECORD, H).indexOf('gs-list'));
+  assert.equal(ghinScoresHTML({ revision: [score('2026-11-01', 44, { holes: 9 })] }, H).includes('gs-stats'), false);
+  assert.equal(ghinScoresHTML({ revision: [], recent: [] }, H).includes('gs-stats'), false);
 });
 
 test('ghinScoresHTML: few scores need no button; production is not marked a trial', () => {

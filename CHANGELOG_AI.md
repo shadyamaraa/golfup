@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Profile: Course Handicap from each tee; the average, best and worst score)
+
+Two of the things GHIN's own app does that needed nothing new from GHIN.
+
+- **Course Handicap** (`src/course-handicaps.js`): under the profile's
+  tiles, the strokes the member's GHIN index is worth from each tee of the
+  app's courses — the tees rated for their gender, every tee when it is not
+  known. Worked out in the app from the index and the course list's rating
+  and slope, which agree with GHIN's. A plus handicap reads «+2».
+- **Statistics**: over the list of scores, the average, the best and the
+  worst — GHIN's own figures where it sent them, else from the revision's
+  eighteen-hole scores (`ghinScoreStats`). Also in a player's «GHIN оноо».
+- For whoever sees the GHIN parts (admins today). No function, no rules
+  change.
+- Note: the Course Handicap is off the GHIN index; games still play off the
+  app's own index until production (see the decision below), so the two can
+  differ for a member today.
+- Tests: `scripts/test-course-handicaps.mjs` (7), `scripts/test-ghin-app.mjs` (27).
+
 ## 2026-11-20 (GHIN: which index is played off — a decision, recorded)
 
 The profile shows two indexes — the app's own «HCP индекс» and «GHIN HI» —
