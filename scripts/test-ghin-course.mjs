@@ -96,6 +96,45 @@ test('courseDiff: holes whose par or stroke index differ — men and women apart
   assert.deepEqual(gaps.holes, []);
 });
 
+// What GHIN had for the app's two courses — read with scripts/ghin-courses.mjs
+// against staging, 2026-11-20. Pars and stroke indexes were the app's own on
+// every tee set, so the app's card stands in for GHIN's here.
+const ghinTee = (id, name, gender, rating, slope, card) => ({ id: String(id), name, gender, rating, slope, par: 72, pars: { ...card.pars }, si: { ...card.si }, lengths: {} });
+const SKY = COURSE_DATA['Sky Resort Golf Club'];
+const CK = COURSE_DATA['Chinggis Khaan Golf Course'];
+const ON_GHIN = {
+  sky: { id: '29423', name: 'Mt. Bogd Golf & Country Club', tees: [
+    ghinTee(443315, 'BLACK TEE - MALE', 'M', 73.8, 132, SKY), ghinTee(443352, 'BLUE TEE - MALE', 'M', 71.4, 131, SKY),
+    ghinTee(443353, 'WHITE TEE - MALE', 'M', 69.4, 127, SKY), ghinTee(443354, 'GOLD TEE - MALE', 'M', 67, 121, SKY),
+    ghinTee(443357, 'RED TEE - MALE', 'M', 64.3, 111, SKY), ghinTee(443360, 'BLUE TEE - FEMALE', 'F', 78.6, 143, SKY),
+    ghinTee(443361, 'WHITE TEE - FEMALE', 'F', 75.8, 138, SKY), ghinTee(443362, 'GOLD TEE - FEMALE', 'F', 72.8, 134, SKY),
+    ghinTee(443363, 'RED TEE - FEMALE', 'F', 69.1, 122, SKY),
+  ] },
+  chinggis: { id: '29422', name: 'Chinggis Khaan Golf Course', tees: [
+    ghinTee(443285, 'WHITE - FEMALE', 'F', 75.2, 133, CK), ghinTee(443286, 'RED - FEMALE', 'F', 71.2, 127, CK),
+    ghinTee(443288, 'WHITE - MALE', 'M', 69.2, 119, CK), ghinTee(443289, 'RED - MALE', 'M', 66.1, 108, CK),
+  ] },
+};
+
+test('the app\'s courses agree with GHIN: every tee\'s rating and slope, and the ids a posted score names', () => {
+  for (const [name, app] of Object.entries(COURSE_DATA)) {
+    const ghin = ON_GHIN[app.key];
+    assert.ok(ghin, `${name}: what GHIN has is not held here — read it with scripts/ghin-courses.mjs`);
+    assert.equal(app.ghinCourseId, ghin.id, name);
+    const d = courseDiff(app, ghin);
+    assert.equal(d.agrees, true, name);
+    for (const t of d.tees) {
+      assert.equal(t.same, true, `${name} ${t.key}: app ${t.app.rating}/${t.app.slope}, GHIN ${t.ghin?.rating}/${t.ghin?.slope}`);
+      assert.equal(app.tees[t.key].ghinTeeSetId, t.ghin.id, `${name} ${t.key}`);
+    }
+  }
+  // The tee sets GHIN rates that the app does not offer yet.
+  assert.deepEqual(courseDiff(SKY, ON_GHIN.sky).unmatched.map(t => `${t.name} ${t.rating}/${t.slope}`),
+    ['RED TEE - MALE 64.3/111', 'BLUE TEE - FEMALE 78.6/143', 'WHITE TEE - FEMALE 75.8/138']);
+  assert.deepEqual(courseDiff(CK, ON_GHIN.chinggis).unmatched.map(t => `${t.name} ${t.rating}/${t.slope}`),
+    ['WHITE - FEMALE 75.2/133', 'RED - MALE 66.1/108']);
+});
+
 test('the app\'s own courses are of the shape compared', () => {
   for (const [name, c] of Object.entries(COURSE_DATA)) {
     const d = courseDiff(c, { tees: [] });

@@ -24,11 +24,10 @@ import { courseDiff } from '../src/ghin-course.js';
 
 const ghin = createRequire(import.meta.url)('../functions/ghin.js');
 
-// What to look a course up by, by its key in the app: a GHIN course id where
-// one is known, and words to search for. Chinggis Khaan's id is from an
-// earlier look (docs/ghin.md).
+// The words to search GHIN for, by a course's key in the app — for a course
+// that carries no GHIN id yet (`ghinCourseId` in src/courses.js).
 const LOOK = {
-  chinggis: { id: '29422', words: ['Chinggis'] },
+  chinggis: { words: ['Chinggis'] },
   sky: { words: ['Bogd', 'Sky Resort'] },
 };
 
@@ -75,7 +74,7 @@ try {
   const summary = {};
   for (const [name, app] of Object.entries(COURSE_DATA)) {
     const look = LOOK[app.key] || { words: [name] };
-    let id = pinned[app.key] || look.id || '';
+    let id = pinned[app.key] || app.ghinCourseId || '';
     console.log(`\n=== ${name}  (${app.key})`);
 
     if (!id) {
@@ -105,7 +104,8 @@ try {
     const diff = courseDiff(app, course);
     console.log('  The app\'s tees against GHIN\'s:');
     for (const t of diff.tees) {
-      const mark = !t.ghin ? 'NOT ON GHIN' : t.same ? 'same' : 'DIFFERS';
+      const held = app.tees[t.key].ghinTeeSetId;
+      const mark = !t.ghin ? 'NOT ON GHIN' : !t.same ? 'DIFFERS' : held && held !== t.ghin.id ? `same — but the app holds tee set ${held}` : 'same';
       console.log(`    ${t.key.padEnd(11)} app ${rs(t.app).padEnd(11)}  GHIN ${t.ghin ? `${rs(t.ghin).padEnd(11)} (${t.ghin.name}, ${G[t.ghin.gender]}, id ${t.ghin.id})` : '—'.padEnd(11)}  ${mark}`);
     }
     if (diff.unmatched.length) console.log(`  On GHIN, not in the app: ${diff.unmatched.map(t => `${t.name} (${G[t.gender]}) ${rs(t)}`).join('; ')}`);
@@ -116,7 +116,8 @@ try {
     } else if (course.tees.length) {
       console.log('  Pars and stroke indexes: the same as GHIN\'s.');
     }
-    console.log(`  ${diff.agrees ? 'Agrees with GHIN.' : 'Does not agree with GHIN yet — see above.'}`);
+    const idsOff = diff.tees.some(t => t.ghin && app.tees[t.key].ghinTeeSetId && app.tees[t.key].ghinTeeSetId !== t.ghin.id);
+    console.log(`  ${diff.agrees && !idsOff ? 'Agrees with GHIN.' : 'Does not agree with GHIN yet — see above.'}`);
     summary[app.key] = { ghinCourseId: course.id, tees: Object.fromEntries(diff.tees.map(t => [t.key, t.ghin ? { teeSetId: t.ghin.id, rating: t.ghin.rating, slope: t.ghin.slope } : null])) };
   }
   if (Object.keys(summary).length) {
