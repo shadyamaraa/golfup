@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
-import { ghinScoresHTML, wireGhinScores } from './ghin-scores.js';
+import { ghinScoresHTML, wireGhinScores, ghinHomeHTML } from './ghin-scores.js';
 import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
@@ -97,6 +97,9 @@ let activeUnsubs = [];
 let viewEpoch = 0;
 const viewAlive = () => { const mine = viewEpoch; return () => mine === viewEpoch; };
 const ghinOn = () => ghinVisibleTo(GHIN_STAGE, currentUser);
+// The part of the profile to bring into view when it is next drawn — set by
+// the home screen's Handicap Index block, which leads to the full score list.
+let profileFocus = null;
 // What the last «Сонгосныг холбох» did, shown once in the GHIN card after
 // the admin panel is drawn again with the members it tied.
 let ghinLinkNotice = '';
@@ -1487,6 +1490,7 @@ async function renderHome() {
           <div class="home-greet-name">${esc(displayUsername(currentUser))}</div>
         </div>
       </div>
+      <div id="home-ghin"></div>
       <div id="home-weather"><div class="wx-skel"></div></div>
       <div id="home-news"></div>
       <div id="next-tee-feature"></div>
@@ -1514,6 +1518,7 @@ async function renderHome() {
       if (unsub) activeUnsubs.push(unsub);
     }
   }
+  renderHomeGhin();
   renderHomeWeather(games);
   renderHomeNews();
   renderNextTeeFeature();
@@ -2249,6 +2254,43 @@ function rankingRowHTML(e) {
       ${pts ? `<span class="rk-pts">${esc(pts)}</span>` : ''}
       ${rankingDeltaHTML(e)}
     </div>`;
+}
+
+// The member's Handicap Index and the scores it is worked out from, first
+// thing on the home screen — as GHIN's own app opens (docs/ghin.md). For
+// whoever sees the GHIN parts and has a GHIN number; what the server stored
+// is shown at once, and read again in the background when a day old, as the
+// profile does. Either part may be missing; with neither, the block is not
+// there.
+async function renderHomeGhin() {
+  const host = document.getElementById('home-ghin');
+  if (!host || !ghinOn()) return;
+  const alive = viewAlive();
+  const shown = () => alive() && host.isConnected;
+  let member = currentUser;
+  try { member = (await store.loadUserById(currentUser.id)) || currentUser; } catch (_) { /* the session copy will do */ }
+  if (!shown() || !ghinDigits(member.ghinNumber)) return;
+  const [hiStored, scStored] = await Promise.all([store.loadGhin(member.id), store.loadGhinScores(member.id)]);
+  if (!shown()) return;
+  let hi = ghinFor(member, hiStored);
+  // Scores the server kept back from the member are still an admin's to read: asked for afresh.
+  const kept = ghinFor(member, scStored);
+  let scores = kept?.withheld === true && currentUser.role === 'admin' ? null : kept;
+  const h = { t, esc, icon };
+  const draw = () => {
+    const html = ghinHomeHTML(hi, scores, h);
+    host.innerHTML = html ? `<div class="home-ghin">${html}</div>` : '';
+    // «Бүгд» and the board lead to the full list on the profile.
+    host.querySelectorAll('[data-ghin-all]').forEach(a => a.addEventListener('click', () => { profileFocus = 'ghin-scores'; }));
+  };
+  draw();
+  const quiet = (what) => (err) => console.warn(what, err?.code || err);
+  if (ghinStale(hi)) {
+    store.ghinSync().then((fresh) => { hi = ghinFor(member, fresh) || hi; if (shown()) draw(); }).catch(quiet('GHIN sync:'));
+  }
+  if (ghinStale(scores)) {
+    store.ghinScoresSync().then((fresh) => { scores = ghinFor(member, fresh) || scores; if (shown()) draw(); }).catch(quiet('GHIN scores:'));
+  }
 }
 
 // The season's eagles and birdies and where they fell — the visitor home's
@@ -8838,6 +8880,12 @@ async function renderProfile() {
 
   const scoresHost = document.getElementById('ghin-scores');
   if (scoresHost) mountGhinScores(scoresHost, ghinMember, viewAlive());
+  // Come from the home screen's Handicap Index block: the list, not the top.
+  if (profileFocus) {
+    const at = document.getElementById(profileFocus);
+    profileFocus = null;
+    if (at) requestAnimationFrame(() => (at.previousElementSibling || at).scrollIntoView({ block: 'start' }));
+  }
 
   // A Handicap Index read more than a day ago, or never, is read again in
   // the background and the tile filled when it arrives. A failure — GHIN

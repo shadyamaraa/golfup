@@ -169,6 +169,15 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
   app; scores posted since are tagged «шинэ», an exceptional score «E», a
   penalty score «P»; an adjusted differential has the adjustment under it
   («−1.0»). Five rows, then «Бүгдийг харах».
+- **Home screen**: first thing under the greeting, as GHIN's own app opens
+  — «Handicap Index»: the index, the low index and the latest score as
+  tiles, then the revision's scores as a board of cells (the day, the
+  score, the differential), two rows of ten, the ones the index counts
+  filled in (`ghinHomeHTML`, `renderHomeGhin`). A score posted since is not
+  on the board — it is not in the index yet — but is the latest-score tile
+  and is counted in the board's heading («+1 шинэ»). «Бүгд» and the board
+  lead to the full list on the profile. Not there for a member with no GHIN
+  number.
 - **A player's details** (Тоглогчид → a name): «GHIN оноо» opens the same
   list for that player. Only an admin's opening it reads GHIN; another
   member sees what is stored, if the record is open to everyone.
@@ -396,7 +405,7 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | Which record is a member's, how it reads, what a refusal says, a scoring record's rows (pure) | `src/ghin.js` |
 | The scoring record as a list | `src/ghin-scores.js` |
 | The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`, `loadGhinScores`, `ghinScoresSync`) |
-| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `mountGhinScores`, `ghinAdminHTML`) |
+| The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `renderHomeGhin`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
 | A live check from your own terminal | `scripts/ghin-smoke.mjs` |
 | The app's courses against GHIN's, from your own terminal | `scripts/ghin-courses.mjs`, `src/ghin-course.js` (pure), `scripts/test-ghin-course.mjs` |

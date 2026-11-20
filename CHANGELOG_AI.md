@@ -1,5 +1,24 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: the Handicap Index and the last twenty scores on the home screen)
+
+The index and its scores were two taps away, on the profile. GHIN's own app
+opens on them.
+
+- Home, first thing under the greeting, for whoever sees the GHIN parts and
+  has a GHIN number: «Handicap Index» — tiles for the index, the low index
+  and the latest score, then the revision's scores as a board of cells (day,
+  score, differential), two rows of ten, the counted ones filled in — in
+  the manner of the «Eagle · Birdie» block (`ghinHomeHTML` in
+  `src/ghin-scores.js`, `renderHomeGhin` in `src/app.js`).
+- A score posted since the last revision is the latest-score tile and is
+  counted in the board's heading; it is not on the board.
+- «Бүгд» and the board lead to the full list on the profile, which is
+  brought into view.
+- What the server stored is shown at once and read again in the background
+  when a day old, as on the profile. No new function, no rules change.
+- Tests: `scripts/test-ghin-app.mjs` (24).
+
 ## 2026-11-20 (GHIN: the app's courses against GHIN's — a comparison to run)
 
 A differential agrees with GHIN's only when it is worked out from GHIN's
