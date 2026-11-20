@@ -1765,11 +1765,22 @@ div.cp-opt { cursor: default; }
 .gs-tag { flex-shrink: 0; display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 999px; font-size: 0.64rem; font-weight: 700; background: var(--accent-soft); color: var(--gold-dark); vertical-align: 1px; }
 .gs-more { display: block; width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--line2); background: none; font: inherit; font-size: 0.84rem; font-weight: 700; color: var(--gold-dark); cursor: pointer; }
 .gs-empty { padding: 16px; border: 1px dashed var(--border-card); border-radius: 16px; font-size: 0.86rem; color: var(--text-secondary); text-align: center; }
-/* The home screen's board: the scores the index is worked out from, a cell each. */
-.home-ghin { margin-bottom: 18px; }
-.home-ghin .section-head { margin-top: 20px; }
-.home-ghin .stat-tile { min-width: 0; }
-.home-ghin .st-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The home screen: one line under the greeting — the index, the low index, the latest score. */
+.ghin-strip {
+  display: flex; align-items: center; gap: 12px; margin: -6px 0 16px; padding: 9px 14px; overflow: hidden;
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 14px; text-decoration: none;
+}
+.ghs-item { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+.ghs-item + .ghs-item { padding-left: 12px; border-left: 1px solid var(--line2); }
+.ghs-l { font-size: 0.64rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.ghs-v { font-size: 1.05rem; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ghs-item:first-child .ghs-l { color: var(--gold-dark); }
+.ghs-item:first-child .ghs-v { font-size: 1.25rem; }
+.ghs-end { margin-left: auto; display: inline-flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
+html[data-theme="dark"] .ghs-item:first-child .ghs-l { color: var(--gold-light); }
+/* … and, above «Eagle · Birdie», the scores the index is worked out from, a cell each. */
+.home-ghin-board .section-head { margin-top: 24px; }
+#home-ghin-board { scroll-margin-top: 70px; }
 .gs-board { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 8px; text-decoration: none; }
 .gb-cell {
   display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; min-width: 0;

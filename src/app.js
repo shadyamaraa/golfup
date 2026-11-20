@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
-import { ghinScoresHTML, wireGhinScores, ghinHomeHTML } from './ghin-scores.js';
+import { ghinScoresHTML, wireGhinScores, ghinHomeStripHTML, ghinHomeBoardHTML } from './ghin-scores.js';
 import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
 import * as weather from './weather.js';
@@ -1502,6 +1502,7 @@ async function renderHome() {
         <a href="#/games" class="view-all">${t('viewAllShort')}</a>
       </div>
       <div id="home-upcoming" class="games-list"></div>
+      <div id="home-ghin-board"></div>
       <div id="home-holes"></div>
       <div id="home-ranking"></div>
     </div>`;
@@ -2256,15 +2257,18 @@ function rankingRowHTML(e) {
     </div>`;
 }
 
-// The member's Handicap Index and the scores it is worked out from, first
-// thing on the home screen — as GHIN's own app opens (docs/ghin.md). For
-// whoever sees the GHIN parts and has a GHIN number; what the server stored
-// is shown at once, and read again in the background when a day old, as the
-// profile does. Either part may be missing; with neither, the block is not
-// there.
+// The member's Handicap Index on the home screen, in two places
+// (docs/ghin.md): one line under the greeting — the index, the low index,
+// the latest score — and, above «Eagle · Birdie», the scores the index is
+// worked out from as a board. The line leads down to the board; the board
+// and its «Бүгд» to the full list on the profile. For whoever sees the GHIN
+// parts and has a GHIN number; what the server stored is shown at once, and
+// read again in the background when a day old, as the profile does. Either
+// part may be missing; with neither, nothing is there.
 async function renderHomeGhin() {
   const host = document.getElementById('home-ghin');
-  if (!host || !ghinOn()) return;
+  const boardHost = document.getElementById('home-ghin-board');
+  if (!host || !boardHost || !ghinOn()) return;
   const alive = viewAlive();
   const shown = () => alive() && host.isConnected;
   let member = currentUser;
@@ -2277,11 +2281,17 @@ async function renderHomeGhin() {
   const kept = ghinFor(member, scStored);
   let scores = kept?.withheld === true && currentUser.role === 'admin' ? null : kept;
   const h = { t, esc, icon };
+  const toList = () => { profileFocus = 'ghin-scores'; };
   const draw = () => {
-    const html = ghinHomeHTML(hi, scores, h);
-    host.innerHTML = html ? `<div class="home-ghin">${html}</div>` : '';
-    // «Бүгд» and the board lead to the full list on the profile.
-    host.querySelectorAll('[data-ghin-all]').forEach(a => a.addEventListener('click', () => { profileFocus = 'ghin-scores'; }));
+    host.innerHTML = ghinHomeStripHTML(hi, scores, h);
+    const board = ghinHomeBoardHTML(hi, scores, h);
+    boardHost.innerHTML = board ? `<div class="home-ghin-board">${board}</div>` : '';
+    // The line leads down to the board; with no board, to the full list like the rest.
+    host.querySelector('[data-ghin-board]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      boardHost.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    [host, boardHost].forEach(el => el.querySelectorAll('[data-ghin-all]').forEach(a => a.addEventListener('click', toList)));
   };
   draw();
   const quiet = (what) => (err) => console.warn(what, err?.code || err);

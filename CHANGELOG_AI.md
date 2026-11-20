@@ -1,5 +1,19 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Home: the Handicap Index as one line, the board above «Eagle · Birdie»)
+
+The whole «Handicap Index» block stood first on the home screen and pushed
+the day's play down; the owner wanted it beside «Eagle · Birdie», with the
+index still seen at a glance.
+
+- Under the greeting, one line: the index, the low index, the latest score
+  (`ghinHomeStripHTML`). Tapping it scrolls down to the board.
+- Above «Eagle · Birdie», «Сүүлийн 20 оноо»: the board as before, headed by
+  the index it is the making of and by how many scores count
+  (`ghinHomeBoardHTML`). The three tiles are gone.
+- `ghinHomeHTML` is replaced by the two; `renderHomeGhin` draws both.
+- Tests: `scripts/test-ghin-app.mjs` (25).
+
 ## 2026-11-20 (Courses: Mt. Bogd's ratings are GHIN's; GHIN's ids on the course list)
 
 The owner ran `scripts/ghin-courses.mjs` against GHIN (staging). Chinggis

@@ -4,8 +4,8 @@
 // above them the scores posted since. Builds HTML only — the record comes
 // from src/store.js (loadGhinScores, ghinScoresSync), its shape and the
 // rows from src/ghin.js. Used on the profile and in the player's details —
-// and, as a board of small cells under the Handicap Index, on the home
-// screen (ghinHomeHTML).
+// and on the home screen: one line under the greeting (ghinHomeStripHTML)
+// and the scores as a board of small cells (ghinHomeBoardHTML).
 
 import { ghinScoreRows, ghinScoreCounts, ghinDiffText, ghinAdjustText, ghinHiText } from './ghin.js';
 
@@ -91,24 +91,44 @@ export function wireGhinScores(root, h) {
 const dayText = (d) => String(d || '').slice(5, 10).replace('-', '.');
 
 /**
- * The home screen's block, as GHIN's own app opens: the Handicap Index, the
- * low index and the latest score as tiles, then the scores the index is
- * worked out from — the revision's, usually twenty: two rows of ten — as a
- * board of cells: the day, the score, the differential, the ones the index
- * counts filled in. A score posted since is not on the board (it is not in
- * the index yet): it is the latest-score tile, and counted in the board's
- * heading. `hi` is the stored ghin/{id} record, `scores` the stored
- * ghinScores/{id}; either may be missing. '' when there is nothing to show.
- * Whatever carries `data-ghin-all` leads to the full list.
+ * The home screen, in two places (docs/ghin.md).
+ *
+ * Under the greeting, one line: the Handicap Index, the low index and the
+ * latest score — a strip that leads down to the board (`data-ghin-board`),
+ * or to the full list when there is no board (`data-ghin-all`). It has room
+ * for the three numbers and no more: that the data is a trial, and that a
+ * score is new, is said at the board.
+ * `hi` is the stored ghin/{id} record, `scores` the stored ghinScores/{id};
+ * either may be missing. '' when there is nothing to show.
  */
-export function ghinHomeHTML(hi, scores, h) {
-  const { t, esc } = h;
+export function ghinHomeStripHTML(hi, scores, h) {
+  const { t, esc, icon } = h;
   const rows = ghinScoreRows(scores);
   if (!(hi && hi.found !== false) && !rows.length) return '';
-  const trial = (hi?.env || scores?.env) === 'staging' ? t('ghinStagingShort') : '';
-  const tile = (label, value, sub, navy) => `
-      <div class="stat-tile${navy ? ' navy' : ''}"><div class="st-label">${label}</div><div class="st-value">${esc(value)}</div>${sub ? `<div class="st-sub" title="${esc(sub)}">${esc(sub)}</div>` : ''}</div>`;
   const last = rows[0];
+  const item = (label, value) => `<span class="ghs-item"><span class="ghs-l">${label}</span><span class="ghs-v">${esc(value)}</span></span>`;
+  return `
+    <a class="ghin-strip" href="#/profile" ${rows.some(s => !s.pending) ? 'data-ghin-board' : 'data-ghin-all'}>
+      ${item('H.I', ghinHiText(hi))}
+      ${item(t('ghinLowHi'), (hi && hi.lowHi) || '—')}
+      ${last ? item(t('ghinLastScore'), last.score) : ''}
+      <span class="ghs-end">${icon('next', { size: 16 })}</span>
+    </a>`;
+}
+
+/**
+ * Above «Eagle · Birdie», in its manner: the scores the index is worked out
+ * from — the revision's, usually twenty: two rows of ten — as a board of
+ * cells: the day, the score, the differential, the ones the index counts
+ * filled in. A score posted since is not on the board (it is not in the
+ * index yet): it is counted in the board's heading, and is the strip's
+ * latest score. '' when the revision has no scores. Whatever carries
+ * `data-ghin-all` leads to the full list.
+ */
+export function ghinHomeBoardHTML(hi, scores, h) {
+  const { t, esc } = h;
+  const board = ghinScoreRows(scores).filter(s => !s.pending);
+  if (!board.length) return '';
   const n = ghinScoreCounts(scores);
   const cell = (s) => {
     const tip = [dateText(s.date), s.course, s.tee, s.used ? t('ghinScoresUsed') : ''].filter(Boolean).join(' · ');
@@ -120,22 +140,16 @@ export function ghinHomeHTML(hi, scores, h) {
   };
   const sub = t('ghinBoardSub').replace('{n}', n.revision).replace('{used}', n.used)
     + (n.pending ? ` · +${n.pending} ${t('ghinScoresPending')}` : '');
-  const board = rows.length ? `
-    <div class="hole-course">
-      <span class="hole-course-name">${t('ghinScoresTitle')}</span>
-      <span class="hole-course-sub">${esc(sub)}</span>
-    </div>
-    <a class="gs-board" href="#/profile" data-ghin-all>${rows.filter(s => !s.pending).map(cell).join('')}</a>
-    <div class="hole-legend">${t('ghinBoardLegend')}</div>`
-    : scores ? `<div class="gs-empty" style="margin-top:10px;">${esc(scores.message || (scores.withheld === true ? t('ghinScoresUnproven') : t('ghinScoresNone')))}</div>` : '';
+  const trial = (hi?.env || scores?.env) === 'staging' ? ` · ${t('ghinStagingShort')}` : '';
   return `
     <div class="section-head">
-      <h2>${t('ghinHomeTitle')}</h2>
+      <h2>${t('ghinScoresTitle')}</h2>
       <a href="#/profile" class="view-all" data-ghin-all>${t('viewAllShort')}</a>
     </div>
-    <div class="stat-row">
-      ${tile('H.I', ghinHiText(hi), [trial, hi?.revDate ? dayText(hi.revDate) : ''].filter(Boolean).join(' · '), true)}
-      ${tile(t('ghinLowHi'), (hi && hi.lowHi) || '—', '', true)}
-      ${last ? tile(t('ghinLastScore'), last.score, [dayText(last.date), last.pending ? t('ghinScoresPending') : last.course].filter(Boolean).join(' · '), false) : ''}
-    </div>${board}`;
+    <div class="hole-course">
+      <span class="hole-course-name">H.I ${esc(ghinHiText(hi))}${esc(trial)}</span>
+      <span class="hole-course-sub">${esc(sub)}</span>
+    </div>
+    <a class="gs-board" href="#/profile" data-ghin-all>${board.map(cell).join('')}</a>
+    <div class="hole-legend">${t('ghinBoardLegend')}</div>`;
 }
