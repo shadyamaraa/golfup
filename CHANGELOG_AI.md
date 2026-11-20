@@ -13,6 +13,9 @@ The second half: what the server already reads is now drawn.
   highest («Дээд»). Touching, pointing or the arrow keys show the nearest
   revision's index and day; «Жагсаалтаар харах» under the chart lists every
   change, the latest first.
+- A time with no index («NH») is a break in the line, not passed over: the
+  line stops at its day and starts again at the next index, and a history
+  that ends with one marks nothing as the index now (review of PR #169).
 - Plain SVG built in the app — no new dependency. One line colour in both
   themes (`#C5780C`, checked against the light and the dark card); drawn at
   the width it finds, and again when that changes.
@@ -27,7 +30,7 @@ The second half: what the server already reads is now drawn.
 - No change to the rules, the function's code or any config since the entry
   below — but **`ghinScores` must be deployed again** for `history` to be
   read: until then the chart simply does not appear.
-- Tests: `scripts/test-ghin-history.mjs` (19), in `npm run test:mp`.
+- Tests: `scripts/test-ghin-history.mjs` (22), in `npm run test:mp`.
 
 ## 2026-11-20 (GHIN: the Handicap Index over the last year — read, not shown yet)
 

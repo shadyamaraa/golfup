@@ -33,12 +33,11 @@ test('indexText: a whole number, a half, a plus handicap', () => {
   assert.deepEqual([12, 10.5, 0, -1, -2.5, 9.96].map(indexText), ['12', '10.5', '0', '+1', '+2.5', '10']);
 });
 
-test('ghinHistoryPoints: oldest first, with the day in milliseconds; what has no day or no number is left out', () => {
+test('ghinHistoryPoints: oldest first, with the day in milliseconds; what has no day, or nothing written, is left out', () => {
   const points = ghinHistoryPoints({ history: [
     rev('2026-03-05', 11.2), rev('2026-01-20', 12.4),
-    { date: '2026-02-01', hi: 'NH' },                    // no index that day
     { date: '', hi: '9.0', value: 9 }, { date: 'soon', hi: '9.0', value: 9 }, { hi: '9.0', value: 9 },
-    { date: '2026-02-10', hi: '9.0', value: '9' }, { date: '2026-02-11', hi: '9.0', value: NaN }, null, 'x',
+    { date: '2026-02-10' }, { date: '2026-02-11', hi: '', value: NaN }, null, 'x',
   ] });
   assert.deepEqual(points, [
     { date: '2026-01-20', hi: '12.4', value: 12.4, at: at(2026, 1, 20) },
@@ -53,10 +52,26 @@ test('ghinHistoryPoints: oldest first, with the day in milliseconds; what has no
   for (const none of [null, undefined, {}, { history: null }, { history: 'x' }, { history: [] }]) assert.deepEqual(ghinHistoryPoints(none), []);
 });
 
+// No index for a while: GHIN writes «NH», with no number behind it.
+const nh = (date) => ({ date, hi: 'NH' });
+
+test('ghinHistoryPoints: a time with no index stays, as a break — not before the first index, and not alone', () => {
+  const points = ghinHistoryPoints({ history: [nh('2025-12-01'), rev('2026-01-01', 12), nh('2026-01-11'), { date: '2026-01-15', hi: 'NH', value: 'x' }, rev('2026-01-21', 11), nh('2026-02-01')] });
+  assert.deepEqual(points.map(p => [p.date, p.hi, p.value]), [
+    ['2026-01-01', '12.0', 12], ['2026-01-11', 'NH', null], ['2026-01-15', 'NH', null], ['2026-01-21', '11.0', 11], ['2026-02-01', 'NH', null],
+  ]);
+  assert.deepEqual(ghinHistoryPoints({ history: [nh('2026-01-01'), nh('2026-02-01')] }), []);
+});
+
 test('ghinHistoryMarks: the last, the lowest and the highest — the latest of each', () => {
   assert.deepEqual(ghinHistoryMarks(POINTS), { now: 2, low: 1, high: 0 });
   const twice = ghinHistoryPoints({ history: [rev('2026-01-01', 10), rev('2026-01-02', 13), rev('2026-01-03', 10), rev('2026-01-04', 13), rev('2026-01-05', 12)] });
   assert.deepEqual(ghinHistoryMarks(twice), { now: 4, low: 2, high: 3 });
+  // A time with no index is neither the lowest nor the highest — and, last, there is no index now.
+  const gaps = ghinHistoryPoints({ history: [rev('2026-01-01', 12), nh('2026-01-05'), rev('2026-01-11', 10), rev('2026-01-21', 11), nh('2026-01-25')] });
+  assert.deepEqual(ghinHistoryMarks(gaps), { now: null, low: 2, high: 0 });
+  assert.deepEqual(ghinHistoryMarks(gaps.slice(0, 4)), { now: 3, low: 2, high: 0 });
+  assert.deepEqual(ghinHistoryMarks([]), { now: null, low: null, high: null });
 });
 
 test('niceTicks: round numbers, four at most', () => {
@@ -96,11 +111,40 @@ test('ghinHistoryLayout: the line is a step — flat until the day the index was
   }
 });
 
+test('ghinHistoryLayout: a time with no index is a break — the line stops there and starts again at the next index', () => {
+  const gap = ghinHistoryPoints({ history: [rev('2026-01-01', 12), nh('2026-01-11'), rev('2026-01-21', 11)] });
+  const L = ghinHistoryLayout(gap, { width: 370, until: at(2026, 1, 31) });
+  // No riser from 12 to 11: nothing is drawn from the 11th to the 21st.
+  assert.equal(L.path, 'M30,28H130M230,132H330');
+  assert.deepEqual([L.xs, L.ys], [[30, 130, 230], [28, null, 132]]);
+  assert.deepEqual([L.marks, L.end], [{ now: 2, low: null, high: 0 }, { x: 330, y: 132 }]);
+  // Two in a row are one break; the scale is the numbers' alone.
+  const two = ghinHistoryPoints({ history: [rev('2026-01-01', 12), nh('2026-01-06'), { date: '2026-01-11', hi: 'WD' }, rev('2026-01-21', 11)] });
+  assert.equal(ghinHistoryLayout(two, { width: 370, until: at(2026, 1, 31) }).path, 'M30,28H80M230,132H330');
+});
+
+test('ghinHistoryLayout: a history that ends with no index — the line ends there, and nothing is the index now', () => {
+  const ended = ghinHistoryPoints({ history: [rev('2026-01-01', 12), rev('2026-01-11', 11), nh('2026-01-21')] });
+  const L = ghinHistoryLayout(ended, { width: 370, until: at(2026, 1, 31) });
+  // Not on to the day it was read: 11.0 stopped being the index on the 21st.
+  assert.equal(L.path, 'M30,28H130V132H230');
+  assert.deepEqual([L.marks, L.end], [{ now: null, low: 1, high: 0 }, null]);
+  const html = ghinHistoryPlotHTML(L, ended, H);
+  assert.deepEqual([/gh-now/.test(html), html.split('class="gh-dot').length - 1, /High <tspan class="gh-lab-v">12\.0</.test(html), /Low <tspan class="gh-lab-v">11\.0</.test(html)], [false, 2, true, true]);
+  assert.match(ghinHistoryHTML({ syncedAt: at(2026, 1, 31), history: [rev('2026-01-01', 12), rev('2026-01-11', 11), nh('2026-01-21')] }, H),
+    /<div class="gs-sub">GHIN · 2026\.01\.01 to 2026\.01\.21, 3 changes<\/div>\s*<div class="gh-card">\s*<div class="gh-plot" tabindex="0" role="img" aria-label="now NH, lowest 11\.0, highest 12\.0">/);
+  // The time with no index is in the list, and can be pointed at.
+  assert.match(ghinHistoryHTML({ history: [rev('2026-01-01', 12), rev('2026-01-11', 11), nh('2026-01-21')] }, H), /<span>2026\.01\.21<\/span><span class="gh-row-v">NH<\/span>/);
+  assert.equal(ghinHistoryNearest(L, 240), 2);
+});
+
 test('ghinHistoryLayout: nothing to draw from one point, or from none, or with no time between them', () => {
   assert.equal(ghinHistoryLayout([], { width: 370 }), null);
   assert.equal(ghinHistoryLayout(null, { width: 370 }), null);
   assert.equal(ghinHistoryLayout(ghinHistoryPoints({ history: [rev('2026-01-01', 12)] }), { width: 370, until: at(2026, 3, 1) }), null);
   assert.equal(ghinHistoryLayout(ghinHistoryPoints({ history: [rev('2026-01-01', 12), rev('2026-01-01', 11)] }), { width: 370 }), null);
+  // One index and a time with none is still one index.
+  assert.equal(ghinHistoryLayout(ghinHistoryPoints({ history: [rev('2026-01-01', 12), nh('2026-02-01')] }), { width: 370, until: at(2026, 3, 1) }), null);
 });
 
 test('ghinHistoryLayout: the lowest and the highest are marked — unless that is where the line ends', () => {
@@ -206,6 +250,7 @@ test('ghinHistoryHTML: the time it covers, the chart\'s place, and every change 
 
 test('ghinHistoryHTML: nothing when there is no history to draw', () => {
   for (const none of [null, {}, { history: [] }, { history: [rev('2026-01-01', 12)] }, { history: [{ date: '2026-01-01', hi: 'NH' }, rev('2026-02-01', 12)] },
+    { history: [rev('2026-01-01', 12), nh('2026-02-01')] }, { history: [nh('2026-01-01'), nh('2026-02-01')] },
     { withheld: true, revision: [], recent: [] }]) assert.equal(ghinHistoryHTML(none, H), '');
 });
 

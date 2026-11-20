@@ -3,7 +3,7 @@
 // The data is the scoring record's `history`: one entry each time the index
 // changed, oldest first. The index holds from one revision to the next, so
 // the line is a step — flat until the day it was revised, and on to the day
-// the record was read. Marked on it: the index now (the end of the line), the
+// the record was read; a time with no index («NH») is a break in it. Marked on it: the index now (the end of the line), the
 // lowest and the highest of the year. Pointing at the chart shows the day and
 // the index of the nearest revision; every value is also in the list under
 // it. Down to ghinHistoryNearest the functions are pure (no DOM);
@@ -30,30 +30,43 @@ export function indexText(v) {
 }
 
 /**
- * What can be drawn of a record's history: [{ date, hi, value, at }], oldest
+ * What can be shown of a record's history: [{ date, hi, value, at }], oldest
  * first — the day, the index as GHIN displays it, the number behind it and
- * the day in milliseconds. An entry with no day or no number («NH») is left out.
+ * the day in milliseconds. A revision with no number («NH») is a time with
+ * no index: it stays, its `value` null, as a break in the line — the index
+ * before it did not go on. An entry with no day, or with nothing written, is
+ * left out; so is a time with no index before the first one. [] when the
+ * history has no number at all.
  */
 export function ghinHistoryPoints(record) {
-  return items(record?.history)
-    .map(r => ({ date: String(r?.date || '').slice(0, 10), value: r?.value, at: dayAt(r?.date), hi: r?.hi }))
-    .filter(p => Number.isFinite(p.at) && typeof p.value === 'number' && Number.isFinite(p.value))
-    .map(p => ({ ...p, hi: p.hi == null || p.hi === '' ? indexText(p.value) : String(p.hi) }))
+  const points = items(record?.history)
+    .map(r => {
+      const value = typeof r?.value === 'number' && Number.isFinite(r.value) ? r.value : null;
+      const hi = r?.hi == null || r.hi === '' ? (value == null ? '' : indexText(value)) : String(r.hi);
+      return { date: String(r?.date || '').slice(0, 10), hi, value, at: dayAt(r?.date) };
+    })
+    .filter(p => Number.isFinite(p.at) && p.hi !== '')
     .sort((a, b) => a.at - b.at);
+  const first = points.findIndex(p => p.value != null);
+  return first < 0 ? [] : points.slice(first);
 }
 
 /**
  * Which points are marked: { now, low, high } — the last, and the lowest and
  * the highest index (the latest of each, when it was reached more than once).
+ * `now` is null when the history ends with no index: the last number is not
+ * the index now. `low` and `high` are null when there is no number.
  */
 export function ghinHistoryMarks(points) {
-  let low = 0;
-  let high = 0;
+  let low = null;
+  let high = null;
   points.forEach((p, i) => {
-    if (p.value <= points[low].value) low = i;
-    if (p.value >= points[high].value) high = i;
+    if (p.value == null) return;
+    if (low == null || p.value <= points[low].value) low = i;
+    if (high == null || p.value >= points[high].value) high = i;
   });
-  return { now: points.length - 1, low, high };
+  const last = points.length - 1;
+  return { now: last >= 0 && points[last].value != null ? last : null, low, high };
 }
 
 /** Round numbers from `lo` to `hi` — the widest set of at most `most`. */
@@ -72,18 +85,20 @@ const MONTH_GAP = 40;
 /**
  * Where everything goes at a width. `opts`: { width, height?, until? } —
  * `until` is when the record was read (ms): the line runs on to that day.
- * null when there is nothing to draw: fewer than two points, or no time
+ * null when there is nothing to draw: fewer than two numbers, or no time
  * between them.
  *
  * → { width, height, left, right, top, bottom,     the plot's frame
- *     xs, ys,                                     a point's place, by its index
- *     path,                                       the step line
- *     marks: { now, low, high },                  indexes; low/high null when it is the last
- *     end: { x, y },                              the end of the line — the index now
+ *     xs, ys,                                     a point's place, by its index — y null for a time with no index
+ *     path,                                       the step line, broken where there was no index
+ *     marks: { now, low, high },                  indexes; low/high null when it is the last, now null when it ends with no index
+ *     end: { x, y } | null,                       the end of the line — the index now, when there is one
  *     yTicks: [{ y, text }], xTicks: [{ x, month, year } | { x, day, anchor }] }
  */
 export function ghinHistoryLayout(points, opts = {}) {
-  if (!Array.isArray(points) || points.length < 2) return null;
+  if (!Array.isArray(points)) return null;
+  const values = points.filter(p => p.value != null).map(p => p.value);
+  if (values.length < 2) return null;
   const last = points[points.length - 1];
   const from = points[0].at;
   const until = Math.floor(Number(opts.until) / DAY) * DAY;
@@ -102,7 +117,6 @@ export function ghinHistoryLayout(points, opts = {}) {
   // The line keeps clear of the frame: room over the highest and under the
   // lowest for what is written there. An index that barely moved is not
   // blown up to fill the height: the scale spans a stroke at least.
-  const values = points.map(p => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = Math.max(max - min, 1);
@@ -113,10 +127,17 @@ export function ghinHistoryLayout(points, opts = {}) {
   const y = (v) => round1(yHigh + (ceiling - v) / perPx);
 
   const xs = points.map(p => x(p.at));
-  const ys = points.map(p => y(p.value));
-  let path = `M${xs[0]},${ys[0]}`;
-  for (let i = 1; i < points.length; i++) path += `H${xs[i]}V${ys[i]}`;
-  if (to > last.at) path += `H${right}`;
+  const ys = points.map(p => (p.value == null ? null : y(p.value)));
+  // Flat from each revision to the next; where the index was taken away the
+  // line stops, and starts again where there is one.
+  let path = '';
+  let pen = false;
+  points.forEach((p, i) => {
+    if (p.value == null) { if (pen) path += `H${xs[i]}`; pen = false; return; }
+    path += pen ? `H${xs[i]}V${ys[i]}` : `M${xs[i]},${ys[i]}`;
+    pen = true;
+  });
+  if (pen && to > last.at) path += `H${right}`;
 
   const m = ghinHistoryMarks(points);
   const marks = { now: m.now, low: m.low === m.now ? null : m.low, high: m.high === m.now ? null : m.high };
@@ -145,7 +166,8 @@ export function ghinHistoryLayout(points, opts = {}) {
     xTicks = [{ x: left, day: md(from), anchor: 'start' }, { x: right, day: md(to), anchor: 'end' }];
   }
 
-  return { width, height, left, right, top, bottom, xs, ys, path, marks, end: { x: to > last.at ? right : xs[m.now], y: ys[m.now] }, yTicks, xTicks };
+  const end = m.now == null ? null : { x: to > last.at ? right : xs[m.now], y: ys[m.now] };
+  return { width, height, left, right, top, bottom, xs, ys, path, marks, end, yTicks, xTicks };
 }
 
 /** The point nearest to `px` across the chart: its index — the earlier of two as near. */
@@ -186,8 +208,8 @@ export function ghinHistoryPlotHTML(layout, points, h) {
       <line class="gh-cross" x1="0" x2="0" y1="${L.top}" y2="${L.bottom}"/>
       ${L.marks.high != null ? dot(L.marks.high) + label(L.marks.high, t('ghinHistHigh'), -10) : ''}
       ${L.marks.low != null ? dot(L.marks.low) + label(L.marks.low, t('ghinHistLow'), 17) : ''}
-      <circle class="gh-dot gh-now" cx="${L.end.x}" cy="${L.end.y}" r="4.5"/>
-      <text class="gh-lab gh-lab-now" x="${L.end.x + 9}" y="${round1(L.end.y + 4)}">${esc(points[L.marks.now].hi)}</text>
+      ${L.end ? `<circle class="gh-dot gh-now" cx="${L.end.x}" cy="${L.end.y}" r="4.5"/>
+      <text class="gh-lab gh-lab-now" x="${L.end.x + 9}" y="${round1(L.end.y + 4)}">${esc(points[L.marks.now].hi)}</text>` : ''}
       <circle class="gh-focus" cx="0" cy="0" r="5"/>
     </svg>
     <div class="gh-tip" role="status"><span class="gh-tip-v"></span><span class="gh-tip-d"></span></div>`;
@@ -204,11 +226,13 @@ export function ghinHistoryHTML(record, h) {
   const points = ghinHistoryPoints(record);
   if (!ghinHistoryLayout(points, { until: record?.syncedAt })) return '';
   const m = ghinHistoryMarks(points);
+  // The latest revision is what the index is now — a number, or none («NH»).
+  const latest = points[points.length - 1];
   const trial = record?.env === 'staging' ? ` · ${t('ghinStagingShort')}` : '';
   const sub = t('ghinHistSub')
-    .replace('{from}', dateText(points[0].date)).replace('{to}', dateText(points[m.now].date)).replace('{n}', points.length);
+    .replace('{from}', dateText(points[0].date)).replace('{to}', dateText(latest.date)).replace('{n}', points.length);
   const about = t('ghinHistAbout')
-    .replace('{now}', points[m.now].hi).replace('{low}', points[m.low].hi).replace('{high}', points[m.high].hi);
+    .replace('{now}', latest.hi).replace('{low}', points[m.low].hi).replace('{high}', points[m.high].hi);
   return `
     <div class="gs-sub">GHIN${esc(trial)} · ${esc(sub)}</div>
     <div class="gh-card">
@@ -229,8 +253,8 @@ const watching = new WeakMap();
  * Draw a record's history into `host` — `head` (the section's heading) over
  * it — or empty it when there is none. The chart is drawn at the width found
  * there and again when that changes. Pointing, touching or the arrow keys
- * show a revision: a line down the chart at its day, a dot on it, and the
- * index and the day in a note at the top.
+ * show a revision: a line down the chart at its day, a dot on it (none for
+ * a time with no index), and the index and the day in a note at the top.
  */
 export function mountGhinHistory(host, record, h, head = '') {
   if (!host) return;
@@ -252,9 +276,14 @@ export function mountGhinHistory(host, record, h, head = '') {
     const cross = plot.querySelector('.gh-cross');
     cross.setAttribute('x1', px);
     cross.setAttribute('x2', px);
-    const focus = plot.querySelector('.gh-focus');
-    focus.setAttribute('cx', px);
-    focus.setAttribute('cy', layout.ys[i]);
+    // A time with no index has a day and no place on the line: no dot there.
+    const gap = layout.ys[i] == null;
+    plot.classList.toggle('gap', gap);
+    if (!gap) {
+      const focus = plot.querySelector('.gh-focus');
+      focus.setAttribute('cx', px);
+      focus.setAttribute('cy', layout.ys[i]);
+    }
     const tip = plot.querySelector('.gh-tip');
     tip.querySelector('.gh-tip-v').textContent = points[i].hi;
     tip.querySelector('.gh-tip-d').textContent = dateText(points[i].date);

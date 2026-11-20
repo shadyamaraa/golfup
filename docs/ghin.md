@@ -186,7 +186,10 @@ whoever sees the GHIN parts (`GHIN_STAGE`):
   read. Across is the day, not the count of changes. Marked: the index now
   at the end of the line, and the lowest and the highest of the year where
   they are not the same point; a few round figures down the side, the
-  months under it (the year where a year begins). Touching, pointing or the
+  months under it (the year where a year begins). A revision with no number
+  («NH») is a time with no index: the line stops at its day and starts
+  again at the next index, and when the history ends with one, nothing is
+  marked as the index now — the last number is not carried on. Touching, pointing or the
   arrow keys show the nearest revision — its index and its day in a note at
   the top, a line down the chart at its day — and every change is also in
   the list folded under the chart («Жагсаалтаар харах»), the latest first,

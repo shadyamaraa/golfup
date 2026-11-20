@@ -1826,6 +1826,7 @@ html[data-theme="dark"] .ghs-item:first-child .ghs-l { color: var(--gold-light);
 .gh-cross { stroke: var(--text-muted); stroke-width: 1; shape-rendering: crispEdges; }
 .gh-cross, .gh-focus, .gh-tip { visibility: hidden; }
 .gh-plot.on .gh-cross, .gh-plot.on .gh-focus, .gh-plot.on .gh-tip { visibility: visible; }
+.gh-plot.gap .gh-focus { visibility: hidden; }
 .gh-tip {
   position: absolute; top: -2px; left: 0; transform: translateX(-50%); display: inline-flex; align-items: baseline; gap: 7px;
   padding: 4px 9px; white-space: nowrap; pointer-events: none; border-radius: 9px;
