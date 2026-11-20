@@ -1,5 +1,34 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (Profile: the Handicap Index over the last year, as a chart)
+
+The second half: what the server already reads is now drawn.
+
+- **«Индексийн өөрчлөлт»** on the profile, under the GHIN tile and above
+  Course Handicap (`src/ghin-history.js`, `mountGhinHistory`): the whole
+  year at once, no period to choose. The line is a step — the index holds
+  from one revision to the next, so it is flat until the day it was revised
+  (the winter is one long flat) and runs on to the day the record was read.
+  Marked: the index now at the end of the line, the lowest («Доод») and the
+  highest («Дээд»). Touching, pointing or the arrow keys show the nearest
+  revision's index and day; «Жагсаалтаар харах» under the chart lists every
+  change, the latest first.
+- Plain SVG built in the app — no new dependency. One line colour in both
+  themes (`#C5780C`, checked against the light and the dark card); drawn at
+  the width it finds, and again when that changes.
+- Shown to whoever sees the GHIN parts (`GHIN_STAGE`: the admins, for now),
+  for their own record; nothing with fewer than two changes or when the
+  scores were kept back.
+- `renderProfile` reads the stored scoring record with the page (one read
+  more, alongside the index's), so the chart is there from the first paint
+  and pushes nothing down; `mountGhinScores` takes that record
+  (`opts.stored`) and tells of each record it draws (`opts.onRecord`).
+- i18n: `ghinHist*` in mn / en / kr.
+- No change to the rules, the function's code or any config since the entry
+  below — but **`ghinScores` must be deployed again** for `history` to be
+  read: until then the chart simply does not appear.
+- Tests: `scripts/test-ghin-history.mjs` (19), in `npm run test:mp`.
+
 ## 2026-11-20 (GHIN: the Handicap Index over the last year — read, not shown yet)
 
 The first half of a chart of how a member's index moved.

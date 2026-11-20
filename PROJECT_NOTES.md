@@ -68,7 +68,8 @@ under `ghin/{memberId}`, which members read
 and no client writes. `ghinScores` reads a member's scoring record — the
 twenty or so scores the index is worked out from, and the ones posted since
 — into `ghinScores/{memberId}`; the profile shows it as «Сүүлийн 20 оноо»
-(`src/ghin-scores.js`). How a member was tied to their golfer (on the proof
+(`src/ghin-scores.js`), and the index over the last year that rides with it
+as a chart, «Индексийн өөрчлөлт» (`src/ghin-history.js`). How a member was tied to their golfer (on the proof
 of the phone they sign in with) is under `ghinLink/{memberId}`, likewise. It is a trial
 on GHIN's staging environment: only admins see it (`GHIN_STAGE` in
 `src/app.js`), and it does not feed a playing handicap — games still use

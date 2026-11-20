@@ -5,6 +5,7 @@ import * as mtbogd from './booking.js';
 import { mnLocal, leftText, verifyErrorKey, passwordErrorKey } from './phone-auth.js';
 import { ghinVisibleTo, ghinDigits, ghinFor, ghinHiText, ghinStale, ghinErrorKey, ghinRoster, ghinLinkWhyKey } from './ghin.js';
 import { ghinScoresHTML, wireGhinScores, ghinHomeStripHTML, ghinHomeBoardHTML } from './ghin-scores.js';
+import { mountGhinHistory } from './ghin-history.js';
 import { courseHandicapsHTML } from './course-handicaps.js';
 import { memberSystems, MEMBER_FILTERS, MEMBER_ORDERS, systemsInFilter, memberFilterCounts, memberSortKey, compareMembers } from './member-systems.js';
 import { bookingState, verifyOutcome, attachable, remoteSummary, bookingReason, logEntry, gamePlayerCount, seatsToBook, bookingPlayer, bookingPrice, seatsByPlayer, bookingQuoteOf, sameQuote } from './booking-sync.js';
@@ -8812,12 +8813,20 @@ async function renderProfile() {
   // What GHIN said of the member's number, when the server has read it.
   let ghinMember = u;
   let ghinRec = null;
+  // … and their scoring record as the server stored it, read with the page:
+  // the chart drawn from it stands over the rest, so it is there from the
+  // first paint and pushes nothing down. undefined: not read.
+  let ghinScoresStored;
   try {
     const rec = await store.loadUserById(u.id);
     hcpIndex = rec?.hcpIndex ?? u.hcpIndex ?? null;
     if (isGender(rec?.gender)) gender = rec.gender;
     if (rec) ghinMember = rec;
-    if (ghinOn() && ghinDigits(ghinMember.ghinNumber)) ghinRec = ghinFor(ghinMember, await store.loadGhin(u.id));
+    if (ghinOn() && ghinDigits(ghinMember.ghinNumber)) {
+      const [hi, scores] = await Promise.all([store.loadGhin(u.id), store.loadGhinScores(u.id)]);
+      ghinRec = ghinFor(ghinMember, hi);
+      ghinScoresStored = scores;
+    }
   } catch (_) {}
   const myGames = games.filter(isMyGame);
   const created = games.filter(g => g.createdBy === u.id).length;
@@ -8858,6 +8867,7 @@ async function renderProfile() {
           <div class="stat-tile" id="ghin-tile" ${ghinRec ? '' : 'hidden'}>${ghinTileInner(ghinRec)}</div>
         </div>
         ${ghinOn() && ghinDigits(ghinMember.ghinNumber) ? `
+        <div id="ghin-history"></div>
         <div id="ghin-ch"></div>
         <div class="section-head" style="margin-top:22px;"><h2>${t('ghinScoresTitle')}</h2></div>
         <div id="ghin-scores" class="gs-box"></div>` : ''}
@@ -8905,8 +8915,13 @@ async function renderProfile() {
   };
   drawCourseHandicaps(ghinRec);
 
+  // Their Handicap Index over the last year, as a chart — from the scoring
+  // record, so drawn with the list of scores and again when a fresher record
+  // arrives. Nothing when the record has no history.
+  const drawHistory = (rec) => mountGhinHistory(document.getElementById('ghin-history'), rec, { t, esc },
+    `<div class="section-head" style="margin-top:22px;"><h2>${t('ghinHistTitle')}</h2></div>`);
   const scoresHost = document.getElementById('ghin-scores');
-  if (scoresHost) mountGhinScores(scoresHost, ghinMember, viewAlive());
+  if (scoresHost) mountGhinScores(scoresHost, ghinMember, viewAlive(), { stored: ghinScoresStored, onRecord: drawHistory });
   // Come from the home screen's Handicap Index block: the list, not the top.
   if (profileFocus) {
     const at = document.getElementById(profileFocus);
@@ -8936,15 +8951,17 @@ async function renderProfile() {
 // none, or it is more than a day old, it is read again — the member's own,
 // or anyone's for an admin — and the list drawn anew when it arrives. A
 // failure leaves what was there, or says why when there was nothing.
-async function mountGhinScores(host, member, alive = () => true) {
+// `opts.stored`: the stored record when the caller has read it already;
+// `opts.onRecord(rec)`: told of each record drawn, for what else shows it.
+async function mountGhinScores(host, member, alive = () => true, opts = {}) {
   const h = { t, esc, icon };
   const shown = () => alive() && host.isConnected;
-  const draw = (rec) => { host.innerHTML = ghinScoresHTML(rec, h); wireGhinScores(host, h); };
+  const draw = (rec) => { host.innerHTML = ghinScoresHTML(rec, h); wireGhinScores(host, h); opts.onRecord?.(rec); };
   const say = (text) => { host.innerHTML = `<div class="gs-empty">${esc(text)}</div>`; };
   say(t('ghinScoresLoading'));
   const mine = member.id === currentUser?.id;
   const admin = currentUser?.role === 'admin';
-  const stored = ghinFor(member, await store.loadGhinScores(member.id));
+  const stored = ghinFor(member, opts.stored !== undefined ? opts.stored : await store.loadGhinScores(member.id));
   if (!shown()) return;
   // A record whose scores the server kept back (the member's GHIN number is
   // not proven theirs) is still an admin's to read: asked for afresh.

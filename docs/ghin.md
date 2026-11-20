@@ -154,7 +154,8 @@ passed over, a hidden one is not shown. It is one more request when the
 record is read, and optional: where GHIN refuses it the scores stand
 without it. It is kept back with the scores when they are. Written from
 GHIN's spec — `scripts/ghin-smoke.mjs` reads it too and says whether GHIN
-answered. **Not shown in the app yet.**
+answered (it did for the association's login, 2026-11-20: 153 revisions,
+77 changes of the index). Shown on the profile as a chart — below.
 
 Who reads it (database rules): the member their own, an admin anyone's,
 another member only a record whose `visibility` is `everyone` — GHIN lets a
@@ -177,7 +178,25 @@ and an admin's next look asks GHIN again.
 In the app (`src/ghin-scores.js`, `mountGhinScores` in `src/app.js`), for
 whoever sees the GHIN parts (`GHIN_STAGE`):
 
-- **Profile**: «Course Handicap» under the tiles — the strokes the member's
+- **Profile**: «Индексийн өөрчлөлт» first under the tiles — the Handicap
+  Index over the last year as a chart (`src/ghin-history.js`), drawn from
+  the scoring record's `history`. The index holds from one revision to the
+  next, so the line is a **step**, not a slope: flat until the day it was
+  revised (the winter is one long flat), and on to the day the record was
+  read. Across is the day, not the count of changes. Marked: the index now
+  at the end of the line, and the lowest and the highest of the year where
+  they are not the same point; a few round figures down the side, the
+  months under it (the year where a year begins). Touching, pointing or the
+  arrow keys show the nearest revision — its index and its day in a note at
+  the top, a line down the chart at its day — and every change is also in
+  the list folded under the chart («Жагсаалтаар харах»), the latest first,
+  so nothing is read only by pointing. One colour in both themes
+  (`#C5780C`, checked against the light and the dark card); what is written
+  wears the text colours. Drawn at the width it finds and again when that
+  changes. Nothing is shown with fewer than two changes, or when the
+  scores were kept back. The stored record is read with the page, so the
+  chart is there from the first paint and pushes nothing down.
+- «Course Handicap» under it — the strokes the member's
   GHIN index is worth from each tee of the app's courses: a cell a tee, its
   name, the strokes, its rating and slope (`src/course-handicaps.js`).
   `Handicap Index × Slope ÷ 113 + (Course Rating − Par)`, to a whole stroke;
@@ -471,6 +490,7 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 | Which record is a member's, how it reads, what a refusal says, a scoring record's rows (pure) | `src/ghin.js` |
 | The scoring record as a list | `src/ghin-scores.js` |
 | Course Handicap from each tee | `src/course-handicaps.js`, `scripts/test-course-handicaps.mjs` |
+| The index over the last year as a chart | `src/ghin-history.js`, `scripts/test-ghin-history.mjs` |
 | The browser's calls | `src/store.js` (`ghinCheck`, `ghinSync`, `ghinSyncAll`, `loadGhin`, `loadAllGhin`, `loadGhinScores`, `ghinScoresSync`) |
 | The screens | `src/app.js` (`wireProfileForm`, `renderProfile`, `renderHomeGhin`, `mountGhinScores`, `ghinAdminHTML`) |
 | Tests | `scripts/test-ghin.mjs`, `scripts/test-ghin-app.mjs`, `scripts/test-rules.mjs` |
