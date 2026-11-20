@@ -394,10 +394,15 @@ function trimScore(row) {
   const out = { date, score, used: row.used === true };
   const put = (key, value) => { if (value != null && value !== '') out[key] = value; };
   put('id', row.id != null ? String(row.id) : null);
-  put('diff', numberOr(row.differential));
+  // A nine-hole score counts toward the index as the eighteen-hole
+  // differential GHIN works out from it ("scaled up"): that is the one
+  // shown, where GHIN sends it.
+  const nine = numberOr(row.number_of_played_holes) === 9 || numberOr(row.number_of_holes) === 9;
+  const scaled = nine ? numberOr(row.adjusted_scaled_up_differential) : null;
+  put('diff', scaled != null ? scaled : numberOr(row.differential));
   // What the differential was before GHIN adjusted it (an exceptional score
   // takes one off each of the last twenty) — kept only when it differs.
-  const raw = numberOr(row.unadjusted_differential);
+  const raw = numberOr(scaled != null ? row.scaled_up_differential : row.unadjusted_differential);
   if (raw != null && out.diff != null && raw !== out.diff) out.rawDiff = raw;
   put('holes', numberOr(row.number_of_holes));
   put('course', course);

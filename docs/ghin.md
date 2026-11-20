@@ -123,7 +123,10 @@ night's revision apart (**recent scores**) until the next one takes them in.
 counts it, `rawDiff` what it was before an adjustment (kept only when the
 two differ — an exceptional score takes 1.0 off each of the last twenty),
 `type` GHIN's own letter (H home, A away, T tournament, C combined
-nine-hole scores…). Hole-by-hole scores and everything about the golfer stay on the
+nine-hole scores…). For a nine-hole score `diff` is the eighteen-hole
+differential GHIN makes of it (`adjusted_scaled_up_differential`) where it
+sends one — read off the field names; not yet seen on a real nine-hole
+score. Hole-by-hole scores and everything about the golfer stay on the
 server.
 
 GHIN side: `GET /golfers/{number}/scores.json?source_golfer_id={number}` →
@@ -132,9 +135,11 @@ score_history_stats, scoring_record_visibility,
 scoring_record_visibility_message }` — both lists in one request. Where
 GHIN refuses that one, the lists are asked for on their own
 (`golfers/{number}/revision_scores`, `…/recent_scores`; the recent ones are
-then optional). **Not yet tried against GHIN** — written from the spec;
-`scripts/ghin-smoke.mjs` reads a scoring record the same way and prints
-which request answered, or what GHIN said in refusing.
+then optional). Tried against staging from the owner's terminal
+(2026-11-20, `scripts/ghin-smoke.mjs`): the one request answers for the
+association's login — twenty revision scores, eight counted, the record
+shown to everyone. The same golfer in the GHIN app had two newer rounds and
+another index: staging's copy ended the day before them.
 
 Who reads it (database rules): the member their own, an admin anyone's,
 another member only a record whose `visibility` is `everyone` — GHIN lets a
@@ -378,9 +383,6 @@ adjustments stay with the association, in GHIN's own Admin Portal.
 
 ## Not done yet
 
-- **The scoring record against real GHIN.** `ghinScores` is written from
-  the spec; the login may not be allowed the score endpoints. Run
-  `scripts/ghin-smoke.mjs` first.
 - **Every member's scoring record, every night** — needed before the list
   is opened to all members (`GHIN_STAGE = 'all'`), so that a record is there
   without its member having opened their profile. And a record open to the

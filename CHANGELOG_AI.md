@@ -13,9 +13,10 @@ posted since.
   `revision_scores` + `recent_scores`; stored under `ghinScores/{memberId}`;
   an answer under ten minutes old is not asked for again. Nothing personal
   and no hole-by-hole is kept. `sync` and `scores` share `memberAsked`.
-  **A new function — deploy it by hand.** Written from GHIN's spec, not yet
-  tried against GHIN: `scripts/ghin-smoke.mjs` now reads a scoring record
-  too and says which request answered.
+  **A new function — deploy it by hand.** `scripts/ghin-smoke.mjs` now reads
+  a scoring record too and says which request answered; run by the owner
+  against staging (2026-11-20), the one request answers. A nine-hole score
+  shows the eighteen-hole differential GHIN makes of it, where it sends one.
 - **Database rules**: `ghinScores/{memberId}` — read by the member, by an
   admin, and by another member only when GHIN shows the record to everyone;
   no client writes; not readable as a whole.

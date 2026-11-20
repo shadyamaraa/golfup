@@ -932,6 +932,15 @@ test('trimScore: when, where, the score, the differential, whether it counts —
   assert.deepEqual([adjusted.diff, adjusted.rawDiff], [7.4, 8.4]);
   assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { differential: null, unadjusted_differential: 8.4 })), false);
   assert.equal('rawDiff' in ghin.trimScore(scoreRow('2026-11-01', { unadjusted_differential: undefined })), false);
+  // Nine holes: the eighteen-hole differential GHIN made of it, where it sends one.
+  const nine = { number_of_holes: 9, number_of_played_holes: 9, adjusted_gross_score: 44, differential: 6.1, unadjusted_differential: 6.1 };
+  const scaledUp = ghin.trimScore(scoreRow('2026-11-01', { ...nine, scaled_up_differential: 13.9, adjusted_scaled_up_differential: 12.9 }));
+  assert.deepEqual([scaledUp.score, scaledUp.holes, scaledUp.diff, scaledUp.rawDiff], [44, 9, 12.9, 13.9]);
+  const unscaled = ghin.trimScore(scoreRow('2026-11-01', { ...nine, scaled_up_differential: null, adjusted_scaled_up_differential: null }));
+  assert.deepEqual([unscaled.diff, 'rawDiff' in unscaled], [6.1, false]);
+  // … and only for nine holes: an eighteen-hole score's differential is its own.
+  const full = ghin.trimScore(scoreRow('2026-11-01', { scaled_up_differential: 30.1, adjusted_scaled_up_differential: 29.1 }));
+  assert.deepEqual([full.diff, 'rawDiff' in full], [15.4, false]);
   // A field GHIN left out is left out; `used` is only what GHIN says is.
   const bare = ghin.trimScore({ played_at: '2026-11-01', adjusted_gross_score: 90, used: 'true' });
   assert.deepEqual(bare, { date: '2026-11-01', score: 90, used: false });
