@@ -580,16 +580,112 @@ async function scores(deps, body) {
   } catch (err) {
     return refusal(err, admin);
   }
-  const link = await deps.loadLink(target);
+  const kept = await storeScores(deps, target, number, record);
+  return { status: 200, body: { ok: true, scores: admin ? record : kept } };
+}
+
+// Store a record read for a member, by the rule above: the whole of it when
+// GHIN shows it to everyone or the server tied the member to that golfer —
+// otherwise without the scores, and what is made of them. → what was stored.
+// deps: { loadLink(memberId), saveScores(memberId, record) }
+async function storeScores(deps, memberId, number, record) {
+  const link = await deps.loadLink(memberId);
   const proven = !!link && typeof link === 'object' && sameKey(link.number) === sameKey(number);
   if (record.visibility === 'everyone' || proven) {
-    await deps.saveScores(target, record);
-    return { status: 200, body: { ok: true, scores: record } };
+    await deps.saveScores(memberId, record);
+    return record;
   }
   const { stats, history, ...rest } = record;   // eslint-disable-line no-unused-vars
   const kept = { ...rest, revision: [], recent: [], withheld: true };
-  await deps.saveScores(target, kept);
-  return { status: 200, body: { ok: true, scores: admin ? record : kept } };
+  await deps.saveScores(memberId, kept);
+  return kept;
+}
+
+// The night's reading of every scoring record: so many golfers asked for at
+// a time, and so many refusals in a row before the rest are left for the
+// next night — GHIN is refusing everyone, or has had enough of us.
+const SCORES_AT_ONCE = 3;
+const SCORES_GIVE_UP = 5;
+
+/**
+ * Read the scoring record of every member GHIN knows and store each as
+ * `scores` stores one — with no one asking, so nothing is answered but
+ * counts. A member whose number GHIN has no golfer under (ghin/{memberId},
+ * read just before) has no scores there either and is not asked for.
+ *
+ * The longest unread come first — never read, or read for another number or
+ * from another environment, before all — a few at a time, until everyone is
+ * read or the time is up (`deps.until`, ms): who is left is first the next
+ * night. A golfer GHIN refuses is passed over and what was stored for them
+ * stays. A refused login, GHIN out of reach, a run of refusals, or no one
+ * read at all ends the round and is told (`stopped`).
+ *
+ * deps: { client, loadUsers(), loadAllGhin(), loadAllScores(), loadLink(memberId),
+ *         saveScores(memberId, record), now?, until? }
+ * → { members, read, withheld, noHistory, failed, left, stopped }
+ *   members  with a number GHIN knows
+ *   read     stored tonight — `withheld` of them without their scores,
+ *            `noHistory` without the index over the last year
+ *   failed   refused by GHIN, one by one
+ *   left     not asked for: the time was up, or the round stopped
+ *   stopped  null, or the refusal that ended it ({ code, message, … })
+ */
+async function scoresAllNow(deps) {
+  const now = deps.now || Date.now;
+  const env = deps.client.env;
+  const users = (await deps.loadUsers()) || {};
+  const known = (await deps.loadAllGhin()) || {};
+  const held = (await deps.loadAllScores()) || {};
+
+  const queue = [];
+  for (const [memberId, u] of Object.entries(users)) {
+    const number = u && typeof u === 'object' ? ghinNumber(u.ghinNumber) : null;
+    if (!number) continue;
+    const hi = known[memberId];
+    if (hi && typeof hi === 'object' && hi.found === false && sameKey(hi.number) === sameKey(number)) continue;
+    const was = held[memberId];
+    const mine = !!was && typeof was === 'object' && sameKey(was.number) === sameKey(number) && was.env === env;
+    queue.push({ memberId, number, at: mine ? Number(was.syncedAt) || 0 : 0 });
+  }
+  queue.sort((a, b) => a.at - b.at || (a.memberId < b.memberId ? -1 : a.memberId > b.memberId ? 1 : 0));
+
+  const out = { members: queue.length, read: 0, withheld: 0, noHistory: 0, failed: 0, left: 0, stopped: null };
+  let next = 0;
+  let inARow = 0;
+  let refused = null;    // the last golfer's refusal
+  let ended = null;      // what ended the round, if anything did
+  const timeUp = () => deps.until != null && now() >= deps.until;
+  // One golfer. False when there is no one to take: all are read, the time
+  // is up, or the round has ended.
+  const one = async () => {
+    if (ended || next >= queue.length || timeUp()) return false;
+    const { memberId, number } = queue[next++];
+    try {
+      const record = await scoresByNumber(deps.client, number, now());
+      const kept = await storeScores(deps, memberId, number, record);
+      inARow = 0;
+      out.read++;
+      if (kept.withheld === true) out.withheld++;
+      if (!record.history) out.noHistory++;
+    } catch (err) {
+      // Not GHIN refusing this golfer — the login, the line, or our own
+      // side: no one after would fare better.
+      if (!err || err.ghin !== 'GHIN_ERROR') { ended = ended || err || new Error('scores'); return false; }
+      out.failed++;
+      refused = err;
+      if (++inARow >= SCORES_GIVE_UP) ended = ended || err;
+    }
+    return true;
+  };
+  // The first alone — it logs in if no one has, so a refused login is
+  // refused once — then a few at a time.
+  if (await one()) await Promise.all(Array.from({ length: SCORES_AT_ONCE }, async () => { while (await one()); }));
+  out.left = queue.length - out.read - out.failed;
+  // Everyone asked for was refused: that is GHIN's answer to us, not to them.
+  if (!ended && !out.read && refused) ended = refused;
+  // (Anything that is not a refusal of GHIN's is thrown on, as everywhere.)
+  if (ended) out.stopped = refusal(ended, true).body.error;
+  return out;
 }
 
 /**
@@ -1064,13 +1160,18 @@ function nameAgrees(member, golferName) {
  *      an admin to look at; so are a golfer who is another member's, and a
  *      phone two golfers share.
  *   2. Every member's Handicap Index is read afresh.
+ *   3. Every member's scoring record is read and stored (scoresAllNow) — as
+ *      far as the night's time goes (`deps.until`); who is left comes first
+ *      the next night.
  *
  * What GHIN refuses does not stop the rest: the answer says what was done,
  * and `errors` what was not. No phone number is in the answer.
- * deps: { client, loadUsers() (with the private half), saveLink, saveAllGhin, now? }
+ * deps: { client, loadUsers() (with the private half), saveLink, saveAllGhin,
+ *         loadAllGhin(), loadAllScores(), loadLink(memberId), saveScores(memberId, record),
+ *         now?, until? }
  */
 async function nightly(deps) {
-  const out = { ok: true, env: deps.client.env, tied: [], left: { name: 0, taken: 0, several: 0 }, refused: [], sync: null, errors: [] };
+  const out = { ok: true, env: deps.client.env, tied: [], left: { name: 0, taken: 0, several: 0 }, refused: [], sync: null, scores: null, errors: [] };
   const failed = (step, res) => out.errors.push({ step, ...((res.body && res.body.error) || {}) });
 
   const report = await phoneReportNow(deps);
@@ -1098,6 +1199,10 @@ async function nightly(deps) {
   if (sync.status !== 200) failed('read', sync);
   else out.sync = { members: sync.body.members, found: sync.body.found, notFound: sync.body.notFound };
 
+  const { stopped, ...counts } = await scoresAllNow(deps);
+  out.scores = counts;
+  if (stopped) out.errors.push({ step: 'scores', ...stopped });
+
   out.ok = out.errors.length === 0;
   return out;
 }
@@ -1107,6 +1212,7 @@ module.exports = {
   baseUrlOf, envOf, createClient, ghinNumber, trimGolfer, golfersByNumber, phoneKey,
   lookup, sync, syncAll, phoneReport, linkByPhone, MAX_LINKS, nameWords, nameAgrees, nightly,
   trimScore, scoresByNumber, scores, SCORES_FRESH_MS, trimRevision, historyList, historyByNumber,
+  scoresAllNow, SCORES_AT_ONCE, SCORES_GIVE_UP,
   trimTeeSet, trimCourse, findCourses, courseById,
   _resetTokens: () => tokens.clear(),
 };

@@ -32,9 +32,22 @@ const row = (ghinNo, over = {}) => ({
 function fakeGhin(golfers = [], over = {}) {
   const state = { logins: 0, searches: [], listings: [], scoreAsks: [], historyAsks: [], courseAsks: [], asked: [], tokens: new Set(), n: 0, ...over };
   const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+  // Every request: how many are out at once (`most`), a wait (`delay`, ms)
+  // and a hook (`onAsk(url)`) for a test to move the clock by.
   const fetch = async (url, init = {}) => {
+    state.out = (state.out || 0) + 1;
+    state.most = Math.max(state.most || 0, state.out);
+    try {
+      if (state.delay) await new Promise(r => setTimeout(r, state.delay));
+      return await answer(url, init);
+    } finally {
+      state.out--;
+    }
+  };
+  const answer = async (url, init = {}) => {
     const u = new URL(url);
     state.asked.push({ url: String(url), method: init.method || 'GET', body: init.body || null, auth: init.headers?.Authorization || null });
+    if (state.onAsk) state.onAsk(u);
     if (state.down) throw new TypeError('fetch failed');
     if (u.pathname.endsWith('/users/login.json')) {
       state.logins++;
@@ -127,6 +140,8 @@ function fakeGhin(golfers = [], over = {}) {
       state.scoreAsks.push(`${sc[2]} ${sc[1]} for ${u.searchParams.get('source_golfer_id')}`);
       if (state.scoreStatus?.[sc[2]] === 'down') throw new TypeError('fetch failed');
       if (state.scoreStatus?.[sc[2]]) return json(state.scoreStatus[sc[2]], { error: 'AccessDenied: You are not authorized to access this page.' });
+      // One golfer's record refused, whichever way it is asked for.
+      if (state.scoreFail?.[sc[1]]) return json(state.scoreFail[sc[1]], { error: 'Not Found' });
       const rec = (state.scoring || {})[sc[1]] || {};
       const vis = { scoring_record_visibility: rec.visibility, scoring_record_visibility_message: rec.message || '' };
       if (sc[2] === 'scores') {
@@ -181,6 +196,8 @@ function world(golfers = [], over = {}) {
     loadLink: async (id) => ties[id] || null,
     loadScores: async (id) => kept[id] || null,
     saveScores: async (id, record) => { kept[id] = record; },
+    loadAllGhin: async () => saved,
+    loadAllScores: async () => kept,
   };
   return { fake, deps, users, secrets, saved, links, kept, ties, tick };
 }
@@ -820,7 +837,7 @@ test('nameAgrees: one shared word, however the two names are written', () => {
 // as the real one does, so the reading that follows sees it.
 function nightWorld(golfers, over = {}) {
   const w = phoneWorld(golfers, over);
-  w.deps.saveLink = async (id, tie) => { w.links[id] = tie; w.users[id] = { ...w.users[id], ghinNumber: tie.number }; };
+  w.deps.saveLink = async (id, tie) => { w.links[id] = tie; w.ties[id] = tie.link; w.users[id] = { ...w.users[id], ghinNumber: tie.number }; };
   // The night's round has no caller: nothing in it may ask who is signed in.
   w.deps.verifyIdToken = async () => { throw new Error('the night\'s round asked for a caller'); };
   w.deps.loadUser = async () => { throw new Error('the night\'s round asked for a caller'); };
@@ -880,7 +897,7 @@ test('nightly: GHIN down — nothing tied, nothing stored, and it says so instea
   const w = nightWorld(PHONE_GOLFERS, { ghin: { searchStatus: 503 } });
   const out = await ghin.nightly(w.deps);
   assert.equal(out.ok, false);
-  assert.deepEqual(out.errors.map(e => [e.step, e.code]), [['find', 'GHIN_ERROR'], ['read', 'GHIN_ERROR']]);
+  assert.deepEqual(out.errors.map(e => [e.step, e.code]), [['find', 'GHIN_ERROR'], ['read', 'GHIN_ERROR'], ['scores', 'GHIN_ERROR']]);
   assert.deepEqual(out.tied, []);
   assert.deepEqual(w.links, {});
   assert.deepEqual(w.saved, {});
@@ -1352,4 +1369,240 @@ test('scores: a record kept back keeps its history back too — an admin is stil
   const tied = withHistory({}, TIED);
   assert.deepEqual((await ghin.scores(tied.deps, { idToken: 'tok-b' })).body.scores.history.map(r => r.hi), ['20.1']);
   assert.deepEqual(tied.kept.u_b.history.map(r => r.hi), ['20.1']);
+});
+
+// ---- The night's reading of every scoring record ----
+
+// So many members, each with a golfer of their own whose record GHIN shows
+// to everyone: m_0 … ↔ 30000000 …
+const manyNumber = (i) => String(30000000 + i);
+function many(n, over = {}) {
+  const ids = Array.from({ length: n }, (_, i) => i);
+  const w = world(ids.map(i => row(30000000 + i)), {
+    users: Object.fromEntries(ids.map(i => [`m_${i}`, { id: `m_${i}`, name: `Member ${i}`, role: 'user', status: 'active', ghinNumber: manyNumber(i) }])),
+    ghin: { scoring: Object.fromEntries(ids.map(i => [manyNumber(i), { visibility: 'everyone', revision: [scoreRow('2026-11-01', { id: i })], recent: [] }])), ...over },
+  });
+  return noCaller(w);
+}
+// The night's reading has no one asking: nothing in it may ask who is signed in.
+function noCaller(w) {
+  w.deps.verifyIdToken = async () => { throw new Error('the night\'s reading asked for a caller'); };
+  w.deps.loadUser = async () => { throw new Error('the night\'s reading asked for a caller'); };
+  return w;
+}
+// The golfers whose record was asked for, in the order asked.
+const askedFor = (w) => w.fake.state.scoreAsks.filter(a => a.startsWith('scores ')).map(a => a.split(' ')[1]);
+const failing = (...is) => Object.fromEntries(is.map(i => [manyNumber(i), 404]));
+const DAY_MS = 24 * 3600 * 1000;
+
+test('scoresAllNow: every member with a number — read and stored as `scores` stores one', async () => {
+  const w = noCaller(withHistory());
+  const out = await ghin.scoresAllNow(w.deps);
+  // u_a's record is shown to everyone; u_b's and u_adm's are kept to their clubs and their numbers only typed.
+  assert.deepEqual(out, { members: 3, read: 3, withheld: 2, noHistory: 1, failed: 0, left: 0, stopped: null });
+  assert.deepEqual(Object.keys(w.kept).sort(), ['u_a', 'u_adm', 'u_b']);
+  assert.deepEqual([w.kept.u_a.revision.map(s => s.score), w.kept.u_a.recent.map(s => s.score), w.kept.u_a.history.map(r => r.hi), w.kept.u_a.syncedAt, w.kept.u_a.env],
+    [[88, 94], [85], ['12.4', '11.9', '10.8'], NOW, 'staging']);
+  for (const id of ['u_b', 'u_adm']) {
+    assert.deepEqual([w.kept[id].revision, w.kept[id].recent, w.kept[id].withheld, 'stats' in w.kept[id], 'history' in w.kept[id]], [[], [], true, false, false], id);
+  }
+  const told = JSON.stringify([out, w.kept.u_b, w.kept.u_adm]);
+  for (const leak of ['Mt Bogd', '97', '99', '20.1', '2026-09-09', '2026-08-08']) assert.equal(told.includes(leak), false, leak);
+  // Tied by the server: u_b's is stored whole.
+  const tied = noCaller(withHistory({}, TIED));
+  assert.deepEqual(await ghin.scoresAllNow(tied.deps), { members: 3, read: 3, withheld: 1, noHistory: 1, failed: 0, left: 0, stopped: null });
+  assert.deepEqual([tied.kept.u_b.revision.map(s => s.score), tied.kept.u_b.history.map(r => r.hi), 'withheld' in tied.kept.u_b], [[97], ['20.1'], false]);
+  // Nothing personal, and no hole-by-hole, in what is stored.
+  const all = JSON.stringify(tied.kept);
+  for (const secret of [...PII, 'hole_details', 'golfer_id', 'bat@example.mn', '99119007']) assert.equal(all.includes(secret), false, secret);
+});
+
+test('scoresAllNow: a member with no number is not asked for — nor one GHIN has no golfer under their number', async () => {
+  const w = many(5);
+  delete w.users.m_4.ghinNumber;
+  w.saved.m_0 = { number: '30000000', found: false, env: 'staging', syncedAt: NOW };
+  w.saved.m_1 = { number: '39999999', found: false, env: 'staging', syncedAt: NOW };     // said of the number they had before
+  w.saved.m_2 = { number: '30000002', found: true, hi: '12.3', env: 'staging', syncedAt: NOW };
+  const out = await ghin.scoresAllNow(w.deps);
+  assert.deepEqual([out.members, out.read], [3, 3]);
+  assert.deepEqual(askedFor(w), ['30000001', '30000002', '30000003']);
+  assert.deepEqual(Object.keys(w.kept).sort(), ['m_1', 'm_2', 'm_3']);
+  // … however the stored record spells the number.
+  const spelled = many(2);
+  spelled.saved.m_0 = { number: '030000000', found: false };
+  assert.deepEqual([(await ghin.scoresAllNow(spelled.deps)).members, askedFor(spelled)], [1, ['30000001']]);
+  // No one with a number: nothing is asked, not even a login.
+  const none = many(2);
+  for (const u of Object.values(none.users)) delete u.ghinNumber;
+  assert.deepEqual(await ghin.scoresAllNow(none.deps), { members: 0, read: 0, withheld: 0, noHistory: 0, failed: 0, left: 0, stopped: null });
+  assert.equal(none.fake.state.asked.length, 0);
+});
+
+test('scoresAllNow: the longest unread first — never read, or read for another number or elsewhere, before all', async () => {
+  const w = many(6);
+  const rec = (i, ago, over = {}) => ({ number: manyNumber(i), env: 'staging', syncedAt: NOW - ago, visibility: 'everyone', revision: [], recent: [], ...over });
+  w.kept.m_0 = rec(0, 3600 * 1000);
+  w.kept.m_1 = rec(1, 3 * DAY_MS);
+  w.kept.m_3 = rec(3, 7200 * 1000, { number: '39999999' });       // the number they had before
+  w.kept.m_4 = rec(4, 7200 * 1000, { env: 'production' });        // read from the other GHIN
+  w.kept.m_5 = rec(5, 2 * DAY_MS);
+  await ghin.scoresAllNow(w.deps);
+  assert.deepEqual(askedFor(w), ['30000002', '30000003', '30000004', '30000001', '30000005', '30000000']);
+});
+
+test('scoresAllNow: when the time is up no one more is taken — who is left is first the next night', async () => {
+  const w = many(6);
+  // A minute to each golfer's scores; a minute and a half of time.
+  w.fake.state.onAsk = (u) => { if (u.pathname.endsWith('/scores.json')) w.tick(60 * 1000); };
+  w.deps.until = NOW + 90 * 1000;
+  const out = await ghin.scoresAllNow(w.deps);
+  // The first alone, then three at once — taken before the time was up, and read to the end.
+  assert.deepEqual(out, { members: 6, read: 4, withheld: 0, noHistory: 4, failed: 0, left: 2, stopped: null });
+  assert.deepEqual(Object.keys(w.kept).sort(), ['m_0', 'm_1', 'm_2', 'm_3']);
+  // The next night, with time enough: the two left, then the rest as they were read.
+  w.fake.state.scoreAsks.length = 0;
+  delete w.deps.until;
+  assert.deepEqual([(await ghin.scoresAllNow(w.deps)).read, askedFor(w)], [6, ['30000004', '30000005', '30000000', '30000001', '30000002', '30000003']]);
+  // No time at all: nothing is asked — and that is not a failure.
+  const late = many(3);
+  late.deps.until = NOW;
+  assert.deepEqual(await ghin.scoresAllNow(late.deps), { members: 3, read: 0, withheld: 0, noHistory: 0, failed: 0, left: 3, stopped: null });
+  assert.equal(late.fake.state.asked.length, 0);
+});
+
+test('scoresAllNow: a golfer GHIN refuses is passed over — what was stored for them stays, the rest are read', async () => {
+  const w = many(4, { scoreFail: failing(1) });
+  w.kept.m_1 = { number: '30000001', env: 'staging', syncedAt: NOW - 5 * DAY_MS, visibility: 'everyone', revision: [{ date: '2026-10-01', score: 90, used: true }], recent: [] };
+  const before = JSON.stringify(w.kept.m_1);
+  const out = await ghin.scoresAllNow(w.deps);
+  assert.deepEqual(out, { members: 4, read: 3, withheld: 0, noHistory: 3, failed: 1, left: 0, stopped: null });
+  assert.equal(JSON.stringify(w.kept.m_1), before);
+  assert.deepEqual(Object.keys(w.kept).sort(), ['m_0', 'm_1', 'm_2', 'm_3']);
+  // Asked both ways before being given up on, as `scores` asks.
+  assert.ok(w.fake.state.scoreAsks.includes('revision_scores 30000001 for 30000001'));
+  // Refusals that are not a run do not end the round — six of them here, three and three with golfers read between.
+  const some = many(10, { scoreFail: failing(1, 2, 3, 7, 8, 9) });
+  assert.deepEqual(await ghin.scoresAllNow(some.deps), { members: 10, read: 4, withheld: 0, noHistory: 4, failed: 6, left: 0, stopped: null });
+  // The index's history refused is no refusal of the golfer: the scores are stored without it.
+  const quiet = noCaller(withHistory({ historyStatus: 403 }));
+  assert.deepEqual(await ghin.scoresAllNow(quiet.deps), { members: 3, read: 3, withheld: 2, noHistory: 3, failed: 0, left: 0, stopped: null });
+});
+
+test('scoresAllNow: a run of refusals ends the round — the rest are left for the next night', async () => {
+  // One read, then GHIN refuses everyone: five in a row and no one more is taken.
+  const w = many(12, { scoreFail: failing(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11) });
+  const out = await ghin.scoresAllNow(w.deps);
+  assert.equal(ghin.SCORES_GIVE_UP, 5);
+  assert.deepEqual([out.members, out.read, out.read + out.failed + out.left], [12, 1, 12]);
+  // (Those already asked for when the fifth came back are still counted.)
+  assert.ok(out.failed >= 5 && out.failed <= 7 && out.left >= 4, JSON.stringify(out));
+  assert.deepEqual([out.stopped.code, out.stopped.upstream], ['GHIN_ERROR', 404]);
+  assert.match(out.stopped.detail, /Not Found/);
+  assert.deepEqual(Object.keys(w.kept), ['m_0']);
+  assert.equal(askedFor(w).length, 1 + out.failed);
+  // Five exactly ends it; four does not.
+  const five = await ghin.scoresAllNow(many(6, { scoreFail: failing(1, 2, 3, 4, 5) }).deps);
+  assert.deepEqual([five.read, five.failed, five.left, five.stopped.code], [1, 5, 0, 'GHIN_ERROR']);
+  assert.deepEqual(await ghin.scoresAllNow(many(5, { scoreFail: failing(1, 2, 3, 4) }).deps),
+    { members: 5, read: 1, withheld: 0, noHistory: 1, failed: 4, left: 0, stopped: null });
+  // Everyone asked for refused, few as they are: that is told as well.
+  const few = many(3, { scoreFail: failing(0, 1, 2) });
+  const none = await ghin.scoresAllNow(few.deps);
+  assert.deepEqual([none.read, none.failed, none.left, none.stopped.code], [0, 3, 0, 'GHIN_ERROR']);
+  // One of them read: the other two were theirs alone.
+  const one = many(3, { scoreFail: failing(0, 2) });
+  assert.deepEqual(await ghin.scoresAllNow(one.deps), { members: 3, read: 1, withheld: 0, noHistory: 1, failed: 2, left: 0, stopped: null });
+});
+
+test('scoresAllNow: the login refused, or GHIN out of reach — asked once, and no one after', async () => {
+  const refused = many(8, { loginStatus: 401 });
+  const out = await ghin.scoresAllNow(refused.deps);
+  assert.deepEqual([out.read, out.failed, out.left, out.stopped.code], [0, 0, 8, 'LOGIN_REFUSED']);
+  assert.equal(refused.fake.state.logins, 1, 'the first golfer alone: one login tried');
+  assert.deepEqual(refused.kept, {});
+  const down = many(8, { down: true });
+  const gone = await ghin.scoresAllNow(down.deps);
+  assert.deepEqual([gone.read, gone.failed, gone.left, gone.stopped.code], [0, 0, 8, 'GHIN_UNREACHABLE']);
+  assert.equal(down.fake.state.asked.length, 1);
+  // The line lost half way: what was read stays, the rest are left.
+  const half = many(8);
+  half.fake.state.onAsk = () => { if (askedFor(half).length >= 4) half.fake.state.down = true; };
+  const cut = await ghin.scoresAllNow(half.deps);
+  assert.equal(cut.stopped.code, 'GHIN_UNREACHABLE');
+  assert.deepEqual([cut.read + cut.failed + cut.left, cut.failed, cut.read > 0, cut.left > 0], [8, 0, true, true]);
+  assert.equal(Object.keys(half.kept).length, cut.read);
+});
+
+test('scoresAllNow: the first golfer alone, then a few at a time', async () => {
+  const w = many(9, { delay: 2 });
+  // The most requests out at once until a second golfer is asked about.
+  let alone = 0;
+  let others = false;
+  w.fake.state.onAsk = (u) => {
+    if (/\/golfers\/\d+\//.test(u.pathname) && !u.pathname.includes('/golfers/30000000/')) others = true;
+    if (!others) alone = Math.max(alone, w.fake.state.out);
+  };
+  const out = await ghin.scoresAllNow(w.deps);
+  assert.equal(out.read, 9);
+  assert.equal(alone, 1, 'no other request out while the first golfer is read — its login among them');
+  assert.deepEqual([ghin.SCORES_AT_ONCE, w.fake.state.most], [3, 3]);
+});
+
+test('scoresAllNow: a failure on our own side is thrown on — and no one after is asked', async () => {
+  const w = many(8);
+  w.deps.saveScores = async () => { throw new Error('the database is away'); };
+  await assert.rejects(ghin.scoresAllNow(w.deps), /the database is away/);
+  assert.deepEqual(askedFor(w), ['30000000']);
+  // Half way: the readers stop where they are.
+  const half = many(12);
+  const save = half.deps.saveScores;
+  half.deps.saveScores = async (id, record) => { if (id === 'm_2') throw new Error('the database is away'); return save(id, record); };
+  await assert.rejects(ghin.scoresAllNow(half.deps), /the database is away/);
+  assert.ok(askedFor(half).length < 12);
+});
+
+// GHIN's scoring records for the night's round: l_same's is shown to
+// everyone; the golfer n_one is tied to tonight keeps theirs to the club.
+const NIGHT_SCORING = {
+  12345678: SCORING[12345678],
+  67890123: { visibility: 'club_only', revision: [scoreRow('2026-10-10', { id: 21, golfer_id: '67890123', adjusted_gross_score: 81 })], recent: [] },
+  23456789: SCORING[23456789],
+};
+
+test('nightly: last, every scoring record is read — tonight\'s tie is proof enough for a record kept to the club', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { scoring: NIGHT_SCORING } });
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, true);
+  // Five tied before and n_one tonight; l_gone is not on GHIN and is not asked for.
+  assert.deepEqual(out.scores, { members: 5, read: 5, withheld: 3, noHistory: 5, failed: 0, left: 0 });
+  assert.deepEqual(Object.keys(w.kept).sort(), ['l_diff', 'l_kr', 'l_none', 'l_same', 'n_one']);
+  assert.deepEqual([w.kept.l_same.revision.length, 'withheld' in w.kept.l_same], [2, false]);
+  assert.deepEqual([w.kept.n_one.revision.map(s => s.score), w.kept.n_one.visibility, 'withheld' in w.kept.n_one], [[81], 'club', false]);
+  // l_diff's number was only typed: their club's record is stored without its scores.
+  assert.deepEqual([w.kept.l_diff.revision, w.kept.l_diff.withheld], [[], true]);
+  assert.equal(askedFor(w).includes('45678901'), false);
+  // Counts only: no name, no number, no phone.
+  assert.ok(Object.values(out.scores).every(Number.isInteger));
+  const all = JSON.stringify([out, w.kept]);
+  for (const secret of ['88110001', '99119007', 'bat@example.mn', '1988-04-02', 'Peace Ave']) assert.equal(all.includes(secret), false, secret);
+});
+
+test('nightly: the scoring records go as far as the night\'s time — the ties and the indexes are done first', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { scoring: NIGHT_SCORING } });
+  w.deps.until = NOW;
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, true, 'out of time is not a failure');
+  assert.deepEqual(out.scores, { members: 5, read: 0, withheld: 0, noHistory: 0, failed: 0, left: 5 });
+  assert.deepEqual([out.tied.length, out.sync], [1, { members: 6, found: 5, notFound: 1 }]);
+  assert.deepEqual(w.kept, {});
+});
+
+test('nightly: the scoring records refused — it says so, and the rest of the night stands', async () => {
+  const w = nightWorld(PHONE_GOLFERS, { ghin: { scoring: NIGHT_SCORING, scoreStatus: { scores: 403, revision_scores: 403 } } });
+  const out = await ghin.nightly(w.deps);
+  assert.equal(out.ok, false);
+  assert.deepEqual(out.errors.map(e => [e.step, e.code, e.upstream]), [['scores', 'GHIN_ERROR', 403]]);
+  assert.deepEqual([out.scores.read, out.scores.failed, out.scores.left], [0, 5, 0]);
+  assert.deepEqual([out.tied.length, out.sync], [1, { members: 6, found: 5, notFound: 1 }]);
+  assert.equal('stopped' in out.scores, false);
 });

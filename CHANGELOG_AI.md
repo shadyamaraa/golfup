@@ -1,5 +1,32 @@
 # CHANGELOG_AI.md
 
+## 2026-11-20 (GHIN: every member's scoring record is read each night)
+
+So far a scoring record was read when its member — or an admin — opened
+it. The night's round now reads them all, which is what opening the GHIN
+parts to every member needs: the home screen and the profile show last
+night's record without asking GHIN.
+
+- `functions/ghin.js` `nightly`, a third step (`scoresAllNow`): after the
+  ties and the indexes, the scoring record — scores, the ones posted since,
+  the index over the last year — of every member with a number GHIN has a
+  golfer under. Stored by the rule `ghinScores` stores by (`storeScores`,
+  now shared): whole where GHIN shows the record to everyone or the server
+  tied the member to that golfer, without its scores otherwise.
+- Gentle on GHIN and on the function's nine minutes: two requests a golfer,
+  three golfers at a time, the first alone; the longest unread first; no one
+  more is taken after seven and a half minutes (`GHIN_NIGHT_MS`), and who is
+  left is first the next night. A golfer GHIN refuses is passed over and
+  what was stored stays; five refusals in a row, a refused login, GHIN out
+  of reach, or no one read at all ends the step and is named in the log.
+- `functions/index.js` `ghinNightly`: the reads and writes the step needs
+  (`ghin`, `ghinScores`, `ghinLink`), and `scores: { members, read,
+  withheld, noHistory, failed, left }` in its log line — counts only.
+- Same schedule, same timeout, same secrets, same rules; no new function.
+  **`ghinNightly` is to be deployed again** for it to take effect.
+- Nothing in the app changes, and the GHIN parts are still the admins'
+  (`GHIN_STAGE`).
+- Tests: `scripts/test-ghin.mjs` (94).
 ## 2026-11-20 (Profile: the index chart no longer waits a day for its history)
 
 The chart shipped, the function was deployed — and the chart still did not

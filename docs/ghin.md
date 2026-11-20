@@ -61,7 +61,7 @@ hosting rewrite.
 | `ghinScores { idToken, memberId? }` | a member for themselves, an admin for anyone | Reads the scoring record for the GHIN number on the member's record and stores it under `ghinScores/{memberId}`. An answer less than ten minutes old is given back without asking GHIN again. |
 | `ghinPhoneReport { idToken }` | admins | Who can be found on GHIN by the phone they sign in with (below). Counts and candidates; nothing stored. |
 | `ghinLinkByPhone { idToken, links: [{ memberId, number }] }` | admins | Ties the members found that way to their golfers. The server reads each golfer's phone again and ties only where it is the member's own. |
-| `ghinNightly` | no one — a schedule, 02:30 in Ulaanbaatar | The night's round (below): ties the new members found by phone whose name GHIN's also bears out, then reads every Handicap Index afresh. |
+| `ghinNightly` | no one — a schedule, 02:30 in Ulaanbaatar | The night's round (below): ties the new members found by phone whose name GHIN's also bears out, reads every Handicap Index afresh, then every member's scoring record. |
 
 `ghin/{memberId}`:
 
@@ -437,9 +437,26 @@ asking — `nightly` in `functions/ghin.js`:
    admin's is, the phone read again first, marked `auto: true`.
 2. **Every Handicap Index is read afresh** — the daily read; GHIN revises
    an index once a night.
+3. **Every scoring record is read and stored** (`scoresAllNow`) — the
+   scores each index is worked out from, the ones posted since, and the
+   index over the last year — for every member with a number GHIN has a
+   golfer under (step 2 has just said who). Stored by the rule `ghinScores`
+   stores by: whole where GHIN shows the record to everyone or the server
+   tied the member to that golfer — tonight's ties among them — and without
+   its scores otherwise. Two requests a golfer, three golfers at a time
+   (the first alone, so a refused login is refused once). The longest
+   unread come first, and no one more is taken once seven and a half of the
+   function's nine minutes are gone (`GHIN_NIGHT_MS` in
+   `functions/index.js`): who is left is first the next night, so a club
+   too large for one night is read over two. A golfer GHIN refuses is
+   passed over and what was stored for them stays; five refusals in a row,
+   a refused login, GHIN out of reach, or no one read at all ends the step
+   and is named in the log.
 
 So someone who signs up today with only a phone number has their GHIN
-number and Handicap Index by the morning, and has typed nothing.
+number, Handicap Index and scores by the morning, and has typed nothing —
+and a member's home screen and profile show last night's record without
+asking GHIN again (the app asks only for a record more than a day old).
 
 What it leaves for an admin (Users tab → the phone list, as before): a
 golfer whose name has nothing in common with the member's — the phone
@@ -449,7 +466,11 @@ has no name beyond a nickname is never tied by the night's round.
 
 It does not stop on what GHIN refuses: each step that fails is named in
 the log (`ghinNightly {…}` — counts only, no names or numbers) and the rest
-is done. The members hub rebuilds its list an hour later (03:30) and reads
+is done. For the scoring records the log has `scores: { members, read,
+withheld, noHistory, failed, left }` — how many there were to read, how
+many were stored (of them: without their scores, without the index's
+history), how many GHIN refused one by one, and how many were left for the
+next night. The members hub rebuilds its list an hour later (03:30) and reads
 the night's ties (`docs/members-hub.md`).
 
 Deploy it with the functions it shares code with:
