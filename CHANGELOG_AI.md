@@ -1,5 +1,39 @@
 # CHANGELOG_AI.md
 
+## 2026-11-27 (Course map: the hole on the scorer, in 2D and 3D)
+
+The club's map of Mt. Bogd — the drone photograph with the distances to the
+green, the bunkers and the water — can now be opened from the scorecard, at
+the hole being played. The map stays what it was, a site of its own; the app
+only opens it.
+
+- `src/course-map.js` (new): `COURSE_MAP_STAGE` (`'admin'` — a trial, the
+  way GHIN was), `COURSE_MAPS` (course key → the map's address; only `sky`
+  today), `courseMapUrl(game, hole, view)`, `courseMapButtonsHTML(game,
+  user)` and `openCourseMap(url, title)`.
+- `src/game-score.js`: «Нүхний зураг» **2D / 3D** under the hole title, and
+  `data-gs="map"` in `wire()`. The hole is read at click time and sent as
+  the hole on the ground — a back nine's first hole opens the 10th.
+- The map opens over the whole screen in a frame
+  (`https://course.ubgolf.club/?hole=N&view=2d|3d`) with a bar to close it.
+  It is its own history entry, so the phone's Back closes the map and the
+  scorecard is where it was; `#app` is inert under it; focus returns to the
+  button. It is a `.modal-overlay`, so pull-to-refresh stands down.
+- `src/i18n.js`: `cmTitle` in Mongolian, English and Korean.
+  `src/style.css`: `.gs-map`, `.cm-overlay`, `.cm-bar`, `.cm-frame`.
+- No change to Firebase config, rules, functions or deployment. The map is
+  a second Hosting site of the same project, published from the PC that
+  holds the survey data, never from this repository — **until that site
+  and the `course.ubgolf.club` domain exist, the buttons open an empty
+  frame**, which only admins can meet.
+- On `localhost` only, `localStorage.courseMapUrl` points the app at a map
+  served beside it, so both can be tried before either is published.
+- Not opened to members yet: the map's surrounding imagery needs a licence
+  and GPS inside the frame has to be seen on an iPhone first
+  (`docs/course-map.md`). Verified in a headless browser only — the scorer
+  in local mode against a local copy of the map.
+- Tests: `scripts/test-course-map.mjs` (8), added to `npm run test:mp`.
+
 ## 2026-11-20 (GHIN: every member's scoring record is read each night)
 
 So far a scoring record was read when its member — or an admin — opened

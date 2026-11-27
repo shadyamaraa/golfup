@@ -652,3 +652,14 @@ body:has(.bottom-nav:not(.hidden)) #main-content { padding-bottom: 76px; }
 .rk-delta.rk-up { color: #22c55e; }
 .rk-delta.rk-down { color: #e63946; }
 .rk-delta.rk-same, .rk-delta.rk-new { color: var(--text-muted); }
+
+/* ====== Course map (src/course-map.js) ====== */
+/* The two buttons under the scorer's hole title. */
+.gs-map { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; }
+.gs-map-label { font-size: 0.72rem; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.04em; }
+.gs-map .btn { min-width: 52px; }
+/* The map itself: the whole screen, a bar to close it and the map's own page below. */
+.cm-overlay { padding: 0; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; overflow: hidden; background: var(--bg-primary); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.cm-bar { display: flex; align-items: center; gap: 10px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; border-bottom: 1px solid var(--border-card); flex-shrink: 0; }
+.cm-title { flex: 1; min-width: 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-frame { flex: 1; min-height: 0; width: 100%; border: 0; display: block; background: #000; }
