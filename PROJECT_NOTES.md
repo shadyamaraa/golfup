@@ -149,6 +149,18 @@ not a booking and not a payment. The poster is an image data URI kept in
 its own node (`coachPosters`), not in a storage bucket.
 Everything is in `docs/coaching.md`.
 
+### Course map
+
+On the casual game scorer, «Нүхний зураг» **2D / 3D** under the hole title
+opens the map of that hole — Mt. Bogd's drone photograph with distances —
+over the whole screen (`src/course-map.js`). The map is **not part of this
+repository**: it has its own repository and is served from its own Hosting
+site in the same Firebase project, `https://course.ubgolf.club/`, published
+by hand from the PC that holds the survey data. The app only opens
+`?hole=<1..18>&view=<2d|3d>` in a frame. A trial for now: admins only
+(`COURSE_MAP_STAGE` in `src/course-map.js`; `'all'` / `'off'`).
+Everything is in `docs/course-map.md`.
+
 ## Known Cautions
 
 - `src/app.js` is large and contains most UI logic. Keep edits focused.

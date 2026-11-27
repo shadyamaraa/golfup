@@ -17,6 +17,7 @@ import * as store from './store.js';
 import { t, getLang } from './i18n.js';
 import { gameHoleCount, roundFromGame, handicapIndex, courseHandicap } from './handicap.js';
 import { holePar, holeSI, physicalHole } from './courses.js';
+import { courseMapButtonsHTML, courseMapUrl, openCourseMap } from './course-map.js';
 import { gridHTML, patchGrid, wirePager, pageOfHole } from './flight-grid.js';
 import { holeTimeline, HALVED } from './matchplay.js';
 import {
@@ -870,7 +871,7 @@ function screenHTML(game, groupIdx, user, fade, usersById) {
         </div>
         <button data-gs="next" ${hole >= holeCount ? 'disabled' : ''} class="btn btn-outline btn-sm" style="min-width:52px;">${t('scNext')} ›</button>
       </div>
-
+${courseMapButtonsHTML(game, user)}
       <div style="background:var(--bg-card-hover);border:1px solid var(--border-color);border-radius:12px;padding:4px 14px;margin-top:10px;">
         ${scoreRowsHTML(game, groupIdx, players, hole, user, usersById)
           || `<div style="padding:14px 0;color:var(--text-secondary);">${t('emptySlot')}</div>`}
@@ -1280,6 +1281,12 @@ export async function renderGameScorePage(gameId, groupIdx, ctx) {
       } else if (kind === 'goto') {
         viewHole = Number(b.dataset.hole);
         paint();
+      } else if (kind === 'map') {
+        // The hole on screen now, as the course numbers it (a back nine's
+        // first hole is the 10th on the ground and on the map).
+        const view = b.dataset.view;
+        const url = courseMapUrl(data, hole, view);
+        if (url) openCourseMap(url, `${holeTitle(physicalHole(data, hole))} · ${view.toUpperCase()}`);
       } else if (kind === 'ov-open') {
         const key = b.dataset.key;
         const h = Number(b.dataset.hole);

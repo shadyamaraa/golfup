@@ -25,6 +25,11 @@
       with no GHIN number (decided 2026-11-20; nothing changes before
       production). Then run `scripts/ghin-courses.mjs` again to confirm the
       course and tee-set ids. See `docs/ghin.md` («Not done yet»).
+- [ ] Course map, before it is opened to every member
+      (`COURSE_MAP_STAGE = 'all'`): an imagery licence for the map's
+      surroundings (Esri key), and GPS inside the frame seen working on an
+      iPhone. Then the tournament scorers. See `docs/course-map.md`
+      («Before opening it to everyone»).
 - [ ] Coaching phase 2: payment through the club's own QPay and the club
       paying the coaches their share; then counting lessons used against a
       package, a class with a fixed timetable, lesson notes. See
@@ -36,6 +41,10 @@
 
 ## Done
 
+- [x] Course map on the game scorer — «Нүхний зураг» 2D / 3D under the hole
+      title opens that hole of Mt. Bogd's map full-screen; the map itself is
+      its own site, `course.ubgolf.club`. Admins only for now.
+      `docs/course-map.md`.
 - [x] Coaching, flexible times — a coach opens weeks at once, a player
       books a weekly series, and a lesson's time is changed at once or by a
       request the coach grants. `docs/coaching.md`.
